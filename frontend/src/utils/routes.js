@@ -167,8 +167,14 @@ export const routes = {
   getVacationBlockedPeriods: `${BACKEND_BASE}/api/solicitudes/vacation-blocked-periods`,
   createVacationBlockedPeriod: `${BACKEND_BASE}/api/solicitudes/vacation-blocked-periods`,
   deleteVacationBlockedPeriod: (id) => `${BACKEND_BASE}/api/solicitudes/vacation-blocked-periods/${id}`,
+  getAsuntoPropioBlockedPeriods: `${BACKEND_BASE}/api/solicitudes/asunto-propio-blocked-periods`,
+  createAsuntoPropioBlockedPeriod: `${BACKEND_BASE}/api/solicitudes/asunto-propio-blocked-periods`,
+  deleteAsuntoPropioBlockedPeriod: (id) =>
+    `${BACKEND_BASE}/api/solicitudes/asunto-propio-blocked-periods/${id}`,
   getVacacionesDisponibilidadPorcentaje: `${BACKEND_BASE}/api/solicitudes/vacaciones-disponibilidad-porcentaje`,
   putVacacionesDisponibilidadPorcentaje: `${BACKEND_BASE}/api/solicitudes/vacaciones-disponibilidad-porcentaje`,
+  getAsuntosPropiosMaxPorDia: `${BACKEND_BASE}/api/solicitudes/asuntos-propios-max-por-dia`,
+  putAsuntosPropiosMaxPorDia: `${BACKEND_BASE}/api/solicitudes/asuntos-propios-max-por-dia`,
   
   // Vacaciones (Vacations & Asuntos Propios)
   getVacacionesSaldo: `${BACKEND_BASE}/api/vacaciones/saldo`,

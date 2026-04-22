@@ -103,7 +103,9 @@ export class PresupuestosGuardadosController {
     const companyKey =
       company?.toLowerCase() === 'hera' ? ('hera' as const) : undefined;
     const snap =
-      body?.payload && typeof body.payload === 'object' ? body.payload : undefined;
+      body?.payload && typeof body.payload === 'object'
+        ? body.payload
+        : undefined;
     const { buffer, filename } =
       await this.presupuestoDocumentoService.generarPdf(id, {
         ...(companyKey && { companyKey }),

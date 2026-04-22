@@ -440,4 +440,78 @@ export class SolicitudesController {
     await this.solicitudesService.deleteVacationBlockedPeriod(id);
     return { success: true };
   }
+
+  /**
+   * Lista periodos bloqueados para Asuntos Propios — cualquier usuario autenticado
+   * (empleados necesitan verlo en el calendario).
+   */
+  @Get('asunto-propio-blocked-periods')
+  async getAsuntoPropioBlockedPeriods() {
+    return this.solicitudesService.getAsuntoPropioBlockedPeriods();
+  }
+
+  /** Límite diario global Asuntos Propios (1–50). Cualquier usuario autenticado (calendario). */
+  @Get('asuntos-propios-max-por-dia')
+  async getAsuntosPropiosMaxPorDia() {
+    return this.solicitudesService.getAsuntosPropiosMaxPersonasDia();
+  }
+
+  @Put('asuntos-propios-max-por-dia')
+  async putAsuntosPropiosMaxPorDia(
+    @CurrentUser() user: any,
+    @Body() body: { max_personas_dia?: number },
+  ) {
+    const grupo = user?.GRUPO || user?.grupo || '';
+    const allowed = ['Admin', 'Developer', 'Manager', 'Supervisor'];
+    if (!allowed.includes(grupo)) {
+      throw new BadRequestException(
+        'Solo managers pueden cambiar el límite diario de Asuntos Propios.',
+      );
+    }
+    if (
+      body?.max_personas_dia === undefined ||
+      body?.max_personas_dia === null
+    ) {
+      throw new BadRequestException('max_personas_dia es obligatorio');
+    }
+    return this.solicitudesService.setAsuntosPropiosMaxPersonasDia(
+      Number(body.max_personas_dia),
+    );
+  }
+
+  @Post('asunto-propio-blocked-periods')
+  async createAsuntoPropioBlockedPeriod(
+    @CurrentUser() user: any,
+    @Body() body: { fecha_inicio: string; fecha_fin: string },
+  ) {
+    const grupo = user?.GRUPO || user?.grupo || '';
+    const allowed = ['Admin', 'Developer', 'Manager', 'Supervisor'];
+    if (!allowed.includes(grupo)) {
+      throw new BadRequestException(
+        'Solo managers pueden crear periodos bloqueados para Asuntos Propios.',
+      );
+    }
+    if (!body?.fecha_inicio || !body?.fecha_fin) {
+      throw new BadRequestException(
+        'fecha_inicio y fecha_fin son obligatorios',
+      );
+    }
+    return this.solicitudesService.createAsuntoPropioBlockedPeriod(body);
+  }
+
+  @Delete('asunto-propio-blocked-periods/:id')
+  async deleteAsuntoPropioBlockedPeriod(
+    @CurrentUser() user: any,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    const grupo = user?.GRUPO || user?.grupo || '';
+    const allowed = ['Admin', 'Developer', 'Manager', 'Supervisor'];
+    if (!allowed.includes(grupo)) {
+      throw new BadRequestException(
+        'Solo managers pueden eliminar periodos bloqueados para Asuntos Propios.',
+      );
+    }
+    await this.solicitudesService.deleteAsuntoPropioBlockedPeriod(id);
+    return { success: true };
+  }
 }

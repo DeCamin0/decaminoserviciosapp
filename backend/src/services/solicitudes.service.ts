@@ -283,6 +283,113 @@ export class SolicitudesService {
     await this.prisma.vacationBlockedPeriod.delete({ where: { id } });
   }
 
+  /** Periodos bloqueados solo para Asuntos Propios (no afectan vacaciones). */
+  async getAsuntoPropioBlockedPeriods(): Promise<
+    { id: number; fecha_inicio: Date; fecha_fin: Date }[]
+  > {
+    const rows = await this.prisma.asuntoPropioBlockedPeriod.findMany({
+      orderBy: { fecha_inicio: 'asc' },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      fecha_inicio: r.fecha_inicio,
+      fecha_fin: r.fecha_fin,
+    }));
+  }
+
+  async createAsuntoPropioBlockedPeriod(dto: {
+    fecha_inicio: string;
+    fecha_fin: string;
+  }): Promise<{ id: number; fecha_inicio: Date; fecha_fin: Date }> {
+    const start = new Date(dto.fecha_inicio);
+    const end = new Date(dto.fecha_fin);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+      throw new BadRequestException(
+        'fecha_inicio y fecha_fin deben ser fechas válidas y fecha_fin >= fecha_inicio',
+      );
+    }
+    const created = await this.prisma.asuntoPropioBlockedPeriod.create({
+      data: {
+        fecha_inicio: start,
+        fecha_fin: end,
+      },
+    });
+    return {
+      id: created.id,
+      fecha_inicio: created.fecha_inicio,
+      fecha_fin: created.fecha_fin,
+    };
+  }
+
+  async deleteAsuntoPropioBlockedPeriod(id: number): Promise<void> {
+    await this.prisma.asuntoPropioBlockedPeriod.delete({ where: { id } });
+  }
+
+  /** Máximo de personas con Asunto Propio el mismo día (global), configurable (id=1). */
+  async getAsuntosPropiosMaxPersonasDia(): Promise<{
+    max_personas_dia: number;
+  }> {
+    try {
+      const row =
+        await this.prisma.asuntosPropiosDisponibilidadConfig.findUnique({
+          where: { id: 1 },
+        });
+      const raw = row ? Number(row.max_personas_dia) : 3;
+      const n = Math.min(50, Math.max(1, Math.round(raw)));
+      return { max_personas_dia: n };
+    } catch (e: any) {
+      this.logger.warn(
+        `getAsuntosPropiosMaxPersonasDia fallback 3: ${e?.message}`,
+      );
+      return { max_personas_dia: 3 };
+    }
+  }
+
+  async setAsuntosPropiosMaxPersonasDia(
+    maxPersonas: number,
+  ): Promise<{ max_personas_dia: number }> {
+    if (!Number.isFinite(maxPersonas)) {
+      throw new BadRequestException('max_personas_dia no es un número válido');
+    }
+    const n = Math.round(Number(maxPersonas));
+    if (n < 1 || n > 50) {
+      throw new BadRequestException('max_personas_dia debe estar entre 1 y 50');
+    }
+    await this.prisma.asuntosPropiosDisponibilidadConfig.upsert({
+      where: { id: 1 },
+      create: { id: 1, max_personas_dia: n },
+      update: { max_personas_dia: n },
+    });
+    return { max_personas_dia: n };
+  }
+
+  private async checkAsuntoPropioBlockedPeriods(
+    fechaInicio: string,
+    fechaFin: string,
+  ): Promise<{ allowed: boolean; firstBadDate?: string }> {
+    const periods = await this.getAsuntoPropioBlockedPeriods();
+    if (!periods.length) return { allowed: true };
+    const start = new Date(fechaInicio);
+    const end = new Date(fechaFin);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+    let cur = new Date(start);
+    while (cur <= end) {
+      const dateStr = cur.toISOString().split('T')[0];
+      for (const p of periods) {
+        const pStart = new Date(p.fecha_inicio);
+        const pEnd = new Date(p.fecha_fin);
+        pStart.setHours(0, 0, 0, 0);
+        pEnd.setHours(0, 0, 0, 0);
+        if (cur >= pStart && cur <= pEnd) {
+          return { allowed: false, firstBadDate: dateStr };
+        }
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    return { allowed: true };
+  }
+
   /** % del grupo en vacaciones el mismo día (1–100), para API y UI. */
   async getVacacionesDisponibilidadPorcentaje(): Promise<{
     porcentaje: number;
@@ -457,7 +564,7 @@ export class SolicitudesService {
   }
 
   /**
-   * Verifică dacă nici o zi din interval nu depășește capacitatea pentru Asuntos Propios (max 4 global, max 1 per centru).
+   * Verifică dacă nici o zi din interval nu depășește capacitatea pentru Asuntos Propios (max global + max 1 per centru) sau periodos bloqueados.
    */
   private async checkAsuntoPropioRangeAvailability(
     codigo: string,
@@ -471,6 +578,17 @@ export class SolicitudesService {
       if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
         return { allowed: true };
       }
+
+      const blockedAp = await this.checkAsuntoPropioBlockedPeriods(
+        fechaInicio,
+        fechaFin,
+      );
+      if (!blockedAp.allowed) {
+        return { allowed: false, firstBadDate: blockedAp.firstBadDate };
+      }
+
+      const { max_personas_dia: maxGlobal } =
+        await this.getAsuntosPropiosMaxPersonasDia();
 
       const empleadoQuery = `
         SELECT \`CENTRO TRABAJO\` as centro FROM DatosEmpleados
@@ -523,7 +641,7 @@ export class SolicitudesService {
       endCheck.setHours(0, 0, 0, 0);
       while (cur <= endCheck) {
         const dateStr = cur.toISOString().split('T')[0];
-        if ((globalDayCount[dateStr] || 0) >= 4) {
+        if ((globalDayCount[dateStr] || 0) >= maxGlobal) {
           return { allowed: false, firstBadDate: dateStr };
         }
         if ((centerDayCount[dateStr] || 0) >= 1) {
@@ -1265,7 +1383,7 @@ export class SolicitudesService {
           );
           if (!rangeCheck.allowed) {
             throw new BadRequestException(
-              `El rango seleccionado incluye días sin disponibilidad (ocupados o límite por centro). Primera fecha no disponible: ${rangeCheck.firstBadDate}. Elige solo días disponibles.`,
+              `El rango seleccionado incluye días sin disponibilidad (ocupados, límite por centro o período bloqueado para Asuntos Propios). Primera fecha no disponible: ${rangeCheck.firstBadDate}. Elige solo días disponibles.`,
             );
           }
         }
@@ -1896,7 +2014,7 @@ export class SolicitudesService {
           );
           if (!rangeCheck.allowed) {
             throw new BadRequestException(
-              `El rango seleccionado incluye días sin disponibilidad (ocupados o límite por centro). Primera fecha no disponible: ${rangeCheck.firstBadDate}. Elige solo días disponibles.`,
+              `El rango seleccionado incluye días sin disponibilidad (ocupados, límite por centro o período bloqueado para Asuntos Propios). Primera fecha no disponible: ${rangeCheck.firstBadDate}. Elige solo días disponibles.`,
             );
           }
         }

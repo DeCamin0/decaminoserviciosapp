@@ -36,6 +36,26 @@ const MONTHS = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
 ];
 
+/** Valor por defecto hasta cargar el límite desde la API (gestión). */
+const DEFAULT_ASUNTOS_PROPIOS_MAX_POR_DIA = 3;
+
+function isTipoAsuntoPropio(tipo) {
+  const t = String(tipo || '').trim().toLowerCase();
+  return t === 'asunto propio' || t === 'asuntos propios';
+}
+
+/** Parámetro TIPO en URL/API: la UI usa «Asuntos Propios» pero el backend guarda «Asunto Propio». */
+function tipoSolicitudApiParam(tipoUI) {
+  return tipoUI === 'Asuntos Propios' ? 'Asunto Propio' : tipoUI;
+}
+
+/** Coincide el tipo de la solicitud (API) con el tipo seleccionado en el formulario. */
+function solicitudTipoCoincideUi(sTipo, uiTipo) {
+  if (String(uiTipo) === 'Vacaciones') return sTipo === 'Vacaciones';
+  if (isTipoAsuntoPropio(uiTipo)) return isTipoAsuntoPropio(sTipo);
+  return String(sTipo) === String(uiTipo);
+}
+
 /** Inicio/fin locales (YYYY-MM-DD) para filtros por mes; alineado con Control vacaciones. */
 const getSolicitudRangoFechasLocal = (s) => {
   let fi = '';
@@ -1862,10 +1882,20 @@ export default function SolicitudesPage() {
   const [newBlockedPeriodInicio, setNewBlockedPeriodInicio] = useState('');
   const [newBlockedPeriodFin, setNewBlockedPeriodFin] = useState('');
   const [blockedPeriodsYear, setBlockedPeriodsYear] = useState(() => new Date().getFullYear());
+  const [showAsuntoPropioBlockedPeriodsModal, setShowAsuntoPropioBlockedPeriodsModal] = useState(false);
+  const [asuntoPropioBlockedPeriods, setAsuntoPropioBlockedPeriods] = useState([]);
+  const [newApBlockedPeriodInicio, setNewApBlockedPeriodInicio] = useState('');
+  const [newApBlockedPeriodFin, setNewApBlockedPeriodFin] = useState('');
+  const [blockedApPeriodsYear, setBlockedApPeriodsYear] = useState(() => new Date().getFullYear());
   // % del grupo en vacaciones simultáneas (misma regla que backend; por defecto 10)
   const [vacacionesDisponibilidadPct, setVacacionesDisponibilidadPct] = useState(10);
   const [vacacionPctDraft, setVacacionPctDraft] = useState('10');
   const [savingVacacionPct, setSavingVacacionPct] = useState(false);
+  const [asuntosPropiosMaxPorDia, setAsuntosPropiosMaxPorDia] = useState(
+    DEFAULT_ASUNTOS_PROPIOS_MAX_POR_DIA,
+  );
+  const [apMaxPersonasDraft, setApMaxPersonasDraft] = useState('3');
+  const [savingApMaxPersonas, setSavingApMaxPersonas] = useState(false);
 
   // Conflicte MANUAL vs MUTUA (după upload Excel)
   const [showBajaConflictsModal, setShowBajaConflictsModal] = useState(false);
@@ -2051,32 +2081,50 @@ export default function SolicitudesPage() {
     return occupiedDates.includes(dateStr);
   };
 
-  // Check if a date is in the blocked holiday period (Dec 6 - Jan 6) or in any configurable blocked period
-  const isInHolidayBlockPeriod = (dateStr) => {
+  /** 6 Dic – 6 Ene (empleada), aplicable a Vacaciones y Asuntos Propios. */
+  const isFixedEmpleadaBlock = (dateStr) => {
     const date = new Date(dateStr);
-    const month = date.getMonth() + 1; // getMonth() returns 0-11
-    
-    // Block from December 6 to January 6 (next year)
-    if (month === 12 && date.getDate() >= 6) {
-      return true; // December 6-31
-    }
-    if (month === 1 && date.getDate() <= 6) {
-      return true; // January 1-6
-    }
-    // Perioade blocate configurate (din API)
-    if (vacationBlockedPeriods?.length) {
-      const d = new Date(dateStr);
-      d.setHours(0, 0, 0, 0);
-      for (const p of vacationBlockedPeriods) {
-        const start = new Date(p.fecha_inicio);
-        const end = new Date(p.fecha_fin);
-        start.setHours(0, 0, 0, 0);
-        end.setHours(0, 0, 0, 0);
-        if (d >= start && d <= end) return true;
-      }
+    const month = date.getMonth() + 1;
+    if (month === 12 && date.getDate() >= 6) return true;
+    if (month === 1 && date.getDate() <= 6) return true;
+    return false;
+  };
+
+  const isVacationConfiguredBlock = (dateStr) => {
+    if (!vacationBlockedPeriods?.length) return false;
+    const d = new Date(dateStr);
+    d.setHours(0, 0, 0, 0);
+    for (const p of vacationBlockedPeriods) {
+      const start = new Date(p.fecha_inicio);
+      const end = new Date(p.fecha_fin);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+      if (d >= start && d <= end) return true;
     }
     return false;
   };
+
+  const isAsuntoPropioConfiguredBlock = (dateStr) => {
+    if (!asuntoPropioBlockedPeriods?.length) return false;
+    const d = new Date(dateStr);
+    d.setHours(0, 0, 0, 0);
+    for (const p of asuntoPropioBlockedPeriods) {
+      const start = new Date(p.fecha_inicio);
+      const end = new Date(p.fecha_fin);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+      if (d >= start && d <= end) return true;
+    }
+    return false;
+  };
+
+  /** Vacaciones: fijo empleada + periodos bloqueados de vacaciones (gestión). */
+  const isInHolidayBlockPeriod = (dateStr) =>
+    isFixedEmpleadaBlock(dateStr) || isVacationConfiguredBlock(dateStr);
+
+  /** Asuntos Propios: fijo empleada + periodos bloqueados solo para AP (no los de vacaciones). */
+  const isInAsuntoPropioCalendarBlock = (dateStr) =>
+    isFixedEmpleadaBlock(dateStr) || isAsuntoPropioConfiguredBlock(dateStr);
 
   const isDateDisabled = (date, isManagerMode = false) => {
     // În modul manager, nu blocăm nicio dată
@@ -2104,7 +2152,11 @@ export default function SolicitudesPage() {
       if (isEditingVacacionesOrAsuntoPropio) {
         return false; // Nu blocăm nicio dată când se editează
       }
-      return currentDate < today || isInHolidayBlockPeriod(dateStr) || isFull;
+      const blockedByPolicy =
+        tipo === 'Vacaciones'
+          ? isInHolidayBlockPeriod(dateStr)
+          : isInAsuntoPropioCalendarBlock(dateStr);
+      return currentDate < today || blockedByPolicy || isFull;
     } else {
       // For other types, use the old logic
       return currentDate < today || occupiedDates.includes(dateStr) || isInHolidayBlockPeriod(dateStr);
@@ -2137,15 +2189,21 @@ export default function SolicitudesPage() {
     if (tipo === 'Vacaciones') {
       const percentage = vacacionesDisponibilidadPct / 100;
       return Math.max(1, Math.ceil(groupSize * percentage)); // At least 1 person
-    } else if (tipo === 'Asunto Propio') {
-      // For Asuntos Propios: max 4 people per day globally
-      return 4; // Absolute limit of 4 people per day
+    } else if (isTipoAsuntoPropio(tipo)) {
+      return Math.min(
+        50,
+        Math.max(1, Number(asuntosPropiosMaxPorDia) || DEFAULT_ASUNTOS_PROPIOS_MAX_POR_DIA),
+      );
     }
     return 1; // Default fallback
-  }, [vacacionesDisponibilidadPct]);
+  }, [vacacionesDisponibilidadPct, asuntosPropiosMaxPorDia]);
 
   // Calculate date availability for each group and center
   const calculateDateAvailability = useCallback((solicitudes, users, year, month) => {
+    const apCap = Math.min(
+      50,
+      Math.max(1, Number(asuntosPropiosMaxPorDia) || DEFAULT_ASUNTOS_PROPIOS_MAX_POR_DIA),
+    );
     const availability = {};
     const currentUser = authUser;
     const currentUserGroup = currentUser?.['GRUPO'] || currentUser?.grupo || '';
@@ -2298,9 +2356,8 @@ export default function SolicitudesPage() {
     const groupSize = relevantUsers.length;
     let maxAllowed;
     
-    if (tipo === 'Asunto Propio') {
-      // For Asuntos Propios: max 4 people globally, max 1 from same center
-      maxAllowed = 4; // Global limit
+    if (isTipoAsuntoPropio(tipo)) {
+      maxAllowed = apCap;
     } else {
       maxAllowed = getAvailabilityLimit(month, groupSize, tipo);
     }
@@ -2349,7 +2406,7 @@ export default function SolicitudesPage() {
           return; // Skip solicitarea care se editează
         }
         
-        if (solicitud.tipo === tipo && 
+        if (solicitudTipoCoincideUi(solicitud.tipo, tipo) &&
             (solicitud.estado === 'Aprobada' || solicitud.estado === 'Pendiente')) {
           
           const solicitudGroup = solicitud.grupo || solicitud['GRUPO'] || '';
@@ -2394,8 +2451,8 @@ export default function SolicitudesPage() {
                     sameCenterCount++;
                   }
                 }
-              } else if (tipo === 'Asunto Propio') {
-                // ✅ Asuntos Propios: limită globală (4) + limită per centru (1)
+              } else if (isTipoAsuntoPropio(tipo)) {
+                // ✅ Asuntos Propios: límite global + máx. 1 del mismo centro
                 occupiedCount++; // Numără toate solicitările global (din toate grupuri/centre)
                 
                 // Count people from same center (pentru limita per centru)
@@ -2421,9 +2478,8 @@ export default function SolicitudesPage() {
       if (isEditingVacacionesOrAsuntoPropio) {
         // La editare, toate zilele sunt disponibile (ignorăm regulile)
         isFull = false;
-      } else if (tipo === 'Asunto Propio') {
-        // Asuntos Propios: limită globală de 4 + limită per centru de 1
-        isFull = occupiedCount >= 4 || sameCenterCount >= 1;
+      } else if (isTipoAsuntoPropio(tipo)) {
+        isFull = occupiedCount >= apCap || sameCenterCount >= 1;
       } else if (tipo === 'Vacaciones') {
         // Vacaciones: limită per grup (maxAllowed) + limită per grup+centru (max 1)
         isFull = occupiedCount >= maxAllowed || sameCenterCount >= 1;
@@ -2433,16 +2489,17 @@ export default function SolicitudesPage() {
       }
 
       availability[dateStr] = {
-        available: tipo === 'Asunto Propio' 
-          ? Math.max(0, 4 - occupiedCount) // Show global availability
+        available: isTipoAsuntoPropio(tipo)
+          ? Math.max(0, apCap - occupiedCount)
           : Math.max(0, maxAllowed - occupiedCount),
-        total: tipo === 'Asunto Propio' ? 4 : maxAllowed,
+        total: isTipoAsuntoPropio(tipo) ? apCap : maxAllowed,
         occupied: occupiedCount,
         sameCenterOccupied: sameCenterCount,
         isFull: isFull,
         group: currentUserGroup,
         center: currentUserCenter,
-        maxAllowed: tipo === 'Asunto Propio' ? 4 : maxAllowed
+        maxAllowed: isTipoAsuntoPropio(tipo) ? apCap : maxAllowed,
+        groupSize,
       };
       
       // Log first few days for debugging
@@ -2451,15 +2508,15 @@ export default function SolicitudesPage() {
           occupiedCount,
           sameCenterCount,
           maxAllowed,
-          available: tipo === 'Asunto Propio' 
-            ? Math.max(0, 4 - occupiedCount)
+          available: isTipoAsuntoPropio(tipo)
+            ? Math.max(0, apCap - occupiedCount)
             : Math.max(0, maxAllowed - occupiedCount),
-          isFull: tipo === 'Asunto Propio' 
-            ? (occupiedCount >= 4 || sameCenterCount >= 1)
+          isFull: isTipoAsuntoPropio(tipo)
+            ? (occupiedCount >= apCap || sameCenterCount >= 1)
             : occupiedCount >= maxAllowed,
           tipo,
           solicitudesForDay: solicitudes.filter(s => {
-            if (s.tipo !== tipo || (s.estado !== 'Aprobada' && s.estado !== 'Pendiente')) return false;
+            if (!solicitudTipoCoincideUi(s.tipo, tipo) || (s.estado !== 'Aprobada' && s.estado !== 'Pendiente')) return false;
             
             const solicitudGroup = s.grupo || s['GRUPO'] || '';
             const normalizedSolicitudGroup = normalizeGroup(solicitudGroup);
@@ -2509,7 +2566,7 @@ export default function SolicitudesPage() {
     }
 
     return availability;
-  }, [authUser, tipo, editingSolicitud, getAvailabilityLimit]);
+  }, [authUser, tipo, editingSolicitud, getAvailabilityLimit, asuntosPropiosMaxPorDia]);
 
   const toggleDate = (date) => {
     const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
@@ -2632,7 +2689,8 @@ export default function SolicitudesPage() {
   const getApprovedRequests = useCallback(async (monthStr) => {
     try {
       // Remove email filter to get ALL approved requests for the month
-      const allApprovedUrl = `${routes.getSolicitudesByEmail}?MES=${encodeURIComponent(monthStr)}&TIPO=${encodeURIComponent(tipo)}&ESTADO=Aprobada&limit=1000`;
+      const tipoApi = tipoSolicitudApiParam(tipo);
+      const allApprovedUrl = `${routes.getSolicitudesByEmail}?MES=${encodeURIComponent(monthStr)}&TIPO=${encodeURIComponent(tipoApi)}&ESTADO=Aprobada&limit=1000`;
       console.log('🔍 Fetching ALL approved requests from:', allApprovedUrl);
       const approvedResult = await callApi(allApprovedUrl);
       if (approvedResult.success) {
@@ -2712,16 +2770,17 @@ export default function SolicitudesPage() {
     loadOccupiedDatesTimeoutRef.current = setTimeout(async () => {
       setOperationLoading('occupiedDates', true);
       try {
+        const tipoApi = tipoSolicitudApiParam(tipo);
         // For managers: get all requests for the month
         // For employees: get their own requests plus approved ones from others
         let url;
         if (isManager) {
           // Managers can see all requests
-          url = `${routes.getSolicitudesByEmail}?MES=${encodeURIComponent(monthStr)}&TIPO=${encodeURIComponent(tipo)}&limit=1000`;
+          url = `${routes.getSolicitudesByEmail}?MES=${encodeURIComponent(monthStr)}&TIPO=${encodeURIComponent(tipoApi)}&limit=1000`;
         } else {
           // Employees see their own requests plus all approved ones
           const userCode = authUser?.['CODIGO'] || authUser?.codigo || '';
-          url = `${routes.getSolicitudesByEmail}?MES=${encodeURIComponent(monthStr)}&TIPO=${encodeURIComponent(tipo)}&codigo=${encodeURIComponent(userCode)}&limit=1000`;
+          url = `${routes.getSolicitudesByEmail}?MES=${encodeURIComponent(monthStr)}&TIPO=${encodeURIComponent(tipoApi)}&codigo=${encodeURIComponent(userCode)}&limit=1000`;
         }
         
         console.log('🔍 Loading occupied dates from:', url);
@@ -2756,7 +2815,7 @@ export default function SolicitudesPage() {
         
         data.forEach(solicitud => {
           // Process requests based on current tipo (Vacaciones or Asunto Propio)
-          if (solicitud.tipo === tipo && (solicitud.estado === 'Aprobada' || solicitud.estado === 'Pendiente')) {
+          if (solicitudTipoCoincideUi(solicitud.tipo, tipo) && (solicitud.estado === 'Aprobada' || solicitud.estado === 'Pendiente')) {
             // Handle different date formats
             let fechaInicio = '';
             let fechaFin = '';
@@ -2789,7 +2848,7 @@ export default function SolicitudesPage() {
         console.log('🔍 Loaded occupied dates:', Array.from(occupiedDatesSet));
 
         // Calculate availability for current user's group and center
-        if (tipo === 'Vacaciones' || tipo === 'Asunto Propio') {
+        if (tipo === 'Vacaciones' || isTipoAsuntoPropio(tipo)) {
           // For non-managers, fetch users if not already loaded
           if (allUsers.length === 0) {
             try {
@@ -2844,7 +2903,7 @@ export default function SolicitudesPage() {
             
             try {
               // Get ALL approved requests for the month (no email filter) - same for everyone
-              const allApprovedUrl = `${routes.getSolicitudesByEmail}?MES=${encodeURIComponent(monthStr)}&TIPO=${encodeURIComponent(tipo)}&ESTADO=Aprobada&limit=1000`;
+              const allApprovedUrl = `${routes.getSolicitudesByEmail}?MES=${encodeURIComponent(monthStr)}&TIPO=${encodeURIComponent(tipoApi)}&ESTADO=Aprobada&limit=1000`;
               console.log('🔍 Fetching ALL approved requests for availability calculation:', allApprovedUrl);
               const approvedResult = await callApi(allApprovedUrl);
               if (approvedResult.success) {
@@ -3016,13 +3075,13 @@ export default function SolicitudesPage() {
 
     if (tipo === 'Vacaciones') {
       loadOccupiedDates(calendarYear, calendarMonth);
-    } else if (tipo === 'Asunto Propio' && allowedGroups.includes(currentUserGroup)) {
+    } else if (isTipoAsuntoPropio(tipo) && allowedGroups.includes(currentUserGroup)) {
       loadOccupiedDates(calendarYear, calendarMonth);
     } else {
       setOccupiedDates(prev => (prev.length === 0 ? prev : []));
       setDateAvailability(prev => (Object.keys(prev || {}).length === 0 ? prev : {}));
     }
-  }, [calendarYear, calendarMonth, tipo, authUser, loadOccupiedDates]);
+  }, [calendarYear, calendarMonth, tipo, authUser, loadOccupiedDates, asuntosPropiosMaxPorDia]);
 
   // Recalculează disponibilitatea când se schimbă editingSolicitud (pentru a exclude solicitarea din calcul)
   useEffect(() => {
@@ -3057,7 +3116,7 @@ export default function SolicitudesPage() {
       const [y, m] = key.split('-').map(Number);
       loadOccupiedDates(y, m);
     });
-  }, [tipo, fechaInicio, fechaFin, editingSolicitud, loadOccupiedDates]);
+  }, [tipo, fechaInicio, fechaFin, editingSolicitud, loadOccupiedDates, asuntosPropiosMaxPorDia]);
 
   // Demo solicitudes data
   const setDemoSolicitudes = useCallback(() => {
@@ -3788,6 +3847,32 @@ export default function SolicitudesPage() {
     }
   }, [authUser?.isDemo, canAccessAllTabs, callApi]);
 
+  const fetchAsuntoPropioBlockedPeriods = useCallback(async () => {
+    if (authUser?.isDemo || !canAccessPage) return;
+    try {
+      const res = await callApi(routes.getAsuntoPropioBlockedPeriods, { method: 'GET' });
+      const list = (res?.data ?? res) ?? [];
+      setAsuntoPropioBlockedPeriods(Array.isArray(list) ? list : []);
+    } catch (e) {
+      console.warn('Error fetching asunto propio blocked periods:', e);
+      setAsuntoPropioBlockedPeriods([]);
+    }
+  }, [authUser?.isDemo, canAccessPage, callApi]);
+
+  const fetchAsuntosPropiosMaxPorDia = useCallback(async () => {
+    if (authUser?.isDemo || !canAccessPage) return;
+    try {
+      const res = await callApi(routes.getAsuntosPropiosMaxPorDia, { method: 'GET' });
+      const data = res?.data ?? res;
+      const n = Number(data?.max_personas_dia);
+      if (Number.isFinite(n) && n >= 1 && n <= 50) {
+        setAsuntosPropiosMaxPorDia(n);
+      }
+    } catch (e) {
+      console.warn('getAsuntosPropiosMaxPorDia:', e);
+    }
+  }, [authUser?.isDemo, canAccessPage, callApi]);
+
   const fetchVacacionesDisponibilidadPct = useCallback(async () => {
     if (authUser?.isDemo) return;
     try {
@@ -3820,6 +3905,21 @@ export default function SolicitudesPage() {
   useEffect(() => {
     if (canAccessAllTabs) fetchVacationBlockedPeriods();
   }, [canAccessAllTabs, fetchVacationBlockedPeriods]);
+
+  useEffect(() => {
+    if (canAccessPage) fetchAsuntoPropioBlockedPeriods();
+  }, [canAccessPage, fetchAsuntoPropioBlockedPeriods]);
+
+  useEffect(() => {
+    if (canAccessPage) fetchAsuntosPropiosMaxPorDia();
+  }, [canAccessPage, fetchAsuntosPropiosMaxPorDia]);
+
+  useEffect(() => {
+    if (showAsuntoPropioBlockedPeriodsModal) {
+      setApMaxPersonasDraft(String(asuntosPropiosMaxPorDia));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAsuntoPropioBlockedPeriodsModal]);
   useEffect(() => {
     if (selectedTab === 'baja' && canAccessAllTabs) {
       fetchBajasMedicas();
@@ -5439,6 +5539,22 @@ export default function SolicitudesPage() {
           return false;
         }
         checkBlock.setDate(checkBlock.getDate() + 1);
+      }
+    }
+    if (isTipoAsuntoPropio(tipo) && editingSolicitud === null) {
+      const checkAp = new Date(start);
+      checkAp.setHours(0, 0, 0, 0);
+      const endCheckAp = new Date(end);
+      endCheckAp.setHours(0, 0, 0, 0);
+      while (checkAp <= endCheckAp) {
+        const dateStr = checkAp.toISOString().split('T')[0];
+        if (isInAsuntoPropioCalendarBlock(dateStr)) {
+          setErrorMsg(
+            'El rango incluye días bloqueados para Asuntos Propios (período empleada 6 Dic - 6 Ene o periodos configurados en gestión). Elige solo días permitidos.',
+          );
+          return false;
+        }
+        checkAp.setDate(checkAp.getDate() + 1);
       }
     }
 
@@ -10020,6 +10136,22 @@ export default function SolicitudesPage() {
                   </div>
                 </button>
               )}
+              {selectedTab === 'asunto' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErrorMsg('');
+                    setShowAsuntoPropioBlockedPeriodsModal(true);
+                    fetchAsuntoPropioBlockedPeriods();
+                  }}
+                  className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-violet-500 to-purple-600 text-white"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">🔒</span>
+                    <span className="text-sm">Bloquear Asuntos Propios</span>
+                  </div>
+                </button>
+              )}
               <button
                 onClick={() => setShowManagerSolicitudModal(true)}
                   className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-indigo-500 to-indigo-600 text-white"
@@ -13938,7 +14070,7 @@ export default function SolicitudesPage() {
                               const isFull = availability && availability.isFull;
                               const isLowAvailability = availability && availability.available <= 1 && availability.available > 0;
                               // For Vacaciones and Asuntos Propios, we don't use isDateOccupied anymore - we use availability logic instead
-                              const isOccupied = (tipo !== 'Vacaciones' && tipo !== 'Asunto Propio') ? isDateOccupied(day) : false;
+                              const isOccupied = (tipo !== 'Vacaciones' && !isTipoAsuntoPropio(tipo)) ? isDateOccupied(day) : false;
                               
                               return (
                               <button
@@ -14325,7 +14457,9 @@ export default function SolicitudesPage() {
                               // Ignorăm perioada de blocare când se editează o solicitare
                               const isEditingVacacionesOrAsuntoPropio = editingSolicitud !== null && 
                                 (tipo === 'Vacaciones' || tipo === 'Asunto Propio' || tipo === 'Asuntos Propios');
-                              const isBlocked = isEditingVacacionesOrAsuntoPropio ? false : isInHolidayBlockPeriod(dateStr);
+                              const isBlocked = isEditingVacacionesOrAsuntoPropio
+                                ? false
+                                : isInAsuntoPropioCalendarBlock(dateStr);
                               const availability = dateAvailability[dateStr];
                               const isFull = availability && availability.isFull;
                               const isLowAvailability = availability && availability.available <= 1 && availability.available > 0;
@@ -14359,15 +14493,21 @@ export default function SolicitudesPage() {
                                       : isBlocked
                                       ? 'Bloqueado (Empleada)'
                                       : isFull
-                                      ? `Sin disponibilidad (${availability?.occupiedCount || 0}/${availability?.maxAllowed || 1})`
+                                      ? (canAccessAllTabs
+                                          ? `Sin disponibilidad (${availability?.occupied ?? 0}/${availability?.maxAllowed ?? 1})`
+                                          : 'Sin disponibilidad para Asuntos Propios en esta fecha')
                                       : isLowAvailability
-                                      ? `Poca disponibilidad (${availability?.available || 0}/${availability?.maxAllowed || 1})`
+                                      ? (canAccessAllTabs
+                                          ? `Poca disponibilidad (${availability?.available ?? 0}/${availability?.maxAllowed ?? 1})`
+                                          : 'Poca disponibilidad: quedan pocos cupos para este día')
                                       : isOccupied
                                       ? 'Ocupado por otras solicitudes'
                                       : isToday
                                       ? 'Hoy'
                                       : availability
-                                      ? `Disponible (${availability.available}/${availability.maxAllowed})`
+                                      ? (canAccessAllTabs
+                                          ? `Disponible (${availability.available}/${availability.maxAllowed})`
+                                          : 'Disponible')
                                       : 'Disponible'
                                   }
                                 >
@@ -14375,7 +14515,13 @@ export default function SolicitudesPage() {
                                     <span className="text-xs sm:text-sm font-medium">{day}</span>
                                     {availability && (
                                       <span className="text-[10px] sm:text-xs opacity-75">
-                                        {isFull ? '🈵' : isLowAvailability ? '⚠️' : availability.available}
+                                        {isFull
+                                          ? '🈵'
+                                          : isLowAvailability
+                                            ? '⚠️'
+                                            : canAccessAllTabs
+                                              ? availability.available
+                                              : ''}
                                       </span>
                                     )}
                                   </div>
@@ -14401,12 +14547,20 @@ export default function SolicitudesPage() {
                         <p className="text-sm font-medium text-purple-800">
                           📊 Disponibilidad de Asuntos Propios
                         </p>
-                        <p className="text-xs text-purple-600 mt-1">
-                          Total empleados en grupo: {Object.values(dateAvailability)[0]?.groupSize || 0}
-                        </p>
-                        <p className="text-xs text-purple-600">
-                          Límite permitido: {Object.values(dateAvailability)[0]?.maxAllowed || 0} personas
-                        </p>
+                        {canAccessAllTabs ? (
+                          <>
+                            <p className="text-xs text-purple-600 mt-1">
+                              Total empleados en grupo: {Object.values(dateAvailability)[0]?.groupSize ?? 0}
+                            </p>
+                            <p className="text-xs text-purple-600">
+                              Límite permitido: {Object.values(dateAvailability)[0]?.maxAllowed ?? 0} personas
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-xs text-purple-600 mt-1">
+                            El calendario indica si el día está disponible; en amarillo hay poca disponibilidad. El cupo diario lo gestiona la empresa y no se muestra el número exacto.
+                          </p>
+                        )}
                         <p className="text-xs text-purple-600">
                           Días disponibles: {totalAsuntoPropioDays}/6 días (anual)
                         </p>
@@ -14456,7 +14610,11 @@ export default function SolicitudesPage() {
                           • Máximo 6 días por persona por año
                         </p>
                         <p className="text-xs text-purple-600">
-                          • Máximo 4 personas por día en total
+                          {canAccessAllTabs ? (
+                            <>• Máximo {asuntosPropiosMaxPorDia} personas por día en total (se configura en «Bloquear Asuntos Propios»)</>
+                          ) : (
+                            <>• Cupo diario a nivel empresa (el número no se muestra en el calendario)</>
+                          )}
                         </p>
                         <p className="text-xs text-purple-600">
                           • Máximo 1 persona del mismo centro por día
@@ -16697,6 +16855,232 @@ export default function SolicitudesPage() {
                           try {
                             await callApi(routes.deleteVacationBlockedPeriod(p.id), { method: 'DELETE' });
                             await fetchVacationBlockedPeriods();
+                          } catch (e) {
+                            setErrorMsg(e?.message || 'Error al eliminar.');
+                          }
+                        }}
+                        className="text-red-600 hover:text-red-800 font-medium"
+                      >
+                        Eliminar
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Bloquear periodos Asuntos Propios */}
+      <Modal
+        isOpen={showAsuntoPropioBlockedPeriodsModal}
+        onClose={() => {
+          setShowAsuntoPropioBlockedPeriodsModal(false);
+          setNewApBlockedPeriodInicio('');
+          setNewApBlockedPeriodFin('');
+        }}
+        title="Bloquear periodos para Asuntos Propios"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">
+            Las fechas dentro de estos periodos no se podrán solicitar como Asuntos Propios. Puedes bloquear meses enteros con los checkboxes o intervalos concretos abajo (solo afecta a Asuntos Propios, no a vacaciones).
+          </p>
+          {canAccessAllTabs && (
+            <div className="p-3 bg-purple-50 rounded-xl border border-purple-200">
+              <h4 className="text-sm font-semibold text-gray-800 mb-1">
+                Límite diario (toda la empresa)
+              </h4>
+              <p className="text-xs text-gray-600 mb-2">
+                Máximo de personas con Asunto Propio el mismo día. Los empleados ven «poca disponibilidad» en amarillo sin cifras en el calendario.
+              </p>
+              <div className="flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Personas / día</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    step={1}
+                    value={apMaxPersonasDraft}
+                    onChange={(e) => setApMaxPersonasDraft(e.target.value)}
+                    className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={savingApMaxPersonas}
+                  onClick={async () => {
+                    const n = Number(apMaxPersonasDraft);
+                    if (!Number.isFinite(n) || n < 1 || n > 50) {
+                      setErrorMsg('Indica un valor entre 1 y 50.');
+                      return;
+                    }
+                    setSavingApMaxPersonas(true);
+                    setErrorMsg('');
+                    try {
+                      await callApi(routes.putAsuntosPropiosMaxPorDia, {
+                        method: 'PUT',
+                        body: JSON.stringify({ max_personas_dia: n }),
+                        headers: { 'Content-Type': 'application/json' },
+                      });
+                      await fetchAsuntosPropiosMaxPorDia();
+                      setApMaxPersonasDraft(String(n));
+                    } catch (e) {
+                      setErrorMsg(e?.message || 'Error al guardar el límite.');
+                    } finally {
+                      setSavingApMaxPersonas(false);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-900 text-white text-sm disabled:opacity-50"
+                >
+                  {savingApMaxPersonas ? 'Guardando…' : 'Guardar límite'}
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="p-3 bg-violet-50 rounded-xl border border-violet-200">
+            <h4 className="text-sm font-semibold text-gray-800 mb-2">Bloquear mes entero</h4>
+            <div className="flex items-center gap-3 mb-3">
+              <label className="text-xs font-medium text-gray-600">Año:</label>
+              <select
+                value={blockedApPeriodsYear}
+                onChange={(e) => setBlockedApPeriodsYear(Number(e.target.value))}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              >
+                {[new Date().getFullYear(), new Date().getFullYear() + 1, new Date().getFullYear() + 2].map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              {monthNames.map((name, idx) => {
+                const month1 = idx + 1;
+                const firstDay = `${blockedApPeriodsYear}-${String(month1).padStart(2, '0')}-01`;
+                const lastDay = (() => {
+                  const d = new Date(blockedApPeriodsYear, month1, 0);
+                  return `${blockedApPeriodsYear}-${String(month1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                })();
+                const isBlocked = asuntoPropioBlockedPeriods.some((p) => {
+                  const inicio = (typeof p.fecha_inicio === 'string' ? p.fecha_inicio : p.fecha_inicio?.split?.('T')[0] ?? '').slice(0, 10);
+                  const fin = (typeof p.fecha_fin === 'string' ? p.fecha_fin : p.fecha_fin?.split?.('T')[0] ?? '').slice(0, 10);
+                  return inicio <= firstDay && fin >= lastDay;
+                });
+                const periodIdForMonth = asuntoPropioBlockedPeriods.find((p) => {
+                  const inicio = (typeof p.fecha_inicio === 'string' ? p.fecha_inicio : p.fecha_inicio?.split?.('T')[0] ?? '').slice(0, 10);
+                  const fin = (typeof p.fecha_fin === 'string' ? p.fecha_fin : p.fecha_fin?.split?.('T')[0] ?? '').slice(0, 10);
+                  return inicio === firstDay && fin === lastDay;
+                })?.id;
+                return (
+                  <label key={idx} className="flex items-center gap-2 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked={!!isBlocked}
+                      onChange={async (e) => {
+                        setErrorMsg('');
+                        if (e.target.checked) {
+                          try {
+                            await callApi(routes.createAsuntoPropioBlockedPeriod, {
+                              method: 'POST',
+                              body: JSON.stringify({ fecha_inicio: firstDay, fecha_fin: lastDay }),
+                              headers: { 'Content-Type': 'application/json' },
+                            });
+                            await fetchAsuntoPropioBlockedPeriods();
+                          } catch (err) {
+                            setErrorMsg(err?.message || 'Error al bloquear el mes.');
+                          }
+                        } else if (periodIdForMonth != null) {
+                          try {
+                            await callApi(routes.deleteAsuntoPropioBlockedPeriod(periodIdForMonth), { method: 'DELETE' });
+                            await fetchAsuntoPropioBlockedPeriods();
+                          } catch (err) {
+                            setErrorMsg(err?.message || 'Error al desbloquear.');
+                          }
+                        }
+                      }}
+                      className="rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                    />
+                    <span className="text-gray-700">{name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <h4 className="text-sm font-semibold text-gray-800 mb-2">O añade un intervalo concreto</h4>
+            <div className="flex gap-2 flex-wrap items-end">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Desde</label>
+                <input
+                  type="date"
+                  value={newApBlockedPeriodInicio}
+                  onChange={(e) => setNewApBlockedPeriodInicio(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Hasta</label>
+                <input
+                  type="date"
+                  value={newApBlockedPeriodFin}
+                  onChange={(e) => setNewApBlockedPeriodFin(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!newApBlockedPeriodInicio || !newApBlockedPeriodFin) {
+                    setErrorMsg('Indica desde y hasta.');
+                    return;
+                  }
+                  if (new Date(newApBlockedPeriodFin) < new Date(newApBlockedPeriodInicio)) {
+                    setErrorMsg('La fecha hasta debe ser igual o posterior a desde.');
+                    return;
+                  }
+                  setErrorMsg('');
+                  try {
+                    await callApi(routes.createAsuntoPropioBlockedPeriod, {
+                      method: 'POST',
+                      body: JSON.stringify({
+                        fecha_inicio: newApBlockedPeriodInicio,
+                        fecha_fin: newApBlockedPeriodFin,
+                      }),
+                      headers: { 'Content-Type': 'application/json' },
+                    });
+                    setNewApBlockedPeriodInicio('');
+                    setNewApBlockedPeriodFin('');
+                    await fetchAsuntoPropioBlockedPeriods();
+                  } catch (e) {
+                    setErrorMsg(e?.message || 'Error al crear el periodo bloqueado.');
+                  }
+                }}
+                className="px-4 py-2 rounded-lg font-medium bg-violet-600 hover:bg-violet-700 text-white text-sm"
+              >
+                Añadir periodo
+              </button>
+            </div>
+          </div>
+          {errorMsg && <p className="text-sm text-red-600">{errorMsg}</p>}
+          <div>
+            <h4 className="text-sm font-semibold text-gray-800 mb-2">Periodos bloqueados actuales (Asuntos Propios)</h4>
+            {asuntoPropioBlockedPeriods.length === 0 ? (
+              <p className="text-sm text-gray-500">Ninguno. Usa los checkboxes o el intervalo arriba.</p>
+            ) : (
+              <ul className="space-y-2 max-h-40 overflow-y-auto">
+                {asuntoPropioBlockedPeriods.map((p) => {
+                  const inicio = typeof p.fecha_inicio === 'string' ? p.fecha_inicio : (p.fecha_inicio?.split?.('T')[0] ?? '');
+                  const fin = typeof p.fecha_fin === 'string' ? p.fecha_fin : (p.fecha_fin?.split?.('T')[0] ?? '');
+                  return (
+                    <li key={p.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg text-sm">
+                      <span>{inicio} — {fin}</span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await callApi(routes.deleteAsuntoPropioBlockedPeriod(p.id), { method: 'DELETE' });
+                            await fetchAsuntoPropioBlockedPeriods();
                           } catch (e) {
                             setErrorMsg(e?.message || 'Error al eliminar.');
                           }

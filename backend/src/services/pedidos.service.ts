@@ -433,6 +433,7 @@ export class PedidosService {
           COUNT(*) as num_items,
           GROUP_CONCAT(
             CONCAT(
+              COALESCE(CAST(producto_id AS CHAR), ''), '|',
               COALESCE(numero_articulo, ''), '|',
               COALESCE(descripcion, ''), '|',
               COALESCE(cantidad, 0), '|',
@@ -473,16 +474,42 @@ export class PedidosService {
       const pedidos = rows.map((row) => {
         const items = row.items
           ? row.items.split(';;').map((itemStr: string) => {
-              const [
-                numero_articulo,
-                descripcion,
-                cantidad,
-                precio_unitario,
-                subtotal_linea,
-                iva_linea,
-                total_linea,
-              ] = itemStr.split('|');
+              const parts = itemStr.split('|');
+              const isNewShape = parts.length >= 8;
+              let producto_id: number | null = null;
+              let numero_articulo: string;
+              let descripcion: string;
+              let cantidad: string;
+              let precio_unitario: string;
+              let subtotal_linea: string;
+              let iva_linea: string;
+              let total_linea: string;
+              if (isNewShape) {
+                const pidRaw = parts[0];
+                const n = parseInt(String(pidRaw), 10);
+                producto_id = Number.isFinite(n) && n > 0 ? n : null;
+                [
+                  numero_articulo,
+                  descripcion,
+                  cantidad,
+                  precio_unitario,
+                  subtotal_linea,
+                  iva_linea,
+                  total_linea,
+                ] = parts.slice(1, 8);
+              } else {
+                [
+                  numero_articulo,
+                  descripcion,
+                  cantidad,
+                  precio_unitario,
+                  subtotal_linea,
+                  iva_linea,
+                  total_linea,
+                ] = parts;
+              }
               return {
+                ...(producto_id != null ? { producto_id } : {}),
                 numero_articulo,
                 descripcion,
                 cantidad: parseFloat(cantidad),

@@ -464,7 +464,19 @@ export default function LoginPage() {
                 {/* Terms text - Redesignat */}
                 <div className="text-center">
                   <p className={`text-sm leading-relaxed ${isClient2 ? 'text-gray-800 font-medium' : 'text-gray-300'}`}>
-                    Al iniciar sesión, estás de acuerdo con los <a href={`${config.EXTERNAL_SITE_URL}/es/terminos/`} target="_blank" rel="noopener noreferrer" className="text-[var(--primary-color)] hover:opacity-80 font-medium underline transition-colors duration-300">Términos y Condiciones</a>
+                    Al iniciar sesión, estás de acuerdo con los{' '}
+                    <a
+                      href={`${config.EXTERNAL_SITE_URL}/es/terminos/`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={
+                        isClient2
+                          ? 'text-blue-700 underline decoration-blue-400/60 hover:text-blue-900 font-semibold transition-colors duration-300'
+                          : 'text-white underline decoration-white/80 hover:decoration-white font-semibold transition-colors duration-300 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)]'
+                      }
+                    >
+                      Términos y Condiciones
+                    </a>
                   </p>
                 </div>
               

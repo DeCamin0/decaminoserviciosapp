@@ -643,8 +643,9 @@ function esFilaDescuentoFidelidadOfertaPdf(descripcion: string): boolean {
 }
 
 function esFilaTotalBloqueOfertaPdf(row: OfertaEconomicaRow): boolean {
-  return String((row as { tipoOferta?: string }).tipoOferta || '') ===
-    '_blockTotal';
+  return (
+    String((row as { tipoOferta?: string }).tipoOferta || '') === '_blockTotal'
+  );
 }
 
 function redondeOfertaImportePdf(n: number): number {
@@ -840,7 +841,10 @@ function normalizarDescripcionesOfertaEconomica(
   const re = /\(\s*calendario\s+anual\s*\)/gi;
   return oferta.map((r) => {
     const d = String(r.descripcion ?? '');
-    const cleaned = d.replace(re, '').replace(/[ \t]{2,}/g, ' ').trim();
+    const cleaned = d
+      .replace(re, '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim();
     return cleaned === d ? r : { ...r, descripcion: cleaned };
   });
 }
@@ -1646,7 +1650,10 @@ export class PresupuestoDocumentoService {
         '-',
       );
       const numeroPresupuesto = await this.getOrAssignNumeroPresupuesto(id);
-      const basePayload = (presupuesto.payload || {}) as Record<string, unknown>;
+      const basePayload = (presupuesto.payload || {}) as Record<
+        string,
+        unknown
+      >;
       const snap = opciones?.payloadSnapshot;
       const payload = (
         snap && typeof snap === 'object'
@@ -5006,8 +5013,8 @@ export class PresupuestoDocumentoService {
             ofertaY += rowDyn;
           }
 
-          const ofertaPdfTieneSubtotalesVarianteAux = filasOfertaPdf.some(
-            (r) => esFilaTotalBloqueOfertaPdf(r),
+          const ofertaPdfTieneSubtotalesVarianteAux = filasOfertaPdf.some((r) =>
+            esFilaTotalBloqueOfertaPdf(r),
           );
           if (
             pctFidelidadPdf > 0 &&

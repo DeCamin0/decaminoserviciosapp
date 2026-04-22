@@ -1365,6 +1365,15 @@ model VacationBlockedPeriod {
   @@map("vacation_blocked_periods")
 }
 
+model AsuntoPropioBlockedPeriod {
+  id           Int      @id @default(autoincrement())
+  fecha_inicio DateTime @map("fecha_inicio") @db.Date
+  fecha_fin    DateTime @map("fecha_fin") @db.Date
+  created_at   DateTime @default(now()) @map("created_at") @db.DateTime(0)
+
+  @@map("asunto_propio_blocked_periods")
+}
+
 /// Fila única id=1: % del tamaño del grupo que puede estar de vacaciones el mismo día
 model VacacionesDisponibilidadConfig {
   id               Int      @id
@@ -1372,6 +1381,15 @@ model VacacionesDisponibilidadConfig {
   updated_at       DateTime @default(now()) @updatedAt @map("updated_at") @db.DateTime(0)
 
   @@map("vacaciones_disponibilidad_config")
+}
+
+/// Fila única id=1: máximo de Asuntos Propios el mismo día (global)
+model AsuntosPropiosDisponibilidadConfig {
+  id               Int      @id
+  max_personas_dia Int      @default(3) @map("max_personas_dia")
+  updated_at       DateTime @default(now()) @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@map("asuntos_propios_disponibilidad_config")
 }
 
 enum ChatRoomType {

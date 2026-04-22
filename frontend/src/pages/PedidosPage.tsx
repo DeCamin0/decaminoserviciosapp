@@ -1,5 +1,15 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, Button, Input } from '../components/ui';
+import {
+  ProductListItem,
+  StickyCartBar,
+  RecentPedidoProducts,
+  ReviewPedidoScreen,
+  extractRecentProductIdsFromPedidos,
+  sumQtyForProduct,
+  lineasAfterSetProductQty,
+  type PedidoCatalogProduct,
+} from '../components/pedidos';
 import { useAuth } from '../contexts/AuthContextBase';
 import { useAdminApi } from '../hooks/useAdminApi';
 import { routes } from '../utils/routes';
@@ -285,10 +295,12 @@ const ToastComponent: React.FC<{ toast: Toast; onClose: (id: string) => void }> 
 
 const ToastContainer: React.FC<{ toasts: Toast[]; onClose: (id: string) => void }> = ({ toasts, onClose }) => {
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-2">
-      {toasts.map(toast => (
-        <ToastComponent key={toast.id} toast={toast} onClose={onClose} />
-      ))}
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[10050] flex flex-col items-stretch gap-2 p-4 pb-[max(5.5rem,env(safe-area-inset-bottom,0px)+4.5rem)] max-md:items-center md:inset-x-auto md:bottom-auto md:left-auto md:right-4 md:top-4 md:max-w-sm md:pb-4 md:pointer-events-none">
+      <div className="pointer-events-auto flex w-full max-w-md flex-col gap-2 md:ml-auto">
+        {toasts.map((toast) => (
+          <ToastComponent key={toast.id} toast={toast} onClose={onClose} />
+        ))}
+      </div>
     </div>
   );
 };
@@ -769,7 +781,11 @@ const TabNuevoPedido: React.FC<{
   const [comunidadDetalles, setComunidadDetalles] = useState<ComunidadDetalle | null>(null);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [loadingProductos] = useState(false);
-  
+  const [recentHistoryPedidos, setRecentHistoryPedidos] = useState<Pedido[]>([]);
+  const [recentPedidoSourceReady, setRecentPedidoSourceReady] = useState(false);
+  const [nuevoPedidoStep, setNuevoPedidoStep] = useState<'products' | 'review'>('products');
+  const [pedidoSubmitLoading, setPedidoSubmitLoading] = useState(false);
+
   // State pentru searchable dropdown
   const [comunidadSearchTerm, setComunidadSearchTerm] = useState('');
   const [showComunidadDropdown, setShowComunidadDropdown] = useState(false);
@@ -1410,58 +1426,79 @@ const TabNuevoPedido: React.FC<{
     return sorted;
   }, [searchTerm, productos, sortField, sortDirection]);
 
-  // Adăugare produs în pedido
-  const agregarProducto = (producto: Producto) => {
-    const limite = getLimiteGastoCliente();
-    if (limite != null) {
-      const nuevoSub = subtotal + producto.precio;
-      if (Math.round(nuevoSub * 100) / 100 > Math.round(limite * 100) / 100) {
-        addToast(
-          'error',
-          'Límite excedido',
-          `No se puede añadir: el subtotal superaría el límite de gasto (${limite.toFixed(2)} €).`,
-        );
+  const recentProductIds = useMemo(
+    () => extractRecentProductIdsFromPedidos(recentHistoryPedidos, 16, productos),
+    [recentHistoryPedidos, productos],
+  );
+
+  const recientesEnCatalogo = useMemo((): PedidoCatalogProduct[] => {
+    return recentProductIds
+      .map((pid) => productos.find((p) => p.id === pid))
+      .filter((p): p is Producto => Boolean(p))
+      .slice(0, 12)
+      .map((p) => ({
+        id: p.id,
+        numero: p.numero,
+        descripcion: p.descripcion,
+        imagen: p.imagen,
+        precio: p.precio,
+      }));
+  }, [recentProductIds, productos]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (comunidadSeleccionada == null) {
+        if (!cancelled) {
+          setRecentHistoryPedidos([]);
+          setRecentPedidoSourceReady(true);
+        }
         return;
       }
-    }
-    const nuevaLinea: LineaPedido = {
-      producto_id: producto.id,
-      cantidad: 1,
-      precio_unitario: producto.precio,
-      descuento_linea: 0, // Păstrăm în structură pentru compatibilitate, dar nu se mai folosește
-      iva_porcentaje: 21
-    };
-    setLineasPedido([...lineasPedido, nuevaLinea]);
-  };
-
-  // Actualizare linie
-  const actualizarLinea = (index: number, campo: keyof LineaPedido, valor: number) => {
-    const nuevasLineas = [...lineasPedido];
-    nuevasLineas[index] = { ...nuevasLineas[index], [campo]: valor };
-    if (campo === 'cantidad' || campo === 'precio_unitario') {
-      const limite = getLimiteGastoCliente();
-      if (limite != null) {
-        const nuevosSub = nuevasLineas.reduce(
-          (sum, linea) => sum + linea.cantidad * linea.precio_unitario,
-          0,
-        );
-        if (Math.round(nuevosSub * 100) / 100 > Math.round(limite * 100) / 100) {
-          addToast(
-            'error',
-            'Límite excedido',
-            'No se puede superar el límite de gasto del cliente.',
-          );
+      try {
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+          if (!cancelled) {
+            setRecentHistoryPedidos([]);
+            setRecentPedidoSourceReady(true);
+          }
           return;
         }
+        const res = await fetch(routes.getPedidos, {
+          headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+        });
+        if (!res.ok) {
+          if (!cancelled) {
+            setRecentHistoryPedidos([]);
+            setRecentPedidoSourceReady(true);
+          }
+          return;
+        }
+        const data = await res.json();
+        const arr = Array.isArray(data) ? data : [];
+        const filtered = arr.filter((p) => Number(p.comunidad?.id) === Number(comunidadSeleccionada));
+        const source = filtered.length > 0 ? filtered : arr;
+        if (!cancelled) {
+          setRecentHistoryPedidos(source);
+          setRecentPedidoSourceReady(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setRecentHistoryPedidos([]);
+          setRecentPedidoSourceReady(true);
+        }
       }
-    }
-    setLineasPedido(nuevasLineas);
-  };
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [comunidadSeleccionada]);
 
-  // Ștergere linie
-  const eliminarLinea = (index: number) => {
-    setLineasPedido(lineasPedido.filter((_, i) => i !== index));
-  };
+  React.useEffect(() => {
+    if (lineasPedido.length === 0 && nuevoPedidoStep === 'review') {
+      setNuevoPedidoStep('products');
+    }
+  }, [lineasPedido.length, nuevoPedidoStep]);
 
   // Calcule pentru fiecare linie
   const calcularLinea = (linea: LineaPedido) => {
@@ -1499,6 +1536,38 @@ const TabNuevoPedido: React.FC<{
     return parseLimiteGastoCliente(raw);
   };
 
+  const setCantidadProductoEnPedido = (producto: Producto, newQty: number) => {
+    const q = Math.max(0, Math.floor(Number(newQty) || 0));
+    const current = sumQtyForProduct(lineasPedido, producto.id);
+    if (q === current) return;
+    const delta = q - current;
+    if (delta > 0) {
+      const limite = getLimiteGastoCliente();
+      if (limite != null) {
+        const totalActual = lineasPedido.reduce(
+          (sum, linea) => sum + linea.cantidad * linea.precio_unitario,
+          0,
+        );
+        if (Math.round((totalActual + delta * producto.precio) * 100) / 100 > Math.round(limite * 100) / 100) {
+          addToast(
+            'error',
+            'Límite excedido',
+            'No se puede superar el límite de gasto del cliente.',
+          );
+          return;
+        }
+      }
+    }
+    const base = lineasAfterSetProductQty(lineasPedido, producto, q);
+    setLineasPedido(
+      base.map((line) =>
+        line.producto_id === producto.id
+          ? { ...line, numero_articulo: producto.numero, descripcion: producto.descripcion }
+          : line,
+      ) as LineaPedido[],
+    );
+  };
+
   // Guardar borrador
   const guardarBorrador = async () => {
     if (!comunidadSeleccionada) {
@@ -1513,11 +1582,21 @@ const TabNuevoPedido: React.FC<{
 
     // Validare: Horario Entrega este obligatoriu
     if (!horarioEntregaTipo || !horarioEntrega || horarioEntrega.trim() === '') {
-      addToast('error', 'Horario obligatorio', 'Por favor selecciona un tipo de horario y complétalo.');
+      addToast(
+        'error',
+        'Horario obligatorio',
+        'Por favor selecciona un tipo de horario y complétalo.',
+        12000,
+      );
       return;
     }
     if (!telefonoEntrega || telefonoEntrega.trim() === '') {
-      addToast('error', 'Teléfono de entrega requerido', 'Por favor introduce el teléfono de entrega antes de guardar el pedido.');
+      addToast(
+        'error',
+        'Teléfono de entrega requerido',
+        'Por favor introduce el teléfono de entrega antes de guardar el pedido.',
+        12000,
+      );
       return;
     }
 
@@ -1720,6 +1799,7 @@ const TabNuevoPedido: React.FC<{
           // Resetează comanda după salvarea cu succes
           setLineasPedido([]);
           setNotas('');
+          setNuevoPedidoStep('products');
           // Nu resetăm horarioEntrega pentru a păstra valoarea pentru următorul pedido
         } else {
           addToast('warning', 'Pedido guardado con advertencias', responseData.message || 'El pedido se guardó pero con algunas advertencias.');
@@ -1735,8 +1815,56 @@ const TabNuevoPedido: React.FC<{
     }
   };
 
+  const handleEnviarPedido = async () => {
+    setPedidoSubmitLoading(true);
+    try {
+      await guardarBorrador();
+    } finally {
+      setPedidoSubmitLoading(false);
+    }
+  };
+
+  const cartProductCount = lineasPedido.length;
+  const cartUnitCount = lineasPedido.reduce((s, l) => s + (l.cantidad || 0), 0);
+  const entregaPendienteMensaje = useMemo(() => {
+    if (!horarioEntregaTipo || !horarioEntrega?.trim()) {
+      return 'Tienes que elegir y completar el horario de entrega en la pantalla anterior (apartado «Horario Entrega»).';
+    }
+    if (!telefonoEntrega?.trim()) {
+      return 'Tienes que escribir el teléfono de entrega en la pantalla anterior (campo «Teléfono Entrega»).';
+    }
+    return null;
+  }, [horarioEntregaTipo, horarioEntrega, telefonoEntrega]);
+  const isReviewStep = nuevoPedidoStep === 'review';
+
   return (
-    <div className="space-y-6">
+    <div
+      className={`space-y-6 ${!isReviewStep && cartProductCount > 0 ? 'pb-24 max-md:pb-28' : ''}`}
+    >
+      {isReviewStep ? (
+        <ReviewPedidoScreen
+          lineas={lineasPedido}
+          products={productos.map((p) => ({
+            id: p.id,
+            numero: p.numero,
+            descripcion: p.descripcion,
+            imagen: p.imagen,
+          }))}
+          notas={notas}
+          onNotasChange={setNotas}
+          onBack={() => setNuevoPedidoStep('products')}
+          onSubmit={handleEnviarPedido}
+          submitting={pedidoSubmitLoading}
+          onSetProductQty={(productId, qty) => {
+            const prod = productos.find((p) => p.id === productId);
+            if (prod) setCantidadProductoEnPedido(prod, qty);
+          }}
+          limiteGasto={getLimiteGastoCliente()}
+          subtotal={subtotal}
+          entregaAlert={entregaPendienteMensaje}
+        />
+      ) : (
+        <>
       {/* Informații utilizator */}
       <Card>
         <div className="p-6">
@@ -1942,21 +2070,22 @@ const TabNuevoPedido: React.FC<{
         </Card>
       )}
 
-      {/* Căutare produse */}
-      <Card>
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold">
-              Buscar Productos 
-              {productos.length > 0 && (
-                <span className="text-sm font-normal text-green-600 ml-2">
-                  ({productos.length} productos cargados)
-                </span>
-              )}
-            </h3>
-          </div>
-          <div className="flex flex-col md:flex-row gap-4 items-start md:items-end mb-4">
-            <div className="flex-1 max-w-md">
+      {/* Catálogo: zona clară, +/- sincroniza líneas (sin botón Añadir) */}
+      <section
+        className="-mx-1 border-y border-zinc-200/90 bg-zinc-50 px-3 py-5 text-zinc-900 sm:mx-0 sm:rounded-2xl sm:border sm:px-5 sm:py-6 dark:border-zinc-200/80 dark:bg-zinc-50 dark:text-zinc-900 [&_input]:text-zinc-900 [&_label]:text-zinc-700"
+        style={{ colorScheme: 'light' }}
+      >
+        <div className="mb-4">
+          <h3 className="text-base font-semibold !text-zinc-800" style={{ color: '#27272a' }}>
+            Buscar productos
+            {productos.length > 0 && (
+              <span className="ml-2 text-sm font-normal !text-zinc-500" style={{ color: '#71717a' }}>
+                ({productos.length} en catálogo)
+              </span>
+            )}
+          </h3>
+          <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-end">
+            <div className="min-w-0 flex-1">
               <Input
                 label="Buscar por número o descripción"
                 value={searchTerm}
@@ -1964,16 +2093,13 @@ const TabNuevoPedido: React.FC<{
                 placeholder="Ej: A-100 o Pintura blanca"
               />
             </div>
-            
-            <div className="flex gap-2 items-end">
+            <div className="flex shrink-0 items-end gap-2">
               <div className="flex flex-col">
-                <label className="text-sm font-medium text-gray-700 mb-1">
-                  Ordenar por
-                </label>
+                <label className="mb-1 text-sm font-medium text-zinc-600">Ordenar por</label>
                 <select
                   value={sortField}
                   onChange={(e) => setSortField(e.target.value as 'id' | 'numero' | 'descripcion' | 'precio')}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-400/40"
                 >
                   <option value="id">ID</option>
                   <option value="numero">Número</option>
@@ -1981,247 +2107,118 @@ const TabNuevoPedido: React.FC<{
                   <option value="precio">Precio</option>
                 </select>
               </div>
-              
               <button
+                type="button"
                 onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
-                className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-700 transition-colors hover:bg-zinc-100"
                 title={sortDirection === 'asc' ? 'Ascendente' : 'Descendente'}
               >
                 {sortDirection === 'asc' ? '↑' : '↓'}
               </button>
             </div>
           </div>
-          
-          {loadingProductos ? (
-            <div className="flex items-center justify-center p-8">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto mb-2"></div>
-                <p className="text-gray-600">Cargando productos...</p>
-              </div>
+        </div>
+
+        {loadingProductos ? (
+          <div className="flex justify-center py-10">
+            <div className="text-center">
+              <div className="mx-auto mb-2 h-8 w-8 animate-spin rounded-full border-b-2 border-zinc-400" />
+              <p className="text-zinc-600">Cargando productos...</p>
             </div>
-          ) : productos.length === 0 ? (
-            <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-              <div className="text-6xl mb-4">📦</div>
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">No se encontraron productos disponibles</h3>
-              <p className="text-gray-500 mb-4">
-                Esta comunidad no tiene productos asignados en el catálogo.
-              </p>
-              <div className="text-sm text-gray-400">
-                Contacta con el administrador para asignar productos a esta comunidad.
-              </div>
-            </div>
-          ) : (
-            <div className="max-h-64 overflow-y-auto border rounded-lg">
+          </div>
+        ) : productos.length === 0 ? (
+          <div className="py-10 text-center">
+            <div className="mb-4 text-5xl">📦</div>
+            <h3 className="mb-2 text-lg font-semibold text-zinc-700">No se encontraron productos disponibles</h3>
+            <p className="text-zinc-600">Esta comunidad no tiene productos asignados en el catálogo.</p>
+          </div>
+        ) : (
+          <>
+            <RecentPedidoProducts
+              products={recientesEnCatalogo}
+              hasHistorySource={recentPedidoSourceReady}
+              onQuickAdd={(p) => {
+                const prod = productos.find((x) => x.id === p.id);
+                if (!prod) return;
+                setCantidadProductoEnPedido(prod, sumQtyForProduct(lineasPedido, p.id) + 1);
+              }}
+            />
+            <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide !text-zinc-600" style={{ color: '#52525b' }}>
+              Todos los productos
+            </h3>
+            <div className="max-h-[min(58vh,560px)] overflow-y-auto rounded-xl border border-zinc-200/80 bg-white px-2 sm:px-3">
               {productosFiltrados.length > 0 ? (
                 productosFiltrados.map((producto, index) => (
-                  <div key={producto.id || `producto-${index}`} className="flex items-center gap-3 p-3 border-b hover:bg-gray-50">
-                    {/* Imagine produs - mică în listă */}
-                    <div className="w-16 h-16 bg-gray-50 rounded-lg flex-shrink-0 flex items-center justify-center">
-                      {producto.imagen ? (
-                        <img 
-                          src={producto.imagen} 
-                          alt={producto.descripcion}
-                          className="w-full h-full object-contain rounded-lg"
-                        />
-                      ) : (
-                        <div className="text-center">
-                          <div className="text-2xl text-gray-300">📷</div>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Informații produs */}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-gray-900 truncate">{producto.numero}</div>
-                      <div className="text-sm text-gray-600 overflow-hidden" style={{
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical'
-                      }}>{producto.descripcion}</div>
-                      <div className="text-sm font-semibold text-red-600">{formatMoney(producto.precio)}</div>
-                    </div>
-                    
-                    {/* Buton Añadir */}
-                    <div className="flex-shrink-0">
-                      <Button
-                        onClick={() => agregarProducto(producto)}
-                        size="sm"
-                        variant="primary"
-                      >
-                        Añadir
-                      </Button>
-                    </div>
-                  </div>
+                  <ProductListItem
+                    key={producto.id || `producto-${index}`}
+                    product={{
+                      id: producto.id,
+                      numero: producto.numero,
+                      descripcion: producto.descripcion,
+                      imagen: producto.imagen,
+                      precio: producto.precio,
+                    }}
+                    quantityInCart={sumQtyForProduct(lineasPedido, producto.id)}
+                    onQuantityInCartChange={(n) => setCantidadProductoEnPedido(producto, n)}
+                    showPrice
+                    formatPrice={formatMoney}
+                  />
                 ))
               ) : (
-                <div className="p-4 text-center text-gray-500">
+                <div className="p-8 text-center text-zinc-500">
                   {searchTerm ? 'No se encontraron productos' : 'No hay productos disponibles'}
                 </div>
               )}
             </div>
-          )}
-        </div>
-      </Card>
+          </>
+        )}
+      </section>
 
-      {/* Liniile din pedido */}
-      {lineasPedido.length > 0 && (
-        <Card>
-          <div className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Líneas del Pedido</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left p-2">Producto</th>
-                    <th className="text-left p-2 min-w-[11rem]">Cantidad</th>
-                    <th className="text-left p-2">Precio Unit.</th>
-                    <th className="text-left p-2">IVA %</th>
-                    <th className="text-left p-2">Total Línea</th>
-                    <th className="text-left p-2">Acción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lineasPedido.map((linea, index) => {
-                    const producto = productos.find(p => p.id === linea.producto_id);
-                    const calc = calcularLinea(linea);
-                    // Folosim un key unic bazat pe producto_id și index pentru a evita conflictele
-                    const uniqueKey = `${linea.producto_id}-${index}-${linea.cantidad}`;
-                    
-                    return (
-                      <tr key={uniqueKey} className="border-b">
-                        <td className="p-2">
-                          <div>
-                            <div className="font-medium">{producto?.numero}</div>
-                            <div className="text-sm text-gray-600">{producto?.descripcion}</div>
-                          </div>
-                        </td>
-                        <td className="p-2 min-w-[11rem]">
-                          <label htmlFor={`cantidad-${index}`} className="sr-only">Cantidad</label>
-                          <div className="flex items-center gap-1.5 w-fit">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="!min-w-8 !w-8 !p-0 h-9 shrink-0"
-                              aria-label="Restar cantidad"
-                              onClick={() => actualizarLinea(index, 'cantidad', Math.max(0, linea.cantidad - 1))}
-                            >
-                              −
-                            </Button>
-                            <Input
-                              id={`cantidad-${index}`}
-                              name={`cantidad-${index}`}
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={linea.cantidad === 0 ? '' : linea.cantidad}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                if (v === '') actualizarLinea(index, 'cantidad', 0);
-                                else { const n = parseInt(v, 10); if (!isNaN(n) && n >= 0) actualizarLinea(index, 'cantidad', n); }
-                              }}
-                              onBlur={() => {
-                                if (linea.cantidad === 0) actualizarLinea(index, 'cantidad', 1);
-                              }}
-                              className="!min-w-[5.5rem] !w-28 shrink-0 tabular-nums text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                              aria-label={`Cantidad para ${producto?.numero || 'producto'}`}
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="!min-w-8 !w-8 !p-0 h-9 shrink-0"
-                              aria-label="Sumar cantidad"
-                              onClick={() => actualizarLinea(index, 'cantidad', (linea.cantidad || 0) + 1)}
-                            >
-                              +
-                            </Button>
-                          </div>
-                        </td>
-                        <td className="p-2">{formatMoney(linea.precio_unitario)}</td>
-                        <td className="p-2">
-                          <label htmlFor={`iva-${index}`} className="sr-only">IVA porcentaje</label>
-                          <Input
-                            id={`iva-${index}`}
-                            name={`iva-${index}`}
-                            type="number"
-                            value={linea.iva_porcentaje}
-                            onChange={(e) => actualizarLinea(index, 'iva_porcentaje', Number(e.target.value))}
-                            className="w-16"
-                            aria-label={`IVA porcentaje para ${producto?.numero || 'producto'}`}
-                          />
-                        </td>
-                        <td className="p-2 font-semibold">{formatMoney(calc.total)}</td>
-                        <td className="p-2">
-                          <Button
-                            onClick={() => eliminarLinea(index)}
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            ✕
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* Rezumat final */}
-      {lineasPedido.length > 0 && (
-        <Card>
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Notas</label>
-                  <textarea
-                    value={notas}
-                    onChange={(e) => setNotas(e.target.value)}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                    rows={3}
-                    placeholder="Notas adicionales..."
-                  />
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span>Subtotal:</span>
-                  <span>{formatMoney(subtotal)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Impuestos:</span>
-                  <span>{formatMoney(impuestosCalculados)}</span>
-                </div>
-                <div className="flex justify-between text-lg font-bold border-t pt-2">
-                  <span>TOTAL:</span>
-                  <span>{formatMoney(total)}</span>
-                </div>
-              </div>
-            </div>
-            
-            <div className="mt-6">
-              <Button
-                onClick={guardarBorrador}
-                variant="primary"
-                size="lg"
-                className="w-full"
-              >
-                Guardar Borrador
-              </Button>
-            </div>
-          </div>
-        </Card>
+      <StickyCartBar
+        productCount={cartProductCount}
+        unitCount={cartUnitCount}
+        ctaLabel="Ver pedido"
+        onCtaClick={() => setNuevoPedidoStep('review')}
+      />
+        </>
       )}
     </div>
   );
 };
+
+/** ID comunitate din pedido (listă API: nested sau rădăcină). */
+function pedidoComunidadIdStable(p: Pedido): number | null {
+  const nested = p.comunidad?.id;
+  if (nested != null && String(nested).trim() !== '') {
+    const n = Number(nested);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  const top = (p as Record<string, unknown>).comunidad_id;
+  if (top != null && String(top).trim() !== '') {
+    const n = Number(top);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+function normalizeNif(raw: unknown): string {
+  return String(raw ?? '')
+    .replace(/\s/g, '')
+    .toUpperCase();
+}
+
+/**
+ * Cheie stabilă pentru filtrul «Filtrar por centro»: nu depinde de ortografia numelui.
+ * Prioritate: id client > NIF/CIF > nume (ultimul recurs).
+ */
+function pedidoCentroFiltroKey(p: Pedido): string {
+  const id = pedidoComunidadIdStable(p);
+  if (id != null) return `id:${id}`;
+  const nif = normalizeNif(p.comunidad?.nif);
+  if (nif) return `nif:${nif}`;
+  const name = (p.comunidad?.nombre || '').trim();
+  return name ? `name:${name}` : '';
+}
 
 // ===== TAB GESTIONAR PEDIDOS =====
 const TabGestionarPedidos: React.FC<{ 
@@ -2295,6 +2292,46 @@ const TabGestionarPedidos: React.FC<{
   const albaranViewBlobUrlRef = React.useRef<string | null>(null);
   const albaranViewPreviewUrlRef = React.useRef<string | null>(null);
 
+  /** Opțiuni dropdown: o intrare per client real (id sau NIF), etichetă = numele cel mai recent. */
+  const opcionesCentroFiltro = useMemo(() => {
+    const agg = new Map<string, { label: string; ts: number }>();
+    for (const p of pedidos) {
+      const key = pedidoCentroFiltroKey(p);
+      if (!key) continue;
+      const nombre = (p.comunidad?.nombre || '').trim() || '—';
+      const ts =
+        Date.parse(String(p.fecha || p.fecha_envio || (p as Record<string, unknown>).creado_en || '')) || 0;
+      const cur = agg.get(key);
+      if (!cur || ts > cur.ts || (ts === cur.ts && nombre.length > cur.label.length)) {
+        agg.set(key, { label: nombre, ts });
+      }
+    }
+    return Array.from(agg.entries())
+      .map(([value, { label }]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
+  }, [pedidos]);
+
+  // Migrează filtru vechi (doar după nume exact) la cheie stabilă când se încarcă pedidos
+  React.useEffect(() => {
+    if (filtroCentro === 'all') return;
+    if (filtroCentro.startsWith('id:') || filtroCentro.startsWith('nif:') || filtroCentro.startsWith('name:')) {
+      const ok = opcionesCentroFiltro.some((o) => o.value === filtroCentro);
+      if (!ok) setFiltroCentro('all');
+      return;
+    }
+    const byLabel = opcionesCentroFiltro.find((o) => o.label === filtroCentro);
+    if (byLabel) {
+      setFiltroCentro(byLabel.value);
+      return;
+    }
+    const fromPedido = pedidos.find((p) => (p.comunidad?.nombre || '').trim() === filtroCentro.trim());
+    if (fromPedido) {
+      setFiltroCentro(pedidoCentroFiltroKey(fromPedido));
+      return;
+    }
+    setFiltroCentro('all');
+  }, [pedidos, opcionesCentroFiltro, filtroCentro]);
+
   // Pedidos filtrate după estado, centro și an
   const pedidosFiltrados = useMemo(() => {
     let filtered = pedidos;
@@ -2304,12 +2341,9 @@ const TabGestionarPedidos: React.FC<{
       filtered = filtered.filter(p => p.estado === filtroEstado);
     }
 
-    // Filtrare după centro (comunidad)
+    // Filtrare după centro: cheie stabilă (id / NIF), nu string-ul numelui
     if (filtroCentro !== 'all') {
-      filtered = filtered.filter(p => {
-        const centroNombre = p.comunidad?.nombre || '';
-        return centroNombre === filtroCentro;
-      });
+      filtered = filtered.filter((p) => pedidoCentroFiltroKey(p) === filtroCentro);
     }
 
     // Filtrare după an
@@ -3281,7 +3315,7 @@ const TabGestionarPedidos: React.FC<{
   };
 
   const getEstadoColor = (estado: string) => {
-    switch (estado) {
+    switch (estado?.toLowerCase()) {
       case 'aprobado':
         return 'bg-green-100 text-green-800 border-green-300';
       case 'rechazado':
@@ -3290,13 +3324,15 @@ const TabGestionarPedidos: React.FC<{
         return 'bg-yellow-100 text-yellow-800 border-yellow-300';
       case 'enviado':
         return 'bg-blue-100 text-blue-800 border-blue-300';
+      case 'entregado':
+        return 'bg-emerald-100 text-emerald-800 border-emerald-300';
       default:
         return 'bg-gray-100 text-gray-800 border-gray-300';
     }
   };
 
   const getEstadoTexto = (estado: string) => {
-    switch (estado) {
+    switch (estado?.toLowerCase()) {
       case 'aprobado':
         return '✅ Aprobado';
       case 'rechazado':
@@ -3305,8 +3341,10 @@ const TabGestionarPedidos: React.FC<{
         return '⏳ Pendiente';
       case 'enviado':
         return '📦 Enviado';
+      case 'entregado':
+        return '📬 Entregado';
       default:
-        return estado;
+        return estado || '—';
     }
   };
 
@@ -3649,10 +3687,13 @@ const TabGestionarPedidos: React.FC<{
                 value={filtroCentro}
                 onChange={(e) => setFiltroCentro(e.target.value)}
                 className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 min-w-[200px]"
+                title="Agrupado por ID o NIF del cliente; correcciones de nombre no duplican el centro."
               >
                 <option value="all">Todos</option>
-                {Array.from(new Set(pedidos.map(p => p.comunidad?.nombre).filter(Boolean))).sort().map(centro => (
-                  <option key={centro} value={centro}>{centro}</option>
+                {opcionesCentroFiltro.map(({ value, label }) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
                 ))}
               </select>
 

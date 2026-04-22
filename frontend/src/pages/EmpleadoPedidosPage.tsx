@@ -1,8 +1,19 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, Button, Input } from '../components/ui';
+import {
+  ProductListItem,
+  StickyCartBar,
+  RecentPedidoProducts,
+  ReviewPedidoScreen,
+  extractRecentProductIdsFromPedidos,
+  sumQtyForProduct,
+  lineasAfterSetProductQty,
+  type PedidoCatalogProduct,
+} from '../components/pedidos';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
 import { Link } from 'react-router-dom';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { config } from '../config/env';
 import heic2any from 'heic2any';
 
@@ -283,10 +294,12 @@ const ToastComponent: React.FC<{ toast: Toast; onClose: (id: string) => void }> 
 
 const ToastContainer: React.FC<{ toasts: Toast[]; onClose: (id: string) => void }> = ({ toasts, onClose }) => {
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-2">
-      {toasts.map(toast => (
-        <ToastComponent key={toast.id} toast={toast} onClose={onClose} />
-      ))}
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[10050] flex flex-col items-stretch gap-2 p-4 pb-[max(5.5rem,env(safe-area-inset-bottom,0px)+4.5rem)] max-md:items-center md:inset-x-auto md:bottom-auto md:left-auto md:right-4 md:top-4 md:max-w-sm md:pb-4 md:pointer-events-none">
+      <div className="pointer-events-auto flex w-full max-w-md flex-col gap-2 md:ml-auto">
+        {toasts.map((toast) => (
+          <ToastComponent key={toast.id} toast={toast} onClose={onClose} />
+        ))}
+      </div>
     </div>
   );
 };
@@ -518,7 +531,10 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
   const [comunidadDetalles, setComunidadDetalles] = useState<ComunidadDetalle | null>(null);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [loadingProductos] = useState(false); // Nu este setat în acest tab
-  const [cantidadesProductos, setCantidadesProductos] = useState<{[key: number]: number}>({});
+  const [recentHistoryPedidos, setRecentHistoryPedidos] = useState<Pedido[]>([]);
+  const [recentPedidoSourceReady, setRecentPedidoSourceReady] = useState(false);
+  const [nuevoPedidoStep, setNuevoPedidoStep] = useState<'products' | 'review'>('products');
+  const [pedidoSubmitLoading, setPedidoSubmitLoading] = useState(false);
   const [horarioEntrega, setHorarioEntrega] = useState('');
   const [horarioEntregaTipo, setHorarioEntregaTipo] = useState<'24horas' | '12horas' | 'personalizado' | ''>('');
   const [telefonoEntrega, setTelefonoEntrega] = useState('');
@@ -1072,6 +1088,110 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     ); // ✅ Afișează toate produsele găsite la căutare (fără limitare)
   }, [productos, searchTerm]);
 
+  const recentProductIds = useMemo(
+    () => extractRecentProductIdsFromPedidos(recentHistoryPedidos, 16, productos),
+    [recentHistoryPedidos, productos],
+  );
+
+  const recientesEnCatalogo = useMemo((): PedidoCatalogProduct[] => {
+    return recentProductIds
+      .map((pid) => productos.find((p) => p.id === pid))
+      .filter((p): p is Producto => Boolean(p))
+      .slice(0, 12)
+      .map((p) => ({
+        id: p.id,
+        numero: p.numero,
+        descripcion: p.descripcion,
+        imagen: p.imagen,
+        precio: p.precio,
+      }));
+  }, [recentProductIds, productos]);
+
+  const comunidadClienteIdFromDatos = useMemo(
+    () =>
+      (comunidadDetalles?.datosCompletos as { id?: number } | undefined)?.id,
+    [comunidadDetalles?.datosCompletos],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+          if (!cancelled) {
+            setRecentHistoryPedidos([]);
+            setRecentPedidoSourceReady(true);
+          }
+          return;
+        }
+        const res = await fetch(routes.getPedidos, {
+          headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+        });
+        if (!res.ok) {
+          if (!cancelled) {
+            setRecentHistoryPedidos([]);
+            setRecentPedidoSourceReady(true);
+          }
+          return;
+        }
+        const data = await res.json();
+        const arr: Pedido[] = Array.isArray(data) ? data : [];
+        const myCodigo = String(user?.CODIGO ?? user?.id ?? '').trim();
+        const myMail = String(user?.email ?? '').trim().toLowerCase();
+        const mine = arr.filter((p) => {
+          const emp = p.empleado;
+          if (!emp) return false;
+          const id = String(emp.id ?? '').trim();
+          const mail = String(emp.email ?? '').trim().toLowerCase();
+          if (myCodigo && id && id === myCodigo) return true;
+          if (myMail && mail && mail === myMail) return true;
+          return false;
+        });
+        const datosClienteId = comunidadClienteIdFromDatos;
+        const comIdRaw =
+          comunidadSeleccionada ?? datosClienteId ?? comunidadDetalles?.id ?? null;
+        const comId = comIdRaw != null ? Number(comIdRaw) : NaN;
+        const byComunidad = (p: Pedido) =>
+          Number.isFinite(comId) && Number(p.comunidad?.id) === comId;
+
+        let sourceList: Pedido[] = [];
+        if (mine.length > 0) {
+          const scoped = Number.isFinite(comId) ? mine.filter(byComunidad) : mine;
+          sourceList = scoped.length > 0 ? scoped : mine;
+        } else if (Number.isFinite(comId)) {
+          sourceList = arr.filter(byComunidad);
+        }
+
+        if (!cancelled) {
+          setRecentHistoryPedidos(sourceList);
+          setRecentPedidoSourceReady(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setRecentHistoryPedidos([]);
+          setRecentPedidoSourceReady(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    user?.CODIGO,
+    user?.id,
+    user?.email,
+    comunidadSeleccionada,
+    comunidadDetalles?.id,
+    comunidadClienteIdFromDatos,
+  ]);
+
+  React.useEffect(() => {
+    if (lineasPedido.length === 0 && nuevoPedidoStep === 'review') {
+      setNuevoPedidoStep('products');
+    }
+  }, [lineasPedido.length, nuevoPedidoStep]);
+
   // Funcție pentru a obține limita de cheltuieli a comunității
   const getLimiteGasto = () => {
     if (!comunidadDetalles?.datosCompletos) return null;
@@ -1083,81 +1203,32 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     return null;
   };
 
-  // Funcție pentru a verifica dacă se poate adăuga produsul fără a depăși limita
-  const puedeAgregarProducto = (producto: Producto, cantidad: number = 1) => {
-    const limite = getLimiteGasto();
-    if (!limite) return true; // Dacă nu există limită, se poate adăuga
-    
-    const precioTotal = producto.precio * cantidad;
-    const totalActual = lineasPedido.reduce(
-      (sum, linea) => sum + linea.cantidad * linea.precio_unitario,
-      0,
-    );
-    
-    return totalActual + precioTotal <= limite + 0.02;
-  };
-
-  // Actualizează cantitatea pentru un produs (permite 0 pentru ștergere; onBlur pune 1)
-  const actualizarCantidadProducto = (productoId: number, cantidad: number) => {
-    setCantidadesProductos(prev => ({
-      ...prev,
-      [productoId]: Math.max(0, cantidad)
-    }));
-  };
-
-  // Adaugă produs în comandă
-  const agregarProducto = (producto: Producto, cantidad: number = 1) => {
-    // Verifică limita de cheltuieli
-    if (!puedeAgregarProducto(producto, cantidad)) {
-      addToast('error', 'Límite excedido', `No se puede agregar este producto. Has superado el límite de gasto permitido.`);
-      return;
-    }
-
-    const nuevaLinea: LineaPedido = {
-      producto_id: producto.id,
-      cantidad: cantidad,
-      precio_unitario: producto.precio,
-      descuento_linea: 0,
-      iva_porcentaje: 21
-    };
-    
-    setLineasPedido(prev => [...prev, nuevaLinea]);
-    addToast('success', 'Producto añadido', `${producto.descripcion} (${cantidad} unidades) añadido al pedido.`);
-  };
-
-  // Elimină linia din comandă
-  const eliminarLinea = (index: number) => {
-    const producto = productos.find(p => p.id === lineasPedido[index]?.producto_id);
-    const nombreProducto = producto?.descripcion || 'este producto';
-    
-    if (window.confirm(`¿Estás seguro de que quieres eliminar ${nombreProducto} del pedido?`)) {
-      setLineasPedido(prev => prev.filter((_, i) => i !== index));
-      addToast('info', 'Línea eliminada', 'Producto eliminado del pedido.');
-    }
-  };
-
-  // Actualizează cantitatea
-  const actualizarCantidad = (index: number, cantidad: number) => {
-    const limite = getLimiteGasto();
-    if (limite != null) {
-      const nuevas = lineasPedido.map((linea, i) =>
-        i === index ? { ...linea, cantidad } : linea,
-      );
-      const sub = nuevas.reduce(
-        (s, linea) => s + linea.cantidad * linea.precio_unitario,
-        0,
-      );
-      if (Math.round(sub * 100) / 100 > Math.round(limite * 100) / 100) {
-        addToast(
-          'error',
-          'Límite excedido',
-          'No se puede superar el límite de gasto del cliente.',
+  /** Cantitate în pedido din +/- (o singură linie consolidată per producto). */
+  const setCantidadProductoEnPedido = (producto: Producto, newQty: number) => {
+    const q = Math.max(0, Math.floor(Number(newQty) || 0));
+    const current = sumQtyForProduct(lineasPedido, producto.id);
+    if (q === current) return;
+    const delta = q - current;
+    if (delta > 0) {
+      const limite = getLimiteGasto();
+      if (limite != null) {
+        const totalActual = lineasPedido.reduce(
+          (sum, linea) => sum + linea.cantidad * linea.precio_unitario,
+          0,
         );
-        return;
+        if (Math.round((totalActual + delta * producto.precio) * 100) / 100 > Math.round(limite * 100) / 100) {
+          addToast('error', 'Límite excedido', 'No se puede superar el límite de gasto del cliente.');
+          return;
+        }
       }
     }
-    setLineasPedido((prev) =>
-      prev.map((linea, i) => (i === index ? { ...linea, cantidad } : linea)),
+    const base = lineasAfterSetProductQty(lineasPedido, producto, q);
+    setLineasPedido(
+      base.map((line) =>
+        line.producto_id === producto.id
+          ? { ...line, numero_articulo: producto.numero, descripcion: producto.descripcion }
+          : line,
+      ) as LineaPedido[],
     );
   };
 
@@ -1189,11 +1260,21 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
 
     // Validare: Horario Entrega este obligatoriu
     if (!horarioEntregaTipo || !horarioEntrega || horarioEntrega.trim() === '') {
-      addToast('error', 'Horario obligatorio', 'Por favor selecciona un tipo de horario y complétalo.');
+      addToast(
+        'error',
+        'Horario obligatorio',
+        'Por favor selecciona un tipo de horario y complétalo.',
+        12000,
+      );
       return;
     }
     if (!telefonoEntrega || telefonoEntrega.trim() === '') {
-      addToast('error', 'Teléfono de entrega requerido', 'Por favor introduce el teléfono de entrega antes de guardar el pedido.');
+      addToast(
+        'error',
+        'Teléfono de entrega requerido',
+        'Por favor introduce el teléfono de entrega antes de guardar el pedido.',
+        12000,
+      );
       return;
     }
 
@@ -1379,7 +1460,7 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
           // Resetează comanda după salvarea cu succes
           setLineasPedido([]);
           setNotas('');
-          setCantidadesProductos({});
+          setNuevoPedidoStep('products');
           // Nu resetăm horarioEntrega pentru a păstra valoarea pentru următorul pedido
         } else {
           addToast('warning', 'Pedido guardado con advertencias', responseData.message || 'El pedido se guardó pero con algunas advertencias.');
@@ -1401,8 +1482,57 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
 };
 
 
+  const cartProductCount = lineasPedido.length;
+  const cartUnitCount = lineasPedido.reduce((s, l) => s + (l.cantidad || 0), 0);
+  const entregaPendienteMensaje = useMemo(() => {
+    if (!horarioEntregaTipo || !horarioEntrega?.trim()) {
+      return 'Tienes que elegir y completar el horario de entrega en la pantalla anterior (apartado «Horario Entrega»).';
+    }
+    if (!telefonoEntrega?.trim()) {
+      return 'Tienes que escribir el teléfono de entrega en la pantalla anterior (campo «Teléfono Entrega»).';
+    }
+    return null;
+  }, [horarioEntregaTipo, horarioEntrega, telefonoEntrega]);
+  const isReviewStep = nuevoPedidoStep === 'review';
+
+  const handleEnviarPedido = async () => {
+    setPedidoSubmitLoading(true);
+    try {
+      await guardarBorrador();
+    } finally {
+      setPedidoSubmitLoading(false);
+    }
+  };
+
   return (
-    <div className="space-y-6">
+    <div className={`space-y-6 ${!isReviewStep && cartProductCount > 0 ? 'pb-24 max-md:pb-28' : ''}`}>
+      {isReviewStep ? (
+        <ReviewPedidoScreen
+          lineas={lineasPedido}
+          products={productos.map((p) => ({
+            id: p.id,
+            numero: p.numero,
+            descripcion: p.descripcion,
+            imagen: p.imagen,
+          }))}
+          notas={notas}
+          onNotasChange={setNotas}
+          onBack={() => setNuevoPedidoStep('products')}
+          onSubmit={handleEnviarPedido}
+          submitting={pedidoSubmitLoading}
+          onSetProductQty={(productId, qty) => {
+            const prod = productos.find((p) => p.id === productId);
+            if (prod) setCantidadProductoEnPedido(prod, qty);
+          }}
+          confirmRemove
+          limiteGasto={getLimiteGasto()}
+          subtotal={calcularSubtotal()}
+          notasLabel="Nota (opcional)"
+          notasPlaceholder="Especifica el horario de entrega u otros detalles…"
+          entregaAlert={entregaPendienteMensaje}
+        />
+      ) : (
+        <>
       {/* Informații pedido */}
       <Card>
         <div className="p-6">
@@ -1584,270 +1714,89 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
         </Card>
       )}
 
-      {/* Căutare produse */}
-      <Card>
-        <div className="p-6">
-          <h3 className="text-lg font-semibold mb-4 text-green-900">
-            Buscar Productos ({productos.length} productos cargados)
+      {/* Catálogo: zona clară, full-width, fără carduri în carduri */}
+      <section
+        className="-mx-1 border-y border-zinc-200/90 bg-zinc-50 px-3 py-5 text-zinc-900 sm:mx-0 sm:rounded-2xl sm:border sm:px-5 sm:py-6 dark:border-zinc-200/80 dark:bg-zinc-50 dark:text-zinc-900 [&_input]:text-zinc-900 [&_label]:text-zinc-700"
+        style={{ colorScheme: 'light' }}
+      >
+        <div className="mb-4">
+          <h3 className="text-base font-semibold !text-zinc-800" style={{ color: '#27272a' }}>
+            Buscar productos
+            <span className="ml-2 text-sm font-normal !text-zinc-500" style={{ color: '#71717a' }}>
+              ({productos.length} en catálogo)
+            </span>
           </h3>
-          <div className="mb-4">
+          <div className="mt-3">
             <Input
               id="search-productos"
+              label="Buscar"
               type="text"
               placeholder="Buscar por número o descripción (Ej: A-100 o Pintura blanca)"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
               className="w-full"
               aria-label="Buscar productos"
             />
           </div>
-          
-          {loadingProductos ? (
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto mb-2"></div>
-              <p className="text-gray-600">Cargando productos...</p>
-            </div>
-          ) : productos.length === 0 ? (
-            <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-              <div className="text-6xl mb-4">📦</div>
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">No se encontraron productos disponibles</h3>
-              <p className="text-gray-500 mb-4">
-                Esta comunidad no tiene productos asignados en el catálogo.
-              </p>
-              <div className="text-sm text-gray-400">
-                Contacta con el administrador para asignar productos a esta comunidad.
-              </div>
-            </div>
-          ) : (
-            <div className="max-h-64 overflow-y-auto border rounded-lg">
+        </div>
+
+        {loadingProductos ? (
+          <div className="py-10 text-center">
+            <div className="mx-auto mb-2 h-8 w-8 animate-spin rounded-full border-b-2 border-zinc-400" />
+            <p className="text-zinc-600">Cargando productos...</p>
+          </div>
+        ) : productos.length === 0 ? (
+          <div className="py-10 text-center">
+            <div className="mb-4 text-5xl">📦</div>
+            <h3 className="mb-2 text-lg font-semibold text-zinc-700">No se encontraron productos disponibles</h3>
+            <p className="text-zinc-600">Esta comunidad no tiene productos asignados en el catálogo.</p>
+          </div>
+        ) : (
+          <>
+            <RecentPedidoProducts
+              products={recientesEnCatalogo}
+              hasHistorySource={recentPedidoSourceReady}
+              onQuickAdd={(p) => {
+                const prod = productos.find((x) => x.id === p.id);
+                if (!prod) return;
+                setCantidadProductoEnPedido(prod, sumQtyForProduct(lineasPedido, p.id) + 1);
+              }}
+            />
+            <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide !text-zinc-600" style={{ color: '#52525b' }}>
+              Todos los productos
+            </h3>
+            <div className="max-h-[min(58vh,560px)] overflow-y-auto rounded-xl border border-zinc-200/80 bg-white px-2 sm:px-3">
               {productosFiltrados.length > 0 ? (
-                productosFiltrados.map(producto => (
-                  <div key={producto.id} className="flex items-center gap-3 p-3 border-b hover:bg-gray-50">
-                    {/* Imagine produs - mică în listă */}
-                    <div className="w-16 h-16 bg-gray-50 rounded-lg flex-shrink-0 flex items-center justify-center">
-                      {producto.imagen ? (
-                        <img 
-                          src={producto.imagen} 
-                          alt={producto.descripcion}
-                          className="w-full h-full object-contain rounded-lg"
-                        />
-                      ) : (
-                        <div className="text-center">
-                          <div className="text-2xl text-gray-300">📷</div>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Informații produs */}
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-gray-900 truncate">{producto.numero}</div>
-                      <div className="text-sm text-gray-600 overflow-hidden" style={{
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical'
-                      }}>{producto.descripcion}</div>
-                    </div>
-                    
-                    {/* Cantidad y Buton Añadir */}
-                    <div className="flex-shrink-0 flex items-center gap-2">
-                      <div className="flex items-center gap-1">
-                        <label htmlFor={`cantidad-${producto.id}`} className="text-xs text-gray-600">Cant:</label>
-                        <div className="flex items-center gap-0.5">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="!min-w-7 !w-7 !p-0 h-8 text-sm shrink-0"
-                            aria-label="Restar cantidad"
-                            onClick={() => actualizarCantidadProducto(producto.id, Math.max(0, (cantidadesProductos[producto.id] ?? 1) - 1))}
-                          >
-                            −
-                          </Button>
-                          <Input
-                            id={`cantidad-${producto.id}`}
-                            type="number"
-                            min="0"
-                            value={cantidadesProductos[producto.id] === 0 ? '' : (cantidadesProductos[producto.id] ?? 1)}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              if (v === '') actualizarCantidadProducto(producto.id, 0);
-                              else { const n = parseInt(v, 10); if (!isNaN(n) && n >= 0) actualizarCantidadProducto(producto.id, n); }
-                            }}
-                            onBlur={() => {
-                              if ((cantidadesProductos[producto.id] ?? 1) === 0) actualizarCantidadProducto(producto.id, 1);
-                            }}
-                            className="!w-12 h-8 text-sm shrink-0"
-                            aria-label={`Cantidad para ${producto.descripcion}`}
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="!min-w-7 !w-7 !p-0 h-8 text-sm shrink-0"
-                            aria-label="Sumar cantidad"
-                            onClick={() => actualizarCantidadProducto(producto.id, (cantidadesProductos[producto.id] ?? 0) + 1)}
-                          >
-                            +
-                          </Button>
-                        </div>
-                      </div>
-                      <Button
-                        onClick={() => agregarProducto(producto, cantidadesProductos[producto.id] || 1)}
-                        size="sm"
-                        variant="primary"
-                      >
-                        Añadir
-                      </Button>
-                    </div>
-                  </div>
+                productosFiltrados.map((producto) => (
+                  <ProductListItem
+                    key={producto.id}
+                    product={{
+                      id: producto.id,
+                      numero: producto.numero,
+                      descripcion: producto.descripcion,
+                      imagen: producto.imagen,
+                    }}
+                    quantityInCart={sumQtyForProduct(lineasPedido, producto.id)}
+                    onQuantityInCartChange={(n) => setCantidadProductoEnPedido(producto, n)}
+                  />
                 ))
               ) : (
-                <div className="p-4 text-center text-gray-500">
+                <div className="p-8 text-center text-zinc-500">
                   {searchTerm ? 'No se encontraron productos' : 'No hay productos disponibles'}
                 </div>
               )}
             </div>
-          )}
-        </div>
-      </Card>
+          </>
+        )}
+      </section>
 
-      {/* Liniile din comandă */}
-      {lineasPedido.length > 0 && (
-        <Card>
-          <div className="p-6">
-            <h3 className="text-lg font-semibold mb-4 text-purple-900">Líneas del Pedido</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-2">Producto</th>
-                    <th className="text-left py-2 min-w-[11rem]">Cantidad</th>
-                    <th className="text-left py-2">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lineasPedido.map((linea, index) => {
-                    const producto = productos.find(p => p.id === linea.producto_id);
-                    return (
-                      <tr key={index} className="border-b">
-                        <td className="py-2">
-                          <div>
-                            <div className="font-medium">{producto?.numero || 'N/A'}</div>
-                            <div className="text-sm text-gray-600">{producto?.descripcion || 'N/A'}</div>
-                          </div>
-                        </td>
-                        <td className="py-2 min-w-[11rem]">
-                          <label htmlFor={`cantidad-pedido-${index}`} className="sr-only">Cantidad</label>
-                          <div className="flex items-center gap-1.5 w-fit">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="!min-w-8 !w-8 !p-0 h-9 shrink-0"
-                              aria-label="Restar cantidad"
-                              onClick={() => actualizarCantidad(index, Math.max(0, linea.cantidad - 1))}
-                            >
-                              −
-                            </Button>
-                            <Input
-                              id={`cantidad-pedido-${index}`}
-                              name={`cantidad-pedido-${index}`}
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={linea.cantidad === 0 ? '' : linea.cantidad}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                if (v === '') actualizarCantidad(index, 0);
-                                else { const n = parseInt(v, 10); if (!isNaN(n) && n >= 0) actualizarCantidad(index, n); }
-                              }}
-                              onBlur={() => { if (linea.cantidad === 0) actualizarCantidad(index, 1); }}
-                              className="!min-w-[5.5rem] !w-28 shrink-0 tabular-nums text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                              aria-label={`Cantidad para ${producto?.descripcion || 'producto'}`}
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="!min-w-8 !w-8 !p-0 h-9 shrink-0"
-                              aria-label="Sumar cantidad"
-                              onClick={() => actualizarCantidad(index, (linea.cantidad || 0) + 1)}
-                            >
-                              +
-                            </Button>
-                          </div>
-                        </td>
-                        <td className="py-2">
-                          <Button
-                            onClick={() => eliminarLinea(index)}
-                            size="sm"
-                            variant="outline"
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            Eliminar
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* Rezumat final */}
-      {lineasPedido.length > 0 && (
-        <Card>
-          <div className="p-6">
-            <div className="mt-4">
-              <label htmlFor="notas" className="block text-sm font-medium text-gray-700 mb-1">Nota (horario o otros detalles)</label>
-              <textarea
-                id="notas"
-                value={notas}
-                onChange={(e) => setNotas(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                rows={3}
-                placeholder="Especifica el horario de entrega u otros detalles..."
-              />
-            </div>
-            {getLimiteGasto() && calcularSubtotal() > getLimiteGasto() ? (
-              <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-red-600 mb-2">
-                    ⚠️ Límite excedido
-                  </div>
-                  <div className="text-lg text-red-700 mb-2">
-                    Has superado el límite de gasto permitido
-                  </div>
-                  <div className="text-sm text-red-600">
-                    💡 Sugerencia: Reduce las cantidades de los productos para ajustarte al límite
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600 mb-2">
-                    ✅ Pedido válido
-                  </div>
-                  <div className="text-sm text-green-700">
-                    El pedido está dentro del límite permitido
-                  </div>
-                </div>
-              </div>
-            )}
-            <div className="mt-4 flex gap-4">
-              <Button
-                onClick={guardarBorrador}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                Guardar Borrador
-              </Button>
-            </div>
-          </div>
-        </Card>
+      <StickyCartBar
+        productCount={cartProductCount}
+        unitCount={cartUnitCount}
+        ctaLabel="Ver pedido"
+        onCtaClick={() => setNuevoPedidoStep('review')}
+      />
+        </>
       )}
     </div>
   );
@@ -3174,6 +3123,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
 const BannerNotasInstrucciones: React.FC = () => {
   const [notas, setNotas] = useState<PedidosNota[]>([]);
   const [loading, setLoading] = useState(true);
+  const [avisosAbiertos, setAvisosAbiertos] = useState(false);
 
   // Încarcă notele
   const loadNotas = useCallback(async () => {
@@ -3232,52 +3182,84 @@ const BannerNotasInstrucciones: React.FC = () => {
   };
 
   return (
-    <div className="mb-4 space-y-3">
-      {notas.map((nota) => (
-        <Card key={nota.id} className="border-l-3 border-purple-400 bg-gradient-to-r from-purple-50/80 to-white shadow-sm hover:shadow-md transition-shadow">
-          <div className="p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex-shrink-0">
-                <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
-                  <span className="text-base">📝</span>
-                </div>
-              </div>
-              <div className="flex-1 min-w-0">
-                {nota.titulo && (
-                  <h3 className="text-sm font-semibold text-gray-800 mb-1.5">
-                    {nota.titulo}
-                  </h3>
-                )}
-                <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                  {nota.contenido}
-                </div>
-                
-                {/* Poze */}
-                {nota.imagenes && nota.imagenes.length > 0 && (
-                  <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {nota.imagenes.map((imagen: PedidosNotasImagen) => (
-                      <div key={imagen.id} className="relative group">
-                        <img
-                          src={getImagenUrl(imagen.ruta_archivo)}
-                          alt={imagen.nombre_archivo}
-                          className="w-full h-20 object-cover rounded border border-purple-200 hover:border-purple-400 transition-colors cursor-pointer"
-                          onClick={() => {
-                            // Deschide imaginea în modal/fullscreen
-                            window.open(getImagenUrl(imagen.ruta_archivo), '_blank');
-                          }}
-                        />
-                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity rounded flex items-center justify-center">
-                          <span className="text-white opacity-0 group-hover:opacity-100 text-xs">🔍</span>
-                        </div>
-                      </div>
-                    ))}
+    <div className="mb-4">
+      <button
+        type="button"
+        onClick={() => setAvisosAbiertos((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 rounded-xl border border-purple-200/90 bg-gradient-to-r from-purple-50/95 to-white px-4 py-3 text-left shadow-sm transition hover:from-purple-100/90 hover:to-purple-50/80 dark:border-purple-900/50 dark:from-zinc-900 dark:to-zinc-900/95 dark:hover:from-zinc-800 dark:hover:to-zinc-900"
+        aria-expanded={avisosAbiertos}
+        id="avisos-pedidos-toggle"
+      >
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="text-base" aria-hidden>
+            📝
+          </span>
+          <span className="truncate font-semibold text-purple-900 dark:text-purple-200">
+            Avisos importantes
+          </span>
+          <span className="shrink-0 rounded-full bg-purple-200/90 px-2 py-0.5 text-xs font-semibold text-purple-900 dark:bg-purple-800/80 dark:text-purple-100">
+            {notas.length}
+          </span>
+        </span>
+        <span className="shrink-0 text-purple-800 dark:text-purple-300" aria-hidden>
+          {avisosAbiertos ? (
+            <ChevronUp className="h-5 w-5" strokeWidth={2.25} />
+          ) : (
+            <ChevronDown className="h-5 w-5" strokeWidth={2.25} />
+          )}
+        </span>
+      </button>
+
+      {avisosAbiertos && (
+        <div className="mt-3 space-y-3" role="region" aria-labelledby="avisos-pedidos-toggle">
+          {notas.map((nota) => (
+            <Card
+              key={nota.id}
+              className="border-l-[3px] border-purple-400 bg-gradient-to-r from-purple-50/80 to-white shadow-sm transition-shadow dark:border-l-purple-500 dark:from-zinc-900/90 dark:to-zinc-950 dark:shadow-none"
+            >
+              <div className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-950/80">
+                      <span className="text-base">📝</span>
+                    </div>
                   </div>
-                )}
+                  <div className="min-w-0 flex-1">
+                    {nota.titulo && (
+                      <h3 className="mb-1.5 text-sm font-semibold text-gray-800 dark:text-zinc-100">{nota.titulo}</h3>
+                    )}
+                    <div className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700 dark:text-zinc-300">
+                      {nota.contenido}
+                    </div>
+
+                    {nota.imagenes && nota.imagenes.length > 0 && (
+                      <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-3">
+                        {nota.imagenes.map((imagen: PedidosNotasImagen) => (
+                          <div key={imagen.id} className="group relative">
+                            <img
+                              src={getImagenUrl(imagen.ruta_archivo)}
+                              alt={imagen.nombre_archivo}
+                              className="h-20 w-full cursor-pointer rounded border border-purple-200 object-cover transition-colors hover:border-purple-400 dark:border-zinc-600 dark:hover:border-zinc-500"
+                              onClick={() => {
+                                window.open(getImagenUrl(imagen.ruta_archivo), '_blank');
+                              }}
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center rounded bg-black bg-opacity-0 transition-opacity group-hover:bg-opacity-10">
+                              <span className="text-xs text-white opacity-0 transition-opacity group-hover:opacity-100">
+                                🔍
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        </Card>
-      ))}
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
