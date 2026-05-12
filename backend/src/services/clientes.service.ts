@@ -1337,4 +1337,43 @@ export class ClientesService {
       'No se pudo generar el enlace del portal; reintente.',
     );
   }
+
+  /** Facturas PDF del portal (import manual / lote) para ficha CRM del cliente. */
+  async listPortalFacturasManuales(clienteId: number) {
+    await this.assertClienteExists(clienteId);
+    const rows = await this.prisma.clienteFacturaManual.findMany({
+      where: { cliente_id: clienteId },
+      orderBy: [{ fecha_emision: 'desc' }, { id: 'desc' }],
+      select: {
+        id: true,
+        numero_factura: true,
+        nombre_archivo: true,
+        fecha_emision: true,
+        fecha_vencimiento: true,
+        importe: true,
+        estado: true,
+        created_at: true,
+      },
+    });
+    return { success: true as const, data: rows };
+  }
+
+  async getPortalFacturaManualPdfBuffer(
+    clienteId: number,
+    facturaId: number,
+  ): Promise<{ buffer: Buffer; filename: string; mime: string }> {
+    await this.assertClienteExists(clienteId);
+    const row = await this.prisma.clienteFacturaManual.findFirst({
+      where: { id: facturaId, cliente_id: clienteId },
+    });
+    if (!row) {
+      throw new NotFoundException('Factura no encontrada');
+    }
+    const raw = row.archivo;
+    const buffer = Buffer.isBuffer(raw)
+      ? raw
+      : Buffer.from(raw as ArrayLike<number>);
+    const mime = row.mime_type?.trim() || 'application/pdf';
+    return { buffer, filename: row.nombre_archivo, mime };
+  }
 }

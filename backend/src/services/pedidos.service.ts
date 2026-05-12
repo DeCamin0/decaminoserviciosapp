@@ -86,17 +86,37 @@ export class PedidosService {
     return Math.round(sum * 100) / 100;
   }
 
+  /**
+   * Limite de gasto: empleados sí lo respetan.
+   * Developer, Admin, Administrativ(o) y Supervisor pueden superar el límite.
+   */
+  private shouldEnforceClienteLimiteGasto(actorGrupo?: string | null): boolean {
+    const g = String(actorGrupo ?? '').trim().toLowerCase();
+    if (!g) return true;
+    const bypass = new Set([
+      'developer',
+      'admin',
+      'administrador',
+      'administrator',
+      'administrativ',
+      'administrativo',
+      'supervisor',
+    ]);
+    return !bypass.has(g);
+  }
+
   /** Compara subtotal (sin IVA) con el límite actual del cliente en BD. */
   private assertPedidoSubtotalWithinLimite(
     limite: number | null,
     subtotal: number,
+    actorGrupo?: string | null,
   ): void {
+    if (!this.shouldEnforceClienteLimiteGasto(actorGrupo)) return;
     if (limite == null) return;
     const roundedSub = Math.round(subtotal * 100) / 100;
     if (roundedSub - limite > 0.02) {
       throw new BadRequestException(
-        `El subtotal del pedido (${roundedSub.toFixed(2)} €) supera el límite de gasto del cliente (${limite.toFixed(2)} €). ` +
-          `Reduce cantidades o aumenta el límite en la ficha del cliente.`,
+        'El subtotal del pedido supera el límite de gasto del cliente. Reduce cantidades o aumenta el límite en la ficha del cliente.',
       );
     }
   }
@@ -171,7 +191,9 @@ export class PedidosService {
         total_linea: number;
       }>;
     };
-  }): Promise<{
+  },
+  options?: { actorGrupo?: string | null },
+  ): Promise<{
     status: string;
     message: string;
     pedido_uid: string;
@@ -247,7 +269,11 @@ export class PedidosService {
         pedidoData.pedido.items,
       );
       const limiteCliente = await this.getClienteLimiteGastoEur(comunidadId);
-      this.assertPedidoSubtotalWithinLimite(limiteCliente, computedSubtotal);
+      this.assertPedidoSubtotalWithinLimite(
+        limiteCliente,
+        computedSubtotal,
+        options?.actorGrupo,
+      );
 
       // Salvează fiecare item ca un rând separat în PedidosTodos
       const insertQueries: string[] = [];
@@ -910,6 +936,7 @@ export class PedidosService {
     iva_total: number,
     total: number,
     notas?: string | null,
+    actorGrupo?: string | null,
   ): Promise<any> {
     try {
       this.logger.log(
@@ -936,6 +963,7 @@ export class PedidosService {
       this.assertPedidoSubtotalWithinLimite(
         limiteEdicion,
         computedSubtotalItems,
+        actorGrupo,
       );
 
       // Folosește tranzacție pentru a asigura atomicitatea (dacă INSERT eșuează, DELETE este rollback-uit)

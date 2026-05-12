@@ -19,6 +19,21 @@ import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/repor
 import { config } from '../config/env';
 import heic2any from 'heic2any';
 
+/** Mensaje para el usuario desde el cuerpo de error API (Nest: `{ message: string }`). */
+function messageFromApiErrorBody(body: string): string | null {
+  if (body == null || typeof body !== 'string') return null;
+  const trimmed = body.trim();
+  if (!trimmed) return null;
+  if (!trimmed.startsWith('{')) return trimmed;
+  try {
+    const j = JSON.parse(trimmed) as { message?: unknown };
+    if (typeof j.message === 'string' && j.message.trim()) return j.message.trim();
+  } catch {
+    /* no es JSON */
+  }
+  return trimmed;
+}
+
 // ===== TIPURI TYPESCRIPT =====
 
 type Producto = {
@@ -2944,7 +2959,11 @@ const TabGestionarPedidos: React.FC<{
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ [Frontend] Error response:', errorText);
-        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        const detail =
+          messageFromApiErrorBody(errorText) ??
+          'No se pudo guardar el producto. Inténtalo de nuevo.';
+        addToast('error', 'Error', detail);
+        return;
       }
 
       // Recargar pedidos pentru a obține datele actualizate din baza de date
@@ -3011,7 +3030,11 @@ const TabGestionarPedidos: React.FC<{
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ [Frontend] Error response:', errorText);
-        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        const detail =
+          messageFromApiErrorBody(errorText) ??
+          'No se pudieron guardar los cambios. Inténtalo de nuevo.';
+        addToast('error', 'Error', detail);
+        return;
       }
 
       // Recargar pedidos pentru a obține datele actualizate din baza de date
@@ -3057,7 +3080,11 @@ const TabGestionarPedidos: React.FC<{
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ [Frontend] Error response:', errorText);
-        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        const detail =
+          messageFromApiErrorBody(errorText) ??
+          'No se pudo guardar la nota. Inténtalo de nuevo.';
+        addToast('error', 'Error', detail);
+        return;
       }
 
       // Recargar pedidos pentru a obține datele actualizate din baza de date

@@ -21,7 +21,12 @@ export const JARDINERIA_OPERATIVA_IDS = {
       'jar_her_tr_05',
       'jar_her_tr_06',
     ],
-    tratamientos: ['jar_her_tt_01', 'jar_her_tt_02', 'jar_her_tt_03', 'jar_her_tt_04'],
+    tratamientos: [
+      'jar_her_tt_01',
+      'jar_her_tt_02',
+      'jar_her_tt_03',
+      'jar_her_tt_04',
+    ],
   },
 } as const;
 

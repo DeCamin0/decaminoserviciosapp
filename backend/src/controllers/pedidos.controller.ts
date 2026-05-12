@@ -32,11 +32,13 @@ export class PedidosController {
   ) {}
 
   @Post()
-  async savePedido(@Body() body: any) {
+  async savePedido(@Body() body: any, @CurrentUser() user: any) {
     this.logger.log(
       `Received request to save pedido for empleado: ${body.empleado?.id || 'N/A'}`,
     );
-    return this.pedidosService.savePedido(body);
+    return this.pedidosService.savePedido(body, {
+      actorGrupo: user?.grupo,
+    });
   }
 
   @Get()
@@ -203,6 +205,7 @@ export class PedidosController {
       total: number;
       notas?: string | null;
     },
+    @CurrentUser() user: any,
   ) {
     // Decodează UID-ul dacă este encodat
     const decodedUid = decodeURIComponent(pedidoUid);
@@ -219,6 +222,7 @@ export class PedidosController {
       body.iva_total,
       body.total,
       body.notas,
+      user?.grupo,
     );
   }
 

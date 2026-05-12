@@ -7,6 +7,8 @@ import { PortalAuthController } from './portal-auth.controller';
 import { PortalPublicController } from './portal-public.controller';
 import { PortalClienteController } from './portal-cliente.controller';
 import { PortalDocumentosAdminController } from './portal-documentos-admin.controller';
+import { PortalFacturasLoteController } from './portal-facturas-lote.controller';
+import { PortalFacturasLoteService } from './portal-facturas-lote.service';
 import { PortalAuthService } from './portal-auth.service';
 import { PortalDocumentsService } from './portal-documents.service';
 import { PortalJwtStrategy } from './portal-jwt.strategy';
@@ -34,10 +36,12 @@ import { PresupuestosGuardadosService } from '../services/presupuestos-guardados
     PortalAuthController,
     PortalClienteController,
     PortalDocumentosAdminController,
+    PortalFacturasLoteController,
   ],
   providers: [
     PortalAuthService,
     PortalDocumentsService,
+    PortalFacturasLoteService,
     PortalJwtStrategy,
     PortalJwtOrSelectGuard,
     EmailService,

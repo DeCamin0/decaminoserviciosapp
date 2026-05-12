@@ -1848,9 +1848,16 @@ const getFirstValue = (record, keys) => {
 
         'fechaFin',
 
+        // MutuaCasos / MySQL: coloana reală este «Fecha de alta», nu «Fecha alta»
+        'Fecha de alta',
+
+        'Fecha De Alta',
+
         'Fecha alta',
 
         'Fecha Alta',
+
+        'fecha_de_alta',
 
         'fecha_alta',
 
@@ -3353,7 +3360,17 @@ const getFirstValue = (record, keys) => {
                     // Verifică dacă există fecha_alta reală în trecut (din raw data)
                     // pentru a evita problemele când end este setat la data de astăzi din cauza logicii de fallback
                     if (baja.raw) {
-                      const fechaAltaRaw = baja.raw['Fecha alta'] || baja.raw['Fecha Alta'] || baja.raw.fecha_alta || baja.raw.fechaAlta || baja.raw.FECHA_ALTA || baja.raw['FECHA ALTA'] || '';
+                      const fechaAltaRaw =
+                        baja.raw['Fecha de alta'] ||
+                        baja.raw['Fecha De Alta'] ||
+                        baja.raw['Fecha alta'] ||
+                        baja.raw['Fecha Alta'] ||
+                        baja.raw.fecha_de_alta ||
+                        baja.raw.fecha_alta ||
+                        baja.raw.fechaAlta ||
+                        baja.raw.FECHA_ALTA ||
+                        baja.raw['FECHA ALTA'] ||
+                        '';
                       if (fechaAltaRaw) {
                         const fechaAltaDate = new Date(fechaAltaRaw);
                         if (!isNaN(fechaAltaDate.getTime())) {

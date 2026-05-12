@@ -10,7 +10,9 @@ import {
   UseGuards,
   Logger,
   BadRequestException,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ClientesService } from '../services/clientes.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -224,6 +226,35 @@ export class ClientesController {
     @Param('contactoId', ParseIntPipe) contactoId: number,
   ) {
     return this.clientesService.deleteClienteContacto(clienteId, contactoId);
+  }
+
+  /** Facturas subidas al portal (PDF) por cliente — listado CRM. */
+  @Get(':clienteId/portal-facturas-manuales')
+  @UseGuards(JwtAuthGuard)
+  async listPortalFacturasManuales(
+    @Param('clienteId', ParseIntPipe) clienteId: number,
+  ) {
+    return this.clientesService.listPortalFacturasManuales(clienteId);
+  }
+
+  @Get(':clienteId/portal-facturas-manuales/:facturaId/archivo')
+  @UseGuards(JwtAuthGuard)
+  async getPortalFacturaManualArchivo(
+    @Param('clienteId', ParseIntPipe) clienteId: number,
+    @Param('facturaId', ParseIntPipe) facturaId: number,
+    @Res() res: Response,
+  ) {
+    const { buffer, filename, mime } =
+      await this.clientesService.getPortalFacturaManualPdfBuffer(
+        clienteId,
+        facturaId,
+      );
+    res.setHeader('Content-Type', mime);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    );
+    res.send(buffer);
   }
 
   /**

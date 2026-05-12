@@ -67,7 +67,7 @@
     "@types/pdfkit": "^0.17.4",
     "adm-zip": "^0.5.16",
     "archiver": "^7.0.1",
-    "axios": "^1.6.2",
+    "axios": "^1.16.0",
     "bcrypt": "^5.1.1",
     "docx": "^9.5.3",
     "docxtemplater": "^3.68.2",
@@ -141,9 +141,13 @@
     "serialize-javascript": "^7.0.3",
     "diff": "^8.0.3",
     "lodash": "^4.17.23",
-    "fast-xml-parser": "^5.3.6",
+    "@xmldom/xmldom": "^0.9.10",
+    "fast-xml-parser": "^5.7.3",
     "@aws-sdk/xml-builder": {
-      "fast-xml-parser": "^5.3.6"
+      "fast-xml-parser": "^5.7.3"
+    },
+    "docxtemplater": {
+      "@xmldom/xmldom": "^0.9.10"
     },
     "minimatch": "^10.2.1",
     "ajv": "^8.18.0",

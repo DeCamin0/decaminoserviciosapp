@@ -266,6 +266,11 @@ export const routes = {
     `${BACKEND_BASE}/api/clientes/${encodeURIComponent(clienteId)}/contactos`,
   clientePortalInviteToken: (clienteId) =>
     `${BACKEND_BASE}/api/clientes/${encodeURIComponent(clienteId)}/portal-invite-token`,
+  /** Facturas PDF guardadas para el portal (CRM). clienteId = id numérico. */
+  clientePortalFacturasManuales: (clienteId) =>
+    `${BACKEND_BASE}/api/clientes/${encodeURIComponent(clienteId)}/portal-facturas-manuales`,
+  clientePortalFacturaManualArchivo: (clienteId, facturaId) =>
+    `${BACKEND_BASE}/api/clientes/${encodeURIComponent(clienteId)}/portal-facturas-manuales/${encodeURIComponent(facturaId)}/archivo`,
   portalPublicComunidad: (token) =>
     `${BACKEND_BASE}/api/portal/public/comunidad/${encodeURIComponent(token)}`,
   /** Sesión portal: comunidad activa (nombre fiscal, NIF, ids). */
@@ -289,12 +294,22 @@ export const routes = {
   portalPresupuestos: `${BACKEND_BASE}/api/portal/presupuestos`,
   portalPresupuestoPdfFirmado: (id) =>
     `${BACKEND_BASE}/api/portal/presupuestos/${encodeURIComponent(id)}/pdf-firmado`,
+  /** Facturas PDF subidas para esta comunidad (JWT portal). */
+  portalFacturas: `${BACKEND_BASE}/api/portal/facturas`,
+  portalFacturaArchivo: (id) =>
+    `${BACKEND_BASE}/api/portal/facturas/${encodeURIComponent(id)}/archivo`,
   /** Panel interno: documentación general del portal (JWT app). */
   adminPortalDocumentosGenerales: `${BACKEND_BASE}/api/admin/portal-documentos-generales`,
   adminPortalDocumentoGeneralArchivo: (id) =>
     `${BACKEND_BASE}/api/admin/portal-documentos-generales/${encodeURIComponent(id)}/archivo`,
   adminPortalDocumentoGeneralEstado: (id) =>
     `${BACKEND_BASE}/api/admin/portal-documentos-generales/${encodeURIComponent(id)}/estado`,
+  /** Import masivo facturas PDF (admin): analizar → preview por página → confirmar. */
+  adminPortalFacturasLoteAnalizar: `${BACKEND_BASE}/api/admin/portal-facturas-lote/analizar`,
+  adminPortalFacturasLotePreview: (batchId, pageIndex) =>
+    `${BACKEND_BASE}/api/admin/portal-facturas-lote/${encodeURIComponent(batchId)}/preview/${encodeURIComponent(pageIndex)}`,
+  adminPortalFacturasLoteConfirmar: (batchId) =>
+    `${BACKEND_BASE}/api/admin/portal-facturas-lote/${encodeURIComponent(batchId)}/confirmar`,
   getContratosCliente: (nif) => `${BACKEND_BASE}/api/clientes/${encodeURIComponent(nif)}/contracts`,
   // POST /api/clientes/contracts cu action: 'upload'|'delete'
   crudContract: `${BACKEND_BASE}/api/clientes/contracts`,

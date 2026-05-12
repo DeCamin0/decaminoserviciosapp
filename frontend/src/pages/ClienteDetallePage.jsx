@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Card, Badge, Separator } from '../components/ui';
 import { ArrowLeft, MapPin, Phone, Mail, Globe, CreditCard, FileText, Building, User, AlertCircle } from 'lucide-react';
@@ -13,6 +13,8 @@ export default function ClienteDetallePage() {
   const [cliente, setCliente] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [portalFacturas, setPortalFacturas] = useState([]);
+  const [portalFacturasLoading, setPortalFacturasLoading] = useState(false);
   // Funcție pentru a normaliza coordonatele și a crea link Google Maps
   const getGoogleMapsLink = (lat, lng) => {
     if (!lat || !lng) return null;
@@ -90,6 +92,115 @@ export default function ClienteDetallePage() {
   useEffect(() => {
     fetchCliente();
   }, [fetchCliente]);
+
+  const fetchPortalFacturas = useCallback(async () => {
+    if (!cliente?.id) return;
+    const token = localStorage.getItem('auth_token');
+    if (!token) return;
+    setPortalFacturasLoading(true);
+    try {
+      const res = await fetch(routes.clientePortalFacturasManuales(cliente.id), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setPortalFacturas([]);
+        return;
+      }
+      const list = Array.isArray(json.data) ? json.data : [];
+      setPortalFacturas(list);
+    } catch {
+      setPortalFacturas([]);
+    } finally {
+      setPortalFacturasLoading(false);
+    }
+  }, [cliente?.id]);
+
+  useEffect(() => {
+    fetchPortalFacturas();
+  }, [fetchPortalFacturas]);
+
+  const facturasPorMes = useMemo(() => {
+    const map = new Map();
+    for (const f of portalFacturas) {
+      const d = new Date(f.fecha_emision);
+      if (Number.isNaN(d.getTime())) continue;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(f);
+    }
+    return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  }, [portalFacturas]);
+
+  const resumenTotalFacturasPortal = useMemo(() => {
+    const anioActual = new Date().getFullYear();
+    let sum = 0;
+    let conImporte = 0;
+    let facturasEnAno = 0;
+    for (const f of portalFacturas) {
+      const fd = new Date(f.fecha_emision);
+      if (Number.isNaN(fd.getTime()) || fd.getFullYear() !== anioActual) {
+        continue;
+      }
+      facturasEnAno += 1;
+      const imp = f.importe;
+      if (imp == null || imp === '') continue;
+      const raw =
+        typeof imp === 'object' && imp != null && 'toString' in imp
+          ? String(imp.toString())
+          : String(imp);
+      const n = Number(raw.replace(',', '.'));
+      if (!Number.isFinite(n)) continue;
+      sum += n;
+      conImporte += 1;
+    }
+    const totalFormatted =
+      conImporte > 0
+        ? sum.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
+        : null;
+    return {
+      anioActual,
+      sum,
+      conImporte,
+      facturasEnAno,
+      totalFormatted,
+    };
+  }, [portalFacturas]);
+
+  const etiquetaMes = (yyyyMm) => {
+    const [y, m] = yyyyMm.split('-').map(Number);
+    const label = new Date(y, m - 1, 1).toLocaleDateString('es-ES', {
+      month: 'long',
+      year: 'numeric',
+    });
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  };
+
+  const formatImporteEur = (imp) => {
+    if (imp == null || imp === '') return null;
+    const n = typeof imp === 'string' ? Number(imp.replace(',', '.')) : Number(imp);
+    if (!Number.isFinite(n)) return null;
+    return n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });
+  };
+
+  const abrirFacturaPortal = async (facturaId) => {
+    if (!cliente?.id) return;
+    const token = localStorage.getItem('auth_token');
+    if (!token) return;
+    try {
+      const res = await fetch(
+        routes.clientePortalFacturaManualArchivo(cliente.id, facturaId),
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
+    } catch {
+      /* ignore */
+    }
+  };
 
 
   if (loading) {
@@ -474,6 +585,114 @@ export default function ClienteDetallePage() {
                 >
                                      📞 Llamar
                  </Button>
+
+                <Separator className="my-2" />
+
+                <div className="pt-1">
+                  <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
+                    Facturas (portal)
+                  </p>
+                  {portalFacturasLoading ? (
+                    <p className="text-xs text-gray-500">Cargando…</p>
+                  ) : facturasPorMes.length === 0 ? (
+                    <p className="text-xs text-gray-500">
+                      Sin facturas importadas. Las subidas desde administración (PDF lote) aparecerán aquí agrupadas por mes de emisión.
+                    </p>
+                  ) : (
+                    <div className="space-y-3 max-h-[min(420px,50vh)] overflow-y-auto pr-1">
+                      {facturasPorMes.map(([mesKey, lista]) => (
+                        <div key={mesKey}>
+                          <p className="text-xs font-medium text-gray-600 mb-1.5 border-b border-gray-100 pb-0.5">
+                            {etiquetaMes(mesKey)}
+                          </p>
+                          <ul className="space-y-1">
+                            {lista.map((f) => {
+                              const fechaEm = f.fecha_emision
+                                ? new Date(f.fecha_emision).toLocaleDateString('es-ES', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric',
+                                  })
+                                : '';
+                              const fechaVto = f.fecha_vencimiento
+                                ? new Date(f.fecha_vencimiento).toLocaleDateString('es-ES', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric',
+                                  })
+                                : null;
+                              const importeTxt = formatImporteEur(f.importe);
+                              const titulo =
+                                f.numero_factura?.trim() ||
+                                f.nombre_archivo?.replace(/\.pdf$/i, '') ||
+                                `Factura #${f.id}`;
+                              const detalles = [];
+                              if (fechaEm) detalles.push(`Emisión: ${fechaEm}`);
+                              if (fechaVto) detalles.push(`Venc.: ${fechaVto}`);
+                              if (importeTxt) detalles.push(importeTxt);
+                              return (
+                                <li key={f.id}>
+                                  <button
+                                    type="button"
+                                    className="w-full text-left text-xs text-red-700 hover:text-red-900 hover:underline flex flex-col gap-0.5 py-1"
+                                    onClick={() => abrirFacturaPortal(f.id)}
+                                  >
+                                    <span className="font-medium break-words">{titulo}</span>
+                                    {detalles.length > 0 ? (
+                                      <span className="text-gray-500 font-normal">
+                                        {detalles.join(' · ')}
+                                      </span>
+                                    ) : null}
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {!portalFacturasLoading &&
+                  facturasPorMes.length > 0 &&
+                  resumenTotalFacturasPortal.totalFormatted ? (
+                    <div className="mt-3 pt-2 border-t border-gray-200">
+                      <p className="text-xs font-semibold text-gray-800">
+                        Total {resumenTotalFacturasPortal.anioActual} (solo emisión
+                        en este año, con importe):{' '}
+                        <span className="text-red-700 tabular-nums">
+                          {resumenTotalFacturasPortal.totalFormatted}
+                        </span>
+                      </p>
+                      {resumenTotalFacturasPortal.conImporte <
+                      resumenTotalFacturasPortal.facturasEnAno ? (
+                        <p className="text-[10px] text-gray-500 mt-1 leading-snug">
+                          Suma de {resumenTotalFacturasPortal.conImporte} factura(s) de{' '}
+                          {resumenTotalFacturasPortal.anioActual} con importe; otras del
+                          mismo año sin importe no entran.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {!portalFacturasLoading &&
+                  facturasPorMes.length > 0 &&
+                  !resumenTotalFacturasPortal.totalFormatted ? (
+                    <p className="mt-2 text-[10px] text-gray-500 leading-snug">
+                      {resumenTotalFacturasPortal.facturasEnAno === 0 ? (
+                        <>
+                          El total solo cuenta facturas con{' '}
+                          <strong>fecha de emisión en {resumenTotalFacturasPortal.anioActual}</strong>.
+                          No hay ninguna en el año en curso (las de otros años siguen listadas arriba).
+                        </>
+                      ) : (
+                        <>
+                          Hay {resumenTotalFacturasPortal.facturasEnAno} factura(s) con emisión en{' '}
+                          {resumenTotalFacturasPortal.anioActual}, pero ninguna con importe
+                          registrado; no se muestra total.
+                        </>
+                      )}
+                    </p>
+                  ) : null}
+                </div>
                </div>
              </Card>
            </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Button } from '../components/ui';
 import { routes } from '../utils/routes';
@@ -382,7 +382,7 @@ export default function PortalAccesoPage() {
               <strong className="text-slate-800">general de la empresa</strong> y
               de <strong className="text-slate-800">esta comunidad</strong>{' '}
               (personal activo, contratos laborales visibles, contratos PDF del
-              cliente y presupuestos guardados con PDF firmado).
+              cliente, presupuestos guardados con PDF firmado y facturas mensuales).
             </p>
           }
           downloadContrato={downloadContrato}
@@ -702,6 +702,176 @@ export function ContratosPortalList({ jwt, onDownload, hideHeading = false }) {
   );
 }
 
+export function PortalFacturasManualesList({ jwt, onError }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+
+  useEffect(() => {
+    if (!jwt) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(routes.portalFacturas, {
+          headers: { Authorization: `Bearer ${jwt}` },
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (!cancelled) {
+            setRows([]);
+            onErrorRef.current?.(
+              json.message ||
+                json.error ||
+                `No se pudieron cargar las facturas (${res.status})`,
+            );
+          }
+          return;
+        }
+        if (!cancelled) setRows(Array.isArray(json.data) ? json.data : []);
+      } catch {
+        if (!cancelled) {
+          setRows([]);
+          onErrorRef.current?.('Error de red al cargar facturas');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [jwt]);
+
+  const facturasPorMes = useMemo(() => {
+    const map = new Map();
+    for (const f of rows) {
+      const d = new Date(f.fecha_emision);
+      if (Number.isNaN(d.getTime())) continue;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(f);
+    }
+    return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  }, [rows]);
+
+  const etiquetaMes = (yyyyMm) => {
+    const [y, m] = yyyyMm.split('-').map(Number);
+    const label = new Date(y, m - 1, 1).toLocaleDateString('es-ES', {
+      month: 'long',
+      year: 'numeric',
+    });
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  };
+
+  const formatImporteEur = (imp) => {
+    if (imp == null || imp === '') return null;
+    const n =
+      typeof imp === 'string' ? Number(imp.replace(',', '.')) : Number(imp);
+    if (!Number.isFinite(n)) return null;
+    return n.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });
+  };
+
+  const abrirPdf = async (facturaId) => {
+    if (!jwt) return;
+    try {
+      const res = await fetch(routes.portalFacturaArchivo(facturaId), {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      if (!res.ok) {
+        onError?.('No se pudo abrir el PDF de la factura');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
+    } catch {
+      onError?.('Error al abrir el PDF');
+    }
+  };
+
+  if (!jwt) return null;
+  if (loading) {
+    return <p className="text-sm text-slate-500">Cargando facturas…</p>;
+  }
+  if (!rows.length) {
+    return (
+      <p className="text-sm text-slate-500">
+        No hay facturas disponibles para esta comunidad en el portal.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4 max-h-[min(380px,45vh)] overflow-y-auto pr-1">
+      {facturasPorMes.map(([mesKey, lista]) => (
+        <div key={mesKey}>
+          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 border-b border-slate-100 pb-1 mb-2">
+            {etiquetaMes(mesKey)}
+          </p>
+          <ul className="space-y-2">
+            {lista.map((f) => {
+              const fechaEm = f.fecha_emision
+                ? new Date(f.fecha_emision).toLocaleDateString('es-ES', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                  })
+                : '';
+              const fechaVto = f.fecha_vencimiento
+                ? new Date(f.fecha_vencimiento).toLocaleDateString('es-ES', {
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                  })
+                : null;
+              const importeTxt = formatImporteEur(f.importe);
+              const titulo =
+                f.numero_factura?.trim() ||
+                f.nombre_archivo?.replace(/\.pdf$/i, '') ||
+                `Factura #${f.id}`;
+              const detalles = [];
+              if (fechaEm) detalles.push(`Emisión: ${fechaEm}`);
+              if (fechaVto) detalles.push(`Venc.: ${fechaVto}`);
+              if (importeTxt) detalles.push(importeTxt);
+              return (
+                <li
+                  key={f.id}
+                  className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <span className="font-medium text-slate-800 block truncate">
+                      {titulo}
+                    </span>
+                    {detalles.length > 0 ? (
+                      <span className="text-[11px] text-slate-500 block">
+                        {detalles.join(' · ')}
+                      </span>
+                    ) : null}
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0 border-red-200 text-red-700 hover:bg-red-50"
+                    onClick={() => abrirPdf(f.id)}
+                  >
+                    Ver PDF
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function PresupuestosPortalList({ jwt, onDownload, hideHeading = false }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -901,6 +1071,20 @@ export function PortalClienteDashboardInside({
             </div>
           </section>
         </div>
+
+        <section className={`mt-6 ${portalDashPanel}`}>
+          <div className={portalDashPanelHead}>
+            <h2 className={portalDashPanelTitle}>Facturas mensuales</h2>
+          </div>
+          <p className="px-4 pt-3 text-[11px] text-slate-500 leading-snug">
+            PDFs de facturación de esta comunidad, agrupados por mes de emisión (misma
+            vista que en el área interna del CRM).
+          </p>
+          <div className={portalDashPanelBody}>
+            <PortalFacturasManualesList jwt={jwt} onError={(m) => setErr(m)} />
+          </div>
+        </section>
+
         {footer ? (
           <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:items-center">
             {footer}

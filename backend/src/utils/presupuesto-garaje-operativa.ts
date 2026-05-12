@@ -9,20 +9,10 @@ export type ModoGarajeOperativaFallback = 'fregadora' | 'karcher' | 'ambos';
 
 export const GARAJE_OPERATIVA_IDS = {
   decamino: {
-    tareas: [
-      'gar_dcm_t_01',
-      'gar_dcm_t_02',
-      'gar_dcm_t_03',
-      'gar_dcm_t_04',
-    ],
+    tareas: ['gar_dcm_t_01', 'gar_dcm_t_02', 'gar_dcm_t_03', 'gar_dcm_t_04'],
   },
   hera: {
-    tareas: [
-      'gar_dcm_t_01',
-      'gar_dcm_t_02',
-      'gar_dcm_t_03',
-      'gar_dcm_t_04',
-    ],
+    tareas: ['gar_dcm_t_01', 'gar_dcm_t_02', 'gar_dcm_t_03', 'gar_dcm_t_04'],
   },
 } as const;
 
@@ -64,7 +54,9 @@ export function tareasIdsFromModoGarajeFallback(
   modo: ModoGarajeOperativaFallback,
   catalogIds: readonly string[],
 ): string[] {
-  const m = String(modo || 'fregadora').toLowerCase().trim();
+  const m = String(modo || 'fregadora')
+    .toLowerCase()
+    .trim();
   const base = [catalogIds[0], catalogIds[1]];
   if (m === 'ambos' || m === 'both') {
     return [...base, catalogIds[2], catalogIds[3]];

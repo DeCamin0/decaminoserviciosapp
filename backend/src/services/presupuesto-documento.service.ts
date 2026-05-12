@@ -67,15 +67,10 @@ function ofertaPdfNuevaPaginaConMarca(
   if (logoPath) {
     try {
       doc.opacity(0.1);
-      doc.image(
-        logoPath,
-        (PAGE_WIDTH - 400) / 2,
-        (PAGE_HEIGHT - 400) / 2,
-        {
-          width: 400,
-          height: 400,
-        },
-      );
+      doc.image(logoPath, (PAGE_WIDTH - 400) / 2, (PAGE_HEIGHT - 400) / 2, {
+        width: 400,
+        height: 400,
+      });
       doc.opacity(1);
       doc.image(logoPath, MARGIN, 40, { width: 56, height: 56 });
     } catch {
@@ -920,8 +915,7 @@ function calcularFontUnificadoTablaOfertaEconomicaPdf(
     let ok = true;
     for (const row of filas) {
       const desc =
-        (row.descripcion != null ? String(row.descripcion) : '').trim() ||
-        '—';
+        (row.descripcion != null ? String(row.descripcion) : '').trim() || '—';
       if (
         esFilaDescuentoFidelidadOfertaPdf(desc) ||
         esFilaTotalBloqueOfertaPdf(row)
@@ -1078,8 +1072,7 @@ function pintarCeldaPreciosDescuentoOfertaPdf(
     uniformFs,
   );
   const fs1s = Number.isFinite(fs1) && fs1 >= 5.5 ? fs1 : OFERTA_TABLA_FS_BASE;
-  const fs2s =
-    Number.isFinite(fs2) && fs2 >= 5.5 ? fs2 : fs1s;
+  const fs2s = Number.isFinite(fs2) && fs2 >= 5.5 ? fs2 : fs1s;
 
   doc.save();
   doc.font('Helvetica').fontSize(fs1s);
@@ -2164,8 +2157,12 @@ export class PresupuestoDocumentoService {
         const ofertaGarajeDosSuelos =
           nGarajeRowsOfertaRebuild === 2 &&
           Array.isArray(garajeTareasIdsOfertaRebuild) &&
-          garajeTareasIdsOfertaRebuild.includes(garajeCatalogIdsOfertaRebuild[2]) &&
-          garajeTareasIdsOfertaRebuild.includes(garajeCatalogIdsOfertaRebuild[3]);
+          garajeTareasIdsOfertaRebuild.includes(
+            garajeCatalogIdsOfertaRebuild[2],
+          ) &&
+          garajeTareasIdsOfertaRebuild.includes(
+            garajeCatalogIdsOfertaRebuild[3],
+          );
         let iA = 0,
           iL = 0,
           iJ = 0,
@@ -2321,8 +2318,9 @@ export class PresupuestoDocumentoService {
         (payload.selectedServiciosPresupuesto || []) as Array<{
           nombre?: string;
         }>
-      ).filter((s) => derivarTipoDesdeServicio(s.nombre || '') === 'garaje')
-        .length;
+      ).filter(
+        (s) => derivarTipoDesdeServicio(s.nombre || '') === 'garaje',
+      ).length;
       const garajeTareasIdsIndice = (
         payload.presupuestoGarajeOperativa as
           | PresupuestoGarajeOperativaPayload
@@ -4385,8 +4383,9 @@ export class PresupuestoDocumentoService {
               doc.fillColor('#1a1a1a').font('Helvetica');
               doc.text(line, { width: auxContentWidth - 8, align: 'left' });
               auxY +=
-                doc.heightOfString(`• ${line}`, { width: auxContentWidth - 8 }) +
-                4;
+                doc.heightOfString(`• ${line}`, {
+                  width: auxContentWidth - 8,
+                }) + 4;
             });
             auxY += auxSectionSpacing - 4;
           }
@@ -4412,8 +4411,9 @@ export class PresupuestoDocumentoService {
               doc.fillColor('#1a1a1a').font('Helvetica');
               doc.text(line, { width: auxContentWidth - 8, align: 'left' });
               auxY +=
-                doc.heightOfString(`• ${line}`, { width: auxContentWidth - 8 }) +
-                4;
+                doc.heightOfString(`• ${line}`, {
+                  width: auxContentWidth - 8,
+                }) + 4;
             });
             auxY += auxSectionSpacing - 4;
           }
@@ -5160,7 +5160,9 @@ export class PresupuestoDocumentoService {
             });
             gY += gSectionSpacing;
 
-            const fregTxtGarajeImg = String(gBlock.tareaSueloFregadora || '').trim();
+            const fregTxtGarajeImg = String(
+              gBlock.tareaSueloFregadora || '',
+            ).trim();
             const incluyeMaquinaEnTareas = tareasGaraje.some(
               (ln) => String(ln).trim() === fregTxtGarajeImg,
             );
@@ -5434,12 +5436,10 @@ export class PresupuestoDocumentoService {
             width: colDescW,
             align: 'center',
           });
-          doc.text(
-            'MENSUALIDAD',
-            MARGIN + colDescW,
-            piscinaTableTop + 10,
-            { width: ofertaFullWidth - colDescW, align: 'center' },
-          );
+          doc.text('MENSUALIDAD', MARGIN + colDescW, piscinaTableTop + 10, {
+            width: ofertaFullWidth - colDescW,
+            align: 'center',
+          });
 
           const piscinaRows: {
             desc: string;
@@ -5555,7 +5555,10 @@ export class PresupuestoDocumentoService {
             doc
               .rect(MARGIN + colDescW + colMensW, tableTop, colAnualW, rowH)
               .fillAndStroke();
-          doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(OFERTA_TABLA_FS_ENCABEZADO);
+          doc
+            .fillColor('#1a1a1a')
+            .font('Helvetica-Bold')
+            .fontSize(OFERTA_TABLA_FS_ENCABEZADO);
           const ofertaHeaderTextY = tableTop + 11;
           doc.text('DESCRIPCIÓN', MARGIN, ofertaHeaderTextY, {
             width: colDescW,
@@ -5612,10 +5615,10 @@ export class PresupuestoDocumentoService {
             const anualCon = Number(row.anualidadConIva) || 0;
             const esDesc = esFilaDescuentoFidelidadOfertaPdf(desc);
             const esBlockTot = esFilaTotalBloqueOfertaPdf(row);
-            const rowBodyFont = esBlockTot
-              ? 'Helvetica-Bold'
-              : ofertaDescFont;
-            const rowTextColor = esDesc ? ofertaDescuentoColor : ofertaDescColor;
+            const rowBodyFont = esBlockTot ? 'Helvetica-Bold' : ofertaDescFont;
+            const rowTextColor = esDesc
+              ? ofertaDescuentoColor
+              : ofertaDescColor;
             let mensCell: string;
             let anualCell: string;
             let netMS = mensSin;
@@ -5861,7 +5864,10 @@ export class PresupuestoDocumentoService {
                 ofertaY + cellPad,
                 { width: wAnualOferta, lineGap: 2 },
               );
-            doc.fillColor('#1a1a1a').font('Helvetica').fontSize(fontTablaOferta);
+            doc
+              .fillColor('#1a1a1a')
+              .font('Helvetica')
+              .fontSize(fontTablaOferta);
             ofertaY += rowTot;
           }
 
@@ -5960,7 +5966,8 @@ export class PresupuestoDocumentoService {
             altoColaLegalOferta +=
               doc.heightOfString(bulletPago, { width: ofertaFullWidth }) + 3;
             altoColaLegalOferta +=
-              doc.heightOfString(bulletValidez, { width: ofertaFullWidth }) + 12;
+              doc.heightOfString(bulletValidez, { width: ofertaFullWidth }) +
+              12;
 
             doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
             const hTitRev = doc.heightOfString('Revisión de precios', {
@@ -6035,7 +6042,9 @@ export class PresupuestoDocumentoService {
             doc.text(bulletPago, MARGIN, ofertaY, { width: ofertaFullWidth });
             ofertaY +=
               doc.heightOfString(bulletPago, { width: ofertaFullWidth }) + 3;
-            doc.text(bulletValidez, MARGIN, ofertaY, { width: ofertaFullWidth });
+            doc.text(bulletValidez, MARGIN, ofertaY, {
+              width: ofertaFullWidth,
+            });
             ofertaY +=
               doc.heightOfString(bulletValidez, { width: ofertaFullWidth }) +
               gapTrasRevisionOferta;

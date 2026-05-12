@@ -10,7 +10,12 @@ export const LIMPIEZA_OPERATIVA_IDS = {
       'limp_dcm_d_05',
       'limp_dcm_d_06',
     ],
-    alterna: ['limp_dcm_a_01', 'limp_dcm_a_02', 'limp_dcm_a_03', 'limp_dcm_a_04'],
+    alterna: [
+      'limp_dcm_a_01',
+      'limp_dcm_a_02',
+      'limp_dcm_a_03',
+      'limp_dcm_a_04',
+    ],
   },
   hera: {
     diaria: [
@@ -21,7 +26,12 @@ export const LIMPIEZA_OPERATIVA_IDS = {
       'limp_her_d_05',
       'limp_her_d_06',
     ],
-    alterna: ['limp_her_a_01', 'limp_her_a_02', 'limp_her_a_03', 'limp_her_a_04'],
+    alterna: [
+      'limp_her_a_01',
+      'limp_her_a_02',
+      'limp_her_a_03',
+      'limp_her_a_04',
+    ],
   },
 } as const;
 

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContextBase';
 import { routes } from '../../utils/routes';
+import PortalFacturasLoteAdmin from './PortalFacturasLoteAdmin';
 
 const GRUPOS_GESTION = ['Developer', 'Admin', 'Manager', 'Supervisor'];
 
@@ -45,6 +46,7 @@ export default function PortalDocumentosGeneralesAdmin() {
   const [fechaValidez, setFechaValidez] = useState('');
   const [reemplazar, setReemplazar] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [subTab, setSubTab] = useState<'general' | 'facturas-lote'>('general');
 
   const load = useCallback(async () => {
     if (!authToken || !allowed) return;
@@ -185,6 +187,36 @@ export default function PortalDocumentosGeneralesAdmin() {
 
   return (
     <div className="space-y-8">
+      <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-3">
+        <button
+          type="button"
+          onClick={() => setSubTab('general')}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+            subTab === 'general'
+              ? 'bg-red-600 text-white'
+              : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+          }`}
+        >
+          Documentación general
+        </button>
+        <button
+          type="button"
+          onClick={() => setSubTab('facturas-lote')}
+          className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+            subTab === 'facturas-lote'
+              ? 'bg-red-600 text-white'
+              : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+          }`}
+        >
+          Facturas (PDF lote)
+        </button>
+      </div>
+
+      {subTab === 'facturas-lote' ? (
+        <PortalFacturasLoteAdmin />
+      ) : null}
+
+      {subTab === 'general' ? (
       <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-bold text-gray-900 mb-1">
           Subir documentación general (portal clientes)
@@ -285,7 +317,9 @@ export default function PortalDocumentosGeneralesAdmin() {
           </div>
         </form>
       </div>
+      ) : null}
 
+      {subTab === 'general' ? (
       <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <h2 className="text-lg font-bold text-gray-900">Listado e histórico</h2>
@@ -419,6 +453,7 @@ export default function PortalDocumentosGeneralesAdmin() {
           </div>
         )}
       </div>
+      ) : null}
     </div>
   );
 }

@@ -251,6 +251,32 @@ const PRESUPUESTO_HORARIO_PISCINA_PERIOD_EMPTY = {
   turn2Hasta: '',
 };
 
+/** Nombre en texto plano desde HTML (Quill) */
+function servicioNombreTexto(nombre) {
+  if (!nombre) return '';
+  const s = String(nombre);
+  if (s.startsWith('<')) {
+    if (typeof document !== 'undefined') {
+      const div = document.createElement('div');
+      div.innerHTML = s;
+      return (div.textContent || div.innerText || '').trim();
+    }
+    return s.replace(/<[^>]*>/g, '').trim();
+  }
+  return s.trim();
+}
+
+/** Derivar tipo de cálculo desde el nombre del servicio */
+function derivarTipoDesdeServicio(nombre) {
+  const n = servicioNombreTexto(nombre).toLowerCase();
+  if (/garaje/.test(n)) return 'garaje';
+  if (/limpieza/.test(n)) return 'limpieza';
+  if (/jardin/.test(n)) return 'jardineria';
+  if (/cubos|basura/.test(n)) return 'cubos';
+  if (/piscina/.test(n)) return 'piscina';
+  return 'auxiliares';
+}
+
 export default function PresupuestosInformesPage() {
   useAuth();
   const navigate = useNavigate();
@@ -493,31 +519,6 @@ export default function PresupuestosInformesPage() {
   const [enviarInformeEmail, setEnviarInformeEmail] = useState('');
   const [enviarInformeMensaje, setEnviarInformeMensaje] = useState('');
   const [sendingEnviarInforme, setSendingEnviarInforme] = useState(false);
-
-  // Nombre en texto plano desde HTML (Quill)
-  const servicioNombreTexto = (nombre) => {
-    if (!nombre) return '';
-    const s = String(nombre);
-    if (s.startsWith('<')) {
-      if (typeof document !== 'undefined') {
-        const div = document.createElement('div');
-        div.innerHTML = s;
-        return (div.textContent || div.innerText || '').trim();
-      }
-      return s.replace(/<[^>]*>/g, '').trim();
-    }
-    return s.trim();
-  };
-  // Derivar tipo de cálculo desde el nombre del servicio
-  const derivarTipoDesdeServicio = (nombre) => {
-    const n = servicioNombreTexto(nombre).toLowerCase();
-    if (/garaje/.test(n)) return 'garaje';
-    if (/limpieza/.test(n)) return 'limpieza';
-    if (/jardin/.test(n)) return 'jardineria';
-    if (/cubos|basura/.test(n)) return 'cubos';
-    if (/piscina/.test(n)) return 'piscina';
-    return 'auxiliares';
-  };
 
   // Convertește listele numerotate (ol) în liste cu puncte (ul) în HTML
   const htmlListasNumeradasAPuntos = (html) => {
