@@ -13,11 +13,14 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import { SkipThrottle } from '@nestjs/throttler';
 import { PedidosNotasService } from '../services/pedidos-notas.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 @UseGuards(JwtAuthGuard)
+/** Polling periodic din Pedidos; limita globală per IP provoca 429 la birou. */
+@SkipThrottle()
 @Controller('api/pedidos-notas')
 export class PedidosNotasController {
   private readonly logger = new Logger(PedidosNotasController.name);

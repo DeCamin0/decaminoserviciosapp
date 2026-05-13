@@ -3128,7 +3128,7 @@ const BannerNotasInstrucciones: React.FC = () => {
   // Încarcă notele
   const loadNotas = useCallback(async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
       const response = await fetch(routes.getPedidosNotas, {
         headers: {
           'Authorization': `Bearer ${token}`,

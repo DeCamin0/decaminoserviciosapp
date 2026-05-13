@@ -182,9 +182,8 @@ if (typeof window !== 'undefined' && window.__originalFetchForLocation) {
         const { fetchWithAuth } = await import('./utils/tokenRefresh.js');
         return await fetchWithAuth(url, options);
       } catch (error) {
-        // Dacă fetchWithAuth eșuează, folosește fetch-ul curent (care poate fi deja interceptat)
-        console.warn('[TokenRefresh] Error in fetchWithAuth, falling back to current fetch:', error);
-        return currentFetch.apply(this, args);
+        console.warn('[TokenRefresh] Error in fetchWithAuth:', error);
+        throw error;
       }
     }
     

@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { notifySessionExpired } from '../utils/tokenRefresh';
 
 export const useApi = () => {
   const [loading, setLoading] = useState(false);
@@ -63,6 +64,10 @@ export const useApi = () => {
 
       console.log('useApi response status:', response.status);
       if (!response.ok) {
+        if (response.status === 401) {
+          notifySessionExpired();
+        }
+
         // Încearcă să extragă mesajul de eroare din răspunsul JSON
         let errorMessage = `HTTP error! status: ${response.status}`;
         try {

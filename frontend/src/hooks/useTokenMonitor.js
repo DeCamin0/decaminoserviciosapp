@@ -62,11 +62,19 @@ export function useTokenMonitor(checkInterval = 30000) {
     // Verifică imediat
     checkToken();
 
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        checkToken();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     // Setează intervalul de verificare
     intervalRef.current = setInterval(checkToken, checkInterval);
 
     // Cleanup
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;

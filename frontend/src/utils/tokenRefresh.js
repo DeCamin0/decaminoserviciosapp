@@ -17,13 +17,28 @@ export function setSessionExpiredCallback(callback) {
   sessionExpiredCallback = callback;
 }
 
+const DEFAULT_SESSION_EXPIRED_MESSAGE =
+  'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.';
+
 /**
  * Emite evenimentul de sesiune expirată
  */
-function emitSessionExpired(message) {
+function emitSessionExpired(message = DEFAULT_SESSION_EXPIRED_MESSAGE) {
   if (sessionExpiredCallback) {
     sessionExpiredCallback(message);
   }
+}
+
+/** Afișează aviso de sesiune expirată (folosit și din useApi / monitor). */
+export function notifySessionExpired(
+  message = DEFAULT_SESSION_EXPIRED_MESSAGE,
+) {
+  emitSessionExpired(message);
+}
+
+function clearAuthTokens() {
+  localStorage.removeItem('auth_token');
+  localStorage.removeItem('refresh_token');
 }
 
 // Salvează fetch-ul original pentru a evita loop-uri cu interceptor-ul global
@@ -66,12 +81,11 @@ async function refreshAccessToken(forceLogoutOnError = false) {
   const isCurrentTokenValid = currentToken && !isTokenFullyExpired();
   
   if (!refreshToken) {
-    // Dacă nu avem refresh token, dar token-ul curent e valid, nu facem logout
     if (isCurrentTokenValid && !forceLogoutOnError) {
-      // Nu afișăm warning - e normal să nu avem refresh token dacă token-ul e încă valid
       throw new Error('No refresh token available');
     }
-    // Dacă token-ul curent e expirat sau forțăm logout, atunci facem logout
+    clearAuthTokens();
+    notifySessionExpired();
     throw new Error('No refresh token available');
   }
 
@@ -112,14 +126,14 @@ async function refreshAccessToken(forceLogoutOnError = false) {
     }
     
     // Dacă token-ul curent e expirat sau forțăm logout, facem logout
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('refresh_token');
-    
-    // Emite evenimentul de sesiune expirată
+    clearAuthTokens();
+
     const errorMessage = error.message || 'No se pudo renovar la sesión';
-    emitSessionExpired(errorMessage.includes('expired') || errorMessage.includes('expirado')
-      ? 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.'
-      : 'No se pudo renovar la sesión. Por favor, inicia sesión nuevamente.');
+    notifySessionExpired(
+      errorMessage.includes('expired') || errorMessage.includes('expirado')
+        ? DEFAULT_SESSION_EXPIRED_MESSAGE
+        : 'No se pudo renovar la sesión. Por favor, inicia sesión nuevamente.',
+    );
     
     throw error;
   }
@@ -199,9 +213,8 @@ export async function fetchWithAuth(url, options = {}) {
     console.warn('[TokenRefresh] No valid token and no refresh token available. User is logged out. Skipping request to:', url);
     
     // Face logout imediat pentru a evita spam-ul de request-uri
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('refresh_token');
-    emitSessionExpired('Tu sesión ha expirado. Por favor, inicia sesión nuevamente.');
+    clearAuthTokens();
+    notifySessionExpired();
     
     // Returnăm un Response mock cu 401 pentru a evita spam-ul de erori în console
     return new Response(
@@ -229,9 +242,11 @@ export async function fetchWithAuth(url, options = {}) {
       // Token-ul e expirat, emite evenimentul de sesiune expirată
       console.error('[TokenRefresh] Cannot get valid token');
       const errorMessage = error.message || 'Token no válido';
-      emitSessionExpired(errorMessage.includes('expired') || errorMessage.includes('expirado')
-        ? 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.'
-        : 'No se pudo validar la sesión. Por favor, inicia sesión nuevamente.');
+      notifySessionExpired(
+        errorMessage.includes('expired') || errorMessage.includes('expirado')
+          ? DEFAULT_SESSION_EXPIRED_MESSAGE
+          : 'No se pudo validar la sesión. Por favor, inicia sesión nuevamente.',
+      );
       throw error;
     }
   }
@@ -261,10 +276,13 @@ export async function fetchWithAuth(url, options = {}) {
         headers,
       });
     } catch (refreshError) {
-      // Dacă refresh-ul eșuează după 401, token-ul e sigur expirat
-      // (refreshAccessToken cu forceLogoutOnError=true deja a gestionat logout-ul)
       console.error('[TokenRefresh] Refresh failed after 401');
       throw refreshError;
+    }
+
+    if (response.status === 401) {
+      clearAuthTokens();
+      notifySessionExpired();
     }
   }
 

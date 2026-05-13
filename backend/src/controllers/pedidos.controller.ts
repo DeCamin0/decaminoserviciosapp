@@ -16,12 +16,15 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
+import { SkipThrottle } from '@nestjs/throttler';
 import { PedidosService } from '../services/pedidos.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { EmpleadosService } from '../services/empleados.service';
 
 @UseGuards(JwtAuthGuard)
+/** Fără rate limit global: listări/refetch frecvente pe Pedidos (mai multe GET /api/pedidos per tab) + NAT birou → 429. */
+@SkipThrottle()
 @Controller('api/pedidos')
 export class PedidosController {
   private readonly logger = new Logger(PedidosController.name);

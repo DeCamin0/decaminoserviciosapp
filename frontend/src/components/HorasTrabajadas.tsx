@@ -91,6 +91,29 @@ export type ResumenEmpleado = {
   diasFiesta?: number | string;
 };
 
+/** Fecha YYYY-MM-DD en zona Europe/Madrid (alineada al backend de horas trabajadas). */
+function fechaMadridYYYYMMDD(d: Date = new Date()): string {
+  return d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Madrid' });
+}
+
+/** Día marcado como vacaciones en el detalle diario del resumen. */
+function empleadoEnVacacionesEnFecha(
+  resumen: ResumenEmpleado | undefined,
+  fechaYYYYMMDD: string,
+): boolean {
+  if (!resumen?.detaliiZilnice?.length) return false;
+  const target = fechaYYYYMMDD.trim();
+  for (const det of resumen.detaliiZilnice) {
+    if (!det.fecha || det.fecha !== target) continue;
+    const src =
+      det.plan_fuente ??
+      (det as { planFuente?: string }).planFuente ??
+      '';
+    if (String(src).trim().toLowerCase() === 'vacaciones') return true;
+  }
+  return false;
+}
+
 // Interface pentru registru de ore
 interface RegistroHora {
   fecha: string;
@@ -1602,7 +1625,8 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
       
       // Obține anul și luna curentă din selectedMes
       const [year, month] = selectedMes.split('-');
-      
+      const fechaVerificacionMadrid = fechaMadridYYYYMMDD();
+
       // Obține log-urile pentru toți angajații (pentru a găsi ultimul log)
       let allLogs: ActivityLog[] = [];
       try {
@@ -1652,15 +1676,19 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
         if (isEmpleadoEnBajaMedica(codigo, bajasMedicas)) {
           return false;
         }
-        
+
+        const resumenEmpleado = resumenData.find((r) => String(r.empleadoId) === codigo);
+
+        // No listar como "sin registros" si hoy (Madrid) está marcado como vacaciones
+        if (empleadoEnVacacionesEnFecha(resumenEmpleado, fechaVerificacionMadrid)) {
+          return false;
+        }
+
         // Caută angajatul în resumenData
-        const resumenEmpleado = resumenData.find(r => String(r.empleadoId) === codigo);
-        
-        // Dacă nu apare în resumenData, nu are registre
         if (!resumenEmpleado) {
           return true;
         }
-        
+
         // Verifică dacă are detalii zilnice cu registre până la data curentă
         if (resumenEmpleado.detaliiZilnice && resumenEmpleado.detaliiZilnice.length > 0) {
           // Verifică dacă are cel puțin o zi cu fichado > 0 până la data curentă

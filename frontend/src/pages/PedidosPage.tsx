@@ -6754,7 +6754,7 @@ const TabNotas: React.FC<{
   const loadNotas = useCallback(async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
       const response = await fetch(routes.getPedidosNotas, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -6825,7 +6825,7 @@ const TabNotas: React.FC<{
     }
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
       let notaId: number;
 
       if (editingNota) {
@@ -6878,7 +6878,7 @@ const TabNotas: React.FC<{
 
     setUploadingImagenes(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
       const formData = new FormData();
       
       selectedFiles.forEach((file) => {
@@ -6909,7 +6909,7 @@ const TabNotas: React.FC<{
     if (!confirm('¿Estás seguro de que quieres eliminar esta nota?')) return;
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
       const response = await fetch(routes.deletePedidosNota(id), {
         method: 'DELETE',
         headers: {
@@ -6932,7 +6932,7 @@ const TabNotas: React.FC<{
     if (!confirm('¿Estás seguro de que quieres eliminar esta imagen?')) return;
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
       const response = await fetch(routes.deletePedidosNotaImagen(imagenId), {
         method: 'DELETE',
         headers: {
@@ -7152,7 +7152,7 @@ const BannerNotasInstrucciones: React.FC = () => {
   // Încarcă notele
   const loadNotas = useCallback(async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
       const response = await fetch(routes.getPedidosNotas, {
         headers: {
           'Authorization': `Bearer ${token}`,
