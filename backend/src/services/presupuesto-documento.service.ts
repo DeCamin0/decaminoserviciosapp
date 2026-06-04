@@ -2479,8 +2479,16 @@ export class PresupuestoDocumentoService {
           const concepto =
             calc?.concepto != null && String(calc.concepto).trim()
               ? String(calc.concepto).trim()
-              : 'Precio según oferta económica.';
+              : 'Gestión cubos de basura';
           bullets.push(concepto);
+          const horarioCubosTxt = textoHorarioAplicableCubosOferta(
+            payload.presupuestoCubosOperativa as
+              | PresupuestoCubosOperativaPayload
+              | undefined,
+          );
+          if (horarioCubosTxt) {
+            bullets.push(`Horario aplicable: ${horarioCubosTxt}`);
+          }
         } else if (tipo === 'garaje') {
           const gVariantIdxOferta = idxGaraje;
           const calc = garajeAll[idxGaraje++] as

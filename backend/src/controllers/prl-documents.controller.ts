@@ -714,6 +714,81 @@ export class PrlDocumentsController {
    * Încarcă documentul semnat pentru Renuncia RM
    */
   /**
+   * Autoevaluación del manual PRL (preguntas / envío de respuestas)
+   */
+  @Get('mis-documentos/:documentoId/autoevaluacion')
+  @UseGuards(JwtAuthGuard)
+  async obtenerAutoevaluacion(
+    @Param('documentoId') documentoId: string,
+    @CurrentUser() user: any,
+  ) {
+    try {
+      const documentoIdNum = parseInt(documentoId, 10);
+      if (isNaN(documentoIdNum)) {
+        throw new BadRequestException('documentoId debe ser un número');
+      }
+
+      const empleadoId = user.CODIGO || user.codigo || user.userId;
+      if (!empleadoId) {
+        throw new BadRequestException('No se pudo identificar al empleado');
+      }
+
+      const result = await this.prlDocumentsService.obtenerAutoevaluacion(
+        documentoIdNum,
+        empleadoId,
+      );
+
+      return { success: true, ...result };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error obteniendo autoevaluación ${documentoId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  @Post('mis-documentos/:documentoId/autoevaluacion')
+  @UseGuards(JwtAuthGuard)
+  async completarAutoevaluacion(
+    @Param('documentoId') documentoId: string,
+    @Body('respuestas') respuestas: Record<string, string>,
+    @CurrentUser() user: any,
+  ) {
+    try {
+      const documentoIdNum = parseInt(documentoId, 10);
+      if (isNaN(documentoIdNum)) {
+        throw new BadRequestException('documentoId debe ser un número');
+      }
+
+      const empleadoId = user.CODIGO || user.codigo || user.userId;
+      if (!empleadoId) {
+        throw new BadRequestException('No se pudo identificar al empleado');
+      }
+
+      const result = await this.prlDocumentsService.completarAutoevaluacion(
+        documentoIdNum,
+        empleadoId,
+        respuestas,
+      );
+
+      return {
+        success: true,
+        ...result,
+        message: result.aprobado
+          ? 'Autoevaluación superada. Ya puedes firmar el documento.'
+          : `No superada (${result.puntuacion}/${result.total}). Se requieren al menos ${result.minScore} respuestas correctas.`,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error completando autoevaluación ${documentoId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Actualizează template-urile MANUAL_TEST existente pentru a seta requiere_firma = true
    */
   @Post('actualizar-manuales-requiere-firma')

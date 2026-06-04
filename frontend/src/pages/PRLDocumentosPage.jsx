@@ -33,6 +33,7 @@ export default function PRLDocumentosPage() {
   const [showUploadIndividualModal, setShowUploadIndividualModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
+  const [showEnviarModal, setShowEnviarModal] = useState(false);
   const [templateToDelete, setTemplateToDelete] = useState(null);
   const [zipFile, setZipFile] = useState(null);
   const [previewDocumentos, setPreviewDocumentos] = useState([]);
@@ -314,17 +315,17 @@ export default function PRLDocumentosPage() {
     }
   };
 
-  const handleEnviarDocumentosAGrupo = async () => {
+  const abrirModalEnviarDocumentos = () => {
     if (!grupoSeleccionado) return;
-
     if (templates.length === 0) {
       mostrarNotificacion('error', 'No hay documentos para enviar. Sube documentos primero.');
       return;
     }
+    setShowEnviarModal(true);
+  };
 
-    if (!confirm(`¿Enviar ${templates.length} documento(s) PRL a todos los empleados activos del grupo "${grupoSeleccionado}"?`)) {
-      return;
-    }
+  const handleEnviarDocumentosAGrupo = async () => {
+    if (!grupoSeleccionado) return;
 
     try {
       setEnviando(true);
@@ -342,6 +343,7 @@ export default function PRLDocumentosPage() {
       }
 
       const data = await res.json();
+      setShowEnviarModal(false);
       mostrarNotificacion(
         'success',
         `✅ Documentos enviados: ${data.documentos_creados} creados, ${data.empleados_procesados} empleados procesados, ${data.emails_enviados} emails enviados`
@@ -623,7 +625,7 @@ export default function PRLDocumentosPage() {
                 {templates.length > 0 && (
                   <>
                     <Button
-                      onClick={handleEnviarDocumentosAGrupo}
+                      onClick={abrirModalEnviarDocumentos}
                       variant="primary"
                       disabled={enviando}
                       className="bg-green-600 hover:bg-green-700 text-white"
@@ -900,6 +902,51 @@ export default function PRLDocumentosPage() {
               className="bg-red-600 hover:bg-red-700"
             >
               {deleting ? 'Eliminando...' : '🗑️ Eliminar'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Confirmar envío a empleados */}
+      <Modal
+        isOpen={showEnviarModal}
+        onClose={() => !enviando && setShowEnviarModal(false)}
+        title="Confirmar envío PRL"
+        showCloseButton={false}
+        closeOnBackdrop={!enviando}
+      >
+        <div className="space-y-4">
+          <p className="text-gray-700 dark:text-gray-300">
+            ¿Enviar <strong>{templates.length}</strong> documento(s) PRL a todos los empleados activos del grupo?
+          </p>
+          {grupoSeleccionado && (
+            <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+              <div className="font-semibold text-gray-900 dark:text-gray-100">GRUPO: {grupoSeleccionado}</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                Los empleados recibirán los documentos y, si aplica, la notificación por email.
+              </div>
+            </div>
+          )}
+          <ul className="text-sm text-gray-600 dark:text-gray-400 list-disc list-inside max-h-40 overflow-y-auto">
+            {templates.map((template) => (
+              <li key={template.id}>{template.nombre}</li>
+            ))}
+          </ul>
+          <div className="flex gap-2 justify-end pt-2">
+            <Button
+              onClick={() => setShowEnviarModal(false)}
+              variant="secondary"
+              disabled={enviando}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleEnviarDocumentosAGrupo}
+              variant="primary"
+              disabled={enviando}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {enviando ? 'Enviando...' : '📤 Enviar a empleados'}
             </Button>
           </div>
         </div>

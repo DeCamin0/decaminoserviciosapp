@@ -3707,6 +3707,7 @@ const TabGestionarPedidos: React.FC<{
                 <option value="aprobado">Aprobados</option>
                 <option value="rechazado">Rechazados</option>
                 <option value="enviado">Enviados</option>
+                <option value="entregado">Entregados</option>
               </select>
 
               <label className="text-sm font-medium text-gray-700">Filtrar por centro:</label>

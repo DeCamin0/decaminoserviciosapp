@@ -54,12 +54,27 @@ function normalizeHorarioDiasTipoCubos(v) {
   return 'LV';
 }
 
+/** @returns {boolean|undefined} */
+function normalizeFestivosIncluidosCubos(v) {
+  if (v === false || v === 'false') return false;
+  if (v === true || v === 'true') return true;
+  return undefined;
+}
+
+function festivosIncluidosFromPayload(raw, def) {
+  if (!raw || typeof raw !== 'object') return def.festivosIncluidos;
+  if (!Object.prototype.hasOwnProperty.call(raw, 'festivosIncluidos')) return undefined;
+  const n = normalizeFestivosIncluidosCubos(raw.festivosIncluidos);
+  return n === undefined ? def.festivosIncluidos : n;
+}
+
 export function getDefaultCubosOperativaSelection(isHera) {
   const c = getCubosOperativaCatalog(isHera);
   return {
     tareasIds: c.tareas.map((x) => x.id),
     horarioDiasTipo: 'LV',
     horarioDiasSemana: { ...HORARIO_DIAS_SEMANA_EMPTY },
+    festivosIncluidos: true,
   };
 }
 
@@ -68,24 +83,26 @@ export function mergeCubosOperativaFromPayload(raw, isHera) {
   const def = getDefaultCubosOperativaSelection(isHera);
   const horarioDiasTipo = normalizeHorarioDiasTipoCubos(raw?.horarioDiasTipo);
   const horarioDiasSemana = normalizeHorarioDiasSemanaCubos(raw?.horarioDiasSemana);
+  const festivosIncluidos = festivosIncluidosFromPayload(raw, def);
 
   if (!raw || typeof raw !== 'object') {
-    return { ...def, horarioDiasTipo, horarioDiasSemana };
+    return { ...def, horarioDiasTipo, horarioDiasSemana, festivosIncluidos };
   }
 
   const valid = new Set(c.tareas.map((x) => x.id));
   const arr = raw.tareasIds;
   if (!Array.isArray(arr)) {
-    return { ...def, horarioDiasTipo, horarioDiasSemana };
+    return { ...def, horarioDiasTipo, horarioDiasSemana, festivosIncluidos };
   }
   if (arr.length === 0) {
-    return { tareasIds: [], horarioDiasTipo, horarioDiasSemana };
+    return { tareasIds: [], horarioDiasTipo, horarioDiasSemana, festivosIncluidos };
   }
   const filtered = arr.filter((id) => typeof id === 'string' && valid.has(id));
   return {
     tareasIds: filtered.length > 0 ? filtered : def.tareasIds,
     horarioDiasTipo,
     horarioDiasSemana,
+    festivosIncluidos,
   };
 }
 
@@ -103,13 +120,20 @@ const CUBOS_HORARIO_DIAS_FILA_LABELS = [
  * Texto legible del bloque «Días (horario aplicable)» para oferta económica / PDF.
  * @param {object|null|undefined} raw — presupuestoCubosOperativa o fragmento con horarioDiasTipo / horarioDiasSemana
  */
+function sufijoFestivosHorarioCubos(raw) {
+  if (raw?.festivosIncluidos === false) return ', sin festivos';
+  if (raw?.festivosIncluidos === true) return ', festivos incluidos';
+  return '';
+}
+
 export function textoHorarioAplicableCubosOperativa(raw) {
   const tipo = normalizeHorarioDiasTipoCubos(raw?.horarioDiasTipo);
-  if (tipo === 'LV') return 'Lunes a viernes (L-V)';
-  if (tipo === 'SD') return 'Sábado a domingo (S-D)';
-  if (tipo === 'LD') return 'Lunes a domingo (L-D)';
+  const suf = sufijoFestivosHorarioCubos(raw);
+  if (tipo === 'LV') return `Lunes a viernes (L-V)${suf}`;
+  if (tipo === 'SD') return `Sábado a domingo (S-D)${suf}`;
+  if (tipo === 'LD') return `Lunes a domingo (L-D)${suf}`;
   const ds = normalizeHorarioDiasSemanaCubos(raw?.horarioDiasSemana);
   const labels = CUBOS_HORARIO_DIAS_FILA_LABELS.filter((r) => ds[r.key]).map((r) => r.label);
-  if (labels.length === 0) return 'Horario personalizado';
-  return `Personalizada (${labels.join(', ')})`;
+  if (labels.length === 0) return `Horario personalizado${suf}`;
+  return `Personalizada (${labels.join(', ')})${suf}`;
 }

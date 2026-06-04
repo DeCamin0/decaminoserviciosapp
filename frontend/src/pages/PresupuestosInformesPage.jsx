@@ -6177,6 +6177,25 @@ ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2'
                             </div>
                           </div>
                         )}
+                        <div className="w-full pt-2 border-t border-amber-100">
+                          <label className="inline-flex items-center gap-2 cursor-pointer text-sm text-gray-800 select-none">
+                            <input
+                              type="checkbox"
+                              checked={presupuestoCubosOperativa.festivosIncluidos !== false}
+                              onChange={(e) =>
+                                setPresupuestoCubosOperativa((prev) => ({
+                                  ...prev,
+                                  festivosIncluidos: e.target.checked,
+                                }))
+                              }
+                              className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                            />
+                            <span className="font-medium">Festivos incluidos</span>
+                            <span className="text-gray-500 font-normal text-xs">
+                              (se refleja en «Horario aplicable» de la oferta económica)
+                            </span>
+                          </label>
+                        </div>
                       </div>
                     </details>
 

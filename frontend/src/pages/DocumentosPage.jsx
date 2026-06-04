@@ -4,6 +4,11 @@ import Back3DButton from '../components/Back3DButton.jsx';
 import { Button, LoadingSpinner, Notification } from '../components/ui';
 import ContractSigner from '../components/ContractSigner';
 import PRLDocumentSigner from '../components/PRLDocumentSigner';
+import PRLAutoevaluacionModal from '../components/PRLAutoevaluacionModal';
+import {
+  resolvePrlManualFooterLayout,
+  buildPrlManualFooterFields,
+} from '../constants/prlManualPdfFooterFields.js';
 import PDFViewerAndroid from '../components/PDFViewerAndroid';
 import { routes } from '../utils/routes.js';
 import { config } from '../config/env';
@@ -138,6 +143,8 @@ export default function DocumentosPage() {
   const [showPRLSigner, setShowPRLSigner] = useState(false);
   const [prlDocumentToSign, setPrlDocumentToSign] = useState(null);
   const [prlPdfUrl, setPrlPdfUrl] = useState(null);
+  const [showPRLAutoevaluacion, setShowPRLAutoevaluacion] = useState(false);
+  const [prlDocumentForTest, setPrlDocumentForTest] = useState(null);
 
   // Estado para diplomas (solo visualización)
   const [diplomas, setDiplomas] = useState([]);
@@ -831,6 +838,65 @@ export default function DocumentosPage() {
       setDocumentosPRLLoading(false);
     }
   }, [empleadoId]);
+
+  const handleOpenPRLSigner = useCallback(async (doc) => {
+    if (doc.es_manual_test && !doc.test_completado) {
+      setNotification({
+        type: 'info',
+        title: 'Autoevaluación pendiente',
+        message: 'Completa la autoevaluación antes de firmar el manual.',
+      });
+      return;
+    }
+
+    const fileName = doc.nombre_archivo_original || doc.nombre_archivo || '';
+    const isDocx = fileName.toLowerCase().endsWith('.docx') || fileName.toLowerCase().endsWith('.doc');
+    const isPdf = fileName.toLowerCase().endsWith('.pdf');
+
+    if (!isPdf && !isDocx) {
+      setNotification({
+        type: 'info',
+        title: 'Tipo de archivo no soportado',
+        message:
+          'Solo se pueden firmar documentos PDF y DOCX directamente. Para otros tipos de archivo, descárgalos, fírmalos manualmente y súbelos usando "Subir Firmado".',
+      });
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(routes.prlDescargarMiDocumento(doc.id), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error al descargar documento: ${response.status} ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      if (!blob || blob.size === 0) {
+        throw new Error('El documento descargado está vacío');
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      setPrlDocumentToSign({ ...doc, isDocx });
+      setPrlPdfUrl(url);
+      setShowPRLSigner(true);
+    } catch (error) {
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: `Error al cargar documento para firmar: ${error.message}`,
+      });
+    }
+  }, []);
+
+  const handleOpenPRLAutoevaluacion = useCallback((doc) => {
+    setPrlDocumentForTest(doc);
+    setShowPRLAutoevaluacion(true);
+  }, []);
 
   // Cargar documentos PRL cuando se accede a la página (para badge) y cuando se abre el tab
   useEffect(() => {
@@ -2782,10 +2848,9 @@ export default function DocumentosPage() {
                 {/* Text legal pentru livrarea nóminelor */}
                 <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4 rounded-lg">
                   <p className="text-sm text-blue-800">
-                    <strong>📋 Información Legal:</strong> Esta aplicación es el canal oficial 
-de entrega de {config.NOMINAS_LABEL.toLowerCase()}. Al acceder a tu cuenta, aceptas que {config.NOMINAS_LABEL.toLowerCase()}
-                    están disponibles y puestas a tu disposición. Todas las acciones de acceso 
-                    y descarga son registradas para cumplimiento legal.
+                    <strong>📋 Información Legal:</strong> Esta aplicación es el canal oficial de entrega de{' '}
+                    {config.NOMINAS_LABEL.toLowerCase()}. Al acceder a tu cuenta, aceptas que{' '}
+                    {config.NOMINAS_LABEL.toLowerCase()} están disponibles y puestas a tu disposición. Todas las acciones de acceso y descarga son registradas para cumplimiento legal.
                   </p>
                 </div>
                 
@@ -3828,13 +3893,20 @@ de entrega de {config.NOMINAS_LABEL.toLowerCase()}. Al acceder a tu cuenta, acep
                           {doc.fecha_firma && (
                             <p>✍️ Firmado: {formatDate(doc.fecha_firma)}</p>
                           )}
+                          {doc.es_manual_test && doc.estado === 'PENDIENTE' && !doc.test_completado && (
+                            <p>📝 Autoevaluación pendiente — completa el test para poder firmar</p>
+                          )}
                           {doc.es_manual_test && doc.test_completado && (
                             <p>✅ Test completado: {doc.test_puntuacion !== null ? `${doc.test_puntuacion} puntos` : 'Completado'}</p>
                           )}
                         </div>
                         {doc.requiere_firma && doc.estado === 'PENDIENTE' && (
                           <div className="mt-2 p-2 bg-yellow-100 border border-yellow-300 rounded text-xs text-yellow-800">
-                            ⚠️ Este documento requiere firma. Debes descargarlo, firmarlo y devolverlo.
+                            {doc.es_manual_test && !doc.test_completado ? (
+                              <>📝 Completa la autoevaluación y después firma el manual en la última página.</>
+                            ) : (
+                              <>⚠️ Este documento requiere firma. Debes descargarlo, firmarlo y devolverlo.</>
+                            )}
                           </div>
                         )}
                         {doc.es_renuncia_rm && (
@@ -3944,106 +4016,50 @@ de entrega de {config.NOMINAS_LABEL.toLowerCase()}. Al acceder a tu cuenta, acep
                         {/* Buton de semnare pentru documente care necesită semnătură cu status PENDIENTE */}
                         {doc.requiere_firma && doc.estado === 'PENDIENTE' && (
                           <>
+                            {doc.es_manual_test && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenPRLAutoevaluacion(doc)}
+                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors text-sm"
+                              >
+                                📝 Completar autoevaluación
+                              </button>
+                            )}
                             <button
-                              onClick={async () => {
-                                // Verifică tipul de fișier (PDF sau DOCX - ambele se pot semna acum!)
-                                const fileName = doc.nombre_archivo_original || doc.nombre_archivo || '';
-                                const isDocx = fileName.toLowerCase().endsWith('.docx') || fileName.toLowerCase().endsWith('.doc');
-                                const isPdf = fileName.toLowerCase().endsWith('.pdf');
-                                
-                                // Permite doar PDF și DOCX pentru semnare directă
-                                if (!isPdf && !isDocx) {
-                                  setNotification({
-                                    type: 'info',
-                                    title: 'Tipo de archivo no soportado',
-                                    message: 'Solo se pueden firmar documentos PDF y DOCX directamente. Para otros tipos de archivo, descárgalos, fírmalos manualmente y súbelos usando "Subir Firmado".',
-                                  });
-                                  return;
-                                }
-
-                                try {
-                                  console.log('🔍 [DocumentosPage] Starting document download for signing:', {
-                                    docId: doc.id,
-                                    fileName,
-                                    isDocx,
-                                    isPdf,
-                                    url: routes.prlDescargarMiDocumento(doc.id)
-                                  });
-                                  
-                                  const token = localStorage.getItem('auth_token');
-                                  const response = await fetch(routes.prlDescargarMiDocumento(doc.id), {
-                                    headers: {
-                                      Authorization: `Bearer ${token}`,
-                                    },
-                                  });
-
-                                  console.log('🔍 [DocumentosPage] Download response:', {
-                                    ok: response.ok,
-                                    status: response.status,
-                                    statusText: response.statusText,
-                                    contentType: response.headers.get('Content-Type'),
-                                    contentLength: response.headers.get('Content-Length')
-                                  });
-
-                                  if (!response.ok) {
-                                    const errorText = await response.text().catch(() => 'Unknown error');
-                                    console.error('❌ [DocumentosPage] Download failed:', {
-                                      status: response.status,
-                                      statusText: response.statusText,
-                                      errorText
-                                    });
-                                    throw new Error(`Error al descargar documento: ${response.status} ${response.statusText}`);
-                                  }
-
-                                  const blob = await response.blob();
-                                  console.log('🔍 [DocumentosPage] Blob created:', {
-                                    size: blob.size,
-                                    type: blob.type
-                                  });
-                                  
-                                  if (!blob || blob.size === 0) {
-                                    throw new Error('El documento descargado está vacío');
-                                  }
-                                  
-                                  const url = window.URL.createObjectURL(blob);
-                                  console.log('🔍 [DocumentosPage] Object URL created:', url);
-                                  
-                                  // Setează documentul și URL-ul pentru semnare
-                                  console.log('🔍 [DocumentosPage] Setting document to sign:', { 
-                                    fileName, 
-                                    isDocx, 
-                                    isPdf, 
-                                    docId: doc.id,
-                                    blobSize: blob.size,
-                                    blobType: blob.type,
-                                    objectUrl: url
-                                  });
-                                  
-                                  setPrlDocumentToSign({ ...doc, isDocx });
-                                  setPrlPdfUrl(url);
-                                  setShowPRLSigner(true);
-                                  
-                                  console.log('✅ [DocumentosPage] Document signer opened successfully');
-                                } catch (error) {
-                                  console.error('❌ [DocumentosPage] Error loading document for signing:', error);
-                                  setNotification({
-                                    type: 'error',
-                                    title: 'Error',
-                                    message: `Error al cargar documento para firmar: ${error.message}`,
-                                  });
-                                }
-                              }}
-                              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors text-sm"
+                              type="button"
+                              onClick={() => handleOpenPRLSigner(doc)}
+                              disabled={doc.es_manual_test && !doc.test_completado}
+                              className={`px-4 py-2 rounded-lg font-medium transition-colors text-sm ${
+                                doc.es_manual_test && !doc.test_completado
+                                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+                              }`}
                             >
                               ✍️ Firmar
                             </button>
-                            <label className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors text-sm text-center cursor-pointer">
+                            <label
+                              className={`px-4 py-2 rounded-lg font-medium transition-colors text-sm text-center ${
+                                doc.es_manual_test && !doc.test_completado
+                                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                  : 'bg-yellow-600 hover:bg-yellow-700 text-white cursor-pointer'
+                              }`}
+                            >
                               📤 Subir Firmado
                               <input
                                 type="file"
                                 accept=".pdf,.docx,.doc"
                                 className="hidden"
+                                disabled={doc.es_manual_test && !doc.test_completado}
                                 onChange={async (e) => {
+                                  if (doc.es_manual_test && !doc.test_completado) {
+                                    setNotification({
+                                      type: 'info',
+                                      title: 'Autoevaluación pendiente',
+                                      message: 'Completa la autoevaluación antes de subir el manual firmado.',
+                                    });
+                                    e.target.value = '';
+                                    return;
+                                  }
                                   const file = e.target.files?.[0];
                                   if (!file) return;
 
@@ -4779,6 +4795,25 @@ de entrega de {config.NOMINAS_LABEL.toLowerCase()}. Al acceder a tu cuenta, acep
         </div>
       )}
 
+      {/* Modal autoevaluación PRL (antes de firmar manual) */}
+      {showPRLAutoevaluacion && prlDocumentForTest && (
+        <PRLAutoevaluacionModal
+          documento={prlDocumentForTest}
+          onClose={() => {
+            setShowPRLAutoevaluacion(false);
+            setPrlDocumentForTest(null);
+          }}
+          onSuccess={async () => {
+            await fetchDocumentosPRL();
+            setNotification({
+              type: 'success',
+              title: 'Autoevaluación superada',
+              message: 'Ya puedes firmar el manual.',
+            });
+          }}
+        />
+      )}
+
       {/* Modal pentru semnare PRL */}
       {(() => {
         const shouldShow = showPRLSigner && prlDocumentToSign && prlPdfUrl;
@@ -4798,6 +4833,22 @@ de entrega de {config.NOMINAS_LABEL.toLowerCase()}. Al acceder a tu cuenta, acep
           documentoId={prlDocumentToSign.id}
           originalFileName={prlDocumentToSign.nombre_archivo_original}
           isDocx={prlDocumentToSign.isDocx || false}
+          footerLayout={
+            prlDocumentToSign.isDocx
+              ? null
+              : resolvePrlManualFooterLayout(
+                  prlDocumentToSign.nombre_archivo_original || prlDocumentToSign.template_nombre,
+                )
+          }
+          footerFields={
+            prlDocumentToSign.isDocx
+              ? null
+              : resolvePrlManualFooterLayout(
+                  prlDocumentToSign.nombre_archivo_original || prlDocumentToSign.template_nombre,
+                )
+                ? buildPrlManualFooterFields(authUser)
+                : null
+          }
           onClose={() => {
             setShowPRLSigner(false);
             setPrlDocumentToSign(null);

@@ -539,6 +539,7 @@ export const routes = {
   prlSubirDocumentoFirmado: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/subir-firmado`,
   prlAgregarFirmaADocx: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/agregar-firma-docx`,
   prlDescargarDocumentoFirmado: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/descargar-firmado`,
+  prlAutoevaluacion: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/autoevaluacion`,
   
   // Diplomas
   diplomasUploadZipPreview: `${BACKEND_BASE}/api/diplomas/upload-zip-preview`,

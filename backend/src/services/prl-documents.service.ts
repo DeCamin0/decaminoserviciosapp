@@ -12,6 +12,11 @@ import * as mammoth from 'mammoth';
 import { NotificationsService } from './notifications.service';
 import { EmailService } from './email.service';
 import { TelegramService } from './telegram.service';
+import {
+  getPublicAutoevaluacionQuestions,
+  resolvePrlAutoevaluacionLayout,
+  scoreAutoevaluacionAnswers,
+} from '../constants/prl-manual-autoevaluacion';
 
 type PrlDocumentType =
   | 'EVALUACION_RIESGOS'
@@ -2216,6 +2221,190 @@ export class PrlDocumentsService {
   }
 
   /**
+   * Autoevaluación — datos públicos (preguntas sin soluciones)
+   */
+  async obtenerAutoevaluacion(
+    documentoId: number,
+    empleadoId: string,
+  ): Promise<{
+    disponible: boolean;
+    test_completado: boolean;
+    test_puntuacion: number | null;
+    minScore: number;
+    total: number;
+    preguntas: ReturnType<typeof getPublicAutoevaluacionQuestions>;
+  }> {
+    const documento = await this.obtenerDocumentoEmpleadoParaAutoevaluacion(
+      documentoId,
+      empleadoId,
+    );
+    const layout = resolvePrlAutoevaluacionLayout(
+      documento.nombre_archivo_original || documento.template_nombre,
+    );
+    if (!layout) {
+      throw new BadRequestException(
+        'Este documento no tiene autoevaluación configurada en la aplicación',
+      );
+    }
+
+    return {
+      disponible: true,
+      test_completado: documento.test_completado === 1,
+      test_puntuacion: documento.test_puntuacion,
+      minScore: layout.minScore,
+      total: layout.questions.length,
+      preguntas: getPublicAutoevaluacionQuestions(layout),
+    };
+  }
+
+  /**
+   * Valida respuestas de autoevaluación y marca test_completado si supera el mínimo
+   */
+  async completarAutoevaluacion(
+    documentoId: number,
+    empleadoId: string,
+    respuestas: Record<string, string>,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<{
+    aprobado: boolean;
+    puntuacion: number;
+    total: number;
+    minScore: number;
+    test_completado: boolean;
+  }> {
+    const documento = await this.obtenerDocumentoEmpleadoParaAutoevaluacion(
+      documentoId,
+      empleadoId,
+    );
+
+    if (documento.estado !== 'PENDIENTE') {
+      throw new BadRequestException(
+        `El documento debe estar PENDIENTE. Estado actual: ${documento.estado}`,
+      );
+    }
+
+    const layout = resolvePrlAutoevaluacionLayout(
+      documento.nombre_archivo_original || documento.template_nombre,
+    );
+    if (!layout) {
+      throw new BadRequestException(
+        'Este documento no tiene autoevaluación configurada en la aplicación',
+      );
+    }
+
+    if (documento.test_completado === 1) {
+      return {
+        aprobado: true,
+        puntuacion: documento.test_puntuacion ?? layout.minScore,
+        total: layout.questions.length,
+        minScore: layout.minScore,
+        test_completado: true,
+      };
+    }
+
+    if (!respuestas || typeof respuestas !== 'object') {
+      throw new BadRequestException('Se requieren las respuestas del test');
+    }
+
+    const { puntuacion, total } = scoreAutoevaluacionAnswers(layout, respuestas);
+    const aprobado = puntuacion >= layout.minScore;
+
+    if (aprobado) {
+      await this.prisma.$executeRawUnsafe(
+        `
+        UPDATE prl_employee_documents
+        SET test_completado = 1,
+            test_puntuacion = ${puntuacion},
+            test_fecha_completado = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ${documentoId}
+          AND empleado_id = ${this.escapeSql(empleadoId)}
+        `,
+      );
+
+      await this.crearAuditLog(
+        documentoId,
+        empleadoId,
+        'TEST_COMPLETADO',
+        ipAddress,
+        userAgent,
+        JSON.stringify({ puntuacion, total, minScore: layout.minScore }),
+      );
+
+      this.logger.log(
+        `✅ Autoevaluación superada (${puntuacion}/${total}) — documento ${documentoId}, empleado ${empleadoId}`,
+      );
+    }
+
+    return {
+      aprobado,
+      puntuacion,
+      total,
+      minScore: layout.minScore,
+      test_completado: aprobado,
+    };
+  }
+
+  private async obtenerDocumentoEmpleadoParaAutoevaluacion(
+    documentoId: number,
+    empleadoId: string,
+  ): Promise<{
+    id: number;
+    empleado_id: string;
+    estado: string;
+    nombre_archivo_original: string;
+    template_nombre: string;
+    es_manual_test: number;
+    test_completado: number;
+    test_puntuacion: number | null;
+  }> {
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        id: number;
+        empleado_id: string;
+        estado: string;
+        nombre_archivo_original: string;
+        template_nombre: string;
+        es_manual_test: number;
+        test_completado: number;
+        test_puntuacion: number | null;
+      }>
+    >(
+      `
+      SELECT
+        ed.id,
+        ed.empleado_id,
+        ed.estado,
+        ed.nombre_archivo_original,
+        t.nombre AS template_nombre,
+        t.es_manual_test,
+        ed.test_completado,
+        ed.test_puntuacion
+      FROM prl_employee_documents ed
+      INNER JOIN prl_document_templates t ON ed.template_id = t.id
+      WHERE ed.id = ${documentoId}
+        AND ed.empleado_id = ${this.escapeSql(empleadoId)}
+      LIMIT 1
+      `,
+    );
+
+    if (!rows?.length) {
+      throw new NotFoundException(
+        `Documento ${documentoId} no encontrado o no tienes acceso`,
+      );
+    }
+
+    if (rows[0].es_manual_test !== 1) {
+      throw new BadRequestException(
+        'Este documento no requiere autoevaluación',
+      );
+    }
+
+    return rows[0];
+  }
+
+  /**
    * Încarcă documentul semnat pentru Renuncia RM
    */
   async subirDocumentoFirmado(
@@ -2234,6 +2423,8 @@ export class PrlDocumentsService {
           tipo_documento: string;
           estado: string;
           template_nombre: string | null;
+          es_manual_test: number;
+          test_completado: number;
         }>
       >(
         `
@@ -2242,7 +2433,9 @@ export class PrlDocumentsService {
           ed.empleado_id, 
           ed.tipo_documento, 
           ed.estado,
-          t.nombre as template_nombre
+          t.nombre as template_nombre,
+          t.es_manual_test,
+          ed.test_completado
         FROM prl_employee_documents ed
         LEFT JOIN prl_document_templates t ON ed.template_id = t.id
         WHERE ed.id = ${documentoId}
@@ -2261,6 +2454,15 @@ export class PrlDocumentsService {
       if (documento[0].estado !== 'PENDIENTE') {
         throw new BadRequestException(
           `El documento debe tener estado PENDIENTE para poder subir la firma. Estado actual: ${documento[0].estado}`,
+        );
+      }
+
+      if (
+        documento[0].es_manual_test === 1 &&
+        documento[0].test_completado !== 1
+      ) {
+        throw new BadRequestException(
+          'Debes completar la autoevaluación antes de firmar el manual.',
         );
       }
 

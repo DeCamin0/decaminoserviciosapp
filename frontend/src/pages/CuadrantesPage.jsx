@@ -8,6 +8,7 @@ import { routes } from '../utils/routes.js';
 import ScheduleEditor from '../components/ScheduleEditor';
 import Back3DButton from '../components/Back3DButton';
 import { toMinutes } from '../types/schedule';
+import { calculateCuadranteHours } from '../utils/cuadrante-hours-helper';
 import { Loader2, RotateCcw, Pencil, Trash2, Plus, Copy } from 'lucide-react';
 
 const FESTIVOS_ENDPOINT = routes.getFestivos;
@@ -5826,49 +5827,12 @@ export default function CuadrantesPage() {
                                       </div>
                                       <div className="text-green-600 text-xs">
                                         {(() => {
-                                          // Calcular total de ore cu precizie
                                           let totalHoras = 0;
-                                          zile.forEach(z => {
+                                          zile.forEach((z) => {
                                             if (z && z !== 'LIBRE' && z.trim() !== '' && !isCuadranteMarcaMulticentro(z)) {
-                                              // Primero intentar extraer orele din formato de tiempo directo
-                                              const timeMatch = z.match(/(\d{1,2}:\d{2})-(\d{1,2}:\d{2})/);
-                                              if (timeMatch) {
-                                                const startTime = timeMatch[1].split(':');
-                                                const endTime = timeMatch[2].split(':');
-                                                const startMinutes = parseInt(startTime[0]) * 60 + parseInt(startTime[1]);
-                                                let endMinutes = parseInt(endTime[0]) * 60 + parseInt(endTime[1]);
-                                                
-                                                // Manejar cambio de día (turno nocturno)
-                                                if (endMinutes < startMinutes) {
-                                                  endMinutes += 24 * 60; // Agregar 24 horas
-                                                }
-                                                
-                                                const horas = (endMinutes - startMinutes) / 60;
-                                                totalHoras += horas;
-                                                console.log(`📊 Calculando ${z}: ${startTime[0]}:${startTime[1]} -> ${endTime[0]}:${endTime[1]} = ${horas}h`);
-                                              } else {
-                                                // Fallback: usar valores por defecto pentru turnos conocidos
-                                                if (z.includes('T1')) {
-                                                  // T1 típico: 12 ore (07:30-19:30)
-                                                  totalHoras += 12;
-                                                  console.log(`📊 ${z}: T1 default = 12h`);
-                                                } else if (z.includes('T2')) {
-                                                  // T2 típico: 8 ore (14:30-22:30)
-                                                  totalHoras += 8;
-                                                  console.log(`📊 ${z}: T2 default = 8h`);
-                                                } else if (z.includes('T3')) {
-                                                  // T3 típico: 8 ore (22:30-06:30)
-                                                  totalHoras += 8;
-                                                  console.log(`📊 ${z}: T3 default = 8h`);
-                                                } else {
-                                                  // Otros formatos: asumir 8 ore
-                                                  totalHoras += 8;
-                                                  console.log(`📊 ${z}: Fallback default = 8h`);
-                                                }
-                                              }
+                                              totalHoras += calculateCuadranteHours(z);
                                             }
                                           });
-                                          console.log(`📊 Total calculado para ${cuadrante.NOMBRE}: ${totalHoras}h`);
                                           return `${totalHoras.toFixed(1)}h`;
                                         })()}
                                       </div>

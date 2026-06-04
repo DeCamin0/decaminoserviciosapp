@@ -28,6 +28,8 @@ export type PresupuestoCubosOperativaPayload = {
   /** LV | SD | LD | PERS — mismo criterio que horario piscina (solo formulario / payload). */
   horarioDiasTipo?: string;
   horarioDiasSemana?: Record<string, boolean>;
+  /** true = festivos incluidos en el horario aplicable; false = explícitamente sin festivos. */
+  festivosIncluidos?: boolean;
 };
 
 const CUBOS_HORARIO_DIA_ORDER = [
@@ -61,21 +63,30 @@ function normalizeHorarioDiasTipoCubosPayload(v: unknown): string {
   return 'LV';
 }
 
+function sufijoFestivosHorarioCubos(
+  raw: PresupuestoCubosOperativaPayload | null | undefined,
+): string {
+  if (raw?.festivosIncluidos === false) return ', sin festivos';
+  if (raw?.festivosIncluidos === true) return ', festivos incluidos';
+  return '';
+}
+
 /** Misma leyenda que el desplegable del frontend (oferta económica / PDF si se reconstruye la oferta). */
 export function textoHorarioAplicableCubosOferta(
   raw: PresupuestoCubosOperativaPayload | null | undefined,
 ): string {
   const tipo = normalizeHorarioDiasTipoCubosPayload(raw?.horarioDiasTipo);
-  if (tipo === 'LV') return 'Lunes a viernes (L-V)';
-  if (tipo === 'SD') return 'Sábado a domingo (S-D)';
-  if (tipo === 'LD') return 'Lunes a domingo (L-D)';
+  const suf = sufijoFestivosHorarioCubos(raw);
+  if (tipo === 'LV') return `Lunes a viernes (L-V)${suf}`;
+  if (tipo === 'SD') return `Sábado a domingo (S-D)${suf}`;
+  if (tipo === 'LD') return `Lunes a domingo (L-D)${suf}`;
   const ds = raw?.horarioDiasSemana;
   const labels: string[] = [];
   for (const k of CUBOS_HORARIO_DIA_ORDER) {
     if (ds && ds[k]) labels.push(CUBOS_HORARIO_DIA_LABEL[k]);
   }
-  if (labels.length === 0) return 'Horario personalizado';
-  return `Personalizada (${labels.join(', ')})`;
+  if (labels.length === 0) return `Horario personalizado${suf}`;
+  return `Personalizada (${labels.join(', ')})${suf}`;
 }
 
 export function filterCubosOperativaLines(
