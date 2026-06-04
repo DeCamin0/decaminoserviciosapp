@@ -8,6 +8,8 @@ import Modal from './ui/Modal';
 import {
   drawManualFooterPreviewOnCanvas,
   manualSignaturePositionFromLayout,
+  resolveManualFooterPageNumber,
+  resolveNombreMaxWidthRatio,
 } from '../constants/prlManualPdfFooterFields.js';
 
 // Configurare worker PDF.js
@@ -226,7 +228,7 @@ const dialogStyles = `
 
 async function drawManualFooterOnPage(page, pdfDoc, footerFields, layout) {
   if (!page || !footerFields || !layout?.fields) return;
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const pw = page.getWidth();
   const ph = page.getHeight();
   const rows = [
@@ -247,8 +249,12 @@ async function drawManualFooterOnPage(page, pdfDoc, footerFields, layout) {
       font,
       color: rgb(0.12, 0.12, 0.12),
     };
-    if (spec.maxWidthRatio != null) {
-      drawOpts.maxWidth = spec.maxWidthRatio * pw;
+    const maxWidthRatio =
+      key === 'nombre'
+        ? resolveNombreMaxWidthRatio(layout)
+        : spec.maxWidthRatio ?? null;
+    if (maxWidthRatio != null) {
+      drawOpts.maxWidth = maxWidthRatio * pw;
     }
     page.drawText(value, drawOpts);
   }
@@ -287,6 +293,7 @@ export default function PRLDocumentSigner({
   const [signatureDataUrl, setSignatureDataUrl] = useState(null); // Semnătura din SignaturePad
   const [signaturePosition, setSignaturePosition] = useState({ x: 0, y: 0, width: 150, height: 75 });
   const [applyToAllPages, setApplyToAllPages] = useState(!footerLayout); // Manual PRL: solo última página
+  const [manualFooterPage, setManualFooterPage] = useState(null);
   const [isPlacingSignature, setIsPlacingSignature] = useState(false);
   const [docxHtml, setDocxHtml] = useState(null); // HTML convertit din DOCX pentru preview
   const [docxHtmlWithSignature, setDocxHtmlWithSignature] = useState(null); // HTML cu semnătura adăugată în preview
@@ -294,6 +301,8 @@ export default function PRLDocumentSigner({
   const [signatureAddedToPreview, setSignatureAddedToPreview] = useState(false); // Flag pentru a ști dacă semnătura a fost adăugată în preview
 
   const canvasRef = useRef(null);
+  const renderTaskRef = useRef(null);
+  const renderTimeoutRef = useRef(null);
 
   // Desenează semnătura pe canvas-ul PDF
   const drawSignature = useCallback((context, sig) => {
@@ -427,9 +436,23 @@ export default function PRLDocumentSigner({
         setLoading(true);
         setError(null);
         
-        const loadingTask = pdfjsLib.getDocument(pdfUrl);
+        const loadingTask = pdfjsLib.getDocument({
+          url: pdfUrl,
+          verbosity: 0,
+          disableFontFace: true,
+        });
         const pdf = await loadingTask.promise;
-        
+
+        let formPage = pdf.numPages;
+        if (footerLayout) {
+          formPage = await resolveManualFooterPageNumber(pdf);
+          setManualFooterPage(formPage);
+          setCurrentPage(formPage);
+          setApplyToAllPages(false);
+        } else {
+          setManualFooterPage(null);
+        }
+
         setPdfDocument(pdf);
         setTotalPages(pdf.numPages);
         setLoading(false);
@@ -443,95 +466,145 @@ export default function PRLDocumentSigner({
     if (pdfUrl) {
       loadPDF();
     }
-  }, [pdfUrl, isDocx]);
+  }, [pdfUrl, isDocx, footerLayout]);
 
-  // Manual PRL: abrir directamente en la última página (datos + firma)
+  const footerFormPage = manualFooterPage ?? totalPages;
+
+  const applySignatureAtLayoutPosition = useCallback(
+    (dataUrl) => {
+      const canvas = canvasRef.current;
+      if (!canvas?.width) return false;
+
+      const layoutPos =
+        footerLayout?.signature &&
+        manualSignaturePositionFromLayout(canvas, footerLayout.signature);
+      const sigWidth = layoutPos?.width ?? 150;
+      const sigHeight = layoutPos?.height ?? 75;
+      const posX = layoutPos?.x ?? canvas.width * 0.75 - sigWidth / 2;
+      const posY = layoutPos?.y ?? canvas.height * 0.92 - sigHeight / 2;
+
+      setSignature({ dataUrl });
+      setSignaturePosition({
+        x: posX,
+        y: posY,
+        width: sigWidth,
+        height: sigHeight,
+      });
+      setIsPlacingSignature(false);
+      return true;
+    },
+    [footerLayout],
+  );
+
+  // Manual PRL: colocar firma automáticamente en la línea del formulario
   useEffect(() => {
-    if (!hasManualFooter || !totalPages) return;
-    setCurrentPage(totalPages);
-    setApplyToAllPages(false);
-  }, [hasManualFooter, totalPages]);
+    if (!hasManualFooter || !signatureDataUrl || isDocx) return;
+    if (currentPage !== footerFormPage) return;
+    applySignatureAtLayoutPosition(signatureDataUrl);
+  }, [
+    hasManualFooter,
+    signatureDataUrl,
+    currentPage,
+    footerFormPage,
+    isDocx,
+    applySignatureAtLayoutPosition,
+  ]);
 
   // Randează pagina curentă (doar pentru PDF)
   useEffect(() => {
-    if (isDocx || !pdfDocument) return;
-    
-    let renderTask = null;
-    let isCancelled = false;
-    
-    const renderPage = async () => {
-      if (!pdfDocument || !canvasRef.current) return;
+    if (isDocx || !pdfDocument || !canvasRef.current) return;
+
+    if (renderTimeoutRef.current) {
+      clearTimeout(renderTimeoutRef.current);
+    }
+
+    renderTimeoutRef.current = setTimeout(async () => {
+      const canvas = canvasRef.current;
+      if (!canvas || !pdfDocument) return;
 
       try {
-        // Anulează operația anterioară dacă există
-        if (renderTask) {
-          renderTask.cancel();
-          renderTask = null;
+        if (renderTaskRef.current && typeof renderTaskRef.current.cancel === 'function') {
+          try {
+            renderTaskRef.current.cancel();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          } catch {
+            // ignore cancel errors
+          }
         }
 
-        // Așteaptă puțin pentru a se asigura că operația anterioară este anulată
-        await new Promise(resolve => setTimeout(resolve, 50));
-
-        if (isCancelled) return;
-
         const page = await pdfDocument.getPage(currentPage);
-        const canvas = canvasRef.current;
-        
-        if (!canvas || isCancelled) return;
-        
         const context = canvas.getContext('2d');
+        if (!context) return;
 
         const viewport = page.getViewport({ scale });
+        context.clearRect(0, 0, canvas.width, canvas.height);
         canvas.height = viewport.height;
         canvas.width = viewport.width;
 
-        if (isCancelled) return;
-
-        const renderContext = {
+        const task = page.render({
           canvasContext: context,
-          viewport: viewport
-        };
+          viewport,
+        });
+        renderTaskRef.current = task;
+        await task.promise;
 
-        renderTask = page.render(renderContext);
-        await renderTask.promise;
-        
-        if (isCancelled) return;
-        
-        if (hasManualFooter && currentPage === totalPages) {
+        if (renderTaskRef.current === task) {
+          renderTaskRef.current = null;
+        }
+
+        if (hasManualFooter && currentPage === footerFormPage) {
           drawManualFooterPreviewOnCanvas(context, canvas, footerFields, footerLayout);
         }
 
-        // Desenează semnătura dacă există
-        if (signature) {
-          drawSignature(context, {
-            ...signature,
-            x: signaturePosition.x,
-            y: signaturePosition.y,
-            width: signaturePosition.width,
-            height: signaturePosition.height
-          });
+        if (signature?.dataUrl) {
+          context.save();
+          if (typeof context.resetTransform === 'function') {
+            context.resetTransform();
+          } else {
+            context.setTransform(1, 0, 0, 1, 0, 0);
+          }
+          const sigPos =
+            hasManualFooter && footerLayout?.signature
+              ? manualSignaturePositionFromLayout(canvas, footerLayout.signature)
+              : {
+                  x: signaturePosition.x,
+                  y: signaturePosition.y,
+                  width: signaturePosition.width,
+                  height: signaturePosition.height,
+                };
+          if (sigPos) {
+            drawSignature(context, {
+              dataUrl: signature.dataUrl,
+              ...sigPos,
+            });
+          }
+          context.restore();
         }
       } catch (err) {
-        // Ignoră erorile de anulare - sunt normale când se schimbă pagina rapid
-        if (err.name !== 'RenderingCancelled' && 
-            err.name !== 'RenderingCancelledException' &&
-            !err.message?.includes('cancelled')) {
+        if (
+          err.name !== 'RenderingCancelled' &&
+          err.name !== 'RenderingCancelledException' &&
+          !err.message?.includes('cancelled')
+        ) {
           console.error('Error rendering page:', err);
+          setError(`No se pudo mostrar la página ${currentPage}`);
         }
       }
-    };
-
-    renderPage();
+    }, 120);
 
     return () => {
-      isCancelled = true;
-      if (renderTask) {
+      if (renderTimeoutRef.current) {
+        clearTimeout(renderTimeoutRef.current);
+        renderTimeoutRef.current = null;
+      }
+      if (renderTaskRef.current && typeof renderTaskRef.current.cancel === 'function') {
         try {
-          renderTask.cancel();
+          renderTaskRef.current.cancel();
         } catch {
-          // Ignoră erorile la anulare
+          // ignore
+        } finally {
+          renderTaskRef.current = null;
         }
-        renderTask = null;
       }
     };
   }, [
@@ -543,7 +616,7 @@ export default function PRLDocumentSigner({
     drawSignature,
     isDocx,
     hasManualFooter,
-    totalPages,
+    footerFormPage,
     footerFields,
     footerLayout,
   ]);
@@ -595,43 +668,43 @@ export default function PRLDocumentSigner({
       return;
     }
 
+    // Pentru PDF manual PRL: posición fija en el formulario (sin clic en el PDF)
+    if (hasManualFooter) {
+      applySignatureAtLayoutPosition(signatureDataUrl);
+      return;
+    }
+
     // Pentru PDF: logica existentă
     const canvas = canvasRef.current;
-    
+
     if (canvas) {
       const layoutPos =
-        footerLayout?.signature && manualSignaturePositionFromLayout(canvas, footerLayout.signature);
+        footerLayout?.signature &&
+        manualSignaturePositionFromLayout(canvas, footerLayout.signature);
       const sigWidth = layoutPos?.width ?? 150;
       const sigHeight = layoutPos?.height ?? 75;
       const posX = layoutPos?.x ?? canvas.width * 0.75 - sigWidth / 2;
       const posY = layoutPos?.y ?? canvas.height * 0.92 - sigHeight / 2;
 
       setSignature({
-        dataUrl: signatureDataUrl
+        dataUrl: signatureDataUrl,
       });
       setSignaturePosition({
         x: posX,
         y: posY,
         width: sigWidth,
-        height: sigHeight
+        height: sigHeight,
       });
-      
-      // Pe mobile, plasează automat semnătura la poziția default (fără să aștepte click)
+
       const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-      if (isMobile) {
-        // Pe mobile, nu activăm modul de poziționare - semnătura apare direct la poziția default
-        // useEffect-ul va re-rendera canvas-ul automat când se schimbă signature/signaturePosition
-        setIsPlacingSignature(false);
-      } else {
-        setIsPlacingSignature(true); // Pe desktop, activează modul de poziționare
-      }
+      setIsPlacingSignature(!isMobile);
     } else {
       setSignature({
-        dataUrl: signatureDataUrl
+        dataUrl: signatureDataUrl,
       });
       setIsPlacingSignature(false);
     }
-  }, [signatureDataUrl, isDocx, docxHtml, footerLayout]);
+  }, [signatureDataUrl, isDocx, docxHtml, footerLayout, hasManualFooter, applySignatureAtLayoutPosition]);
 
   // Handler pentru ștergerea semnăturii
   const handleClear = useCallback(() => {
@@ -790,7 +863,8 @@ export default function PRLDocumentSigner({
         throw new Error('Canvas not found');
       }
 
-      const signPageIndex = hasManualFooter ? pages.length - 1 : currentPage - 1;
+      const formPageNum = manualFooterPage ?? totalPages;
+      const signPageIndex = hasManualFooter ? formPageNum - 1 : currentPage - 1;
       const signPage = pages[signPageIndex];
 
       if (hasManualFooter) {
@@ -811,12 +885,25 @@ export default function PRLDocumentSigner({
         const page = pages[pageIdx];
         const pageW = page.getWidth();
         const pageH = page.getHeight();
-        page.drawImage(image, {
-          x: xN * pageW,
-          y: ((canvas.height - signaturePosition.y - signaturePosition.height) / canvas.height) * pageH,
-          width: wN * pageW,
-          height: hN * pageH,
-        });
+
+        if (hasManualFooter && footerLayout?.signature) {
+          const sig = footerLayout.signature;
+          const sigW = (sig.widthRatio ?? 0.3) * pageW;
+          const sigH = (sig.heightRatio ?? 0.07) * pageH;
+          page.drawImage(image, {
+            x: (sig.xRatio ?? 0.5) * pageW,
+            y: (sig.yBottomRatio ?? 0.14) * pageH,
+            width: sigW,
+            height: sigH,
+          });
+        } else {
+          page.drawImage(image, {
+            x: xN * pageW,
+            y: ((canvas.height - signaturePosition.y - signaturePosition.height) / canvas.height) * pageH,
+            width: wN * pageW,
+            height: hN * pageH,
+          });
+        }
       }
 
       // Salvează PDF-ul modificat
@@ -969,8 +1056,8 @@ export default function PRLDocumentSigner({
             <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-900">
               <p className="font-semibold">Última página — datos del trabajador</p>
               <p className="mt-1 text-emerald-800">
-                Al guardar se completarán automáticamente: Empresa, Fecha, D.N.I. y Nombre. Coloca la firma en
-                «Nombre y firma del trabajador». En la vista previa verás el texto en azul sobre cada línea.
+                Al guardar se completarán automáticamente: Empresa, Fecha, D.N.I. y Nombre. Dibuja la
+                firma abajo: se colocará sola en «Nombre y firma del trabajador».
               </p>
               <ul className="mt-2 text-xs text-emerald-700 space-y-0.5">
                 <li><strong>Empresa:</strong> {footerFields.empresa || '—'}</li>
@@ -1057,13 +1144,20 @@ export default function PRLDocumentSigner({
               height={typeof window !== 'undefined' && window.innerWidth < 768 ? 150 : 200}
             />
             <div className="flex gap-2 mt-2 signature-buttons-container">
-              <button
-                onClick={handleAddSignature}
-                disabled={!signatureDataUrl}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Añadir Firma a la Página
-              </button>
+              {!hasManualFooter && (
+                <button
+                  onClick={handleAddSignature}
+                  disabled={!signatureDataUrl}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Añadir Firma a la Página
+                </button>
+              )}
+              {hasManualFooter && signature && (
+                <p className="text-sm text-green-700 self-center font-medium">
+                  ✓ Firma colocada en el formulario
+                </p>
+              )}
               <button
                 onClick={handleClear}
                 className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
@@ -1095,7 +1189,7 @@ export default function PRLDocumentSigner({
           )}
 
           {/* Instrucțiuni */}
-          {isPlacingSignature && (
+          {isPlacingSignature && !hasManualFooter && (
             <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
               <p className="text-sm text-yellow-800">
                 💡 Haz clic en el PDF para colocar la firma

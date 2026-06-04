@@ -5,6 +5,7 @@ import { Button, LoadingSpinner, Notification } from '../components/ui';
 import ContractSigner from '../components/ContractSigner';
 import PRLDocumentSigner from '../components/PRLDocumentSigner';
 import PRLAutoevaluacionModal from '../components/PRLAutoevaluacionModal';
+import PRLAutoevaluacionResultModal from '../components/PRLAutoevaluacionResultModal';
 import {
   resolvePrlManualFooterLayout,
   buildPrlManualFooterFields,
@@ -145,6 +146,8 @@ export default function DocumentosPage() {
   const [prlPdfUrl, setPrlPdfUrl] = useState(null);
   const [showPRLAutoevaluacion, setShowPRLAutoevaluacion] = useState(false);
   const [prlDocumentForTest, setPrlDocumentForTest] = useState(null);
+  const [showPRLAutoevaluacionResult, setShowPRLAutoevaluacionResult] = useState(false);
+  const [prlDocumentForResult, setPrlDocumentForResult] = useState(null);
 
   // Estado para diplomas (solo visualización)
   const [diplomas, setDiplomas] = useState([]);
@@ -3897,7 +3900,24 @@ export default function DocumentosPage() {
                             <p>📝 Autoevaluación pendiente — completa el test para poder firmar</p>
                           )}
                           {doc.es_manual_test && doc.test_completado && (
-                            <p>✅ Test completado: {doc.test_puntuacion !== null ? `${doc.test_puntuacion} puntos` : 'Completado'}</p>
+                            <div className="space-y-1">
+                              <p>
+                                ✅ Test completado:{' '}
+                                {doc.test_puntuacion !== null
+                                  ? `${doc.test_puntuacion} puntos`
+                                  : 'Completado'}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPrlDocumentForResult(doc);
+                                  setShowPRLAutoevaluacionResult(true);
+                                }}
+                                className="text-blue-700 hover:underline font-medium"
+                              >
+                                Ver mis respuestas del test
+                              </button>
+                            </div>
                           )}
                         </div>
                         {doc.requiere_firma && doc.estado === 'PENDIENTE' && (
@@ -4810,6 +4830,17 @@ export default function DocumentosPage() {
               title: 'Autoevaluación superada',
               message: 'Ya puedes firmar el manual.',
             });
+          }}
+        />
+      )}
+
+      {showPRLAutoevaluacionResult && prlDocumentForResult && (
+        <PRLAutoevaluacionResultModal
+          documentoId={prlDocumentForResult.id}
+          admin={false}
+          onClose={() => {
+            setShowPRLAutoevaluacionResult(false);
+            setPrlDocumentForResult(null);
           }}
         />
       )}

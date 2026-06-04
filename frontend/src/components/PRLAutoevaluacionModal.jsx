@@ -47,7 +47,7 @@ export default function PRLAutoevaluacionModal({ documento, onClose, onSuccess }
   };
 
   const handleSubmit = async () => {
-    const faltan = preguntas.filter((q) => !respuestas[String(q.id)]);
+    const faltan = preguntas.filter((q) => !String(respuestas[String(q.id)] || '').trim());
     if (faltan.length > 0) {
       setError(`Responde todas las preguntas (${faltan.length} pendiente(s)).`);
       return;
@@ -162,29 +162,40 @@ export default function PRLAutoevaluacionModal({ documento, onClose, onSuccess }
                 {q.id}. {q.text}
               </legend>
               <div className="mt-3 space-y-2">
-                {Object.entries(q.options || {}).map(([key, label]) => (
-                  <label
-                    key={key}
-                    className={`flex items-start gap-3 p-2 rounded-lg cursor-pointer border transition-colors ${
-                      respuestas[String(q.id)] === key
-                        ? 'border-blue-400 bg-blue-50'
-                        : 'border-transparent hover:bg-gray-50'
-                    } ${formLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name={`pregunta-${q.id}`}
-                      value={key}
-                      checked={respuestas[String(q.id)] === key}
-                      onChange={() => handleSelect(q.id, key)}
-                      className="mt-1"
-                      disabled={formLocked}
-                    />
-                    <span className="text-sm text-gray-800">
-                      <strong className="uppercase">{key})</strong> {label}
-                    </span>
-                  </label>
-                ))}
+                {q.type === 'text' ? (
+                  <input
+                    type="text"
+                    value={respuestas[String(q.id)] || ''}
+                    onChange={(e) => handleSelect(q.id, e.target.value)}
+                    placeholder={q.placeholder || 'Escribe tu respuesta'}
+                    disabled={formLocked}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100"
+                  />
+                ) : (
+                  Object.entries(q.options || {}).map(([key, label]) => (
+                    <label
+                      key={key}
+                      className={`flex items-start gap-3 p-2 rounded-lg cursor-pointer border transition-colors ${
+                        respuestas[String(q.id)] === key
+                          ? 'border-blue-400 bg-blue-50'
+                          : 'border-transparent hover:bg-gray-50'
+                      } ${formLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    >
+                      <input
+                        type="radio"
+                        name={`pregunta-${q.id}`}
+                        value={key}
+                        checked={respuestas[String(q.id)] === key}
+                        onChange={() => handleSelect(q.id, key)}
+                        className="mt-1"
+                        disabled={formLocked}
+                      />
+                      <span className="text-sm text-gray-800">
+                        <strong className="uppercase">{key})</strong> {label}
+                      </span>
+                    </label>
+                  ))
+                )}
               </div>
             </fieldset>
           ))}
@@ -204,7 +215,8 @@ export default function PRLAutoevaluacionModal({ documento, onClose, onSuccess }
               disabled={
                 submitting ||
                 loading ||
-                !(preguntas.length > 0 && preguntas.every((q) => respuestas[String(q.id)]))
+                !(preguntas.length > 0 &&
+                  preguntas.every((q) => String(respuestas[String(q.id)] || '').trim()))
               }
               className="flex-1 px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold"
             >

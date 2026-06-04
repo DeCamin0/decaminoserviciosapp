@@ -13,6 +13,7 @@ import { NotificationsService } from './notifications.service';
 import { EmailService } from './email.service';
 import { TelegramService } from './telegram.service';
 import {
+  buildAutoevaluacionReview,
   getPublicAutoevaluacionQuestions,
   resolvePrlAutoevaluacionLayout,
   scoreAutoevaluacionAnswers,
@@ -1337,33 +1338,36 @@ export class PrlDocumentsService {
   }
 
   /**
-   * Trimite documentele PRL la toți angajații activi dintr-un grup
-   * Creează PrlEmployeeDocument pentru fiecare angajat + template
-   * Trimite email/notificare la fiecare angajat
+   * Angajați activi dintr-un GRUPO (pentru preview la trimitere PRL)
    */
-  async enviarDocumentosAGrupo(
-    grupoNombre: string,
-    usuarioId: string,
-  ): Promise<{
-    success: boolean;
-    empleados_procesados: number;
-    documentos_creados: number;
-    documentos_existentes: number;
-    emails_enviados: number;
-    notificaciones_enviadas: number;
-  }> {
-    try {
-      // 1. Obține toți angajații activi din grup (cu DNI și GRUPO)
-      const empleados = await this.prisma.$queryRawUnsafe<
-        Array<{
-          CODIGO: string;
-          'NOMBRE / APELLIDOS': string;
-          'CORREO ELECTRONICO': string;
-          'D.N.I. / NIE': string;
-          GRUPO: string;
-        }>
-      >(
-        `
+  async listarEmpleadosActivosGrupo(grupoNombre: string): Promise<
+    Array<{
+      codigo: string;
+      nombre: string;
+      email: string | null;
+      dni: string;
+    }>
+  > {
+    const empleados = await this.obtenerEmpleadosActivosGrupo(grupoNombre);
+    return empleados.map((e) => ({
+      codigo: e.CODIGO,
+      nombre: e['NOMBRE / APELLIDOS'] || 'Empleado',
+      email: e['CORREO ELECTRONICO'] || null,
+      dni: e['D.N.I. / NIE'] || '',
+    }));
+  }
+
+  private async obtenerEmpleadosActivosGrupo(grupoNombre: string): Promise<
+    Array<{
+      CODIGO: string;
+      'NOMBRE / APELLIDOS': string;
+      'CORREO ELECTRONICO': string;
+      'D.N.I. / NIE': string;
+      GRUPO: string;
+    }>
+  > {
+    return this.prisma.$queryRawUnsafe(
+      `
         SELECT 
           CODIGO,
           \`NOMBRE / APELLIDOS\`,
@@ -1375,7 +1379,39 @@ export class PrlDocumentsService {
           AND \`ESTADO\` = 'ACTIVO'
         ORDER BY \`NOMBRE / APELLIDOS\`
         `,
-      );
+    );
+  }
+
+  /**
+   * Trimite documentele PRL la angajații activi dintr-un grup (toți sau lista selectată)
+   * Creează PrlEmployeeDocument pentru fiecare angajat + template
+   * Trimite email/notificare la fiecare angajat
+   */
+  async enviarDocumentosAGrupo(
+    grupoNombre: string,
+    usuarioId: string,
+    empleadoIds?: string[],
+  ): Promise<{
+    success: boolean;
+    empleados_procesados: number;
+    documentos_creados: number;
+    documentos_existentes: number;
+    emails_enviados: number;
+    notificaciones_enviadas: number;
+  }> {
+    try {
+      // 1. Obține angajații activi din grup (opțional: doar cei selectați)
+      let empleados = await this.obtenerEmpleadosActivosGrupo(grupoNombre);
+
+      if (empleadoIds && empleadoIds.length > 0) {
+        const seleccionados = new Set(empleadoIds.map((id) => String(id).trim()));
+        empleados = empleados.filter((e) => seleccionados.has(String(e.CODIGO)));
+        if (empleados.length === 0) {
+          throw new BadRequestException(
+            'Ningún empleado seleccionado pertenece al grupo o está activo',
+          );
+        }
+      }
 
       if (empleados.length === 0) {
         throw new BadRequestException(
@@ -2257,6 +2293,172 @@ export class PrlDocumentsService {
     };
   }
 
+  private parseTestRespuestas(value: unknown): Record<string, string> | null {
+    if (value == null) return null;
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed as Record<string, string>;
+        }
+      } catch {
+        return null;
+      }
+      return null;
+    }
+    if (typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, string>;
+    }
+    return null;
+  }
+
+  private async obtenerDocumentoPrlConAutoevaluacion(
+    documentoId: number,
+    empleadoId?: string,
+  ): Promise<{
+    id: number;
+    empleado_id: string;
+    empleado_nombre: string;
+    nombre_archivo_original: string;
+    template_nombre: string;
+    test_completado: number;
+    test_puntuacion: number | null;
+    test_fecha_completado: Date | null;
+    test_respuestas: unknown;
+  }> {
+    const empleadoFilter = empleadoId
+      ? `AND ed.empleado_id = ${this.escapeSql(empleadoId)}`
+      : '';
+
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        id: number;
+        empleado_id: string;
+        empleado_nombre: string;
+        nombre_archivo_original: string;
+        template_nombre: string;
+        test_completado: number;
+        test_puntuacion: number | null;
+        test_fecha_completado: Date | null;
+        test_respuestas: unknown;
+      }>
+    >(
+      `
+      SELECT
+        ed.id,
+        ed.empleado_id,
+        COALESCE(de.\`NOMBRE / APELLIDOS\`, ed.empleado_id) AS empleado_nombre,
+        ed.nombre_archivo_original,
+        t.nombre AS template_nombre,
+        ed.test_completado,
+        ed.test_puntuacion,
+        ed.test_fecha_completado,
+        ed.test_respuestas
+      FROM prl_employee_documents ed
+      INNER JOIN prl_document_templates t ON ed.template_id = t.id
+      LEFT JOIN DatosEmpleados de ON de.CODIGO = ed.empleado_id
+      WHERE ed.id = ${documentoId}
+        ${empleadoFilter}
+      LIMIT 1
+      `,
+    );
+
+    if (!rows.length) {
+      throw new NotFoundException('Documento PRL no encontrado');
+    }
+
+    return rows[0];
+  }
+
+  /**
+   * Detalle de respuestas de autoevaluación (empleado propio o admin)
+   */
+  async obtenerResultadoAutoevaluacion(
+    documentoId: number,
+    options: { empleadoId?: string; includeCorrectAnswers?: boolean } = {},
+  ): Promise<{
+    documento_id: number;
+    empleado_id: string;
+    empleado_nombre: string;
+    documento_nombre: string;
+    test_completado: boolean;
+    test_puntuacion: number | null;
+    test_fecha_completado: Date | null;
+    minScore: number;
+    total: number;
+    respuestas_disponibles: boolean;
+    revision: ReturnType<typeof buildAutoevaluacionReview>;
+  }> {
+    const documento = await this.obtenerDocumentoPrlConAutoevaluacion(
+      documentoId,
+      options.empleadoId,
+    );
+
+    const layout = resolvePrlAutoevaluacionLayout(
+      documento.nombre_archivo_original || documento.template_nombre,
+    );
+    if (!layout) {
+      throw new BadRequestException(
+        'Este documento no tiene autoevaluación configurada en la aplicación',
+      );
+    }
+
+    if (documento.test_completado !== 1) {
+      throw new BadRequestException('El test aún no ha sido completado');
+    }
+
+    let respuestas = this.parseTestRespuestas(documento.test_respuestas);
+
+    if (!respuestas) {
+      const auditRows = await this.prisma.$queryRawUnsafe<
+        Array<{ detalles: string | null }>
+      >(
+        `
+        SELECT detalles
+        FROM prl_audit_logs
+        WHERE employee_doc_id = ${documentoId}
+          AND accion = 'TEST_COMPLETADO'
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+      );
+      const detalles = auditRows[0]?.detalles;
+      if (detalles) {
+        try {
+          const parsed = JSON.parse(detalles);
+          if (parsed?.respuestas && typeof parsed.respuestas === 'object') {
+            respuestas = parsed.respuestas as Record<string, string>;
+          }
+        } catch {
+          // sin respuestas en audit
+        }
+      }
+    }
+
+    const revision = respuestas
+      ? buildAutoevaluacionReview(
+          layout,
+          respuestas,
+          Boolean(options.includeCorrectAnswers),
+        )
+      : [];
+
+    return {
+      documento_id: documento.id,
+      empleado_id: documento.empleado_id,
+      empleado_nombre: documento.empleado_nombre,
+      documento_nombre:
+        documento.nombre_archivo_original || documento.template_nombre,
+      test_completado: true,
+      test_puntuacion: documento.test_puntuacion,
+      test_fecha_completado: documento.test_fecha_completado,
+      minScore: layout.minScore,
+      total: layout.questions.length,
+      respuestas_disponibles: Boolean(respuestas),
+      revision,
+    };
+  }
+
   /**
    * Valida respuestas de autoevaluación y marca test_completado si supera el mínimo
    */
@@ -2311,12 +2513,14 @@ export class PrlDocumentsService {
     const aprobado = puntuacion >= layout.minScore;
 
     if (aprobado) {
+      const respuestasJson = JSON.stringify(respuestas);
       await this.prisma.$executeRawUnsafe(
         `
         UPDATE prl_employee_documents
         SET test_completado = 1,
             test_puntuacion = ${puntuacion},
             test_fecha_completado = CURRENT_TIMESTAMP,
+            test_respuestas = ${this.escapeSql(respuestasJson)},
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ${documentoId}
           AND empleado_id = ${this.escapeSql(empleadoId)}
@@ -2329,7 +2533,12 @@ export class PrlDocumentsService {
         'TEST_COMPLETADO',
         ipAddress,
         userAgent,
-        JSON.stringify({ puntuacion, total, minScore: layout.minScore }),
+        JSON.stringify({
+          puntuacion,
+          total,
+          minScore: layout.minScore,
+          respuestas,
+        }),
       );
 
       this.logger.log(
@@ -2584,6 +2793,8 @@ El documento ha sido firmado y guardado correctamente.`;
         requiere_firma: boolean;
         template_id: number;
         documento_id: number;
+        test_completado: boolean;
+        test_puntuacion: number | null;
       }>;
     }>
   > {
@@ -2619,6 +2830,8 @@ El documento ha sido firmado y guardado correctamente.`;
           requiere_firma: number;
           template_id: number;
           id: number;
+          test_completado: number;
+          test_puntuacion: number | null;
         }>
       >(
         `
@@ -2629,7 +2842,9 @@ El documento ha sido firmado y guardado correctamente.`;
           ed.fecha_firma,
           t.requiere_firma,
           ed.template_id,
-          ed.id
+          ed.id,
+          ed.test_completado,
+          ed.test_puntuacion
         FROM prl_employee_documents ed
         INNER JOIN prl_document_templates t ON ed.template_id = t.id
         WHERE t.activo = 1
@@ -2647,6 +2862,8 @@ El documento ha sido firmado y guardado correctamente.`;
           requiere_firma: boolean;
           template_id: number;
           documento_id: number;
+          test_completado: boolean;
+          test_puntuacion: number | null;
         }>
       >();
 
@@ -2661,6 +2878,8 @@ El documento ha sido firmado y guardado correctamente.`;
           requiere_firma: doc.requiere_firma === 1,
           template_id: doc.template_id,
           documento_id: doc.id,
+          test_completado: doc.test_completado === 1,
+          test_puntuacion: doc.test_puntuacion,
         });
       }
 

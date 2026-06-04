@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContextBase';
 import { Button, Card, Modal, Input } from '../components/ui';
 import Notification from '../components/ui/Notification';
 import Back3DButton from '../components/Back3DButton';
+import PRLAutoevaluacionResultModal from '../components/PRLAutoevaluacionResultModal';
 import { routes } from '../utils/routes';
 
 const TIPOS_DOCUMENTO = [
@@ -41,6 +42,11 @@ export default function PRLDocumentosPage() {
   const [deleting, setDeleting] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [empleadosGrupoEnviar, setEmpleadosGrupoEnviar] = useState([]);
+  const [empleadosSeleccionados, setEmpleadosSeleccionados] = useState(new Set());
+  const [loadingEmpleadosEnviar, setLoadingEmpleadosEnviar] = useState(false);
+  const [filtroEmpleadoEnviar, setFiltroEmpleadoEnviar] = useState('');
+  const [autoevalDocumentoId, setAutoevalDocumentoId] = useState(null);
 
   // Form states pentru upload individual
   const [formData, setFormData] = useState({
@@ -315,17 +321,80 @@ export default function PRLDocumentosPage() {
     }
   };
 
-  const abrirModalEnviarDocumentos = () => {
+  const abrirModalEnviarDocumentos = async () => {
     if (!grupoSeleccionado) return;
     if (templates.length === 0) {
       mostrarNotificacion('error', 'No hay documentos para enviar. Sube documentos primero.');
       return;
     }
+
     setShowEnviarModal(true);
+    setLoadingEmpleadosEnviar(true);
+    setFiltroEmpleadoEnviar('');
+    setEmpleadosGrupoEnviar([]);
+    setEmpleadosSeleccionados(new Set());
+
+    try {
+      const res = await fetch(routes.prlEmpleadosActivosGrupo(grupoSeleccionado), {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Error al cargar empleados del grupo');
+      }
+
+      const data = await res.json();
+      const lista = Array.isArray(data.empleados) ? data.empleados : [];
+      setEmpleadosGrupoEnviar(lista);
+      setEmpleadosSeleccionados(new Set(lista.map((e) => String(e.codigo))));
+    } catch (err) {
+      setShowEnviarModal(false);
+      mostrarNotificacion('error', `Error: ${err.message}`);
+    } finally {
+      setLoadingEmpleadosEnviar(false);
+    }
   };
+
+  const toggleEmpleadoEnviar = (codigo) => {
+    const id = String(codigo);
+    setEmpleadosSeleccionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const seleccionarTodosEmpleadosEnviar = () => {
+    setEmpleadosSeleccionados(
+      new Set(empleadosGrupoEnviar.map((e) => String(e.codigo))),
+    );
+  };
+
+  const deseleccionarTodosEmpleadosEnviar = () => {
+    setEmpleadosSeleccionados(new Set());
+  };
+
+  const empleadosEnviarFiltrados = empleadosGrupoEnviar.filter((e) => {
+    const q = filtroEmpleadoEnviar.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      String(e.nombre || '').toLowerCase().includes(q) ||
+      String(e.codigo || '').toLowerCase().includes(q) ||
+      String(e.dni || '').toLowerCase().includes(q)
+    );
+  });
 
   const handleEnviarDocumentosAGrupo = async () => {
     if (!grupoSeleccionado) return;
+    if (empleadosSeleccionados.size === 0) {
+      mostrarNotificacion('error', 'Selecciona al menos un empleado.');
+      return;
+    }
 
     try {
       setEnviando(true);
@@ -335,6 +404,9 @@ export default function PRLDocumentosPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${authToken}`,
         },
+        body: JSON.stringify({
+          empleado_ids: Array.from(empleadosSeleccionados),
+        }),
       });
 
       if (!res.ok) {
@@ -344,9 +416,11 @@ export default function PRLDocumentosPage() {
 
       const data = await res.json();
       setShowEnviarModal(false);
+      setEmpleadosGrupoEnviar([]);
+      setEmpleadosSeleccionados(new Set());
       mostrarNotificacion(
         'success',
-        `✅ Documentos enviados: ${data.documentos_creados} creados, ${data.empleados_procesados} empleados procesados, ${data.emails_enviados} emails enviados`
+        `✅ Enviado a ${empleadosSeleccionados.size} empleado(s): ${data.documentos_creados} documentos creados, ${data.emails_enviados} emails`,
       );
     } catch (err) {
       mostrarNotificacion('error', `Error: ${err.message}`);
@@ -535,15 +609,38 @@ export default function PRLDocumentosPage() {
                               className="border border-gray-300 px-2 py-2 text-center"
                             >
                               {documento ? (
-                                <div
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (
+                                      tipo.value === 'MANUAL_TEST' &&
+                                      documento.test_completado &&
+                                      documento.documento_id
+                                    ) {
+                                      setAutoevalDocumentoId(documento.documento_id);
+                                    }
+                                  }}
                                   className={`inline-block px-2 py-1 rounded text-xs font-medium border ${getEstadoColor(
                                     documento.estado,
                                     documento.requiere_firma
-                                  )}`}
-                                  title={`Estado: ${documento.estado}${documento.fecha_firma ? `, Fecha: ${new Date(documento.fecha_firma).toLocaleDateString('es-ES')}` : ''}`}
+                                  )} ${
+                                    tipo.value === 'MANUAL_TEST' && documento.test_completado
+                                      ? 'cursor-pointer hover:opacity-90 underline-offset-2 hover:underline'
+                                      : ''
+                                  }`}
+                                  title={`Estado: ${documento.estado}${documento.fecha_firma ? `, Fecha: ${new Date(documento.fecha_firma).toLocaleDateString('es-ES')}` : ''}${
+                                    tipo.value === 'MANUAL_TEST' && documento.test_completado
+                                      ? `, Test: ${documento.test_puntuacion ?? '—'} pts — clic para ver respuestas`
+                                      : ''
+                                  }`}
                                 >
                                   {getEstadoLabel(documento.estado)}
-                                </div>
+                                  {tipo.value === 'MANUAL_TEST' && documento.test_completado && (
+                                    <span className="block text-[10px] mt-0.5 opacity-90">
+                                      Test {documento.test_puntuacion ?? '—'} pts · Ver resp.
+                                    </span>
+                                  )}
+                                </button>
                               ) : (
                                 <span className="text-gray-400 text-xs">—</span>
                               )}
@@ -910,31 +1007,126 @@ export default function PRLDocumentosPage() {
       {/* Modal Confirmar envío a empleados */}
       <Modal
         isOpen={showEnviarModal}
-        onClose={() => !enviando && setShowEnviarModal(false)}
+        onClose={() => {
+          if (!enviando) {
+            setShowEnviarModal(false);
+            setEmpleadosGrupoEnviar([]);
+            setEmpleadosSeleccionados(new Set());
+          }
+        }}
         title="Confirmar envío PRL"
+        size="lg"
         showCloseButton={false}
         closeOnBackdrop={!enviando}
       >
         <div className="space-y-4">
           <p className="text-gray-700 dark:text-gray-300">
-            ¿Enviar <strong>{templates.length}</strong> documento(s) PRL a todos los empleados activos del grupo?
+            Se enviarán <strong>{templates.length}</strong> documento(s) PRL. Selecciona los
+            empleados del grupo que deben recibirlos.
           </p>
           {grupoSeleccionado && (
             <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-              <div className="font-semibold text-gray-900 dark:text-gray-100">GRUPO: {grupoSeleccionado}</div>
+              <div className="font-semibold text-gray-900 dark:text-gray-100">
+                GRUPO: {grupoSeleccionado}
+              </div>
               <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Los empleados recibirán los documentos y, si aplica, la notificación por email.
+                Los empleados marcados recibirán los documentos y, si aplica, notificación por
+                email.
               </div>
             </div>
           )}
-          <ul className="text-sm text-gray-600 dark:text-gray-400 list-disc list-inside max-h-40 overflow-y-auto">
-            {templates.map((template) => (
-              <li key={template.id}>{template.nombre}</li>
-            ))}
-          </ul>
+
+          <div>
+            <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">
+              Documentos a enviar
+            </p>
+            <ul className="text-sm text-gray-600 dark:text-gray-400 list-disc list-inside max-h-28 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg p-2">
+              {templates.map((template) => (
+                <li key={template.id}>{template.nombre}</li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                Empleados ({empleadosSeleccionados.size}/{empleadosGrupoEnviar.length})
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={seleccionarTodosEmpleadosEnviar}
+                  disabled={enviando || loadingEmpleadosEnviar}
+                  className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+                >
+                  Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={deseleccionarTodosEmpleadosEnviar}
+                  disabled={enviando || loadingEmpleadosEnviar}
+                  className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+                >
+                  Ninguno
+                </button>
+              </div>
+            </div>
+
+            <Input
+              value={filtroEmpleadoEnviar}
+              onChange={(e) => setFiltroEmpleadoEnviar(e.target.value)}
+              placeholder="Buscar por nombre, código o DNI..."
+              disabled={enviando || loadingEmpleadosEnviar}
+            />
+
+            <div className="mt-2 max-h-52 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-100 dark:divide-gray-800">
+              {loadingEmpleadosEnviar && (
+                <div className="p-4 text-sm text-gray-500 text-center">Cargando empleados…</div>
+              )}
+              {!loadingEmpleadosEnviar && empleadosGrupoEnviar.length === 0 && (
+                <div className="p-4 text-sm text-amber-700 text-center">
+                  No hay empleados activos en este grupo.
+                </div>
+              )}
+              {!loadingEmpleadosEnviar &&
+                empleadosEnviarFiltrados.map((empleado) => {
+                  const codigo = String(empleado.codigo);
+                  const checked = empleadosSeleccionados.has(codigo);
+                  return (
+                    <label
+                      key={codigo}
+                      className={`flex items-start gap-3 p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 ${
+                        checked ? 'bg-blue-50/60 dark:bg-blue-900/10' : ''
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleEmpleadoEnviar(codigo)}
+                        disabled={enviando}
+                        className="mt-1"
+                      />
+                      <span className="text-sm text-gray-800 dark:text-gray-200">
+                        <span className="font-medium">{empleado.nombre}</span>
+                        <span className="block text-xs text-gray-500 dark:text-gray-400">
+                          Código: {codigo}
+                          {empleado.dni ? ` · DNI: ${empleado.dni}` : ''}
+                          {empleado.email ? ` · ${empleado.email}` : ''}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+            </div>
+          </div>
+
           <div className="flex gap-2 justify-end pt-2">
             <Button
-              onClick={() => setShowEnviarModal(false)}
+              onClick={() => {
+                setShowEnviarModal(false);
+                setEmpleadosGrupoEnviar([]);
+                setEmpleadosSeleccionados(new Set());
+              }}
               variant="secondary"
               disabled={enviando}
             >
@@ -943,10 +1135,14 @@ export default function PRLDocumentosPage() {
             <Button
               onClick={handleEnviarDocumentosAGrupo}
               variant="primary"
-              disabled={enviando}
+              disabled={
+                enviando || loadingEmpleadosEnviar || empleadosSeleccionados.size === 0
+              }
               className="bg-green-600 hover:bg-green-700"
             >
-              {enviando ? 'Enviando...' : '📤 Enviar a empleados'}
+              {enviando
+                ? 'Enviando...'
+                : `📤 Enviar a ${empleadosSeleccionados.size} empleado(s)`}
             </Button>
           </div>
         </div>
@@ -1004,6 +1200,14 @@ export default function PRLDocumentosPage() {
           </div>
         </div>
       </Modal>
+
+      {autoevalDocumentoId && (
+        <PRLAutoevaluacionResultModal
+          documentoId={autoevalDocumentoId}
+          admin={true}
+          onClose={() => setAutoevalDocumentoId(null)}
+        />
+      )}
     </div>
   );
 }

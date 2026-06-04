@@ -313,12 +313,45 @@ export class PrlDocumentsController {
   }
 
   /**
-   * Trimite documentele PRL la toți angajații activi dintr-un grup
+   * Lista empleados activos de un GRUPO (preview antes de enviar documentos PRL)
+   */
+  @Get('grupos/:grupoNombre/empleados-activos')
+  @UseGuards(JwtAuthGuard)
+  async listarEmpleadosActivosGrupo(
+    @Param('grupoNombre') grupoNombre: string,
+    @CurrentUser() _user: any,
+  ) {
+    try {
+      if (!grupoNombre || grupoNombre.trim() === '') {
+        throw new BadRequestException('grupo_nombre es requerido');
+      }
+
+      const empleados =
+        await this.prlDocumentsService.listarEmpleadosActivosGrupo(grupoNombre);
+
+      return {
+        success: true,
+        grupo_nombre: grupoNombre,
+        empleados,
+        total: empleados.length,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error listando empleados activos del grupo ${grupoNombre}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Trimite documentele PRL la angajații activi dintr-un grup (toți o lista selectată)
    */
   @Post('grupos/:grupoNombre/enviar')
   @UseGuards(JwtAuthGuard)
   async enviarDocumentosAGrupo(
     @Param('grupoNombre') grupoNombre: string,
+    @Body('empleado_ids') empleadoIds: string[] | undefined,
     @CurrentUser() user: any,
   ) {
     try {
@@ -326,13 +359,19 @@ export class PrlDocumentsController {
         throw new BadRequestException('grupo_nombre es requerido');
       }
 
+      const ids =
+        Array.isArray(empleadoIds) && empleadoIds.length > 0
+          ? empleadoIds.map((id) => String(id).trim()).filter(Boolean)
+          : undefined;
+
       this.logger.log(
-        `📤 Enviando documentos PRL al grupo: ${grupoNombre} por usuario ${user.userId || user.CODIGO}`,
+        `📤 Enviando documentos PRL al grupo: ${grupoNombre} por usuario ${user.userId || user.CODIGO}${ids ? ` (${ids.length} empleado(s) seleccionados)` : ' (todos)'}`,
       );
 
       const result = await this.prlDocumentsService.enviarDocumentosAGrupo(
         grupoNombre,
         user.userId || user.CODIGO || 'system',
+        ids,
       );
 
       return {
@@ -782,6 +821,71 @@ export class PrlDocumentsController {
     } catch (error: any) {
       this.logger.error(
         `❌ Error completando autoevaluación ${documentoId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Respuestas del test completado (empleado — solo su documento)
+   */
+  @Get('mis-documentos/:documentoId/autoevaluacion-resultado')
+  @UseGuards(JwtAuthGuard)
+  async obtenerResultadoAutoevaluacionEmpleado(
+    @Param('documentoId') documentoId: string,
+    @CurrentUser() user: any,
+  ) {
+    try {
+      const documentoIdNum = parseInt(documentoId, 10);
+      if (isNaN(documentoIdNum)) {
+        throw new BadRequestException('documentoId debe ser un número');
+      }
+
+      const empleadoId = user.CODIGO || user.codigo || user.userId;
+      if (!empleadoId) {
+        throw new BadRequestException('No se pudo identificar al empleado');
+      }
+
+      const result = await this.prlDocumentsService.obtenerResultadoAutoevaluacion(
+        documentoIdNum,
+        { empleadoId, includeCorrectAnswers: false },
+      );
+
+      return { success: true, ...result };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error obteniendo resultado autoevaluación empleado ${documentoId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Respuestas del test completado (admin — cualquier documento)
+   */
+  @Get('documentos-empleado/:documentoId/autoevaluacion-resultado')
+  @UseGuards(JwtAuthGuard)
+  async obtenerResultadoAutoevaluacionAdmin(
+    @Param('documentoId') documentoId: string,
+    @CurrentUser() _user: any,
+  ) {
+    try {
+      const documentoIdNum = parseInt(documentoId, 10);
+      if (isNaN(documentoIdNum)) {
+        throw new BadRequestException('documentoId debe ser un número');
+      }
+
+      const result = await this.prlDocumentsService.obtenerResultadoAutoevaluacion(
+        documentoIdNum,
+        { includeCorrectAnswers: true },
+      );
+
+      return { success: true, ...result };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error obteniendo resultado autoevaluación admin ${documentoId}:`,
         error,
       );
       throw error;

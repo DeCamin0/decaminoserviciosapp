@@ -532,6 +532,8 @@ export const routes = {
   prlEliminarTemplate: (templateId) => `${BACKEND_BASE}/api/prl/templates/${templateId}`,
   prlEliminarTodosTemplates: (grupoNombre) => `${BACKEND_BASE}/api/prl/grupos/${encodeURIComponent(grupoNombre)}/templates`,
   prlEnviarDocumentosAGrupo: (grupoNombre) => `${BACKEND_BASE}/api/prl/grupos/${encodeURIComponent(grupoNombre)}/enviar`,
+  prlEmpleadosActivosGrupo: (grupoNombre) =>
+    `${BACKEND_BASE}/api/prl/grupos/${encodeURIComponent(grupoNombre)}/empleados-activos`,
   prlMisDocumentos: `${BACKEND_BASE}/api/prl/mis-documentos`,
   prlDescargarMiDocumento: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/descargar`,
   prlConvertirDocxAHtml: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/convertir-docx-html`,
@@ -540,6 +542,10 @@ export const routes = {
   prlAgregarFirmaADocx: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/agregar-firma-docx`,
   prlDescargarDocumentoFirmado: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/descargar-firmado`,
   prlAutoevaluacion: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/autoevaluacion`,
+  prlAutoevaluacionResultado: (documentoId) =>
+    `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/autoevaluacion-resultado`,
+  prlAutoevaluacionResultadoAdmin: (documentoId) =>
+    `${BACKEND_BASE}/api/prl/documentos-empleado/${documentoId}/autoevaluacion-resultado`,
   
   // Diplomas
   diplomasUploadZipPreview: `${BACKEND_BASE}/api/diplomas/upload-zip-preview`,

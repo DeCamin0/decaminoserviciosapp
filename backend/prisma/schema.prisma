@@ -1907,6 +1907,7 @@ model PrlEmployeeDocument {
   test_completado       Boolean  @default(false) @map("test_completado")
   test_fecha_completado DateTime? @map("test_fecha_completado") @db.Timestamp(0)
   test_puntuacion        Int?     @map("test_puntuacion")
+  test_respuestas       Json?    @map("test_respuestas")
   certificado_archivo   Bytes?   @map("certificado_archivo")
   certificado_nombre    String?  @map("certificado_nombre") @db.VarChar(255)
   certificado_fecha     DateTime? @map("certificado_fecha") @db.Timestamp(0)
