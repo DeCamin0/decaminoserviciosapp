@@ -91,7 +91,9 @@ export class PedidosService {
    * Developer, Admin, Administrativ(o) y Supervisor pueden superar el límite.
    */
   private shouldEnforceClienteLimiteGasto(actorGrupo?: string | null): boolean {
-    const g = String(actorGrupo ?? '').trim().toLowerCase();
+    const g = String(actorGrupo ?? '')
+      .trim()
+      .toLowerCase();
     if (!g) return true;
     const bypass = new Set([
       'developer',
@@ -140,59 +142,60 @@ export class PedidosService {
    * Salvează un pedido în baza de date
    * Creează un rând în PedidosTodos pentru fiecare item din pedido
    */
-  async savePedido(pedidoData: {
-    empleado: {
-      id: string;
-      nombre: string;
-      email: string;
-      centro_trabajo: string;
-    };
-    comunidad: {
-      id: number | string;
-      nombre: string;
-      direccion?: string;
-      codigo_postal?: string;
-      localidad?: string;
-      provincia?: string;
-      telefono?: string;
-      email?: string;
-      nif?: string;
-      dni?: string;
-      limite_gasto?: number;
-    };
-    pedido: {
-      fecha: string;
-      moneda: string;
-      descuento_global: number;
-      impuestos: number;
-      notas?: string;
-      subtotal: number;
-      iva_total: number;
-      total: number;
-      limite_excedido: boolean;
-      exceso_limite: number;
-      estado?: string;
-      horario_entrega: string;
-      telefono_entrega?: string;
-      direccion_envio?: string;
-      codigo_postal_envio?: string;
-      localidad_envio?: string;
-      provincia_envio?: string;
-      items: Array<{
-        producto_id: number;
-        numero_articulo: string;
-        descripcion: string;
-        cantidad: number;
-        precio_unitario: number;
-        subtotal_linea: number;
-        descuento_linea: number;
-        iva_porcentaje: number;
-        iva_linea: number;
-        total_linea: number;
-      }>;
-    };
-  },
-  options?: { actorGrupo?: string | null },
+  async savePedido(
+    pedidoData: {
+      empleado: {
+        id: string;
+        nombre: string;
+        email: string;
+        centro_trabajo: string;
+      };
+      comunidad: {
+        id: number | string;
+        nombre: string;
+        direccion?: string;
+        codigo_postal?: string;
+        localidad?: string;
+        provincia?: string;
+        telefono?: string;
+        email?: string;
+        nif?: string;
+        dni?: string;
+        limite_gasto?: number;
+      };
+      pedido: {
+        fecha: string;
+        moneda: string;
+        descuento_global: number;
+        impuestos: number;
+        notas?: string;
+        subtotal: number;
+        iva_total: number;
+        total: number;
+        limite_excedido: boolean;
+        exceso_limite: number;
+        estado?: string;
+        horario_entrega: string;
+        telefono_entrega?: string;
+        direccion_envio?: string;
+        codigo_postal_envio?: string;
+        localidad_envio?: string;
+        provincia_envio?: string;
+        items: Array<{
+          producto_id: number;
+          numero_articulo: string;
+          descripcion: string;
+          cantidad: number;
+          precio_unitario: number;
+          subtotal_linea: number;
+          descuento_linea: number;
+          iva_porcentaje: number;
+          iva_linea: number;
+          total_linea: number;
+        }>;
+      };
+    },
+    options?: { actorGrupo?: string | null },
   ): Promise<{
     status: string;
     message: string;

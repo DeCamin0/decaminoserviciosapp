@@ -1404,8 +1404,12 @@ export class PrlDocumentsService {
       let empleados = await this.obtenerEmpleadosActivosGrupo(grupoNombre);
 
       if (empleadoIds && empleadoIds.length > 0) {
-        const seleccionados = new Set(empleadoIds.map((id) => String(id).trim()));
-        empleados = empleados.filter((e) => seleccionados.has(String(e.CODIGO)));
+        const seleccionados = new Set(
+          empleadoIds.map((id) => String(id).trim()),
+        );
+        empleados = empleados.filter((e) =>
+          seleccionados.has(String(e.CODIGO)),
+        );
         if (empleados.length === 0) {
           throw new BadRequestException(
             'Ningún empleado seleccionado pertenece al grupo o está activo',
@@ -2509,7 +2513,10 @@ export class PrlDocumentsService {
       throw new BadRequestException('Se requieren las respuestas del test');
     }
 
-    const { puntuacion, total } = scoreAutoevaluacionAnswers(layout, respuestas);
+    const { puntuacion, total } = scoreAutoevaluacionAnswers(
+      layout,
+      respuestas,
+    );
     const aprobado = puntuacion >= layout.minScore;
 
     if (aprobado) {

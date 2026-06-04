@@ -8,6 +8,7 @@ import { NotificationsService } from './notifications.service';
 import { EmpleadosService } from './empleados.service';
 import { BajaVoluntariaPdfService } from './baja-voluntaria-pdf.service';
 import { DocumentosService } from './documentos.service';
+import { AusenciasService } from './ausencias.service';
 
 @Injectable()
 export class SolicitudesService {
@@ -25,6 +26,7 @@ export class SolicitudesService {
     private readonly empleadosService: EmpleadosService,
     private readonly bajaVoluntariaPdfService: BajaVoluntariaPdfService,
     private readonly documentosService: DocumentosService,
+    private readonly ausenciasService: AusenciasService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -2769,6 +2771,8 @@ export class SolicitudesService {
       `;
 
       this.logger.log(`📝 Delete solicitud: ${id} (codigo: ${codigo})`);
+
+      await this.ausenciasService.cleanupRelatedDataForSolicitudId(id);
 
       // Execută operațiile în tranzacție
       await this.prisma.$transaction(async (tx) => {

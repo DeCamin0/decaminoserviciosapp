@@ -597,13 +597,11 @@ function MobileBajaMedicaItem({ item, formatDate, formatDateTime, getSituacionCo
   );
 }
 
-/** Ausencias justificada în Todas > Ausencias (mobil): aceeași logică ca cardul desktop (documento + presencia por ausencia). */
+/** Ausencias justificada în Todas > Ausencias / Aprobación (mobil): detalii + buton comprobar bajo demanda. */
 function MobileAusenciaJustificadaTodasBlocks({
   item,
-  justificanteDocumentosMap = new Map(),
-  justificantesByAusenciaIdMap = new Map(),
-  onJustificanteError,
-  openJustificantePreview,
+  onComprobarJustificante,
+  comprobarJustificanteItemId,
 }) {
   const t = (item.tipo || item.TIPO || item.tipo_solicitud || item.TIPO_SOLICITUD || '').toLowerCase();
   const esAusenciaJustificada =
@@ -619,90 +617,6 @@ function MobileAusenciaJustificadaTodasBlocks({
     otro: 'Otro',
   };
   const tipoLabel = labels[item.tipo_justificante] || item.tipo_justificante || '—';
-  const solicitudIdForMap = item.solicitud_id ?? item.SOLICITUD_ID ?? item.id ?? item.ID;
-  const documento = justificanteDocumentosMap.get(solicitudIdForMap);
-  const codigo = item.codigo || item.CODIGO || '';
-  const emailEnc = encodeURIComponent(item.email || item['CORREO ELECTRONICO'] || '');
-
-  const ausenciaId = item.id ?? item.ID;
-  const justificantesList = ausenciaId != null ? justificantesByAusenciaIdMap.get(Number(ausenciaId)) : null;
-  const presencia = justificantesList?.find((j) => {
-    const tt = (j.tipo || j.TIPO || j.tipo_documento || j.doc_tipo_documento || '').toLowerCase();
-    return tt === 'presencia' || tt.includes('presencia');
-  });
-  const estadoPresencia = (presencia?.doc_solicitado_estado || '').toLowerCase();
-  const tieneDocId = presencia?.doc_id != null && presencia?.doc_id !== '';
-  const tienePresenciaCargada = presencia && (tieneDocId || estadoPresencia === 'completado');
-  const nombrePresencia = presencia?.doc_nombre_archivo ?? presencia?.doc_NOMBRE_ARCHIVO ?? 'Justificante presencia';
-
-  const descargarPresencia = async (e, forPreview = false) => {
-    e.stopPropagation();
-    const token = localStorage.getItem('auth_token');
-    if (tieneDocId) {
-      const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${presencia.doc_id}&id=${codigo}&email=${emailEnc}&fileName=${encodeURIComponent(nombrePresencia)}`;
-      try {
-        const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-        if (!res.ok) throw new Error();
-        const blob = await res.blob();
-        if (forPreview) {
-          openJustificantePreview?.({
-            isOpen: true,
-            blobUrl: window.URL.createObjectURL(blob),
-            fileName: nombrePresencia,
-            mimeType: blob.type || '',
-          });
-        } else {
-          const a = document.createElement('a');
-          a.href = window.URL.createObjectURL(blob);
-          a.download = nombrePresencia;
-          document.body.appendChild(a);
-          a.click();
-          window.URL.revokeObjectURL(a.href);
-          document.body.removeChild(a);
-        }
-      } catch {
-        onJustificanteError?.('Error al descargar. Inicia sesión si es necesario.');
-      }
-      return;
-    }
-    try {
-      const r = await fetch(
-        `${routes.getDocumentos || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos`}?empleadoId=${encodeURIComponent(codigo)}`,
-        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
-      );
-      if (!r.ok) throw new Error();
-      const data = await r.json();
-      const docs = Array.isArray(data) ? data : (data?.data || []);
-      const docPresencia = docs.find((d) => (d.tipo_documento || '').toLowerCase().includes('presencia'));
-      const doc = docPresencia || docs.find((d) => (d.tipo_documento || '').toLowerCase().includes('justificante'));
-      if (!doc?.doc_id) {
-        onJustificanteError?.('No se encontró el documento.');
-        return;
-      }
-      const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${doc.doc_id}&id=${codigo}&email=${emailEnc}&fileName=${encodeURIComponent(doc.nombre_archivo || 'justificante-presencia')}`;
-      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-      if (!res.ok) throw new Error();
-      const blob = await res.blob();
-      if (forPreview) {
-        openJustificantePreview?.({
-          isOpen: true,
-          blobUrl: window.URL.createObjectURL(blob),
-          fileName: doc.nombre_archivo || 'Justificante presencia',
-          mimeType: blob.type || '',
-        });
-      } else {
-        const a = document.createElement('a');
-        a.href = window.URL.createObjectURL(blob);
-        a.download = doc.nombre_archivo || 'justificante-presencia';
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(a.href);
-        document.body.removeChild(a);
-      }
-    } catch {
-      onJustificanteError?.('Error al descargar. Inicia sesión si es necesario.');
-    }
-  };
 
   return (
     <div className="pt-2 border-t border-gray-200 dark:border-gray-600 space-y-2">
@@ -739,99 +653,19 @@ function MobileAusenciaJustificadaTodasBlocks({
           <p className="text-[10px] text-blue-800 dark:text-blue-200 break-words">{item.motivo || item.MOTIVO}</p>
         </div>
       )}
-      <div className="p-2.5 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-500 bg-gray-50 dark:bg-gray-600/20 space-y-2">
-        <p className="text-[10px] font-semibold text-gray-700 dark:text-gray-200">Justificante para la solicitud:</p>
-        {documento ? (
-          <div className="text-[10px] text-green-700 dark:text-green-300 flex flex-col gap-1.5">
-            <span>✅ Cargado</span>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const token = localStorage.getItem('auth_token');
-                  const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${documento.doc_id}&id=${codigo}&email=${emailEnc}&fileName=${encodeURIComponent(documento.nombre_archivo || '')}`;
-                  fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-                    .then((res) => {
-                      if (!res.ok) throw new Error('No autorizado');
-                      return res.blob();
-                    })
-                    .then((blob) => {
-                      const blobUrl = window.URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = blobUrl;
-                      a.download = documento.nombre_archivo || 'justificante';
-                      document.body.appendChild(a);
-                      a.click();
-                      window.URL.revokeObjectURL(blobUrl);
-                      document.body.removeChild(a);
-                    })
-                    .catch(() => onJustificanteError?.('Error al descargar el justificante. Inicia sesión si es necesario.'));
-                }}
-                className="px-2 py-1 text-[10px] font-medium rounded bg-amber-600 text-white hover:bg-amber-700"
-              >
-                📥 Descargar
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const token = localStorage.getItem('auth_token');
-                  const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${documento.doc_id}&id=${codigo}&email=${emailEnc}&fileName=${encodeURIComponent(documento.nombre_archivo || '')}`;
-                  fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-                    .then((res) => {
-                      if (!res.ok) throw new Error('No autorizado');
-                      return res.blob();
-                    })
-                    .then((blob) => {
-                      const blobUrl = window.URL.createObjectURL(blob);
-                      openJustificantePreview?.({
-                        isOpen: true,
-                        blobUrl,
-                        fileName: documento.nombre_archivo || 'Justificante',
-                        mimeType: blob.type || '',
-                      });
-                    })
-                    .catch(() => onJustificanteError?.('Error al abrir el justificante. Inicia sesión si es necesario.'));
-                }}
-                className="px-2 py-1 text-[10px] font-medium rounded bg-cyan-600 text-white hover:bg-cyan-700"
-              >
-                👁️ Ver
-              </button>
-            </div>
-          </div>
-        ) : (
-          <p className="text-[10px] text-gray-600 dark:text-gray-300">No cargado.</p>
-        )}
-        <p className="text-[10px] font-semibold text-gray-700 dark:text-gray-200 pt-1">Justificante de presencia a la cita:</p>
-        {(item.estado || item.ESTADO || '').toLowerCase() === 'pendiente' ? (
-          <p className="text-[10px] text-gray-500 dark:text-gray-400">Se solicitará tras la aprobación.</p>
-        ) : tienePresenciaCargada ? (
-          <div className="text-[10px] text-green-700 dark:text-green-300 flex flex-col gap-1.5">
-            <span>✅ Completado</span>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={(e) => descargarPresencia(e, false)}
-                className="px-2 py-1 text-[10px] font-medium rounded bg-amber-600 text-white hover:bg-amber-700"
-              >
-                📥 Descargar
-              </button>
-              <button
-                type="button"
-                onClick={(e) => descargarPresencia(e, true)}
-                className="px-2 py-1 text-[10px] font-medium rounded bg-cyan-600 text-white hover:bg-cyan-700"
-              >
-                👁️ Ver
-              </button>
-            </div>
-          </div>
-        ) : (
-          <p className="text-[10px] text-amber-700 dark:text-amber-300">
-            Tras la aprobación se solicita al empleado; cuando lo suba aparecerá aquí.
-          </p>
-        )}
-      </div>
+      {onComprobarJustificante && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onComprobarJustificante(item);
+          }}
+          disabled={comprobarJustificanteItemId === (item.id ?? item.ID)}
+          className="w-full px-3 py-2 text-[11px] font-semibold rounded-lg bg-cyan-600 text-white hover:bg-cyan-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+        >
+          {comprobarJustificanteItemId === (item.id ?? item.ID) ? '⏳ Comprobando…' : '🔍 Comprobar justificante'}
+        </button>
+      )}
     </div>
   );
 }
@@ -844,10 +678,8 @@ function MobileAusenciaItemTodas({
   getTipoColor,
   formatHora,
   getStatusColor,
-  justificanteDocumentosMap,
-  justificantesByAusenciaIdMap,
-  onJustificanteError,
-  openJustificantePreview,
+  onComprobarJustificante,
+  comprobarJustificanteItemId,
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const durationDisplay = getAusenciaDurationDisplay(item);
@@ -1045,10 +877,8 @@ function MobileAusenciaItemTodas({
           {esAusenciaJustificadaTodas && (
             <MobileAusenciaJustificadaTodasBlocks
               item={item}
-              justificanteDocumentosMap={justificanteDocumentosMap}
-              justificantesByAusenciaIdMap={justificantesByAusenciaIdMap}
-              onJustificanteError={onJustificanteError}
-              openJustificantePreview={openJustificantePreview}
+              onComprobarJustificante={onComprobarJustificante}
+              comprobarJustificanteItemId={comprobarJustificanteItemId}
             />
           )}
           
@@ -1359,6 +1189,8 @@ function MobileSolicitudItem({
   isDeleting,
   allAusencias,
   solicitudesLookup,
+  onComprobarJustificante,
+  comprobarJustificanteItemId,
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const durationDisplay = getAusenciaDurationDisplay(solicitud);
@@ -1700,6 +1532,25 @@ function MobileSolicitudItem({
               );
             }
 
+            if (esAusenciaJustificadaParaDosBloques && onComprobarJustificante) {
+              const itemId = solicitud.id ?? solicitud.ID;
+              return (
+                <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onComprobarJustificante(solicitud);
+                    }}
+                    disabled={comprobarJustificanteItemId === itemId}
+                    className="w-full px-3 py-2 text-[11px] font-semibold rounded-lg bg-cyan-600 text-white hover:bg-cyan-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {comprobarJustificanteItemId === itemId ? '⏳ Comprobando…' : '🔍 Comprobar justificante'}
+                  </button>
+                </div>
+              );
+            }
+
             return (
               <MobileJustificanteDosBloquesMisSolicitudes
                 solicitud={solicitud}
@@ -1789,9 +1640,15 @@ export default function SolicitudesPage() {
     fileName: '',
     mimeType: '',
   }); // Modal preview justificante (Ausencias justificada)
-  const [justificanteDocumentosMap, setJustificanteDocumentosMap] = useState(new Map()); // Map<solicitudId, documento> pentru Ausencias justificada
-  // Map<ausenciaId, justificantes[]> pentru Todas: cerere + presencia (status y doc para "Justificante de presencia a la cita")
-  const [justificantesByAusenciaIdMap, setJustificantesByAusenciaIdMap] = useState(new Map());
+  const [justificanteStatusModal, setJustificanteStatusModal] = useState({
+    isOpen: false,
+    loading: false,
+    item: null,
+    cerere: null,
+    presencia: null,
+    error: null,
+  }); // Modal estado justificantes (Todas > Aprobación, carga bajo demanda)
+  const [comprobarJustificanteItemId, setComprobarJustificanteItemId] = useState(null);
   // Loading states centralizate
   const { setOperationLoading, isOperationLoading } = useLoadingState();
   const [serverResp, setServerResp] = useState('');
@@ -3271,92 +3128,298 @@ export default function SolicitudesPage() {
   }, []);
 
   // Documente justificante pentru Ausencias justificada (Ver / Descargar în tab Aprobación) – cu batch pentru a evita 429
-  const fetchJustificanteDocumentos = useCallback(async (solicitudes) => {
-    const ausenciasJustificadas = solicitudes.filter(s => {
-      const t = (s.tipo || s.TIPO || '').toLowerCase();
-      return t.includes('ausencias') && t.includes('justificada');
+  const findCerereJustificanteDoc = (documentos, item) => {
+    const justificantes = documentos.filter((d) => {
+      const t = (d.tipo_documento || '').toLowerCase();
+      return t.includes('justificante') && !t.includes('presencia');
     });
-    if (ausenciasJustificadas.length === 0) {
-      setJustificanteDocumentosMap(new Map());
-      return;
-    }
-    const token = localStorage.getItem('auth_token');
-    const map = new Map();
-    await runInBatches(ausenciasJustificadas, 1, async (solicitud) => {
-      try {
-        const codigo = solicitud.codigo || solicitud.CODIGO || '';
-        const email = solicitud.email || solicitud['CORREO ELECTRONICO'] || '';
-        if (!codigo && !email) return null;
-        const url = `${routes.getDocumentos || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos`}${codigo ? `?empleadoId=${codigo}` : ''}${email && !codigo ? `?email=${encodeURIComponent(email)}` : ''}`;
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
-        });
-        if (!response.ok) return null;
-        const data = await response.json();
-        const documentos = Array.isArray(data) ? data : (data.data || []);
-        const justificantes = documentos.filter(d => (d.tipo_documento || '').toLowerCase() === 'justificante');
-        if (justificantes.length === 0) return null;
-        const fechaInicio = solicitud.fecha_inicio || (solicitud.FECHA || '').split(' - ')[0]?.trim() || '';
-        const fechaInicioDay = fechaInicio ? fechaInicio.substring(0, 10) : '';
-        const sorted = justificantes.sort((a, b) => {
-          if (b.doc_id && a.doc_id) return b.doc_id - a.doc_id;
-          if (b.fecha_creacion && a.fecha_creacion) return new Date(b.fecha_creacion) - new Date(a.fecha_creacion);
-          return 0;
-        });
-        const doc = fechaInicioDay
-          ? sorted.find(d => {
-              const fc = d.fecha_creacion;
-              if (!fc) return false;
-              const docDay = typeof fc === 'string' ? fc.substring(0, 10) : (fc instanceof Date ? fc.toISOString().split('T')[0] : '');
-              return docDay === fechaInicioDay;
-            }) || sorted[0]
-          : sorted[0];
-        if (doc) map.set(solicitud.id || solicitud.ID, doc);
-        return doc;
-      } catch (e) {
-        console.warn('Error fetching justificante for Ausencias justificada', solicitud.id, e);
-        return null;
-      }
+    if (justificantes.length === 0) return null;
+    const fechaInicio = item.fecha_inicio || (item.FECHA || '').split(' - ')[0]?.trim() || '';
+    const fechaInicioDay = fechaInicio ? String(fechaInicio).substring(0, 10) : '';
+    const sorted = justificantes.sort((a, b) => {
+      if (b.doc_id && a.doc_id) return b.doc_id - a.doc_id;
+      if (b.fecha_creacion && a.fecha_creacion) return new Date(b.fecha_creacion) - new Date(a.fecha_creacion);
+      return 0;
     });
-    setJustificanteDocumentosMap(map);
-  }, []);
+    if (!fechaInicioDay) return sorted[0];
+    return (
+      sorted.find((d) => {
+        const fc = d.fecha_creacion;
+        if (!fc) return false;
+        const docDay = typeof fc === 'string' ? fc.substring(0, 10) : (fc instanceof Date ? fc.toISOString().split('T')[0] : '');
+        return docDay === fechaInicioDay;
+      }) || sorted[0]
+    );
+  };
 
-  // Justificantes por ausencia_id (cerere + presencia) para Todas > Ausencias: mostrar estado real de "Justificante de presencia a la cita"
-  const fetchJustificantesByAusenciaForTodas = useCallback(async () => {
-    if (!allAusencias || allAusencias.length === 0) {
-      setJustificantesByAusenciaIdMap(new Map());
-      return;
-    }
-    const ausenciasJustificadas = allAusencias.filter(a => {
-      const t = (a.TIPO || a.tipo || '').toLowerCase();
-      return t.includes('ausencias') && t.includes('justificada');
+  const findPresenciaJustificanteDoc = (documentos, item) => {
+    const presenciaDocs = documentos.filter((d) => {
+      const t = (d.tipo_documento || '').toLowerCase();
+      return t.includes('presencia');
     });
-    if (ausenciasJustificadas.length === 0) {
-      setJustificantesByAusenciaIdMap(new Map());
-      return;
-    }
-    const token = localStorage.getItem('auth_token');
-    const map = new Map();
-    await runInBatches(ausenciasJustificadas, 2, async (ausencia) => {
-      const aid = ausencia.id ?? ausencia.ID;
-      if (aid == null) return null;
-      try {
-        const res = await fetch(routes.getAusenciaJustificantes(Number(aid)), {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (!res.ok) return null;
-        const data = await res.json();
-        const list = Array.isArray(data) ? data : (data?.data ?? []);
-        if (list.length > 0) map.set(Number(aid), list);
-        return list;
-      } catch (e) {
-        console.warn('Error fetching justificantes for ausencia', aid, e);
-        return null;
+    if (presenciaDocs.length === 0) return null;
+    const sorted = presenciaDocs.sort((a, b) => {
+      if (b.doc_id && a.doc_id) return b.doc_id - a.doc_id;
+      if (b.fecha_creacion && a.fecha_creacion) return new Date(b.fecha_creacion) - new Date(a.fecha_creacion);
+      return 0;
+    });
+    const fechaRaw = item?.FECHA || item?.fecha || item?.fecha_inicio || (item?.FECHA || '').split(' - ')[0]?.trim() || '';
+    let fechaDay = '';
+    if (fechaRaw) {
+      const s = String(fechaRaw).trim();
+      if (/^\d{4}-\d{2}-\d{2}/.test(s)) fechaDay = s.substring(0, 10);
+      else if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(s)) {
+        const [d, m, y] = s.split('/');
+        fechaDay = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
       }
+    }
+    if (fechaDay) {
+      const byDate = sorted.find((d) => {
+        const fc = d.fecha_creacion;
+        if (!fc) return false;
+        const docDay = typeof fc === 'string' ? fc.substring(0, 10) : (fc instanceof Date ? fc.toISOString().split('T')[0] : '');
+        return docDay === fechaDay;
+      });
+      if (byDate) return byDate;
+    }
+    return sorted[0];
+  };
+
+  const hasValidJustificanteDocId = (doc) => {
+    const id = doc?.doc_id ?? doc?.doc_ID;
+    return id != null && id !== '' && String(id) !== 'undefined';
+  };
+
+  const getItemEmpleadoCodigo = (item) => String(item?.CODIGO ?? item?.codigo ?? '').trim();
+
+  const fetchDocumentosForItem = async (item, token) => {
+    const codigo = getItemEmpleadoCodigo(item);
+    const email = item?.email || item?.['CORREO ELECTRONICO'] || '';
+    if (!codigo && !email) return [];
+    const url = `${routes.getDocumentos || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos`}${codigo ? `?empleadoId=${encodeURIComponent(codigo)}` : ''}${email && !codigo ? `?email=${encodeURIComponent(email)}` : ''}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
     });
-    setJustificantesByAusenciaIdMap(map);
-  }, [allAusencias]);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data) ? data : (data?.data || []);
+  };
+
+  const resolvePresenciaDocFromDocumentos = (documentos, item, cerereDocId = null) => {
+    if (!documentos?.length) return null;
+    const byDate = findPresenciaJustificanteDoc(documentos, item);
+    if (byDate?.doc_id) return byDate;
+    const presenciaLoose = documentos.find((d) => (d.tipo_documento || '').toLowerCase().includes('presencia'));
+    if (presenciaLoose?.doc_id) return presenciaLoose;
+    const justificantes = documentos
+      .filter((d) => (d.tipo_documento || '').toLowerCase().includes('justificante'))
+      .sort((a, b) => {
+        if (b.doc_id && a.doc_id) return b.doc_id - a.doc_id;
+        return 0;
+      });
+    if (cerereDocId != null) {
+      const other = justificantes.find((d) => String(d.doc_id) !== String(cerereDocId));
+      if (other?.doc_id) return other;
+    }
+    return justificantes[0] || null;
+  };
+
+  const resolvePresenciaStatus = async (item, token, presenciaRow, documentosEmpleadoRef, cerereDocId = null) => {
+    const estadoAusencia = (item.estado || item.ESTADO || '').toLowerCase();
+    if (estadoAusencia === 'pendiente') {
+      return { status: 'tras_aprobacion', message: 'Se solicitará tras la aprobación.' };
+    }
+
+    let docId = presenciaRow?.doc_id ?? presenciaRow?.doc_ID;
+    let nombreArchivo = presenciaRow?.doc_nombre_archivo ?? presenciaRow?.doc_NOMBRE_ARCHIVO ?? 'Justificante presencia';
+    const estadoPresencia = (presenciaRow?.doc_solicitado_estado || '').toLowerCase();
+    const solicitudCompletada = estadoPresencia === 'completado';
+
+    if (!hasValidJustificanteDocId({ doc_id: docId })) {
+      if (!documentosEmpleadoRef.current) {
+        documentosEmpleadoRef.current = await fetchDocumentosForItem(item, token);
+      }
+      const resolved = resolvePresenciaDocFromDocumentos(
+        documentosEmpleadoRef.current,
+        item,
+        cerereDocId ?? presenciaRow?.doc_id ?? presenciaRow?.doc_ID,
+      );
+      if (resolved?.doc_id) {
+        docId = resolved.doc_id;
+        nombreArchivo = resolved.nombre_archivo || nombreArchivo;
+      }
+    }
+
+    if (hasValidJustificanteDocId({ doc_id: docId })) {
+      return {
+        status: 'completado',
+        doc: { doc_id: docId, nombre_archivo: nombreArchivo },
+      };
+    }
+
+    // Mismo criterio que Mis Solicitudes del empleado: solicitud completada → ✅ Completado (descarga resuelve el archivo al click)
+    if (solicitudCompletada) {
+      return {
+        status: 'completado',
+        doc: { doc_id: null, nombre_archivo: nombreArchivo },
+      };
+    }
+
+    return {
+      status: 'pendiente',
+      message: 'Tras la aprobación se solicita al empleado; cuando lo suba aparecerá aquí.',
+    };
+  };
+
+  const comprobarJustificantesForItem = useCallback(async (item) => {
+    const itemId = item.id ?? item.ID;
+    setComprobarJustificanteItemId(itemId);
+    setJustificanteStatusModal({
+      isOpen: true,
+      loading: true,
+      item,
+      cerere: null,
+      presencia: null,
+      error: null,
+    });
+
+    const token = localStorage.getItem('auth_token');
+    const codigo = getItemEmpleadoCodigo(item);
+    const email = item.email || item['CORREO ELECTRONICO'] || '';
+    const estado = (item.estado || item.ESTADO || '').toLowerCase();
+
+    try {
+      let cerereDoc = null;
+      let presencia = null;
+      const ausenciaId = item.ausencia_id ?? item.ausenciaId ?? item.id ?? item.ID;
+      const documentosEmpleadoRef = { current: null };
+
+      if (ausenciaId != null && Number.isFinite(Number(ausenciaId))) {
+        try {
+          const res = await fetch(routes.getAusenciaJustificantes(Number(ausenciaId)), {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (res.ok) {
+            const rows = await res.json();
+            const justificantesList = Array.isArray(rows) ? rows : (rows?.data ?? []);
+            const cerereRow = justificantesList.find((j) => {
+              const t = (j.tipo || j.TIPO || '').toLowerCase();
+              return t === 'cerere' || (t && t !== 'presencia' && !t.includes('presencia'));
+            });
+            if (cerereRow && hasValidJustificanteDocId(cerereRow)) {
+              cerereDoc = {
+                doc_id: cerereRow.doc_id ?? cerereRow.doc_ID,
+                nombre_archivo: cerereRow.doc_nombre_archivo ?? cerereRow.doc_NOMBRE_ARCHIVO ?? 'Justificante',
+              };
+            }
+            const presenciaRow = justificantesList.find((j) => {
+              const t = (j.tipo || j.TIPO || j.tipo_documento || j.doc_tipo_documento || '').toLowerCase();
+              return t === 'presencia' || t.includes('presencia');
+            });
+            presencia = await resolvePresenciaStatus(
+              item,
+              token,
+              presenciaRow,
+              documentosEmpleadoRef,
+              cerereDoc?.doc_id,
+            );
+          }
+        } catch {
+          /* fallback below */
+        }
+      }
+
+      if (!presencia && (item.estado || item.ESTADO || '').toLowerCase() !== 'pendiente') {
+        presencia = await resolvePresenciaStatus(item, token, null, documentosEmpleadoRef, cerereDoc?.doc_id);
+      }
+
+      if (!cerereDoc && (codigo || email)) {
+        if (!documentosEmpleadoRef.current) {
+          documentosEmpleadoRef.current = await fetchDocumentosForItem(item, token);
+        }
+        cerereDoc = findCerereJustificanteDoc(documentosEmpleadoRef.current, item);
+      }
+
+      const cerere = cerereDoc
+        ? { status: 'cargado', doc: cerereDoc }
+        : { status: 'no_cargado' };
+
+      if (!presencia) {
+        if (estado === 'pendiente') {
+          presencia = { status: 'tras_aprobacion', message: 'Se solicitará tras la aprobación.' };
+        } else {
+          presencia = {
+            status: 'pendiente',
+            message: 'Tras la aprobación se solicita al empleado; cuando lo suba aparecerá aquí.',
+          };
+        }
+      }
+
+      setJustificanteStatusModal({
+        isOpen: true,
+        loading: false,
+        item,
+        cerere,
+        presencia,
+        error: null,
+      });
+    } catch (e) {
+      console.warn('Error comprobando justificantes:', e);
+      setJustificanteStatusModal((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Error al comprobar justificantes. Inicia sesión si es necesario.',
+      }));
+    } finally {
+      setComprobarJustificanteItemId(null);
+    }
+  }, [fetchDocumentosForItem, resolvePresenciaStatus]);
+
+  const downloadJustificanteDoc = useCallback(async (doc, item, forPreview = false, resolveAsPresencia = false) => {
+    const token = localStorage.getItem('auth_token');
+    const codigo = getItemEmpleadoCodigo(item);
+    const emailEnc = encodeURIComponent(item?.email || item?.['CORREO ELECTRONICO'] || '');
+    let docId = doc?.doc_id ?? doc?.doc_ID;
+    let fileName = doc?.nombre_archivo || (resolveAsPresencia ? 'Justificante presencia' : 'justificante');
+
+    if (!hasValidJustificanteDocId({ doc_id: docId }) && (codigo || emailEnc)) {
+      const documentos = await fetchDocumentosForItem(item, token);
+      const resolved = resolveAsPresencia
+        ? resolvePresenciaDocFromDocumentos(documentos, item)
+        : findCerereJustificanteDoc(documentos, item);
+      if (resolved?.doc_id) {
+        docId = resolved.doc_id;
+        fileName = resolved.nombre_archivo || fileName;
+      }
+    }
+
+    if (!hasValidJustificanteDocId({ doc_id: docId })) {
+      throw new Error('Documento no disponible');
+    }
+
+    const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${docId}&id=${encodeURIComponent(codigo)}&email=${emailEnc}&fileName=${encodeURIComponent(fileName)}`;
+    const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new Error('No autorizado');
+    const blob = await res.blob();
+    if (forPreview) {
+      setJustificantePreview({
+        isOpen: true,
+        blobUrl: window.URL.createObjectURL(blob),
+        fileName,
+        mimeType: blob.type || '',
+      });
+      return;
+    }
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(blobUrl);
+    document.body.removeChild(a);
+  }, [fetchDocumentosForItem, resolvePresenciaDocFromDocumentos]);
 
   const fetchSolicitudes = useCallback(async () => {
     setOperationLoading('solicitudes', true);
@@ -3476,7 +3539,6 @@ export default function SolicitudesPage() {
         setSolicitudes(transformedData);
         
         await fetchBajaVoluntariaDocumentos(transformedData);
-        await fetchJustificanteDocumentos(transformedData);
 
         let totalAsuntoDays = 0;
         let totalVacacionesDays = 0;
@@ -3519,7 +3581,6 @@ export default function SolicitudesPage() {
           
           // Încarcă documentele asociate cu BAJA_VOLUNTARIA și Ausencias justificada
           await fetchBajaVoluntariaDocumentos(data);
-          await fetchJustificanteDocumentos(data);
 
           // Calculează totalul de zile pentru Asunto Propio și Vacaciones
           let totalAsuntoDays = 0;
@@ -3551,7 +3612,7 @@ export default function SolicitudesPage() {
       console.error('Error fetching solicitudes/ausencias:', error);
     }
     setOperationLoading('solicitudes', false);
-  }, [authUser, email, callApi, setOperationLoading, activeTab, fetchBajaVoluntariaDocumentos, fetchJustificanteDocumentos]);
+  }, [authUser, email, callApi, setOperationLoading, activeTab, fetchBajaVoluntariaDocumentos]);
 
   const fetchAllSolicitudes = useCallback(async () => {
     setOperationLoading('allSolicitudes', true);
@@ -5102,12 +5163,7 @@ export default function SolicitudesPage() {
     }
   }, [activeTab, selectedTab, selectedUser, allAusencias.length, canAccessAllTabs, fetchDocumentosSolicitadosForAusencias]);
 
-  // Justificantes por ausencia_id para mostrar estado "Justificante de presencia" (Pendiente de cargar / Cargado) en Todas > Ausencias
-  useEffect(() => {
-    if (selectedTab === 'ausencias' && canAccessAllTabs && allAusencias.length > 0) {
-      fetchJustificantesByAusenciaForTodas();
-    }
-  }, [selectedTab, allAusencias.length, canAccessAllTabs, fetchJustificantesByAusenciaForTodas]);
+  // Justificantes por ausencia_id: ya no se precargan en Todas > Ausencias (comprobar bajo demanda)
 
   // Sub-tab Ausencias: por defecto filtrar por mes actual (no "Todas las meses")
   useEffect(() => {
@@ -5117,16 +5173,14 @@ export default function SolicitudesPage() {
     }
   }, [selectedTab, selectedMonth]);
 
-  // Todas: cargar documentos solo cuando el sub-tab que los necesita está activo (no al abrir Todas)
+  // Todas: documentos Baja Voluntaria al abrir ese sub-tab (justificantes ausencia: bajo demanda)
   useEffect(() => {
     if (activeTab !== 'todas' || !canAccessAllTabs || !allSolicitudes.length) return;
-    if (selectedTab === 'aprobacion' || selectedTab === 'ausencias') {
-      fetchJustificanteDocumentos(allSolicitudes);
-    } else if (selectedTab === 'baja_voluntaria') {
+    if (selectedTab === 'baja_voluntaria') {
       fetchBajaVoluntariaDocumentos(allSolicitudes);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- run when tab/length change, not on every allSolicitudes reference
-  }, [activeTab, canAccessAllTabs, selectedTab, allSolicitudes.length, fetchJustificanteDocumentos, fetchBajaVoluntariaDocumentos]);
+  }, [activeTab, canAccessAllTabs, selectedTab, allSolicitudes.length, fetchBajaVoluntariaDocumentos]);
 
   // Sincronizăm ref-ul cu state-ul pentru a păstra map-ul între render-uri
   useLayoutEffect(() => {
@@ -11761,10 +11815,8 @@ export default function SolicitudesPage() {
                             getTipoColor={getTipoColor}
                             formatHora={formatHora}
                             getStatusColor={getStatusColor}
-                            justificanteDocumentosMap={justificanteDocumentosMap}
-                            justificantesByAusenciaIdMap={justificantesByAusenciaIdMap}
-                            onJustificanteError={setErrorMsg}
-                            openJustificantePreview={setJustificantePreview}
+                            onComprobarJustificante={comprobarJustificantesForItem}
+                            comprobarJustificanteItemId={comprobarJustificanteItemId}
                           />
                         );
                       }
@@ -11886,11 +11938,13 @@ export default function SolicitudesPage() {
                             getStatusColor={getStatusColor}
                             getSolicitudTipoShort={getSolicitudTipoShort}
                             getStatusIndicatorColor={getStatusIndicatorColor}
-                            justificantesPorAusencia={new Map()} // Nu avem justificante pentru "Todas las Solicitudes"
-                            openUploadJustificanteModal={() => {}} // Nu avem funcționalitate de upload pentru "Todas las Solicitudes"
-                            onEdit={handleEdit} // Adăugăm butonul Edit
-                            onDelete={handleDeleteClick} // Adăugăm butonul Delete
-                            isDeleting={isOperationLoading('delete')} // Stare de loading pentru delete
+                            justificantesPorAusencia={new Map()}
+                            openUploadJustificanteModal={selectedTab === 'aprobacion' ? null : undefined}
+                            onComprobarJustificante={selectedTab === 'aprobacion' ? comprobarJustificantesForItem : undefined}
+                            comprobarJustificanteItemId={selectedTab === 'aprobacion' ? comprobarJustificanteItemId : null}
+                            onEdit={handleEdit}
+                            onDelete={handleDeleteClick}
+                            isDeleting={isOperationLoading('delete')}
                           />
                         );
                       }
@@ -12508,7 +12562,7 @@ export default function SolicitudesPage() {
                         )}
                       </div>
                       
-                      {/* Detalii Ausencias justificada (tab Aprobación / Todas): tipo, hora cita, centro, descripción + Ver/Descargar justificante. Siempre mostrar "Justificante para la solicitud: No cargado." cuando está pendiente y no hay doc. */}
+                      {/* Detalii Ausencias justificada (Todas): detalles + justificantes (Aprobación: botón bajo demanda) */}
                       {(() => {
                         const t = (item.tipo || item.TIPO || item.tipo_solicitud || item.TIPO_SOLICITUD || '').toLowerCase();
                         const esAusenciaJustificada = t.includes('ausencias') && t.includes('justificada');
@@ -12522,9 +12576,6 @@ export default function SolicitudesPage() {
                           otro: 'Otro',
                         };
                         const tipoLabel = labels[item.tipo_justificante] || item.tipo_justificante || '—';
-                        // En "Todas" los ítems aprobados vienen de allAusencias (item.id = ausencia id). El mapa está keyed por solicitud_id.
-                        const solicitudIdForMap = item.solicitud_id ?? item.SOLICITUD_ID ?? item.id ?? item.ID;
-                        const documento = justificanteDocumentosMap.get(solicitudIdForMap);
                         return (
                           <div className="mb-4 space-y-3">
                             <div className="p-4 rounded-lg border-2 border-cyan-200 bg-cyan-50/80">
@@ -12542,155 +12593,21 @@ export default function SolicitudesPage() {
                                 <p className="text-sm text-blue-800">{item.motivo || item.MOTIVO}</p>
                               </div>
                             )}
-                            {/* Justificante para la solicitud (cerere) - igual que en Mis Solicitudes */}
-                            <div className="mt-4 p-4 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 space-y-3">
-                              <p className="text-sm font-medium text-gray-700 mb-1">Justificante para la solicitud:</p>
-                              {documento ? (
-                                <p className="text-sm text-green-700 flex items-center gap-2 flex-wrap">
-                                  ✅ Cargado
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const token = localStorage.getItem('auth_token');
-                                      const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${documento.doc_id}&id=${item.codigo || ''}&email=${encodeURIComponent(item.email || '')}&fileName=${encodeURIComponent(documento.nombre_archivo || '')}`;
-                                      fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-                                        .then((res) => {
-                                          if (!res.ok) throw new Error('No autorizado');
-                                          return res.blob();
-                                        })
-                                        .then((blob) => {
-                                          const blobUrl = window.URL.createObjectURL(blob);
-                                          const a = document.createElement('a');
-                                          a.href = blobUrl;
-                                          a.download = documento.nombre_archivo || 'justificante';
-                                          document.body.appendChild(a);
-                                          a.click();
-                                          window.URL.revokeObjectURL(blobUrl);
-                                          document.body.removeChild(a);
-                                        })
-                                        .catch(() => setErrorMsg('Error al descargar el justificante. Inicia sesión si es necesario.'));
-                                    }}
-                                    className="px-3 py-1.5 text-xs font-medium rounded bg-amber-600 text-white hover:bg-amber-700"
-                                  >
-                                    📥 Descargar
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const token = localStorage.getItem('auth_token');
-                                      const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${documento.doc_id}&id=${item.codigo || ''}&email=${encodeURIComponent(item.email || '')}&fileName=${encodeURIComponent(documento.nombre_archivo || '')}`;
-                                      fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-                                        .then((res) => {
-                                          if (!res.ok) throw new Error('No autorizado');
-                                          return res.blob();
-                                        })
-                                        .then((blob) => {
-                                          const blobUrl = window.URL.createObjectURL(blob);
-                                          setJustificantePreview({
-                                            isOpen: true,
-                                            blobUrl,
-                                            fileName: documento.nombre_archivo || 'Justificante',
-                                            mimeType: blob.type || '',
-                                          });
-                                        })
-                                        .catch(() => setErrorMsg('Error al abrir el justificante. Inicia sesión si es necesario.'));
-                                    }}
-                                    className="px-3 py-1.5 text-xs font-medium rounded bg-cyan-600 text-white hover:bg-cyan-700"
-                                  >
-                                    👁️ Ver
-                                  </button>
-                                </p>
-                              ) : (
-                                <p className="text-sm text-gray-600">No cargado.</p>
-                              )}
-                              <p className="text-sm font-medium text-gray-700 mt-2 mb-1">Justificante de presencia a la cita:</p>
-                              {(item.estado || item.ESTADO || '').toLowerCase() === 'pendiente' ? (
-                                <p className="text-sm text-gray-500">Se solicitará tras la aprobación.</p>
-                              ) : (() => {
-                                const ausenciaId = item.id ?? item.ID;
-                                const justificantesList = ausenciaId != null ? justificantesByAusenciaIdMap.get(Number(ausenciaId)) : null;
-                                const presencia = justificantesList?.find(j => {
-                                  const t = (j.tipo || j.TIPO || j.tipo_documento || j.doc_tipo_documento || '').toLowerCase();
-                                  return t === 'presencia' || t.includes('presencia');
-                                });
-                                const estadoPresencia = (presencia?.doc_solicitado_estado || '').toLowerCase();
-                                const tieneDocId = presencia?.doc_id != null && presencia?.doc_id !== '';
-                                const tienePresenciaCargada = presencia && (tieneDocId || estadoPresencia === 'completado');
-                                const nombrePresencia = presencia?.doc_nombre_archivo ?? presencia?.doc_NOMBRE_ARCHIVO ?? 'Justificante presencia';
-                                const descargarPresencia = async (e, forPreview = false) => {
-                                  e.stopPropagation();
-                                  const token = localStorage.getItem('auth_token');
-                                  const codigo = item.codigo || item.CODIGO || '';
-                                  const emailEnc = encodeURIComponent(item.email || item['CORREO ELECTRONICO'] || '');
-                                  if (tieneDocId) {
-                                    const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${presencia.doc_id}&id=${codigo}&email=${emailEnc}&fileName=${encodeURIComponent(nombrePresencia)}`;
-                                    const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-                                    if (!res.ok) throw new Error();
-                                    const blob = await res.blob();
-                                    if (forPreview) {
-                                      setJustificantePreview({
-                                        isOpen: true,
-                                        blobUrl: window.URL.createObjectURL(blob),
-                                        fileName: nombrePresencia,
-                                        mimeType: blob.type || '',
-                                      });
-                                    } else {
-                                      const a = document.createElement('a');
-                                      a.href = window.URL.createObjectURL(blob);
-                                      a.download = nombrePresencia;
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      window.URL.revokeObjectURL(a.href);
-                                      document.body.removeChild(a);
-                                    }
-                                    return;
-                                  }
-                                  try {
-                                    const r = await fetch(`${routes.getDocumentos || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos`}?empleadoId=${encodeURIComponent(codigo)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-                                    if (!r.ok) throw new Error();
-                                    const data = await r.json();
-                                    const docs = Array.isArray(data) ? data : (data?.data || []);
-                                    const docPresencia = docs.find(d => (d.tipo_documento || '').toLowerCase().includes('presencia'));
-                                    const doc = docPresencia || docs.find(d => (d.tipo_documento || '').toLowerCase().includes('justificante'));
-                                    if (!doc?.doc_id) { setErrorMsg('No se encontró el documento.'); return; }
-                                    const url = `${routes.downloadDocumento || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos/download`}?documentId=${doc.doc_id}&id=${codigo}&email=${emailEnc}&fileName=${encodeURIComponent(doc.nombre_archivo || 'justificante-presencia')}`;
-                                    const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-                                    if (!res.ok) throw new Error();
-                                    const blob = await res.blob();
-                                    if (forPreview) {
-                                      setJustificantePreview({
-                                        isOpen: true,
-                                        blobUrl: window.URL.createObjectURL(blob),
-                                        fileName: doc.nombre_archivo || 'Justificante presencia',
-                                        mimeType: blob.type || '',
-                                      });
-                                    } else {
-                                      const a = document.createElement('a');
-                                      a.href = window.URL.createObjectURL(blob);
-                                      a.download = doc.nombre_archivo || 'justificante-presencia';
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      window.URL.revokeObjectURL(a.href);
-                                      document.body.removeChild(a);
-                                    }
-                                  } catch {
-                                    setErrorMsg('Error al descargar. Inicia sesión si es necesario.');
-                                  }
-                                };
-                                if (tienePresenciaCargada) {
-                                  return (
-                                    <p className="text-sm text-green-700 flex items-center gap-2 flex-wrap">
-                                      ✅ Completado
-                                      <button type="button" onClick={(e) => descargarPresencia(e, false)} className="px-3 py-1.5 text-xs font-medium rounded bg-amber-600 text-white hover:bg-amber-700">📥 Descargar</button>
-                                      <button type="button" onClick={(e) => descargarPresencia(e, true)} className="px-3 py-1.5 text-xs font-medium rounded bg-cyan-600 text-white hover:bg-cyan-700">👁️ Ver</button>
-                                    </p>
-                                  );
-                                }
-                                return <p className="text-sm text-amber-700">Tras la aprobación se solicita al empleado; cuando lo suba aparecerá aquí.</p>;
-                              })()}
-                            </div>
+                            {(selectedTab === 'aprobacion' || selectedTab === 'ausencias') ? (
+                              <div className="mt-4 p-4 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    comprobarJustificantesForItem(item);
+                                  }}
+                                  disabled={comprobarJustificanteItemId === (item.id ?? item.ID)}
+                                  className="w-full sm:w-auto px-4 py-2 text-sm font-semibold rounded-lg bg-cyan-600 text-white hover:bg-cyan-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                                >
+                                  {comprobarJustificanteItemId === (item.id ?? item.ID) ? '⏳ Comprobando…' : '🔍 Comprobar justificante'}
+                                </button>
+                              </div>
+                            ) : null}
                           </div>
                         );
                       })()}
@@ -13232,10 +13149,10 @@ export default function SolicitudesPage() {
                         </div>
                       )}
 
-                      {selectedTab !== 'ausencias' && selectedTab !== 'baja' && item.motivo && (
+                      {selectedTab !== 'ausencias' && selectedTab !== 'baja' && (item.motivo || item.MOTIVO) && !((item.tipo || item.TIPO || '').toLowerCase().includes('ausencias') && (item.tipo || item.TIPO || '').toLowerCase().includes('justificada')) && (
                         <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 mb-4">
                           <span className="block text-xs font-medium text-blue-700 mb-1">Motivo</span>
-                          <p className="text-sm text-blue-800">{item.motivo}</p>
+                          <p className="text-sm text-blue-800">{item.motivo || item.MOTIVO}</p>
                         </div>
                       )}
                     </div>
@@ -16164,6 +16081,94 @@ export default function SolicitudesPage() {
                     Cargar Justificante
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal estado justificantes (Todas > Aprobación, carga bajo demanda) */}
+      <Modal
+        isOpen={justificanteStatusModal.isOpen}
+        onClose={() => setJustificanteStatusModal({ isOpen: false, loading: false, item: null, cerere: null, presencia: null, error: null })}
+        title="Estado de justificantes"
+        size="md"
+      >
+        {justificanteStatusModal.loading ? (
+          <div className="flex justify-center py-10">
+            <LoadingSpinner size="md" text="Comprobando justificantes..." />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {justificanteStatusModal.item && (
+              <p className="text-sm text-gray-600">
+                {justificanteStatusModal.item.NOMBRE || justificanteStatusModal.item.nombre || justificanteStatusModal.item.email}
+              </p>
+            )}
+            {justificanteStatusModal.error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                {justificanteStatusModal.error}
+              </div>
+            )}
+            <div className="p-4 rounded-lg border border-gray-200 bg-gray-50 space-y-2">
+              <p className="text-sm font-medium text-gray-800">Justificante para la solicitud:</p>
+              {justificanteStatusModal.cerere?.status === 'cargado' && hasValidJustificanteDocId(justificanteStatusModal.cerere.doc) ? (
+                <div className="text-sm text-green-700 flex items-center gap-2 flex-wrap">
+                  <span>✅ Cargado</span>
+                  <button
+                    type="button"
+                    onClick={() => downloadJustificanteDoc(justificanteStatusModal.cerere.doc, justificanteStatusModal.item, false).catch(() => setErrorMsg('Error al descargar el justificante.'))}
+                    className="px-3 py-1.5 text-xs font-medium rounded bg-amber-600 text-white hover:bg-amber-700"
+                  >
+                    📥 Descargar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => downloadJustificanteDoc(justificanteStatusModal.cerere.doc, justificanteStatusModal.item, true).catch(() => setErrorMsg('Error al abrir el justificante.'))}
+                    className="px-3 py-1.5 text-xs font-medium rounded bg-cyan-600 text-white hover:bg-cyan-700"
+                  >
+                    👁️ Ver
+                  </button>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600">No cargado.</p>
+              )}
+            </div>
+            <div className="p-4 rounded-lg border border-gray-200 bg-gray-50 space-y-2">
+              <p className="text-sm font-medium text-gray-800">Justificante de presencia a la cita:</p>
+              {justificanteStatusModal.presencia?.status === 'completado' ? (
+                <div className="text-sm text-green-700 flex items-center gap-2 flex-wrap">
+                  <span>✅ Completado</span>
+                  <button
+                    type="button"
+                    onClick={() => downloadJustificanteDoc(justificanteStatusModal.presencia.doc, justificanteStatusModal.item, false, true).catch(() => setErrorMsg('Error al descargar el justificante.'))}
+                    className="px-3 py-1.5 text-xs font-medium rounded bg-amber-600 text-white hover:bg-amber-700"
+                  >
+                    📥 Descargar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => downloadJustificanteDoc(justificanteStatusModal.presencia.doc, justificanteStatusModal.item, true, true).catch(() => setErrorMsg('Error al abrir el justificante.'))}
+                    className="px-3 py-1.5 text-xs font-medium rounded bg-cyan-600 text-white hover:bg-cyan-700"
+                  >
+                    👁️ Ver
+                  </button>
+                </div>
+              ) : justificanteStatusModal.presencia?.status === 'tras_aprobacion' ? (
+                <p className="text-sm text-gray-500">{justificanteStatusModal.presencia.message}</p>
+              ) : justificanteStatusModal.presencia?.status === 'pendiente' ? (
+                <p className="text-sm text-amber-700">{justificanteStatusModal.presencia.message}</p>
+              ) : (
+                <p className="text-sm text-gray-500">—</p>
+              )}
+            </div>
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setJustificanteStatusModal({ isOpen: false, loading: false, item: null, cerere: null, presencia: null, error: null })}
+                className="px-6 py-2.5 border-2 border-gray-300 hover:border-gray-400 rounded-lg font-semibold transition-colors"
+              >
+                Cerrar
               </button>
             </div>
           </div>

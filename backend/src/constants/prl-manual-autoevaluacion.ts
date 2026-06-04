@@ -373,8 +373,9 @@ export function resolvePrlAutoevaluacionLayout(
 ): PrlAutoevaluacionLayout | null {
   const name = String(fileName || '');
   return (
-    PRL_MANUAL_AUTOEVALUACIONS.find((layout) => layout.matchFileName.test(name)) ??
-    null
+    PRL_MANUAL_AUTOEVALUACIONS.find((layout) =>
+      layout.matchFileName.test(name),
+    ) ?? null
   );
 }
 
@@ -452,7 +453,9 @@ export function buildAutoevaluacionReview(
     let respuestaTexto: string | null = given || null;
     if (type === 'choice' && q.options && given) {
       const opt = q.options[given as PrlAutoevaluacionOptionKey];
-      respuestaTexto = opt ? `${given.toUpperCase()}) ${opt}` : given.toUpperCase();
+      respuestaTexto = opt
+        ? `${given.toUpperCase()}) ${opt}`
+        : given.toUpperCase();
     }
 
     const item: PrlAutoevaluacionReviewItem = {
@@ -470,7 +473,8 @@ export function buildAutoevaluacionReview(
       } else if (q.options) {
         item.respuesta_correcta = expected;
         item.respuesta_correcta_texto =
-          q.options[expected as PrlAutoevaluacionOptionKey] ?? expected.toUpperCase();
+          q.options[expected as PrlAutoevaluacionOptionKey] ??
+          expected.toUpperCase();
       } else {
         item.respuesta_correcta = expected;
         item.respuesta_correcta_texto = expected.toUpperCase();

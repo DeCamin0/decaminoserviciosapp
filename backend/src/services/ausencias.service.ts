@@ -1081,6 +1081,82 @@ export class AusenciasService {
    * Obtine lista de ausencias cu filtrare opțională pe codigo și MES
    */
   /**
+   * Elimina justificantes, solicitudes de documento y archivos vinculados a una ausencia.
+   * Se invoca al borrar la ausencia o la solicitud padre.
+   */
+  async cleanupRelatedDataForAusenciaId(ausenciaId: number): Promise<void> {
+    if (!Number.isFinite(ausenciaId)) return;
+
+    const links = await this.prisma.$queryRawUnsafe<
+      Array<{ doc_id: number | null; documento_solicitado_id: number | null }>
+    >(
+      `SELECT doc_id, documento_solicitado_id FROM ausencia_justificantes WHERE ausencia_id = ${Number(ausenciaId)}`,
+    );
+
+    const docIds = new Set<number>();
+    const documentoSolicitadoIds = new Set<number>();
+    for (const row of links || []) {
+      if (row.doc_id != null && Number.isFinite(Number(row.doc_id))) {
+        docIds.add(Number(row.doc_id));
+      }
+      if (
+        row.documento_solicitado_id != null &&
+        Number.isFinite(Number(row.documento_solicitado_id))
+      ) {
+        documentoSolicitadoIds.add(Number(row.documento_solicitado_id));
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `DELETE FROM ausencia_justificantes WHERE ausencia_id = ${Number(ausenciaId)}`,
+      );
+
+      await tx.$executeRawUnsafe(
+        `UPDATE Ausencias SET ausencia_asociada_id = NULL WHERE ausencia_asociada_id = ${Number(ausenciaId)}`,
+      );
+
+      for (const dsId of documentoSolicitadoIds) {
+        await tx.$executeRawUnsafe(
+          `DELETE FROM documentos_solicitados WHERE id = ${dsId}`,
+        );
+      }
+
+      for (const docId of docIds) {
+        const refs = await tx.$queryRawUnsafe<Array<{ n: number | bigint }>>(
+          `SELECT COUNT(*) as n FROM ausencia_justificantes WHERE doc_id = ${docId}`,
+        );
+        const refCount = Number(refs?.[0]?.n ?? 0);
+        if (refCount === 0) {
+          await tx.$executeRawUnsafe(
+            `DELETE FROM CarpetasDocumentos WHERE doc_id = ${docId}`,
+          );
+        }
+      }
+    });
+
+    this.logger.log(
+      `✅ Cleanup ausencia ${ausenciaId}: ${docIds.size} archivo(s), ${documentoSolicitadoIds.size} solicitud(es) documento`,
+    );
+  }
+
+  /** Limpia justificantes/archivos de todas las ausencias ligadas a una solicitud. */
+  async cleanupRelatedDataForSolicitudId(solicitudId: string): Promise<void> {
+    const sid = String(solicitudId || '').trim();
+    if (!sid) return;
+
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ id: number }>>(
+      `SELECT id FROM Ausencias WHERE solicitud_id = ${this.escapeSql(sid)}`,
+    );
+
+    for (const row of rows || []) {
+      if (row?.id != null) {
+        await this.cleanupRelatedDataForAusenciaId(Number(row.id));
+      }
+    }
+  }
+
+  /**
    * Șterge o ausencia din baza de date
    */
   async deleteAusencia(
@@ -1116,6 +1192,8 @@ export class AusenciasService {
         tipo === 'Permiso Retribuido' &&
         motivo.includes('Premio - Salón de la Fama');
 
+      await this.cleanupRelatedDataForAusenciaId(Number(id));
+
       // Șterge ausencia
       await this.prisma.$executeRawUnsafe(`
         DELETE FROM Ausencias
@@ -1124,24 +1202,16 @@ export class AusenciasService {
 
       this.logger.log(`✅ Ausencia ${id} eliminada exitosamente`);
 
-      // Dacă nu mai există nici o ausencia pentru această solicitare, șterge și solicitarea (consistență)
+      // Borrar siempre la solicitud padre (1 solicitud ↔ 1 ausencia por codigo)
       if (solicitudId && String(solicitudId).trim() !== '') {
-        const remaining = await this.prisma.$queryRawUnsafe<
-          Array<{ n: number }>
-        >(
-          `SELECT COUNT(*) as n FROM Ausencias WHERE solicitud_id = ${this.escapeSql(String(solicitudId))}`,
+        await this.prisma.$executeRawUnsafe(`
+          DELETE FROM solicitudes
+          WHERE id = ${this.escapeSql(String(solicitudId))}
+            AND codigo = ${this.escapeSql(String(codigo))}
+        `);
+        this.logger.log(
+          `✅ Solicitud ${solicitudId} eliminada junto con la ausencia ${id}.`,
         );
-        const count = remaining?.[0]?.n ?? 0;
-        if (count === 0) {
-          await this.prisma.$executeRawUnsafe(`
-            DELETE FROM solicitudes
-            WHERE id = ${this.escapeSql(String(solicitudId))}
-              AND codigo = ${this.escapeSql(String(codigo))}
-          `);
-          this.logger.log(
-            `✅ Solicitud ${solicitudId} eliminada (nu mai avea ausencias).`,
-          );
-        }
       }
 
       // Trimite notificări pentru toate ausencias (async, non-blocking)

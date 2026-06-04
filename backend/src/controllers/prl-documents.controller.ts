@@ -847,10 +847,11 @@ export class PrlDocumentsController {
         throw new BadRequestException('No se pudo identificar al empleado');
       }
 
-      const result = await this.prlDocumentsService.obtenerResultadoAutoevaluacion(
-        documentoIdNum,
-        { empleadoId, includeCorrectAnswers: false },
-      );
+      const result =
+        await this.prlDocumentsService.obtenerResultadoAutoevaluacion(
+          documentoIdNum,
+          { empleadoId, includeCorrectAnswers: false },
+        );
 
       return { success: true, ...result };
     } catch (error: any) {
@@ -877,10 +878,11 @@ export class PrlDocumentsController {
         throw new BadRequestException('documentoId debe ser un número');
       }
 
-      const result = await this.prlDocumentsService.obtenerResultadoAutoevaluacion(
-        documentoIdNum,
-        { includeCorrectAnswers: true },
-      );
+      const result =
+        await this.prlDocumentsService.obtenerResultadoAutoevaluacion(
+          documentoIdNum,
+          { includeCorrectAnswers: true },
+        );
 
       return { success: true, ...result };
     } catch (error: any) {
