@@ -5,11 +5,13 @@ import {
   Logger,
   Inject,
   forwardRef,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { EmpleadoGrupoScopeFilter } from './empleado-grupo-scope.service';
 import { DocumentosSolicitadosService } from './documentos-solicitados.service';
+import { PrlDocumentsService } from './prl-documents.service';
 import * as ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 
@@ -23,6 +25,9 @@ export class EmpleadosService {
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => DocumentosSolicitadosService))
     private readonly documentosSolicitadosService?: DocumentosSolicitadosService,
+    @Optional()
+    @Inject(forwardRef(() => PrlDocumentsService))
+    private readonly prlDocumentsService?: PrlDocumentsService,
   ) {}
 
   /**
@@ -869,6 +874,32 @@ export class EmpleadosService {
             // Nu aruncăm eroare pentru a nu bloca crearea angajatului
             this.logger.warn(
               `⚠️ Error aplicando reglas a nuevo empleado ${empleadoData.CODIGO}: ${error.message}`,
+            );
+          }
+        }
+      }
+
+      // Documentos PRL del grupo (misma lógica que «Enviar a Empleados»)
+      if (this.prlDocumentsService) {
+        const estado = empleadoData.ESTADO || '';
+        const esActivo = estado.toString().trim().toUpperCase() === 'ACTIVO';
+        const grupo = empleadoData.GRUPO?.trim();
+
+        if (esActivo && grupo) {
+          try {
+            const prlResult =
+              await this.prlDocumentsService.enviarDocumentosPrlAlNuevoEmpleado(
+                empleadoData.CODIGO,
+                grupo,
+              );
+            if (prlResult && prlResult.documentos_creados > 0) {
+              this.logger.log(
+                `✅ ${prlResult.documentos_creados} documento(s) PRL asignado(s) automáticamente a ${empleadoData.CODIGO}`,
+              );
+            }
+          } catch (error: any) {
+            this.logger.warn(
+              `⚠️ Error enviando documentos PRL automáticos a ${empleadoData.CODIGO}: ${error.message}`,
             );
           }
         }

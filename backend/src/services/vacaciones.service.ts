@@ -196,12 +196,43 @@ export class VacacionesService {
   }
 
   /**
+   * Cuenta días naturales entre dos fechas (ambos inclusive).
+   * Si soloDisfrutados=true, solo cuenta días hasta hoy (vacaciones ya disfrutadas).
+   */
+  private contarDiasPeriodo(
+    fechaInicio: Date,
+    fechaFin: Date,
+    soloDisfrutados: boolean,
+  ): number {
+    const inicio = new Date(fechaInicio);
+    inicio.setHours(0, 0, 0, 0);
+    const fin = new Date(fechaFin);
+    fin.setHours(0, 0, 0, 0);
+
+    if (soloDisfrutados) {
+      const hoy = new Date();
+      hoy.setHours(0, 0, 0, 0);
+      if (inicio > hoy) {
+        return 0;
+      }
+      const finEfectivo = fin <= hoy ? fin : hoy;
+      const diffTime = finEfectivo.getTime() - inicio.getTime();
+      return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    }
+
+    const diffTime = fin.getTime() - inicio.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+  }
+
+  /**
    * Calcula días consumidos de solicitudes aprobadas
-   * Cuenta días naturales desde fecha_inicio hasta fecha_fin (ambos inclusive)
+   * Cuenta días naturales desde fecha_inicio hasta fecha_fin (ambos inclusive).
+   * Asuntos propios: solo solicitudes del año en curso (por fecha_inicio).
    */
   private async calcularDiasConsumidos(
     codigo: string,
     tipo: 'Vacaciones' | 'Asunto Propio',
+    soloDisfrutados = false,
   ): Promise<number> {
     // Usar query raw para obtener solicitudes aprobadas
     const query =
@@ -214,6 +245,7 @@ export class VacacionesService {
       WHERE codigo = ${this.escapeSql(codigo)}
         AND tipo IN ('Asunto Propio', 'Asuntos Propios')
         AND estado = 'Aprobada'
+        AND YEAR(fecha_inicio) = YEAR(CURDATE())
     `
         : `
       SELECT 
@@ -249,10 +281,11 @@ export class VacacionesService {
         !isNaN(fechaInicio.getTime()) &&
         !isNaN(fechaFin.getTime())
       ) {
-        // Calcular días naturales (ambos inclusive)
-        const diffTime = fechaFin.getTime() - fechaInicio.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        totalDias += diffDays;
+        totalDias += this.contarDiasPeriodo(
+          fechaInicio,
+          fechaFin,
+          soloDisfrutados,
+        );
       }
     }
 
@@ -267,6 +300,7 @@ export class VacacionesService {
       dias_anuales: number;
       dias_generados_hasta_hoy: number;
       dias_consumidos_aprobados: number;
+      dias_disfrutados_aprobados: number;
       dias_restantes_ano_anterior: number;
       dias_restantes: number;
     };
@@ -411,6 +445,7 @@ export class VacacionesService {
             dias_anuales: 0,
             dias_generados_hasta_hoy: 0,
             dias_consumidos_aprobados: 0,
+            dias_disfrutados_aprobados: 0,
             dias_restantes_ano_anterior: 0,
             dias_restantes: 0,
           },
@@ -452,6 +487,7 @@ export class VacacionesService {
             dias_anuales: 0,
             dias_generados_hasta_hoy: 0,
             dias_consumidos_aprobados: 0,
+            dias_disfrutados_aprobados: 0,
             dias_restantes_ano_anterior: restantesAnoAnteriorDefault,
             dias_restantes: Math.max(0, restantesAnoAnteriorDefault),
           },
@@ -474,11 +510,15 @@ export class VacacionesService {
 
       // Calcular días consumidos
       // Nota: "Asunto Propio" y "Asuntos Propios" son equivalentes en la BD
-      const [diasConsumidosVacaciones, diasConsumidosAsuntosPropios] =
-        await Promise.all([
-          this.calcularDiasConsumidos(codigo, 'Vacaciones'),
-          this.calcularDiasConsumidos(codigo, 'Asunto Propio'),
-        ]);
+      const [
+        diasConsumidosVacaciones,
+        diasDisfrutadosVacaciones,
+        diasConsumidosAsuntosPropios,
+      ] = await Promise.all([
+        this.calcularDiasConsumidos(codigo, 'Vacaciones'),
+        this.calcularDiasConsumidos(codigo, 'Vacaciones', true),
+        this.calcularDiasConsumidos(codigo, 'Asunto Propio'),
+      ]);
 
       // Obtener días restantes del año anterior (manual)
       const restantesAnoAnterior = empleado.VACACIONES_RESTANTES_ANO_ANTERIOR
@@ -503,6 +543,7 @@ export class VacacionesService {
           dias_anuales: diasVacacionesAnuales,
           dias_generados_hasta_hoy: diasGeneradosVacaciones,
           dias_consumidos_aprobados: diasConsumidosVacaciones,
+          dias_disfrutados_aprobados: diasDisfrutadosVacaciones,
           dias_restantes_ano_anterior: restantesAnoAnterior,
           dias_restantes: Math.max(0, diasRestantesVacaciones),
         },
@@ -538,6 +579,7 @@ export class VacacionesService {
         dias_anuales: number;
         dias_generados_hasta_hoy: number;
         dias_consumidos_aprobados: number;
+        dias_disfrutados_aprobados: number;
         dias_restantes_ano_anterior: number;
         dias_restantes: number;
       };
@@ -595,6 +637,7 @@ export class VacacionesService {
                 dias_anuales: 0,
                 dias_generados_hasta_hoy: 0,
                 dias_consumidos_aprobados: 0,
+                dias_disfrutados_aprobados: 0,
                 dias_restantes_ano_anterior: 0,
                 dias_restantes: 0,
               },
@@ -758,6 +801,7 @@ export class VacacionesService {
         { header: 'VAC. ANUALES', key: 'vac_anuales', width: 12 },
         { header: 'VAC. GENERADOS', key: 'vac_generados', width: 15 },
         { header: 'VAC. CONSUMIDOS', key: 'vac_consumidos', width: 15 },
+        { header: 'VAC. DISFRUTADOS', key: 'vac_disfrutados', width: 15 },
         {
           header: 'VAC. REST. AÑO PASADO',
           key: 'vac_rest_ano_pasado',
@@ -786,6 +830,7 @@ export class VacacionesService {
           vac_anuales: emp.vacaciones.dias_anuales,
           vac_generados: emp.vacaciones.dias_generados_hasta_hoy.toFixed(1),
           vac_consumidos: emp.vacaciones.dias_consumidos_aprobados,
+          vac_disfrutados: emp.vacaciones.dias_disfrutados_aprobados,
           vac_rest_ano_pasado: emp.vacaciones.dias_restantes_ano_anterior,
           vac_restantes: emp.vacaciones.dias_restantes.toFixed(1),
           asuntos_anuales: emp.asuntos_propios.dias_anuales,
@@ -841,13 +886,14 @@ export class VacacionesService {
           'VAC. ANUALES',
           'VAC. GEN.',
           'VAC. CONS.',
+          'VAC. DISFR.',
           'VAC. REST. AÑO PASADO',
           'VAC. REST.',
           'ASUNT. ANUALES',
           'ASUNT. CONS.',
           'ASUNT. REST.',
         ];
-        const colWidths = [50, 120, 80, 60, 60, 60, 80, 60, 70, 70, 70];
+        const colWidths = [50, 120, 80, 60, 60, 60, 60, 80, 60, 70, 70, 70];
         const startY = doc.y;
         let currentY = startY;
 
@@ -887,6 +933,7 @@ export class VacacionesService {
             emp.vacaciones.dias_anuales.toString(),
             emp.vacaciones.dias_generados_hasta_hoy.toFixed(1),
             emp.vacaciones.dias_consumidos_aprobados.toString(),
+            emp.vacaciones.dias_disfrutados_aprobados.toString(),
             emp.vacaciones.dias_restantes_ano_anterior.toString(),
             emp.vacaciones.dias_restantes.toFixed(1),
             emp.asuntos_propios.dias_anuales.toString(),

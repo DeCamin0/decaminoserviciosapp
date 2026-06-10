@@ -16,6 +16,7 @@ import {
   Res,
   ConflictException,
   Req,
+  NotFoundException,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -294,6 +295,87 @@ export class GestoriaController {
       }
       throw new BadRequestException(
         `Error al procesar PDF masivo: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * GET /api/gestoria/nominas/download-all?employeeNombre=...&ano=2026
+   * Descarcă toate nóminas unui angajat pentru un an (ZIP)
+   */
+  @Get('nominas/download-all')
+  async downloadAllNominas(
+    @Query('employeeNombre') employeeNombre: string,
+    @Query('ano') ano: string,
+    @Res() res: Response,
+    @CurrentUser() user: any,
+    @Req() req: Request,
+  ) {
+    try {
+      if (!employeeNombre?.trim()) {
+        throw new BadRequestException('employeeNombre es requerido');
+      }
+      const anoNum = parseInt(ano, 10);
+      if (isNaN(anoNum) || anoNum < 2000 || anoNum > 2100) {
+        throw new BadRequestException('Año inválido');
+      }
+
+      const { stream, filename, count } =
+        await this.gestoriaService.downloadAllNominasZip(
+          employeeNombre.trim(),
+          anoNum,
+        );
+
+      const empleadoCodigo = user?.userId || user?.CODIGO || user?.codigo || '';
+      const empleadoNombre =
+        user?.['NOMBRE / APELLIDOS'] || user?.nombre || employeeNombre;
+      const ip = req.ip || req.socket.remoteAddress || undefined;
+      const userAgent = req.get('user-agent') || undefined;
+
+      this.logger.log(
+        `📦 Download all nóminas (${count}) - empleado: ${employeeNombre}, año: ${anoNum}`,
+      );
+
+      if (empleadoCodigo && this.nominasService) {
+        try {
+          const nominas = await this.gestoriaService.getNominasForEmpleado(
+            employeeNombre.trim(),
+            undefined,
+            anoNum,
+          );
+          for (const nomina of nominas) {
+            await this.nominasService.logNominaAcceso(
+              nomina.id,
+              empleadoCodigo,
+              empleadoNombre,
+              'download',
+              ip,
+              userAgent,
+            );
+          }
+        } catch (logError: any) {
+          this.logger.warn(
+            `⚠️ Error logueando accesos bulk download: ${logError.message}`,
+          );
+        }
+      }
+
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${filename}"`,
+      );
+      stream.pipe(res);
+    } catch (error: any) {
+      this.logger.error('❌ Error downloading all nóminas:', error);
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al descargar nóminas: ${error.message}`,
       );
     }
   }

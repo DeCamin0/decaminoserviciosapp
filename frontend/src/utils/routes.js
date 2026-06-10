@@ -94,6 +94,13 @@ export const routes = {
   uploadGestoriaNomina: `${BACKEND_BASE}/api/gestoria/nominas/upload`,
   uploadGestoriaBulk: `${BACKEND_BASE}/api/gestoria/nominas/upload-bulk`,
   downloadGestoriaNomina: (id) => `${BACKEND_BASE}/api/gestoria/nominas/${id}/download`,
+  downloadAllGestoriaNominas: (employeeNombre, ano) => {
+    const params = new URLSearchParams({
+      employeeNombre,
+      ano: String(ano),
+    });
+    return `${BACKEND_BASE}/api/gestoria/nominas/download-all?${params}`;
+  },
   deleteGestoriaNomina: (id) => `${BACKEND_BASE}/api/gestoria/nominas/${id}`,
   uploadCostePersonal: `${BACKEND_BASE}/api/gestoria/coste-personal/upload`,
   getCostePersonal: (mes, ano) => `${BACKEND_BASE}/api/gestoria/coste-personal?mes=${mes}&ano=${ano}`,

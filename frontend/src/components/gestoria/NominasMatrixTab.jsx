@@ -87,6 +87,7 @@ export default function NominasMatrixTab() {
   const [accesosData, setAccesosData] = useState([]);
   const [accesosLoading, setAccesosLoading] = useState(false);
   const [selectedNominaId, setSelectedNominaId] = useState(null);
+  const [downloadingAllCodigo, setDownloadingAllCodigo] = useState(null);
 
   // Căutare și filtrare
   const filteredEmpleados = useMemo(() => {
@@ -451,6 +452,62 @@ export default function NominasMatrixTab() {
     } catch (err) {
       console.error('Error downloading nomina:', err);
       alert(`Error al descargar ${N1}: ` + err.message);
+    }
+  };
+
+  const empleadoTieneNominas = (emp) =>
+    emp.nominas?.some(
+      (n) => n.tiene_nomina === true || n.tiene_nomina === 1 || n.tiene_nomina === '1',
+    );
+
+  const handleDownloadAll = async (emp) => {
+    if (!empleadoTieneNominas(emp)) {
+      alert(`Este empleado no tiene ${N.toLowerCase()} en ${selectedYear}.`);
+      return;
+    }
+
+    setDownloadingAllCodigo(emp.CODIGO);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(
+        routes.downloadAllGestoriaNominas(emp.nombre_completo, selectedYear),
+        {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : '',
+          },
+        },
+      );
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('No autorizado. Por favor, inicia sesión nuevamente.');
+        }
+        if (response.status === 404) {
+          throw new Error(`No hay ${N.toLowerCase()} disponibles para descargar.`);
+        }
+        throw new Error(`Error al descargar ${N.toLowerCase()}`);
+      }
+
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get('Content-Disposition') || '';
+      const match = contentDisposition.match(/filename="([^"]+)"/);
+      const filename =
+        match?.[1] ||
+        `${(emp.nombre_completo || emp.CODIGO).replace(/\s+/g, '_')}_nominas_${selectedYear}.zip`;
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error downloading all nominas:', err);
+      alert(`Error al descargar ${N.toLowerCase()}: ${err.message}`);
+    } finally {
+      setDownloadingAllCodigo(null);
     }
   };
 
@@ -897,12 +954,15 @@ export default function NominasMatrixTab() {
                       {mes}
                     </th>
                   ))}
+                  <th className="px-3 py-3 text-center font-bold min-w-[120px] sticky right-0 bg-green-600 z-10">
+                    Acciones
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {filteredEmpleados.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={14} className="px-4 py-8 text-center text-gray-500">
                       No se encontraron empleados
                     </td>
                   </tr>
@@ -942,6 +1002,21 @@ export default function NominasMatrixTab() {
                           )}
                         </td>
                       ))}
+                      <td className="px-3 py-3 text-center sticky right-0 bg-white z-10">
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadAll(emp)}
+                          disabled={
+                            !empleadoTieneNominas(emp) ||
+                            downloadingAllCodigo === emp.CODIGO
+                          }
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                          title={`Descargar todas las ${N.toLowerCase()} de ${selectedYear}`}
+                        >
+                          {downloadingAllCodigo === emp.CODIGO ? '⏳' : '📥'}
+                          {downloadingAllCodigo === emp.CODIGO ? 'Descargando...' : 'Todas'}
+                        </button>
+                      </td>
                     </tr>
                   ))
                 )}

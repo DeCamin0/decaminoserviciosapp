@@ -1754,6 +1754,55 @@ export class PrlDocumentsService {
   }
 
   /**
+   * La alta de un empleado activo: asigna documentos PRL del grupo si existen templates.
+   * Reutiliza enviarDocumentosAGrupo (misma lógica que «Enviar a Empleados»).
+   */
+  async enviarDocumentosPrlAlNuevoEmpleado(
+    codigo: string,
+    grupoNombre: string,
+    usuarioId = 'alta_automatica',
+  ): Promise<{
+    documentos_creados: number;
+    documentos_existentes: number;
+  } | null> {
+    const grupo = grupoNombre?.trim();
+    if (!grupo || !codigo?.trim()) {
+      return null;
+    }
+
+    const templates = await this.prisma.$queryRawUnsafe<
+      Array<{ c: bigint | number }>
+    >(
+      `
+      SELECT COUNT(*) as c
+      FROM prl_document_templates
+      WHERE grupo_nombre = ${this.escapeSql(grupo)}
+        AND activo = 1
+      `,
+    );
+    const count = Number(templates[0]?.c ?? 0);
+    if (count === 0) {
+      this.logger.log(
+        `ℹ️ Sin templates PRL activos para grupo "${grupo}" — omitido envío automático a ${codigo}`,
+      );
+      return null;
+    }
+
+    const result = await this.enviarDocumentosAGrupo(grupo, usuarioId, [
+      codigo.trim(),
+    ]);
+
+    this.logger.log(
+      `✅ PRL automático en alta: ${codigo} (${grupo}) — ${result.documentos_creados} doc(s) creados`,
+    );
+
+    return {
+      documentos_creados: result.documentos_creados,
+      documentos_existentes: result.documentos_existentes,
+    };
+  }
+
+  /**
    * Obține toate documentele PRL atribuite unui angajat
    */
   async listarDocumentosEmpleado(empleadoId: string): Promise<

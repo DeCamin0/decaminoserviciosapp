@@ -1598,6 +1598,149 @@ function MobileSolicitudItem({
   );
 }
 
+const findCerereJustificanteDoc = (documentos, item) => {
+  const justificantes = documentos.filter((d) => {
+    const t = (d.tipo_documento || '').toLowerCase();
+    return t.includes('justificante') && !t.includes('presencia');
+  });
+  if (justificantes.length === 0) return null;
+  const fechaInicio = item.fecha_inicio || (item.FECHA || '').split(' - ')[0]?.trim() || '';
+  const fechaInicioDay = fechaInicio ? String(fechaInicio).substring(0, 10) : '';
+  const sorted = justificantes.sort((a, b) => {
+    if (b.doc_id && a.doc_id) return b.doc_id - a.doc_id;
+    if (b.fecha_creacion && a.fecha_creacion) return new Date(b.fecha_creacion) - new Date(a.fecha_creacion);
+    return 0;
+  });
+  if (!fechaInicioDay) return sorted[0];
+  return (
+    sorted.find((d) => {
+      const fc = d.fecha_creacion;
+      if (!fc) return false;
+      const docDay = typeof fc === 'string' ? fc.substring(0, 10) : (fc instanceof Date ? fc.toISOString().split('T')[0] : '');
+      return docDay === fechaInicioDay;
+    }) || sorted[0]
+  );
+};
+
+const findPresenciaJustificanteDoc = (documentos, item) => {
+  const presenciaDocs = documentos.filter((d) => {
+    const t = (d.tipo_documento || '').toLowerCase();
+    return t.includes('presencia');
+  });
+  if (presenciaDocs.length === 0) return null;
+  const sorted = presenciaDocs.sort((a, b) => {
+    if (b.doc_id && a.doc_id) return b.doc_id - a.doc_id;
+    if (b.fecha_creacion && a.fecha_creacion) return new Date(b.fecha_creacion) - new Date(a.fecha_creacion);
+    return 0;
+  });
+  const fechaRaw = item?.FECHA || item?.fecha || item?.fecha_inicio || (item?.FECHA || '').split(' - ')[0]?.trim() || '';
+  let fechaDay = '';
+  if (fechaRaw) {
+    const s = String(fechaRaw).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) fechaDay = s.substring(0, 10);
+    else if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(s)) {
+      const [d, m, y] = s.split('/');
+      fechaDay = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+  }
+  if (fechaDay) {
+    const byDate = sorted.find((d) => {
+      const fc = d.fecha_creacion;
+      if (!fc) return false;
+      const docDay = typeof fc === 'string' ? fc.substring(0, 10) : (fc instanceof Date ? fc.toISOString().split('T')[0] : '');
+      return docDay === fechaDay;
+    });
+    if (byDate) return byDate;
+  }
+  return sorted[0];
+};
+
+const hasValidJustificanteDocId = (doc) => {
+  const id = doc?.doc_id ?? doc?.doc_ID;
+  return id != null && id !== '' && String(id) !== 'undefined';
+};
+
+const getItemEmpleadoCodigo = (item) => String(item?.CODIGO ?? item?.codigo ?? '').trim();
+
+const fetchDocumentosForItem = async (item, token) => {
+  const codigo = getItemEmpleadoCodigo(item);
+  const email = item?.email || item?.['CORREO ELECTRONICO'] || '';
+  if (!codigo && !email) return [];
+  const url = `${routes.getDocumentos || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos`}${codigo ? `?empleadoId=${encodeURIComponent(codigo)}` : ''}${email && !codigo ? `?email=${encodeURIComponent(email)}` : ''}`;
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
+  });
+  if (!response.ok) return [];
+  const data = await response.json();
+  return Array.isArray(data) ? data : (data?.data || []);
+};
+
+const resolvePresenciaDocFromDocumentos = (documentos, item, cerereDocId = null) => {
+  if (!documentos?.length) return null;
+  const byDate = findPresenciaJustificanteDoc(documentos, item);
+  if (byDate?.doc_id) return byDate;
+  const presenciaLoose = documentos.find((d) => (d.tipo_documento || '').toLowerCase().includes('presencia'));
+  if (presenciaLoose?.doc_id) return presenciaLoose;
+  const justificantes = documentos
+    .filter((d) => (d.tipo_documento || '').toLowerCase().includes('justificante'))
+    .sort((a, b) => {
+      if (b.doc_id && a.doc_id) return b.doc_id - a.doc_id;
+      return 0;
+    });
+  if (cerereDocId != null) {
+    const other = justificantes.find((d) => String(d.doc_id) !== String(cerereDocId));
+    if (other?.doc_id) return other;
+  }
+  return justificantes[0] || null;
+};
+
+const resolvePresenciaStatus = async (item, token, presenciaRow, documentosEmpleadoRef, cerereDocId = null) => {
+  const estadoAusencia = (item.estado || item.ESTADO || '').toLowerCase();
+  if (estadoAusencia === 'pendiente') {
+    return { status: 'tras_aprobacion', message: 'Se solicitará tras la aprobación.' };
+  }
+
+  let docId = presenciaRow?.doc_id ?? presenciaRow?.doc_ID;
+  let nombreArchivo = presenciaRow?.doc_nombre_archivo ?? presenciaRow?.doc_NOMBRE_ARCHIVO ?? 'Justificante presencia';
+  const estadoPresencia = (presenciaRow?.doc_solicitado_estado || '').toLowerCase();
+  const solicitudCompletada = estadoPresencia === 'completado';
+
+  if (!hasValidJustificanteDocId({ doc_id: docId })) {
+    if (!documentosEmpleadoRef.current) {
+      documentosEmpleadoRef.current = await fetchDocumentosForItem(item, token);
+    }
+    const resolved = resolvePresenciaDocFromDocumentos(
+      documentosEmpleadoRef.current,
+      item,
+      cerereDocId ?? presenciaRow?.doc_id ?? presenciaRow?.doc_ID,
+    );
+    if (resolved?.doc_id) {
+      docId = resolved.doc_id;
+      nombreArchivo = resolved.nombre_archivo || nombreArchivo;
+    }
+  }
+
+  if (hasValidJustificanteDocId({ doc_id: docId })) {
+    return {
+      status: 'completado',
+      doc: { doc_id: docId, nombre_archivo: nombreArchivo },
+    };
+  }
+
+  if (solicitudCompletada) {
+    return {
+      status: 'completado',
+      doc: { doc_id: null, nombre_archivo: nombreArchivo },
+    };
+  }
+
+  return {
+    status: 'pendiente',
+    message: 'Tras la aprobación se solicita al empleado; cuando lo suba aparecerá aquí.',
+  };
+};
+
 export default function SolicitudesPage() {
   const { user: authUser } = useAuth();
   const { callApi } = useApi();
@@ -3127,151 +3270,6 @@ export default function SolicitudesPage() {
     setBajaVoluntariaDocumentos(documentosMap);
   }, []);
 
-  // Documente justificante pentru Ausencias justificada (Ver / Descargar în tab Aprobación) – cu batch pentru a evita 429
-  const findCerereJustificanteDoc = (documentos, item) => {
-    const justificantes = documentos.filter((d) => {
-      const t = (d.tipo_documento || '').toLowerCase();
-      return t.includes('justificante') && !t.includes('presencia');
-    });
-    if (justificantes.length === 0) return null;
-    const fechaInicio = item.fecha_inicio || (item.FECHA || '').split(' - ')[0]?.trim() || '';
-    const fechaInicioDay = fechaInicio ? String(fechaInicio).substring(0, 10) : '';
-    const sorted = justificantes.sort((a, b) => {
-      if (b.doc_id && a.doc_id) return b.doc_id - a.doc_id;
-      if (b.fecha_creacion && a.fecha_creacion) return new Date(b.fecha_creacion) - new Date(a.fecha_creacion);
-      return 0;
-    });
-    if (!fechaInicioDay) return sorted[0];
-    return (
-      sorted.find((d) => {
-        const fc = d.fecha_creacion;
-        if (!fc) return false;
-        const docDay = typeof fc === 'string' ? fc.substring(0, 10) : (fc instanceof Date ? fc.toISOString().split('T')[0] : '');
-        return docDay === fechaInicioDay;
-      }) || sorted[0]
-    );
-  };
-
-  const findPresenciaJustificanteDoc = (documentos, item) => {
-    const presenciaDocs = documentos.filter((d) => {
-      const t = (d.tipo_documento || '').toLowerCase();
-      return t.includes('presencia');
-    });
-    if (presenciaDocs.length === 0) return null;
-    const sorted = presenciaDocs.sort((a, b) => {
-      if (b.doc_id && a.doc_id) return b.doc_id - a.doc_id;
-      if (b.fecha_creacion && a.fecha_creacion) return new Date(b.fecha_creacion) - new Date(a.fecha_creacion);
-      return 0;
-    });
-    const fechaRaw = item?.FECHA || item?.fecha || item?.fecha_inicio || (item?.FECHA || '').split(' - ')[0]?.trim() || '';
-    let fechaDay = '';
-    if (fechaRaw) {
-      const s = String(fechaRaw).trim();
-      if (/^\d{4}-\d{2}-\d{2}/.test(s)) fechaDay = s.substring(0, 10);
-      else if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(s)) {
-        const [d, m, y] = s.split('/');
-        fechaDay = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-      }
-    }
-    if (fechaDay) {
-      const byDate = sorted.find((d) => {
-        const fc = d.fecha_creacion;
-        if (!fc) return false;
-        const docDay = typeof fc === 'string' ? fc.substring(0, 10) : (fc instanceof Date ? fc.toISOString().split('T')[0] : '');
-        return docDay === fechaDay;
-      });
-      if (byDate) return byDate;
-    }
-    return sorted[0];
-  };
-
-  const hasValidJustificanteDocId = (doc) => {
-    const id = doc?.doc_id ?? doc?.doc_ID;
-    return id != null && id !== '' && String(id) !== 'undefined';
-  };
-
-  const getItemEmpleadoCodigo = (item) => String(item?.CODIGO ?? item?.codigo ?? '').trim();
-
-  const fetchDocumentosForItem = async (item, token) => {
-    const codigo = getItemEmpleadoCodigo(item);
-    const email = item?.email || item?.['CORREO ELECTRONICO'] || '';
-    if (!codigo && !email) return [];
-    const url = `${routes.getDocumentos || `${config.BACKEND_BASE || config.API_URL || ''}/api/documentos`}${codigo ? `?empleadoId=${encodeURIComponent(codigo)}` : ''}${email && !codigo ? `?email=${encodeURIComponent(email)}` : ''}`;
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
-    });
-    if (!response.ok) return [];
-    const data = await response.json();
-    return Array.isArray(data) ? data : (data?.data || []);
-  };
-
-  const resolvePresenciaDocFromDocumentos = (documentos, item, cerereDocId = null) => {
-    if (!documentos?.length) return null;
-    const byDate = findPresenciaJustificanteDoc(documentos, item);
-    if (byDate?.doc_id) return byDate;
-    const presenciaLoose = documentos.find((d) => (d.tipo_documento || '').toLowerCase().includes('presencia'));
-    if (presenciaLoose?.doc_id) return presenciaLoose;
-    const justificantes = documentos
-      .filter((d) => (d.tipo_documento || '').toLowerCase().includes('justificante'))
-      .sort((a, b) => {
-        if (b.doc_id && a.doc_id) return b.doc_id - a.doc_id;
-        return 0;
-      });
-    if (cerereDocId != null) {
-      const other = justificantes.find((d) => String(d.doc_id) !== String(cerereDocId));
-      if (other?.doc_id) return other;
-    }
-    return justificantes[0] || null;
-  };
-
-  const resolvePresenciaStatus = async (item, token, presenciaRow, documentosEmpleadoRef, cerereDocId = null) => {
-    const estadoAusencia = (item.estado || item.ESTADO || '').toLowerCase();
-    if (estadoAusencia === 'pendiente') {
-      return { status: 'tras_aprobacion', message: 'Se solicitará tras la aprobación.' };
-    }
-
-    let docId = presenciaRow?.doc_id ?? presenciaRow?.doc_ID;
-    let nombreArchivo = presenciaRow?.doc_nombre_archivo ?? presenciaRow?.doc_NOMBRE_ARCHIVO ?? 'Justificante presencia';
-    const estadoPresencia = (presenciaRow?.doc_solicitado_estado || '').toLowerCase();
-    const solicitudCompletada = estadoPresencia === 'completado';
-
-    if (!hasValidJustificanteDocId({ doc_id: docId })) {
-      if (!documentosEmpleadoRef.current) {
-        documentosEmpleadoRef.current = await fetchDocumentosForItem(item, token);
-      }
-      const resolved = resolvePresenciaDocFromDocumentos(
-        documentosEmpleadoRef.current,
-        item,
-        cerereDocId ?? presenciaRow?.doc_id ?? presenciaRow?.doc_ID,
-      );
-      if (resolved?.doc_id) {
-        docId = resolved.doc_id;
-        nombreArchivo = resolved.nombre_archivo || nombreArchivo;
-      }
-    }
-
-    if (hasValidJustificanteDocId({ doc_id: docId })) {
-      return {
-        status: 'completado',
-        doc: { doc_id: docId, nombre_archivo: nombreArchivo },
-      };
-    }
-
-    // Mismo criterio que Mis Solicitudes del empleado: solicitud completada → ✅ Completado (descarga resuelve el archivo al click)
-    if (solicitudCompletada) {
-      return {
-        status: 'completado',
-        doc: { doc_id: null, nombre_archivo: nombreArchivo },
-      };
-    }
-
-    return {
-      status: 'pendiente',
-      message: 'Tras la aprobación se solicita al empleado; cuando lo suba aparecerá aquí.',
-    };
-  };
-
   const comprobarJustificantesForItem = useCallback(async (item) => {
     const itemId = item.id ?? item.ID;
     setComprobarJustificanteItemId(itemId);
@@ -3374,7 +3372,7 @@ export default function SolicitudesPage() {
     } finally {
       setComprobarJustificanteItemId(null);
     }
-  }, [fetchDocumentosForItem, resolvePresenciaStatus]);
+  }, []);
 
   const downloadJustificanteDoc = useCallback(async (doc, item, forPreview = false, resolveAsPresencia = false) => {
     const token = localStorage.getItem('auth_token');
@@ -3419,7 +3417,7 @@ export default function SolicitudesPage() {
     a.click();
     window.URL.revokeObjectURL(blobUrl);
     document.body.removeChild(a);
-  }, [fetchDocumentosForItem, resolvePresenciaDocFromDocumentos]);
+  }, []);
 
   const fetchSolicitudes = useCallback(async () => {
     setOperationLoading('solicitudes', true);
@@ -13243,7 +13241,7 @@ export default function SolicitudesPage() {
                       <th className={`${isMobile ? 'px-3 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-left font-bold sticky left-0 bg-purple-600 z-10`}>Empleado</th>
                       <th className={`${isMobile ? 'px-3 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-left font-bold`}>Código</th>
                       <th className={`${isMobile ? 'px-3 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-left font-bold`}>Grupo</th>
-                      <th className={`${isMobile ? 'px-2 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-center font-bold border-l-2 border-purple-400`} colSpan={5}>
+                      <th className={`${isMobile ? 'px-2 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-center font-bold border-l-2 border-purple-400`} colSpan={6}>
                         🏖️ Vacaciones
                       </th>
                       <th className={`${isMobile ? 'px-2 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-center font-bold border-l-2 border-purple-400`} colSpan={3}>
@@ -13257,6 +13255,7 @@ export default function SolicitudesPage() {
                       <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium border-l-2 border-purple-400`}>Anuales</th>
                       <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Generados</th>
                       <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Consumidos</th>
+                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`} title="Días de vacaciones aprobadas cuya fecha ya ha pasado">Disfrutadas</th>
                       <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Rest. Año Pasado</th>
                       <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Restantes</th>
                       <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium border-l-2 border-purple-400`}>Anuales</th>
@@ -13368,6 +13367,9 @@ export default function SolicitudesPage() {
                         </td>
                         <td className={`${isMobile ? 'px-1.5 py-2 text-[10px]' : 'px-4 py-4 text-sm'} text-center text-gray-700`}>
                           {emp.vacaciones.dias_consumidos_aprobados}
+                        </td>
+                        <td className={`${isMobile ? 'px-1.5 py-2 text-[10px]' : 'px-4 py-4 text-sm'} text-center text-teal-700 font-medium`}>
+                          {emp.vacaciones.dias_disfrutados_aprobados ?? 0}
                         </td>
                         <td className={`${isMobile ? 'px-1.5 py-2 text-[10px]' : 'px-4 py-4 text-sm'} text-center`}>
                           {editingRestantes[emp.codigo] !== undefined ? (

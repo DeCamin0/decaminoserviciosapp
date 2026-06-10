@@ -8,6 +8,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from './notifications.service';
 import * as ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
+import archiver from 'archiver';
+import { Readable } from 'stream';
 
 import * as pdfLib from 'pdf-lib';
 
@@ -3741,6 +3743,76 @@ export class GestoriaService {
         `Error al procesar PDF masivo: ${error.message}`,
       );
     }
+  }
+
+  private getMesFileLabel(mes: string): string {
+    const mesesNombres = [
+      'Enero',
+      'Febrero',
+      'Marzo',
+      'Abril',
+      'Mayo',
+      'Junio',
+      'Julio',
+      'Agosto',
+      'Septiembre',
+      'Octubre',
+      'Noviembre',
+      'Diciembre',
+    ];
+    const mesTrim = String(mes || '').trim();
+    const mesNum = parseInt(mesTrim, 10);
+    if (!isNaN(mesNum) && mesNum >= 1 && mesNum <= 12) {
+      return `${String(mesNum).padStart(2, '0')}_${mesesNombres[mesNum - 1]}`;
+    }
+    const idx = mesesNombres.findIndex(
+      (m) => m.toLowerCase() === mesTrim.toLowerCase(),
+    );
+    if (idx >= 0) {
+      return `${String(idx + 1).padStart(2, '0')}_${mesesNombres[idx]}`;
+    }
+    return mesTrim.replace(/[^a-zA-Z0-9]/g, '_') || 'mes';
+  }
+
+  /**
+   * Descarcă toate nóminas unui angajat pentru un an (ZIP)
+   */
+  async downloadAllNominasZip(
+    employeeNombre: string,
+    ano: number,
+  ): Promise<{ stream: Readable; filename: string; count: number }> {
+    const nominas = await this.getNominasForEmpleado(
+      employeeNombre,
+      undefined,
+      ano,
+    );
+
+    if (nominas.length === 0) {
+      throw new NotFoundException(
+        `No hay nóminas para ${employeeNombre} en ${ano}`,
+      );
+    }
+
+    const nombreSafe = employeeNombre
+      .replace(/[^a-zA-Z0-9\s]/g, '')
+      .replace(/\s+/g, '_');
+    const filename = `${nombreSafe}_nominas_${ano}.zip`;
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    const usedNames = new Set<string>();
+
+    for (const nomina of nominas) {
+      const full = await this.getNominaById(nomina.id);
+      let entryName = `${this.getMesFileLabel(nomina.Mes)}_${nomina.Ano || ano}.pdf`;
+      if (usedNames.has(entryName)) {
+        entryName = `${this.getMesFileLabel(nomina.Mes)}_${nomina.Ano || ano}_${nomina.id}.pdf`;
+      }
+      usedNames.add(entryName);
+      archive.append(full.archivo, { name: entryName });
+    }
+
+    archive.finalize();
+
+    return { stream: archive, filename, count: nominas.length };
   }
 
   /**
