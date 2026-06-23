@@ -40,7 +40,7 @@ export class PedidosController {
       `Received request to save pedido for empleado: ${body.empleado?.id || 'N/A'}`,
     );
     return this.pedidosService.savePedido(body, {
-      actorGrupo: user?.grupo,
+      actorGrupo: user?.grupo ?? user?.GRUPO,
     });
   }
 
@@ -225,7 +225,7 @@ export class PedidosController {
       body.iva_total,
       body.total,
       body.notas,
-      user?.grupo,
+      user?.grupo ?? user?.GRUPO,
     );
   }
 

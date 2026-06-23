@@ -88,7 +88,7 @@ export class PedidosService {
 
   /**
    * Limite de gasto: empleados sí lo respetan.
-   * Developer, Admin, Administrativ(o) y Supervisor pueden superar el límite.
+   * Developer, Admin, Administrativ(o), Supervisor y Manager pueden superar el límite.
    */
   private shouldEnforceClienteLimiteGasto(actorGrupo?: string | null): boolean {
     const g = String(actorGrupo ?? '')
@@ -103,6 +103,7 @@ export class PedidosService {
       'administrativ',
       'administrativo',
       'supervisor',
+      'manager',
     ]);
     return !bypass.has(g);
   }

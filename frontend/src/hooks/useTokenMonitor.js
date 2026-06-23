@@ -1,5 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { isTokenFullyExpired, getTokenTimeRemaining, getValidAccessToken } from '../utils/tokenRefresh';
+import {
+  isTokenFullyExpired,
+  getTokenTimeRemaining,
+  getValidAccessToken,
+  TOKEN_REFRESH_LEAD_MS,
+  isTransientRefreshError,
+} from '../utils/tokenRefresh';
 import { useSessionExpired } from '../contexts/SessionExpiredContext';
 
 /**
@@ -34,8 +40,11 @@ export function useTokenMonitor(checkInterval = 30000) {
           // Dacă refresh-ul reușește, token-ul e valid acum
           isCheckingRef.current = false;
         } catch (error) {
-          // Refresh-ul a eșuat, sesiunea a expirat
           isCheckingRef.current = false;
+          if (isTransientRefreshError(error)) {
+            console.warn('[TokenMonitor] Token refresh failed (network). Will retry.');
+            return;
+          }
           console.warn('[TokenMonitor] Token expired and refresh failed:', error);
           showSessionExpired('Tu sesión ha expirado. Por favor, inicia sesión nuevamente.');
         }
@@ -43,8 +52,8 @@ export function useTokenMonitor(checkInterval = 30000) {
         // Token-ul e valid, verifică timpul rămas pentru a preveni expirarea bruscă
         const timeRemaining = getTokenTimeRemaining();
         
-        // Refresh preventiv când mai sunt mai puțin de 10 minute (evită deconectare la 30 min)
-        if (timeRemaining > 0 && timeRemaining < 10 * 60) {
+        // Refresh preventivo cuando queda poco tiempo de sesión
+        if (timeRemaining > 0 && timeRemaining < TOKEN_REFRESH_LEAD_MS / 1000) {
           try {
             isCheckingRef.current = true;
             await getValidAccessToken();

@@ -20,6 +20,27 @@ export function setSessionExpiredCallback(callback) {
 const DEFAULT_SESSION_EXPIRED_MESSAGE =
   'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.';
 
+/** Evita que fetch quede colgado indefinidamente (p. ej. red caída tras expirar sesión). */
+export const API_FETCH_TIMEOUT_MS = 60_000;
+
+/** Renueva el access token cuando quedan menos de 15 min (alineado con JWT ~2h). */
+export const TOKEN_REFRESH_LEAD_MS = 15 * 60 * 1000;
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = API_FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const outerSignal = options.signal;
+  if (outerSignal) {
+    if (outerSignal.aborted) controller.abort();
+    else outerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  try {
+    return await originalFetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Emite evenimentul de sesiune expirată
  */
@@ -34,6 +55,13 @@ export function notifySessionExpired(
   message = DEFAULT_SESSION_EXPIRED_MESSAGE,
 ) {
   emitSessionExpired(message);
+}
+
+export function isTransientRefreshError(error) {
+  if (!error) return false;
+  if (error.name === 'AbortError' || error.name === 'TypeError') return true;
+  const msg = String(error.message || '');
+  return /failed to fetch|network|fetch|connection|timeout|aborted|refused/i.test(msg);
 }
 
 function clearAuthTokens() {
@@ -62,9 +90,8 @@ function isTokenExpiredOrNearExpiry(token) {
     const now = Date.now();
     const timeUntilExpiry = exp - now;
     
-    // Considerăm token-ul „aproape expirat” dacă mai are mai puțin de 10 minute
-    // (refresh mai devreme = utilizatorul activ nu e deconectat la 30 min)
-    return timeUntilExpiry < 10 * 60 * 1000; // 10 minutes
+    // Refresh preventivo antes de que expire (usuario activ no pierde la sesión)
+    return timeUntilExpiry < TOKEN_REFRESH_LEAD_MS;
   } catch (error) {
     console.error('[TokenRefresh] Error decoding token:', error);
     return true; // Considerăm expirat dacă nu putem decoda
@@ -91,13 +118,13 @@ async function refreshAccessToken(forceLogoutOnError = false) {
 
   try {
     // Folosim originalFetch pentru a evita loop-uri cu interceptor-ul global
-    const response = await originalFetch(`${BASE_URL}/api/auth/refresh`, {
+    const response = await fetchWithTimeout(`${BASE_URL}/api/auth/refresh`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ refreshToken }),
-    });
+    }, 30_000);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -122,10 +149,16 @@ async function refreshAccessToken(forceLogoutOnError = false) {
     // Dacă token-ul curent e încă valid și nu forțăm logout, nu facem logout
     if (stillValid && !forceLogoutOnError) {
       console.warn('[TokenRefresh] Refresh failed, but current token is still valid. Will retry later.');
-      throw error; // Aruncă eroarea fără să facă logout
+      throw error;
     }
-    
-    // Dacă token-ul curent e expirat sau forțăm logout, facem logout
+
+    // Red caída / backend apagado: păstrăm token-urile ca utilizatorul să nu fie delogat
+    if (isTransientRefreshError(error)) {
+      console.warn('[TokenRefresh] Refresh failed (transient/network). Keeping tokens for retry.');
+      throw error;
+    }
+
+    // Eroare reală de autentificare (refresh invalid/expirat)
     clearAuthTokens();
 
     const errorMessage = error.message || 'No se pudo renovar la sesión';
@@ -239,6 +272,11 @@ export async function fetchWithAuth(url, options = {}) {
       console.warn('[TokenRefresh] Cannot refresh token, but current token is still valid');
       accessToken = currentToken;
     } else {
+      const refreshToken = localStorage.getItem('refresh_token');
+      if (refreshToken && isTransientRefreshError(error)) {
+        console.warn('[TokenRefresh] Cannot refresh (server unreachable). Session preserved.');
+        throw error;
+      }
       // Token-ul e expirat, emite evenimentul de sesiune expirată
       console.error('[TokenRefresh] Cannot get valid token');
       const errorMessage = error.message || 'Token no válido';
@@ -258,7 +296,7 @@ export async function fetchWithAuth(url, options = {}) {
   };
 
   // Face request-ul folosind originalFetch pentru a evita loop-uri
-  let response = await originalFetch(url, {
+  let response = await fetchWithTimeout(url, {
     ...options,
     headers,
   });
@@ -271,7 +309,7 @@ export async function fetchWithAuth(url, options = {}) {
       
       // Reîncearcă request-ul cu noul token folosind originalFetch
       headers['Authorization'] = `Bearer ${newToken}`;
-      response = await originalFetch(url, {
+      response = await fetchWithTimeout(url, {
         ...options,
         headers,
       });

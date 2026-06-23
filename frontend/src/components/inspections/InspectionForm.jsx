@@ -20,6 +20,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import i18nInstance from '../../i18n';
 import { config } from '../../config/env';
+import { validarDniNie, normalizeSpanishDniNie } from '../../utils/spanishId';
 
 /**
  * Watermark PDF: același logo ca în UI (VITE_LOGO_PATH în public), nu asset-ul fix din @/assets.
@@ -373,7 +374,8 @@ const InspectionForm = ({ type, solicitudData }) => {
       type: type,
       observaciones: solicitudData?.observaciones || '',
       status: 'completada',
-      codigo_empleado: solicitudData?.employeeCode || '' // Adăugat la nivel principal
+      codigo_empleado: solicitudData?.employeeCode || '', // Adăugat la nivel principal
+      otraPersona: false
     };
     return baseData;
   };
@@ -808,33 +810,48 @@ const InspectionForm = ({ type, solicitudData }) => {
 
   const validateForm = () => {
     const newErrors = {};
+    const isOtraPersona = type === 'entrega-materiales' && formData.otraPersona;
 
     // Validări de bază
     if (!formData.data) newErrors.data = 'Data este obligatorie';
     if (!formData.inspector.nume.trim()) newErrors.inspectorName = 'Numele inspectorului este obligatoriu';
     if (!formData.locatie.trim()) newErrors.locatie = 'Locația este obligatorie';
     
-    // Verifică dacă angajatul selectat are centru
-    const selectedEmployee = formData.trabajador.nume 
-      ? empleados.find(emp => 
-          (emp['NOMBRE / APELLIDOS'] || emp.name || 'Sin nombre') === formData.trabajador.nume
-        )
-      : null;
-    const trabajadorTieneCentro = selectedEmployee ? empleadoTieneCentro(selectedEmployee) : false;
-    
-    // Centru-ul este obligatoriu doar dacă:
-    // 1. Nu există un angajat fără centru selectat SAU
-    // 2. Angajatul selectat are centru asociat
-    // Dacă angajatul nu are centru, centru-ul devine opțional (poate fi setat prin centroTrabajador)
-    if (trabajadorTieneCentro || !formData.trabajador.nume.trim()) {
-      // Dacă angajatul are centru sau nu există angajat selectat, centru-ul este obligatoriu
+    if (isOtraPersona) {
       if (!formData.centro.trim()) {
         newErrors.centro = 'Centro de trabajo es obligatorio';
       }
+      if (!formData.trabajador.nume.trim()) {
+        newErrors.trabajador = 'Nombre es obligatorio';
+      }
+      if (!formData.trabajador.codigo?.trim()) {
+        newErrors.trabajadorDni = 'required';
+      } else if (validarDniNie(formData.trabajador.codigo) !== true) {
+        newErrors.trabajadorDni = 'invalid';
+      }
+    } else {
+      // Verifică dacă angajatul selectat are centru
+      const selectedEmployee = formData.trabajador.nume 
+        ? empleados.find(emp => 
+            (emp['NOMBRE / APELLIDOS'] || emp.name || 'Sin nombre') === formData.trabajador.nume
+          )
+        : null;
+      const trabajadorTieneCentro = selectedEmployee ? empleadoTieneCentro(selectedEmployee) : false;
+      
+      // Centru-ul este obligatoriu doar dacă:
+      // 1. Nu există un angajat fără centru selectat SAU
+      // 2. Angajatul selectat are centru asociat
+      // Dacă angajatul nu are centru, centru-ul devine opțional (poate fi setat prin centroTrabajador)
+      if (trabajadorTieneCentro || !formData.trabajador.nume.trim()) {
+        // Dacă angajatul are centru sau nu există angajat selectat, centru-ul este obligatoriu
+        if (!formData.centro.trim()) {
+          newErrors.centro = 'Centro de trabajo es obligatorio';
+        }
+      }
+      // Dacă angajatul nu are centru, centru-ul este opțional (nu adăugăm eroare)
+      
+      if (!formData.trabajador.nume.trim()) newErrors.trabajador = 'Trabajador es obligatorio';
     }
-    // Dacă angajatul nu are centru, centru-ul este opțional (nu adăugăm eroare)
-    
-    if (!formData.trabajador.nume.trim()) newErrors.trabajador = 'Trabajador es obligatorio';
 
     // Validări pentru semnături (opționale - doar warning)
     if (!formData.inspector.semnaturaPng) {
@@ -870,10 +887,26 @@ const InspectionForm = ({ type, solicitudData }) => {
       setFormData(prev => ({
         ...prev,
         [field]: value,
-        trabajador: { nume: '', semnaturaPng: '', codigo: '' }
+        trabajador: { nume: '', semnaturaPng: '', codigo: '' },
+        codigo_empleado: ''
       }));
     }
   };
+
+  const handleOtraPersonaChange = (checked) => {
+    setFormData(prev => ({
+      ...prev,
+      otraPersona: checked,
+      trabajador: { nume: '', semnaturaPng: '', codigo: '' },
+      codigo_empleado: '',
+      centroTrabajador: ''
+    }));
+  };
+
+  const isEntregaOtraPersona = type === 'entrega-materiales' && formData.otraPersona;
+  const dniNieOtraPersonaStatus = isEntregaOtraPersona
+    ? validarDniNie(formData.trabajador.codigo)
+    : null;
 
   const handleInspectorChange = (field, value) => {
     setFormData(prev => ({
@@ -903,14 +936,18 @@ const InspectionForm = ({ type, solicitudData }) => {
         ...prev,
         trabajador: {
           ...prev.trabajador,
-          [field]: value
+          [field]: field === 'codigo' && prev.otraPersona
+            ? normalizeSpanishDniNie(value)
+            : value
         },
         // Actualizează și codigo_empleado la nivel principal
-        codigo_empleado: field === 'codigo' ? value : prev.codigo_empleado
+        codigo_empleado: field === 'codigo'
+          ? (prev.otraPersona ? normalizeSpanishDniNie(value) : value)
+          : prev.codigo_empleado
       };
       
       // Dacă se schimbă numele angajatului, verifică dacă are centru și resetează centroTrabajador dacă are
-      if (field === 'nume' && value) {
+      if (field === 'nume' && value && !prev.otraPersona) {
         const selectedEmployee = empleados.find(emp => 
           (emp['NOMBRE / APELLIDOS'] || emp.name || 'Sin nombre') === value
         );
@@ -1047,6 +1084,9 @@ const InspectionForm = ({ type, solicitudData }) => {
 
       setLoading(true);
 
+      const receptorEsOtraPersona = type === 'entrega-materiales' && formData.otraPersona;
+      const etiquetaPersonaPdf = receptorEsOtraPersona ? 'Receptor' : 'Empleado';
+
       // Adaugă timeout pentru generarea PDF-ului
       const pdfGenerationPromise = (async () => {
         // Generează UUID pentru inspeccionId
@@ -1090,8 +1130,10 @@ const InspectionForm = ({ type, solicitudData }) => {
                  <Text style={styles.trabajador}>Centro de Trabajo: {safeText(formData.centroTrabajador || formData.centro)}</Text>
                  <Text style={styles.inspector}>Inspector: {safeText(formData.inspector?.nume)}</Text>
                  <Text style={styles.employee}>
-                   Empleado: {safeText(formData.trabajador?.nume)}
-                   {formData.trabajador?.codigo && formData.trabajador.codigo.trim() !== '' ? ` (${safeText(formData.trabajador.codigo)})` : null}
+                   {etiquetaPersonaPdf}: {safeText(formData.trabajador?.nume)}
+                   {formData.trabajador?.codigo && formData.trabajador.codigo.trim() !== ''
+                     ? ` (${receptorEsOtraPersona ? 'DNI/NIE: ' : ''}${safeText(formData.trabajador.codigo)})`
+                     : null}
                  </Text>
                  <Text style={styles.inspector}>Supervisor: {safeText(formData.supervisor)}</Text>
                  {/* Scor total calculat din toate punctele */}
@@ -1719,7 +1761,8 @@ const InspectionForm = ({ type, solicitudData }) => {
       type: type,
       observaciones: '',
       status: 'completada',
-      codigo_empleado: '' // Resetare cod
+      codigo_empleado: '', // Resetare cod
+      otraPersona: false
     });
     
     // Reload puncte
@@ -1960,8 +2003,86 @@ const InspectionForm = ({ type, solicitudData }) => {
           <div>
             <label className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
               <span className="text-base">👷</span>
-              <span>Trabajador *</span>
+              <span>{isEntregaOtraPersona ? 'Receptor *' : 'Trabajador *'}</span>
             </label>
+
+            {type === 'entrega-materiales' && (
+              <label className="flex items-center gap-2 mb-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={!!formData.otraPersona}
+                  onChange={(e) => handleOtraPersonaChange(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                />
+                <span className="text-sm font-medium text-gray-700">
+                  Otra persona (no es trabajador de la empresa)
+                </span>
+              </label>
+            )}
+
+            {isEntregaOtraPersona ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Nombre *</label>
+                  <input
+                    type="text"
+                    value={formData.trabajador.nume}
+                    onChange={(e) => handleTrabajadorChange('nume', e.target.value)}
+                    placeholder="Nombre completo de la persona..."
+                    className={`w-full px-4 py-3 border-2 rounded-xl text-gray-800 bg-gradient-to-br from-white to-orange-50/30 focus:outline-none focus:ring-2 transition-all duration-300 shadow-md focus:shadow-xl font-medium ${
+                      errors.trabajador
+                        ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                        : 'border-gray-300 focus:ring-orange-500 focus:border-orange-500 hover:border-orange-300 focus:shadow-orange-500/20'
+                    }`}
+                  />
+                  {errors.trabajador && <p className="text-xs text-red-600 mt-1">{errors.trabajador}</p>}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">DNI / NIE *</label>
+                  <input
+                    type="text"
+                    value={formData.trabajador.codigo}
+                    onChange={(e) => handleTrabajadorChange('codigo', e.target.value)}
+                    placeholder="12345678A (DNI) o X1234567A (NIE)"
+                    maxLength={9}
+                    className={`w-full px-4 py-3 border-2 rounded-xl text-gray-800 bg-gradient-to-br from-white to-orange-50/30 focus:outline-none focus:ring-2 transition-all duration-300 shadow-md focus:shadow-xl font-medium ${
+                      formData.trabajador.codigo?.trim()
+                        ? dniNieOtraPersonaStatus === true
+                          ? 'border-green-500 focus:ring-green-500 focus:border-green-500'
+                          : dniNieOtraPersonaStatus === false
+                            ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                            : 'border-gray-300 focus:ring-orange-500 focus:border-orange-500'
+                        : errors.trabajadorDni
+                          ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                          : 'border-gray-300 focus:ring-orange-500 focus:border-orange-500 hover:border-orange-300 focus:shadow-orange-500/20'
+                    }`}
+                  />
+                  {formData.trabajador.codigo?.trim() && (
+                    <div className="flex items-center gap-2 text-sm mt-1">
+                      {dniNieOtraPersonaStatus === true ? (
+                        <>
+                          <span className="text-green-600">✅</span>
+                          <span className="text-green-600 font-medium">DNI/NIE español válido</span>
+                        </>
+                      ) : dniNieOtraPersonaStatus === false ? (
+                        <>
+                          <span className="text-red-600">❌</span>
+                          <span className="text-red-600 font-medium">DNI/NIE español inválido</span>
+                        </>
+                      ) : null}
+                    </div>
+                  )}
+                  {errors.trabajadorDni === 'required' && !formData.trabajador.codigo?.trim() && (
+                    <p className="text-xs text-red-600 mt-1">DNI / NIE es obligatorio</p>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 flex items-center gap-1">
+                  <span>ℹ️</span>
+                  <span>Persona externa que recibe los materiales en el centro indicado.</span>
+                </p>
+              </div>
+            ) : (
+              <>
             <select
               value={formData.trabajador.nume}
               onChange={(e) => {
@@ -2004,7 +2125,13 @@ const InspectionForm = ({ type, solicitudData }) => {
                 );
               })}
             </select>
-            {formData.centro && empleadosFiltrados.length === 0 && (
+            {formData.centro && empleadosFiltrados.length === 0 && type === 'entrega-materiales' && (
+              <p className="text-xs text-orange-600 mt-1 flex items-center gap-1 font-medium">
+                <span>💡</span>
+                <span>No hay empleados en este centro. Marca &quot;Otra persona&quot; para entregar a alguien externo.</span>
+              </p>
+            )}
+            {formData.centro && empleadosFiltrados.length === 0 && type !== 'entrega-materiales' && (
               <p className="text-xs text-orange-600 mt-1 flex items-center gap-1 font-medium">
                 <span>⚠️</span>
                 <span>No hay empleados en este centro</span>
@@ -2017,10 +2144,12 @@ const InspectionForm = ({ type, solicitudData }) => {
               </p>
             )}
             {errors.trabajador && <p className="text-xs text-red-600 mt-1">{errors.trabajador}</p>}
+              </>
+            )}
           </div>
           
           {/* Centro para trabajador sin centro (apare doar când angajatul selectat nu are centru) */}
-          {formData.trabajador.nume && (() => {
+          {formData.trabajador.nume && !formData.otraPersona && (() => {
             const selectedEmployee = empleados.find(emp => 
               (emp['NOMBRE / APELLIDOS'] || emp.name || 'Sin nombre') === formData.trabajador.nume
             );
@@ -2424,15 +2553,15 @@ const InspectionForm = ({ type, solicitudData }) => {
             )}
           </div>
           
-            {/* Firma Trabajador */}
+            {/* Firma Trabajador / Receptor */}
             <div className="group/sign relative">
               <h3 className="text-sm sm:text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
                 <span className="text-lg">👷</span>
-                <span>Firma del Trabajador</span>
+                <span>{isEntregaOtraPersona ? 'Firma del Receptor' : 'Firma del Trabajador'}</span>
             </h3>
               <button
               onClick={() => openSignatureModal('trabajador')}
-              disabled={!formData.trabajador.nume}
+              disabled={!formData.trabajador.nume || (isEntregaOtraPersona && dniNieOtraPersonaStatus !== true)}
                 className={`group/btn relative w-full px-4 sm:px-6 py-4 sm:py-5 rounded-2xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none ${
                   formData.trabajador.semnaturaPng 
                     ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white'
@@ -2457,7 +2586,7 @@ const InspectionForm = ({ type, solicitudData }) => {
             {!formData.trabajador.nume && (
                 <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
                   <span>ℹ️</span>
-                  <span>Primero selecciona un trabajador</span>
+                  <span>{isEntregaOtraPersona ? 'Primero indica el nombre y DNI/NIE del receptor' : 'Primero selecciona un trabajador'}</span>
                 </p>
             )}
             {errors.trabajadorSignature && (

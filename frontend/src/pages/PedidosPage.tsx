@@ -18,6 +18,12 @@ import { isDemoMode } from '../utils/demo';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 import { config } from '../config/env';
 import heic2any from 'heic2any';
+import {
+  parseLimiteGastoCliente,
+  pedidoLimiteExcedidoFlags,
+  shouldEnforcePedidoLimiteGasto,
+  subtotalExceedsLimiteGasto,
+} from '../utils/pedidosLimiteGasto';
 
 /** Mensaje para el usuario desde el cuerpo de error API (Nest: `{ message: string }`). */
 function messageFromApiErrorBody(body: string): string | null {
@@ -210,15 +216,6 @@ type ComunidadDetalle = {
   };
   [key: string]: unknown;
 };
-
-function parseLimiteGastoCliente(raw: unknown): number | null {
-  if (raw === null || raw === undefined) return null;
-  const s = String(raw).trim().replace(/\s/g, '').replace(',', '.');
-  if (s === '') return null;
-  const n = parseFloat(s);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return Math.round(n * 100) / 100;
-}
 
 // ===== API ENDPOINT PENTRU PRODUSE =====
 // ✅ MIGRAT: Folosim backend-ul nou în loc de n8n
@@ -784,6 +781,7 @@ const TabNuevoPedido: React.FC<{
   canAccessAllTabs?: boolean;
 }> = ({ addToast, canAccessAllTabs = false }) => {
   const { user } = useAuth();
+  const enforceLimiteGasto = shouldEnforcePedidoLimiteGasto(user);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<'id' | 'numero' | 'descripcion' | 'precio'>('id');
@@ -1558,12 +1556,12 @@ const TabNuevoPedido: React.FC<{
     const delta = q - current;
     if (delta > 0) {
       const limite = getLimiteGastoCliente();
-      if (limite != null) {
+      if (enforceLimiteGasto && limite != null) {
         const totalActual = lineasPedido.reduce(
           (sum, linea) => sum + linea.cantidad * linea.precio_unitario,
           0,
         );
-        if (Math.round((totalActual + delta * producto.precio) * 100) / 100 > Math.round(limite * 100) / 100) {
+        if (subtotalExceedsLimiteGasto(totalActual + delta * producto.precio, limite)) {
           addToast(
             'error',
             'Límite excedido',
@@ -1616,8 +1614,8 @@ const TabNuevoPedido: React.FC<{
     }
 
     const limiteClienteGuardar = getLimiteGastoCliente();
-    if (limiteClienteGuardar != null) {
-      if (Math.round(subtotal * 100) / 100 > Math.round(limiteClienteGuardar * 100) / 100) {
+    if (enforceLimiteGasto && limiteClienteGuardar != null) {
+      if (subtotalExceedsLimiteGasto(subtotal, limiteClienteGuardar)) {
         addToast(
           'error',
           'Límite excedido',
@@ -1679,6 +1677,7 @@ const TabNuevoPedido: React.FC<{
     const comunidadNombre = comunidades.find(c => c.id === comunidadSeleccionada)?.nombre || 'Sin comunidad';
     const comunidadDetalle = comunidades.find(c => c.id === comunidadSeleccionada);
     const limiteClientePayload = getLimiteGastoCliente();
+    const limiteFlags = pedidoLimiteExcedidoFlags(subtotal, limiteClientePayload);
 
     const payload = {
       // Datele angajatului
@@ -1714,10 +1713,8 @@ const TabNuevoPedido: React.FC<{
         subtotal: subtotal,
         iva_total: impuestosCalculados,
         total: total,
-        limite_excedido:
-          limiteClientePayload != null ? subtotal > limiteClientePayload : false,
-        exceso_limite:
-          limiteClientePayload != null ? (subtotal > limiteClientePayload ? 1 : 0) : 0,
+        limite_excedido: limiteFlags.limite_excedido,
+        exceso_limite: limiteFlags.exceso_limite,
         estado: 'pendiente',
         horario_entrega: horarioEntrega.trim(),
         telefono_entrega: telefonoEntrega.trim(),
@@ -1875,6 +1872,7 @@ const TabNuevoPedido: React.FC<{
             if (prod) setCantidadProductoEnPedido(prod, qty);
           }}
           limiteGasto={getLimiteGastoCliente()}
+          enforceLimiteGasto={enforceLimiteGasto}
           subtotal={subtotal}
           entregaAlert={entregaPendienteMensaje}
         />
@@ -2746,7 +2744,16 @@ const TabGestionarPedidos: React.FC<{
       }
     } catch (error) {
       console.error('❌ Error loading pedidos:', error);
-      addToast('error', 'Error', 'No se pudieron cargar los pedidos.');
+      const isTimeout =
+        error instanceof Error &&
+        (error.name === 'AbortError' || /aborted|timeout/i.test(error.message));
+      addToast(
+        'error',
+        isTimeout ? 'Tiempo de espera agotado' : 'Error',
+        isTimeout
+          ? 'La carga de pedidos tardó demasiado. Comprueba la conexión y pulsa «Actualizar». Si persiste, cierra sesión y vuelve a entrar.'
+          : 'No se pudieron cargar los pedidos. Pulsa «Actualizar» o inicia sesión de nuevo.',
+      );
       setPedidos([]);
     } finally {
       setLoading(false);

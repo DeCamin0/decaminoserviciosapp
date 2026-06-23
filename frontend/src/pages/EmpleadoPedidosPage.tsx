@@ -16,6 +16,12 @@ import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { config } from '../config/env';
 import heic2any from 'heic2any';
+import {
+  parseLimiteGastoCliente,
+  pedidoLimiteExcedidoFlags,
+  shouldEnforcePedidoLimiteGasto,
+  subtotalExceedsLimiteGasto,
+} from '../utils/pedidosLimiteGasto';
 
 // Funcție pentru a converti Buffer la base64
 const bufferToBase64 = (bufferData: number[]): string => {
@@ -107,15 +113,6 @@ type LineaPedido = {
   iva_linea?: number;
   total_linea?: number;
 };
-
-function parseLimiteGastoCliente(raw: unknown): number | null {
-  if (raw === null || raw === undefined) return null;
-  const s = String(raw).trim().replace(/\s/g, '').replace(',', '.');
-  if (s === '') return null;
-  const n = parseFloat(s);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return Math.round(n * 100) / 100;
-}
 
 /** Igual que al guardar: fusiona líneas existentes con productos nuevos (suma cantidades si coincide). */
 function mergePedidoItemsConProductosNuevos(
@@ -522,6 +519,7 @@ const getCentroTrabajoFromUser = (u: Record<string, unknown> | null | undefined)
 
 const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, message: string, duration?: number) => void }> = ({ addToast }) => {
   const { user } = useAuth();
+  const enforceLimiteGasto = shouldEnforcePedidoLimiteGasto(user);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [lineasPedido, setLineasPedido] = useState<LineaPedido[]>([]);
@@ -1195,12 +1193,8 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
   // Funcție pentru a obține limita de cheltuieli a comunității
   const getLimiteGasto = () => {
     if (!comunidadDetalles?.datosCompletos) return null;
-    
     const limite = comunidadDetalles.datosCompletos.CuantoPuedeGastar;
-    if (limite && !isNaN(parseFloat(limite))) {
-      return parseFloat(limite);
-    }
-    return null;
+    return parseLimiteGastoCliente(limite);
   };
 
   /** Cantitate în pedido din +/- (o singură linie consolidată per producto). */
@@ -1211,12 +1205,12 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     const delta = q - current;
     if (delta > 0) {
       const limite = getLimiteGasto();
-      if (limite != null) {
+      if (enforceLimiteGasto && limite != null) {
         const totalActual = lineasPedido.reduce(
           (sum, linea) => sum + linea.cantidad * linea.precio_unitario,
           0,
         );
-        if (Math.round((totalActual + delta * producto.precio) * 100) / 100 > Math.round(limite * 100) / 100) {
+        if (subtotalExceedsLimiteGasto(totalActual + delta * producto.precio, limite)) {
           addToast('error', 'Límite excedido', 'No se puede superar el límite de gasto del cliente.');
           return;
         }
@@ -1279,9 +1273,9 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
     }
 
     const limiteGuardar = getLimiteGasto();
-    if (limiteGuardar != null) {
+    if (enforceLimiteGasto && limiteGuardar != null) {
       const sub = calcularSubtotal();
-      if (Math.round(sub * 100) / 100 > Math.round(limiteGuardar * 100) / 100) {
+      if (subtotalExceedsLimiteGasto(sub, limiteGuardar)) {
         addToast(
           'error',
           'Límite excedido',
@@ -1339,6 +1333,10 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
       // Nu blocăm salvarea dacă verificarea eșuează, dar logăm eroarea
     }
 
+    const subtotalPedido = calcularSubtotal();
+    const limitePedido = getLimiteGasto();
+    const limiteFlags = pedidoLimiteExcedidoFlags(subtotalPedido, limitePedido);
+
     const payload = {
       // Datele angajatului
       empleado: {
@@ -1361,7 +1359,7 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
         email: comunidadDetalles?.datosCompletos?.EMAIL || 'N/A',
         nif: comunidadDetalles?.datosCompletos?.NIF || 'N/A',
         dni: comunidadDetalles?.datosCompletos?.['D.N.I. / NIE'] || 'N/A',
-        limite_gasto: getLimiteGasto() || 0
+        limite_gasto: limitePedido ?? 0
       },
       
       // Comanda cerută
@@ -1371,11 +1369,11 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
         descuento_global: 0,
         impuestos: calcularIVA(),
         notas: notas,
-        subtotal: calcularSubtotal(),
+        subtotal: subtotalPedido,
         iva_total: calcularIVA(),
         total: calcularTotal(),
-        limite_excedido: getLimiteGasto() ? calcularSubtotal() > getLimiteGasto() : false,
-        exceso_limite: getLimiteGasto() ? (calcularSubtotal() > getLimiteGasto() ? 1 : 0) : 0,
+        limite_excedido: limiteFlags.limite_excedido,
+        exceso_limite: limiteFlags.exceso_limite,
         estado: 'pendiente', // Status pentru aprobare de către supervizor
         horario_entrega: horarioEntrega.trim(),
         telefono_entrega: telefonoEntrega.trim(),
@@ -1526,6 +1524,7 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
           }}
           confirmRemove
           limiteGasto={getLimiteGasto()}
+          enforceLimiteGasto={enforceLimiteGasto}
           subtotal={calcularSubtotal()}
           notasLabel="Nota (opcional)"
           notasPlaceholder="Especifica el horario de entrega u otros detalles…"
@@ -1805,6 +1804,7 @@ const TabNuevoPedido: React.FC<{ addToast: (type: ToastType, title: string, mess
 // ===== TAB MIS PEDIDOS =====
 const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, message: string, duration?: number) => void }> = ({ addToast }) => {
   const { user } = useAuth();
+  const enforceLimiteGasto = shouldEnforcePedidoLimiteGasto(user);
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(false);
   const [pedidoSeleccionado, setPedidoSeleccionado] = useState<string | null>(null);
@@ -2319,13 +2319,13 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
       siguienteNuevos = [...productosNuevos, nuevoItem];
     }
 
-    if (limiteGastoEdicion != null) {
+    if (enforceLimiteGasto && limiteGastoEdicion != null) {
       const merged = mergePedidoItemsConProductosNuevos(
         [...(pedidoBase.items || [])],
         siguienteNuevos,
       );
       const sub = subtotalPedidoItemsSinIva(merged);
-      if (sub > limiteGastoEdicion + 0.02) {
+      if (subtotalExceedsLimiteGasto(sub, limiteGastoEdicion)) {
         addToast(
           'error',
           'Límite excedido',
@@ -2355,13 +2355,13 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
     item.total_linea = item.subtotal_linea + item.iva_linea;
     siguienteNuevos[index] = item;
 
-    if (limiteGastoEdicion != null) {
+    if (enforceLimiteGasto && limiteGastoEdicion != null) {
       const merged = mergePedidoItemsConProductosNuevos(
         [...(pedidoBase.items || [])],
         siguienteNuevos,
       );
       const sub = subtotalPedidoItemsSinIva(merged);
-      if (sub > limiteGastoEdicion + 0.02) {
+      if (subtotalExceedsLimiteGasto(sub, limiteGastoEdicion)) {
         addToast(
           'error',
           'Límite excedido',
@@ -2399,7 +2399,11 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
       );
 
       const subtotal = subtotalPedidoItemsSinIva(todosItems);
-      if (limiteGastoEdicion != null && subtotal > limiteGastoEdicion + 0.02) {
+      if (
+        enforceLimiteGasto &&
+        limiteGastoEdicion != null &&
+        subtotalExceedsLimiteGasto(subtotal, limiteGastoEdicion)
+      ) {
         addToast(
           'error',
           'Límite excedido',

@@ -20,8 +20,8 @@ export default function IdleProvider({ children }) {
   const { logout } = useAuth();
 
   const idleEnabled = (import.meta.env.VITE_IDLE_ENABLED ?? '1') === '1'
-  const timeoutMin = Number(import.meta.env.VITE_IDLE_TIMEOUT_MIN ?? '30')
-  const warnSec = Number(import.meta.env.VITE_IDLE_WARNING_SEC ?? '60')
+  const timeoutMin = Number(import.meta.env.VITE_IDLE_TIMEOUT_MIN ?? '120')
+  const warnSec = Number(import.meta.env.VITE_IDLE_WARNING_SEC ?? '120')
 
   const lastActivityRef = useRef(Date.now())
   const deadlineRef = useRef(Date.now() + timeoutMin * 60 * 1000)

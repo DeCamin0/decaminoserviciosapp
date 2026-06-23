@@ -1244,6 +1244,7 @@ export class SolicitudesService {
       let cumplePreaviso15SQL = 'FALSE';
       // Acceptă 'MANAGER' dacă este specificat, altfel default 'EMPLEADO'
       const origen = data.origen === 'MANAGER' ? 'MANAGER' : 'EMPLEADO';
+      const isManagerCreated = origen === 'MANAGER';
       const origenSQL = this.escapeSql(origen);
 
       if (data.tipo === 'BAJA_VOLUNTARIA' && data.fecha_ultimo_dia_trabajo) {
@@ -1314,11 +1315,12 @@ export class SolicitudesService {
       `;
 
       this.logger.log(
-        `📝 Create solicitud: ${data.id} (${data.tipo}), estado: ${estado}`,
+        `📝 Create solicitud: ${data.id} (${data.tipo}), estado: ${estado}, origen: ${origen}`,
       );
 
       // Quincena: ±15 zile în jurul altei vacanțe (aceeași persoană)
       if (
+        !isManagerCreated &&
         data.tipo === 'Vacaciones' &&
         (estado === 'Aprobada' || estado === 'Pendiente') &&
         data.fecha_inicio &&
@@ -1344,6 +1346,7 @@ export class SolicitudesService {
 
       // Validare conflict Vacaciones - doar dacă este aprobată direct
       if (
+        !isManagerCreated &&
         data.tipo === 'Vacaciones' &&
         estado === 'Aprobada' &&
         data.fecha_inicio &&
@@ -1364,7 +1367,8 @@ export class SolicitudesService {
       }
 
       // Validare: nici o zi din rango să nu fie fără disponibilitate (Vacaciones / Asuntos Propios)
-      if (data.fecha_inicio && data.fecha_fin) {
+      // Managerul poate crea solicitări pentru angajați fără restricții de calendar (luni blocate, limite grup, etc.)
+      if (!isManagerCreated && data.fecha_inicio && data.fecha_fin) {
         if (data.tipo === 'Vacaciones') {
           const rangeCheck = await this.checkVacacionesRangeAvailability(
             data.codigo,

@@ -106,6 +106,70 @@ const solicitudSolapaMesCalendario = (s, selectedMonth, year) => {
   return end >= monthStart && start <= monthEnd;
 };
 
+/** Solapamiento con un año natural (para lista sin mes concreto). */
+const solicitudSolapaAnio = (s, year) => {
+  const range = getSolicitudRangoFechasLocal(s);
+  if (!range) return false;
+  const yearStart = new Date(year, 0, 1);
+  yearStart.setHours(0, 0, 0, 0);
+  const yearEnd = new Date(year, 11, 31);
+  yearEnd.setHours(0, 0, 0, 0);
+  const { start, end } = range;
+  return end >= yearStart && start <= yearEnd;
+};
+
+const parseSolicitudFechaTs = (raw) => {
+  if (!raw) return 0;
+  const t = String(raw).trim();
+  const m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0).getTime();
+  }
+  const d = new Date(t);
+  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+};
+
+const getSolicitudSortTs = (s, field) => {
+  if (field === 'fecha_solicitud') {
+    return parseSolicitudFechaTs(s.fecha_solicitud || s.created_at || s.fecha);
+  }
+  const range = getSolicitudRangoFechasLocal(s);
+  if (field === 'fecha_inicio') {
+    return range ? range.start.getTime() : parseSolicitudFechaTs(s.fecha_inicio || s.fecha);
+  }
+  if (field === 'fecha_fin') {
+    return range ? range.end.getTime() : parseSolicitudFechaTs(s.fecha_fin);
+  }
+  return 0;
+};
+
+const getSolicitudDuracionDias = (s) => {
+  const n = Number(s.duracion ?? s.DURACION);
+  if (Number.isFinite(n) && n > 0) return n;
+  const range = getSolicitudRangoFechasLocal(s);
+  if (!range) return 0;
+  return Math.floor((range.end.getTime() - range.start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+};
+
+const getSolicitudEmpleadoLabel = (s) =>
+  String(s.nombre || s.NOMBRE || s.email || s.EMAIL || s.codigo || s.CODIGO || '').trim();
+
+const LISTA_ESTADO_OPTIONS = [
+  { value: 'ALL', label: 'Todos los estados' },
+  { value: 'Aprobada', label: 'Aprobada' },
+  { value: 'Pendiente', label: 'Pendiente' },
+  { value: 'Rechazada', label: 'Rechazada' },
+];
+
+const LISTA_SORT_OPTIONS = [
+  { value: 'fecha_solicitud', label: 'Fecha solicitud' },
+  { value: 'fecha_inicio', label: 'Fecha inicio' },
+  { value: 'fecha_fin', label: 'Fecha fin' },
+  { value: 'empleado', label: 'Empleado' },
+  { value: 'duracion', label: 'Duración' },
+  { value: 'estado', label: 'Estado' },
+];
+
 const ENDPOINT = routes.getSolicitudesByEmail;
 const BAJA_UPLOAD_ENDPOINT = routes.uploadBajasMedicas || '';
 const BAJA_LIST_ENDPOINT = routes.getBajasMedicas || '';
@@ -1856,6 +1920,11 @@ export default function SolicitudesPage() {
   // Documentos asociados con BAJA_VOLUNTARIA: Map<solicitudId, documento>
   const [bajaVoluntariaDocumentos, setBajaVoluntariaDocumentos] = useState(new Map());
   const [selectedMonth, setSelectedMonth] = useState(0);
+  /** Año opcional cuando «Todos los meses» (Vacaciones / Asuntos Propios) */
+  const [listaAnioFilter, setListaAnioFilter] = useState(0);
+  const [listaEstadoFilter, setListaEstadoFilter] = useState('ALL');
+  const [listaSortBy, setListaSortBy] = useState('fecha_solicitud');
+  const [listaSortDir, setListaSortDir] = useState('desc');
   const [selectedTipoAusencia, setSelectedTipoAusencia] = useState(['ALL']); // Filtrul de tip pentru ausencias (array pentru multi-select)
   const [showTipoDropdown, setShowTipoDropdown] = useState(false); // Pentru a controla vizibilitatea dropdown-ului multi-select
   const [selectedUser, setSelectedUser] = useState('ALL');
@@ -7978,6 +8047,21 @@ export default function SolicitudesPage() {
         // Solicitudes (Vacaciones, etc.): solapamiento con el mes/año (mismo criterio que Control vacaciones)
         return solicitudSolapaMesCalendario(s, selectedMonth, vacationControlYear);
       });
+    } else if (
+      listaAnioFilter > 0 &&
+      (selectedTab === 'asunto' || selectedTab === 'vacaciones')
+    ) {
+      filtered = filtered.filter((s) => solicitudSolapaAnio(s, listaAnioFilter));
+    }
+
+    if (
+      listaEstadoFilter !== 'ALL' &&
+      (selectedTab === 'asunto' || selectedTab === 'vacaciones')
+    ) {
+      filtered = filtered.filter((s) => {
+        const estado = String(s.estado || s.ESTADO || '').trim().toLowerCase();
+        return estado === listaEstadoFilter.toLowerCase();
+      });
     }
     
     // Filtru după tip de ausencia (doar pentru tab-ul 'ausencias')
@@ -7989,30 +8073,56 @@ export default function SolicitudesPage() {
       });
     }
     
-    // Sortare după fecha_solicitud (data solicitării) - cele mai recente sus
+    const useListaSort =
+      selectedTab === 'asunto' || selectedTab === 'vacaciones';
+    const sortDirMul = listaSortDir === 'asc' ? 1 : -1;
+
     const sorted = filtered.sort((a, b) => {
+      if (useListaSort) {
+        if (listaSortBy === 'empleado') {
+          const cmp = getSolicitudEmpleadoLabel(a).localeCompare(
+            getSolicitudEmpleadoLabel(b),
+            'es',
+            { sensitivity: 'base' },
+          );
+          return cmp * sortDirMul;
+        }
+        if (listaSortBy === 'estado') {
+          const cmp = String(a.estado || a.ESTADO || '').localeCompare(
+            String(b.estado || b.ESTADO || ''),
+            'es',
+            { sensitivity: 'base' },
+          );
+          return cmp * sortDirMul;
+        }
+        if (listaSortBy === 'duracion') {
+          return (getSolicitudDuracionDias(a) - getSolicitudDuracionDias(b)) * sortDirMul;
+        }
+        const tsA = getSolicitudSortTs(a, listaSortBy);
+        const tsB = getSolicitudSortTs(b, listaSortBy);
+        if (tsA && tsB) return (tsA - tsB) * sortDirMul;
+        if (tsA && !tsB) return -1;
+        if (!tsA && tsB) return 1;
+        return 0;
+      }
+
       let createdA, createdB;
       if (selectedTab === 'ausencias') {
-        // Pentru ausencias, prioritizăm fecha_solicitud sau created_at
         createdA = a.fecha_solicitud || a.created_at || a.FECHA || a.fecha || '';
         createdB = b.fecha_solicitud || b.created_at || b.FECHA || b.fecha || '';
       } else {
-        // Pentru alte taburi, prioritizăm fecha_solicitud
         createdA = a.fecha_solicitud || a.created_at || a.fecha || '';
         createdB = b.fecha_solicitud || b.created_at || b.fecha || '';
       }
       
-      // Compară ca Date dacă e posibil, altfel ca string
       if (createdA && createdB) {
         const dateA = new Date(createdA);
         const dateB = new Date(createdB);
         if (!isNaN(dateA.getTime()) && !isNaN(dateB.getTime())) {
-          return dateB.getTime() - dateA.getTime(); // Descendent - cea mai nouă primul
+          return dateB.getTime() - dateA.getTime();
         }
-        // Fallback: compară ca string
         return createdB.localeCompare(createdA);
       }
-      // Dacă una lipsește, o punem la sfârșit
       if (createdA && !createdB) return -1;
       if (!createdA && createdB) return 1;
       return 0;
@@ -8022,6 +8132,10 @@ export default function SolicitudesPage() {
     selectedTab,
     selectedUser,
     selectedMonth,
+    listaAnioFilter,
+    listaEstadoFilter,
+    listaSortBy,
+    listaSortDir,
     selectedTipoAusencia,
     allAusencias,
     allSolicitudes,
@@ -10591,7 +10705,7 @@ export default function SolicitudesPage() {
                   {selectedTab === 'vacaciones' && (
                     <div
                       className="flex items-center gap-2 px-3 py-2 rounded-xl border-2 border-cyan-200 bg-cyan-50 text-cyan-900 text-sm shadow-sm shrink-0"
-                      title={`Empleados distintos con al menos una solicitud en la lista (año ${vacationControlYear}, periodo solapado con el mes)`}
+                      title={`Empleados distintos con al menos una solicitud en la lista (año ${selectedMonth > 0 ? vacationControlYear : listaAnioFilter || 'todos'}, periodo solapado con el filtro)`}
                     >
                       <span className="text-base" aria-hidden>
                         👤
@@ -10600,6 +10714,83 @@ export default function SolicitudesPage() {
                         <span className="font-bold text-lg tabular-nums">{vacacionesListaEmpleadosUnicos}</span>
                         <span className="text-cyan-800/90"> empleado(s)</span>
                       </span>
+                    </div>
+                  )}
+                  {(selectedTab === 'asunto' || selectedTab === 'vacaciones') && selectedMonth === 0 && (
+                    <div className="flex-1 sm:flex-initial sm:w-auto min-w-0">
+                      <label htmlFor="lista-anio-filter" className="block text-sm font-semibold text-gray-700 mb-2">
+                        Filtrar por año
+                      </label>
+                      <select
+                        id="lista-anio-filter"
+                        value={listaAnioFilter}
+                        onChange={(e) => setListaAnioFilter(Number(e.target.value))}
+                        className="w-full sm:w-auto px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-indigo-700 border-2 border-indigo-200 hover:border-indigo-400 cursor-pointer"
+                      >
+                        <option value={0}>📅 Todos los años</option>
+                        {[0, 1, 2].map((offset) => {
+                          const y = new Date().getFullYear() - 1 + offset;
+                          return (
+                            <option key={y} value={y}>
+                              {y}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  )}
+                  {(selectedTab === 'asunto' || selectedTab === 'vacaciones') && (
+                    <div className="flex-1 sm:flex-initial sm:w-auto min-w-0">
+                      <label htmlFor="lista-estado-filter" className="block text-sm font-semibold text-gray-700 mb-2">
+                        Estado
+                      </label>
+                      <select
+                        id="lista-estado-filter"
+                        value={listaEstadoFilter}
+                        onChange={(e) => setListaEstadoFilter(e.target.value)}
+                        className="w-full sm:w-auto px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-indigo-700 border-2 border-indigo-200 hover:border-indigo-400 cursor-pointer"
+                      >
+                        {LISTA_ESTADO_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.value === 'ALL' ? `📋 ${opt.label}` : opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {(selectedTab === 'asunto' || selectedTab === 'vacaciones') && (
+                    <div className="flex-1 sm:flex-initial sm:w-auto min-w-0">
+                      <label htmlFor="lista-sort-by" className="block text-sm font-semibold text-gray-700 mb-2">
+                        Ordenar por
+                      </label>
+                      <select
+                        id="lista-sort-by"
+                        value={listaSortBy}
+                        onChange={(e) => setListaSortBy(e.target.value)}
+                        className="w-full sm:w-auto px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-indigo-700 border-2 border-indigo-200 hover:border-indigo-400 cursor-pointer"
+                      >
+                        {LISTA_SORT_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {(selectedTab === 'asunto' || selectedTab === 'vacaciones') && (
+                    <div className="flex-1 sm:flex-initial sm:w-auto min-w-0">
+                      <label htmlFor="lista-sort-dir" className="block text-sm font-semibold text-gray-700 mb-2">
+                        Orden
+                      </label>
+                      <select
+                        id="lista-sort-dir"
+                        value={listaSortDir}
+                        onChange={(e) => setListaSortDir(e.target.value)}
+                        className="w-full sm:w-auto px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-indigo-700 border-2 border-indigo-200 hover:border-indigo-400 cursor-pointer"
+                      >
+                        <option value="desc">↓ Más reciente / mayor primero</option>
+                        <option value="asc">↑ Más antiguo / menor primero</option>
+                      </select>
                     </div>
                   )}
                 </div>

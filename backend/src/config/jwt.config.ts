@@ -5,7 +5,7 @@ export default registerAs('jwt', () => {
     process.env.JWT_SECRET || 'your-secret-key-change-in-production';
   return {
     secret: mainSecret,
-    expiresIn: process.env.JWT_EXPIRES_IN || '30m', // 30 minutes for access token
+    expiresIn: process.env.JWT_EXPIRES_IN || '2h', // access token (office: sesiune mai lungă)
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d', // 7 days for refresh token
     /** JWT exclusivo del área portal clientes (no reutilizar el de empleados). */
     portalSecret:

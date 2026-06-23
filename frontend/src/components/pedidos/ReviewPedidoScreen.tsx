@@ -34,8 +34,10 @@ export type ReviewPedidoScreenProps = {
   onSetProductQty: (productId: number, qty: number) => void;
   /** If true, asks for confirmation before removing a line (qty → 0). */
   confirmRemove?: boolean;
-  /** When set with subtotal over limit, shows warning and disables submit. */
+  /** When set with subtotal over limit, shows warning and disables submit (unless enforceLimiteGasto is false). */
   limiteGasto?: number | null;
+  /** If false (conducerea), over-limit is informational only — submit still allowed. Default true. */
+  enforceLimiteGasto?: boolean;
   subtotal?: number;
   notasLabel?: string;
   notasPlaceholder?: string;
@@ -58,6 +60,7 @@ export const ReviewPedidoScreen: React.FC<ReviewPedidoScreenProps> = ({
   onSetProductQty,
   confirmRemove = false,
   limiteGasto = null,
+  enforceLimiteGasto = true,
   subtotal,
   notasLabel = 'Nota (opcional)',
   notasPlaceholder = 'Añade una nota para este pedido…',
@@ -70,6 +73,13 @@ export const ReviewPedidoScreen: React.FC<ReviewPedidoScreenProps> = ({
   const productCount = lineas.length;
   const unitCount = lineas.reduce((s, l) => s + (Number(l.cantidad) || 0), 0);
   const overLimit =
+    enforceLimiteGasto &&
+    limiteGasto != null &&
+    subtotal != null &&
+    Number.isFinite(limiteGasto) &&
+    Math.round(subtotal * 100) / 100 > Math.round(limiteGasto * 100) / 100;
+  const overLimitInformative =
+    !enforceLimiteGasto &&
     limiteGasto != null &&
     subtotal != null &&
     Number.isFinite(limiteGasto) &&
@@ -193,6 +203,12 @@ export const ReviewPedidoScreen: React.FC<ReviewPedidoScreenProps> = ({
       {overLimit && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
           El subtotal supera el límite de gasto del cliente. Ajusta cantidades antes de enviar.
+        </div>
+      )}
+
+      {overLimitInformative && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+          El subtotal supera el límite de gasto del cliente. Como gestor puedes enviar el pedido igualmente; quedará registrado como límite excedido.
         </div>
       )}
 
