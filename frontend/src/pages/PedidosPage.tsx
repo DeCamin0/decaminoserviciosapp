@@ -5125,95 +5125,104 @@ const TabGestionarPedidos: React.FC<{
 
       {/* Modal upload albarán (firma) */}
       {pedidoCargandoAlbaran && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-bold text-gray-800">📄 Cargar Albarán</h2>
-                <button
-                  onClick={() => {
-                    setPedidoCargandoAlbaran(null);
-                    setAlbaranFiles([]);
-                    setAlbaranPreview(null);
-                  }}
-                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
-                >
-                  ×
-                </button>
-              </div>
-              <div className="mb-4">
-                <p className="text-sm text-gray-600 mb-2">
-                  Pedido: <strong>{pedidoCargandoAlbaran}</strong>
-                </p>
-                <p className="text-sm text-gray-600 mb-4">
-                  Puedes subir uno o varios archivos (foto o PDF). El pedido será marcado como &quot;Entregado&quot; automáticamente.
-                </p>
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Seleccionar archivos (PDF, JPG, PNG) — múltiples permitidos
-                </label>
-                <input
-                  type="file"
-                  multiple
-                  accept=".pdf,.jpg,.jpeg,.png,image/*,application/pdf"
-                  onChange={handleAlbaranFileChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                />
-              </div>
-              {albaranPreview && (
-                <div className="mb-4">
-                  <p className="text-sm font-medium text-gray-700 mb-2">Vista previa (primera imagen):</p>
-                  <div className="border border-gray-300 rounded-lg p-2">
-                    <img
-                      src={albaranPreview}
-                      alt="Preview albarán"
-                      className="max-w-full h-auto max-h-64 mx-auto"
+        <div className="fixed inset-0 z-[10060] flex items-end landscape:items-center justify-center bg-black/50 p-0 landscape:p-2 sm:p-4">
+          <div className="bg-white rounded-t-2xl landscape:rounded-lg sm:rounded-lg shadow-xl max-w-2xl landscape:max-w-4xl w-full max-h-[min(92dvh,100%)] landscape:max-h-[min(96dvh,100%)] flex flex-col overflow-hidden">
+            <div className="flex-shrink-0 flex justify-between items-center gap-3 px-4 sm:px-6 pt-4 sm:pt-6 pb-3 border-b border-gray-100">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-800">📄 Cargar Albarán</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setPedidoCargandoAlbaran(null);
+                  setAlbaranFiles([]);
+                  setAlbaranPreview(null);
+                }}
+                className="text-gray-500 hover:text-gray-700 text-2xl font-bold leading-none shrink-0"
+                aria-label="Cerrar"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-4 landscape:py-2">
+              <div className="landscape:flex landscape:gap-4 landscape:items-start">
+                <div className="landscape:flex-1 landscape:min-w-0">
+                  <div className="mb-4 landscape:mb-2">
+                    <p className="text-sm text-gray-600 mb-2">
+                      Pedido: <strong>{pedidoCargandoAlbaran}</strong>
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Puedes subir uno o varios archivos (foto o PDF). El pedido será marcado como &quot;Entregado&quot; automáticamente.
+                    </p>
+                  </div>
+                  <div className="mb-4 landscape:mb-0">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Seleccionar archivos (PDF, JPG, PNG) — múltiples permitidos
+                    </label>
+                    <input
+                      type="file"
+                      multiple
+                      accept=".pdf,.jpg,.jpeg,.png,image/*,application/pdf"
+                      onChange={handleAlbaranFileChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                     />
                   </div>
-                </div>
-              )}
-              {albaranFiles.length > 0 && !albaranPreview && (
-                <div className="mb-4">
-                  <p className="text-sm text-gray-600">
-                    {albaranFiles.length} archivo(s) seleccionado(s):
-                  </p>
-                  <ul className="mt-1 text-sm list-disc list-inside text-gray-700 max-h-32 overflow-y-auto">
-                    {albaranFiles.map((f) => (
-                      <li key={`${f.name}-${f.size}`}>
-                        <strong>{f.name}</strong> ({(f.size / 1024).toFixed(2)} KB)
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <div className="flex gap-3 justify-end">
-                <Button
-                  onClick={() => {
-                    setPedidoCargandoAlbaran(null);
-                    setAlbaranFiles([]);
-                    setAlbaranPreview(null);
-                  }}
-                  variant="outline"
-                  disabled={uploadingAlbaran}
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  onClick={handleUploadAlbaran}
-                  className="bg-green-600 hover:bg-green-700 text-white"
-                  disabled={albaranFiles.length === 0 || uploadingAlbaran}
-                >
-                  {uploadingAlbaran ? (
-                    <>
-                      <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white inline-block mr-2"></span>
-                      Subiendo...
-                    </>
-                  ) : (
-                    '📤 Subir albarán(es)'
+                  {albaranFiles.length > 0 && !albaranPreview && (
+                    <div className="mb-2">
+                      <p className="text-sm text-gray-600">
+                        {albaranFiles.length} archivo(s) seleccionado(s):
+                      </p>
+                      <ul className="mt-1 text-sm list-disc list-inside text-gray-700 max-h-32 overflow-y-auto">
+                        {albaranFiles.map((f) => (
+                          <li key={`${f.name}-${f.size}`}>
+                            <strong>{f.name}</strong> ({(f.size / 1024).toFixed(2)} KB)
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
-                </Button>
+                </div>
+                {albaranPreview && (
+                  <div className="mb-2 landscape:mb-0 landscape:flex-1 landscape:min-w-0">
+                    <p className="text-sm font-medium text-gray-700 mb-2">Vista previa (primera imagen):</p>
+                    <div className="border border-gray-300 rounded-lg p-2">
+                      <img
+                        src={albaranPreview}
+                        alt="Preview albarán"
+                        className="max-w-full h-auto max-h-40 sm:max-h-56 landscape:max-h-[48dvh] mx-auto object-contain"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
+            </div>
+
+            <div className="flex-shrink-0 border-t border-gray-200 bg-white px-4 sm:px-6 py-3 flex flex-col gap-2 landscape:flex-row landscape:justify-end sm:flex-row sm:justify-end sm:gap-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <Button
+                onClick={handleUploadAlbaran}
+                className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white order-1 sm:order-2"
+                disabled={albaranFiles.length === 0 || uploadingAlbaran}
+              >
+                {uploadingAlbaran ? (
+                  <>
+                    <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white inline-block mr-2"></span>
+                    Subiendo...
+                  </>
+                ) : (
+                  '📤 Subir albarán(es)'
+                )}
+              </Button>
+              <Button
+                onClick={() => {
+                  setPedidoCargandoAlbaran(null);
+                  setAlbaranFiles([]);
+                  setAlbaranPreview(null);
+                }}
+                variant="outline"
+                className="w-full sm:w-auto order-2 sm:order-1"
+                disabled={uploadingAlbaran}
+              >
+                Cancelar
+              </Button>
             </div>
           </div>
         </div>

@@ -139,6 +139,23 @@ export class PedidosService {
     return `=${year}${month}${day}${hours}${minutes}${seconds}-${randomId}`;
   }
 
+  /** UI/API poate trimite UID fără '='; în DB e stocat cu '=' (=YYYYMMDDHHMMSS-X). */
+  private normalizePedidoUidInput(pedidoUid: string): string {
+    return (pedidoUid || '').trim().replace(/^=+/, '');
+  }
+
+  private async resolveCanonicalPedidoUid(
+    pedidoUid: string,
+  ): Promise<string | null> {
+    const uidNorm = this.normalizePedidoUidInput(pedidoUid);
+    if (!uidNorm) return null;
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ pedido_uid: string }>>(
+      `SELECT pedido_uid FROM PedidosTodos WHERE pedido_uid = ${this.escapeSql(uidNorm)} OR pedido_uid = ${this.escapeSql('=' + uidNorm)} LIMIT 1`,
+    );
+    if (!rows?.length) return null;
+    return String(rows[0].pedido_uid);
+  }
+
   /**
    * Salvează un pedido în baza de date
    * Creează un rând în PedidosTodos pentru fiecare item din pedido
@@ -618,6 +635,11 @@ export class PedidosService {
    */
   async getPedidoByUid(pedidoUid: string): Promise<any> {
     try {
+      const canonicalUid = await this.resolveCanonicalPedidoUid(pedidoUid);
+      if (!canonicalUid) {
+        throw new BadRequestException(`Pedido with UID ${pedidoUid} not found`);
+      }
+
       // Query direct în baza de date pentru a obține comanda după UID
       const query = `
         SELECT 
@@ -672,7 +694,7 @@ export class PedidosService {
             ) SEPARATOR ';;'
           ) as items
         FROM PedidosTodos
-        WHERE pedido_uid = ${this.escapeSql(pedidoUid)}
+        WHERE pedido_uid = ${this.escapeSql(canonicalUid)}
         GROUP BY pedido_uid, empleado_id, empleado_nombre, empleado_email,
                  comunidad_id, comunidad_nombre, comunidad_direccion,
                  comunidad_codigo_postal, comunidad_localidad, comunidad_provincia,
@@ -790,6 +812,11 @@ export class PedidosService {
     telefono_entrega?: string,
   ): Promise<any> {
     try {
+      const canonicalUid = await this.resolveCanonicalPedidoUid(pedidoUid);
+      if (!canonicalUid) {
+        throw new BadRequestException(`Pedido with UID ${pedidoUid} not found`);
+      }
+
       const updates: string[] = [];
 
       if (direccion_envio !== undefined) {
@@ -824,7 +851,7 @@ export class PedidosService {
       const query = `
         UPDATE PedidosTodos
         SET ${updates.join(', ')}
-        WHERE pedido_uid = ${this.escapeSql(pedidoUid)}
+        WHERE pedido_uid = ${this.escapeSql(canonicalUid)}
       `;
 
       await this.prisma.$executeRawUnsafe(query);
@@ -852,6 +879,11 @@ export class PedidosService {
     userInfo?: string,
   ): Promise<any> {
     try {
+      const canonicalUid = await this.resolveCanonicalPedidoUid(pedidoUid);
+      if (!canonicalUid) {
+        throw new BadRequestException(`Pedido with UID ${pedidoUid} not found`);
+      }
+
       // Validează statusul
       const estadosValidos = [
         'pendiente',
@@ -901,7 +933,7 @@ export class PedidosService {
       const query = `
         UPDATE PedidosTodos
         SET estado = ${this.escapeSql(estado)}${fechaEnvioSQL}${trackingSQL}
-        WHERE pedido_uid = ${this.escapeSql(pedidoUid)}
+        WHERE pedido_uid = ${this.escapeSql(canonicalUid)}
       `;
 
       await this.prisma.$executeRawUnsafe(query);
@@ -954,6 +986,8 @@ export class PedidosService {
         throw new BadRequestException(`Pedido with UID ${pedidoUid} not found`);
       }
 
+      const canonicalUid = pedidoExistente.pedido_uid;
+
       const comunidadIdEdicion =
         typeof pedidoExistente.comunidad?.id === 'number'
           ? pedidoExistente.comunidad.id
@@ -973,7 +1007,7 @@ export class PedidosService {
       // Folosește tranzacție pentru a asigura atomicitatea (dacă INSERT eșuează, DELETE este rollback-uit)
       await this.prisma.$transaction(async (tx) => {
         // Șterge toate items-urile existente pentru această comandă
-        const deleteQuery = `DELETE FROM PedidosTodos WHERE pedido_uid = ${this.escapeSql(pedidoUid)}`;
+        const deleteQuery = `DELETE FROM PedidosTodos WHERE pedido_uid = ${this.escapeSql(canonicalUid)}`;
         await tx.$executeRawUnsafe(deleteQuery);
 
         // Inserează items-urile noi
@@ -1087,7 +1121,7 @@ export class PedidosService {
               rechazado_en,
               creado_en
             ) VALUES (
-              ${this.escapeSql(pedidoUid)},
+              ${this.escapeSql(canonicalUid)},
               ${this.escapeSql(pedidoExistente.empleado?.id || '')},
               ${this.escapeSql(pedidoExistente.empleado?.nombre || '')},
               ${this.escapeSql(pedidoExistente.empleado?.email || '')},
@@ -1180,7 +1214,7 @@ export class PedidosService {
       const updateQuery = `
         UPDATE PedidosTodos 
         SET notas = ${notasValue}
-        WHERE pedido_uid = ${this.escapeSql(pedidoUid)}
+        WHERE pedido_uid = ${this.escapeSql(pedidoExistente.pedido_uid)}
       `;
 
       await this.prisma.$executeRawUnsafe(updateQuery);

@@ -147,7 +147,7 @@ const MobileLayout = ({ children }) => {
       {/* Mobile Header - compact */}
       <header className="sticky top-0 z-50 bg-white/80 dark:bg-gray-800/80 backdrop-blur border-b border-gray-200 dark:border-gray-700 relative">
         {/* Rând 1: Logo + Nume + Buton Salir */}
-        <div className="flex items-center justify-between px-4 py-3" style={{
+        <div className="flex items-center justify-between px-4 py-3 landscape:max-md:py-2" style={{
           WebkitAlignItems: 'center',
           msFlexAlign: 'center',
           alignItems: 'center',
@@ -201,15 +201,15 @@ const MobileLayout = ({ children }) => {
           </div>
         </div>
 
-        {/* Rând 2: Locația */}
-        <div className="px-4 pb-3">
+        {/* Rând 2: Locația — compact în landscape pe telefon */}
+        <div className="px-4 pb-3 landscape:max-md:pb-2 landscape:max-md:pt-0">
           <LocationDisplay />
         </div>
       </header>
 
       {/* Main content */}
-      <main className="flex-1 relative z-10 pb-20">
-        <div className="w-full px-4 sm:px-6 py-4 sm:py-6">
+      <main className="flex-1 relative z-10 pb-20 landscape:max-md:pb-16">
+        <div className="w-full px-4 sm:px-6 py-4 sm:py-6 landscape:max-md:py-2">
           {children}
         </div>
       </main>

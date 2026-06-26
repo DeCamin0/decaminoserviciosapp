@@ -376,6 +376,7 @@ export default defineConfig(({ mode }) => {
         start_url: `${env.VITE_BASE_PATH || '/'}?v=${process.env.npm_package_version || Date.now()}&c=${mode}`,
         lang: 'es',
         categories: ['business', 'productivity'],
+        orientation: 'any',
         version: process.env.npm_package_version || '1.0.0', // Adaugă versiunea în manifest
         icons: pwaManifestIcons
       },
