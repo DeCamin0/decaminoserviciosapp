@@ -2412,4 +2412,75 @@ export class PedidosService {
       tipo_mime: row.tipo_mime || 'application/pdf',
     };
   }
+
+  /**
+   * Elimina un albarán concreto. Si no quedan documentos y el pedido está «entregado», vuelve a «enviado».
+   */
+  async deleteAlbaran(
+    pedidoUid: string,
+    albaranId: number,
+    userInfo?: string,
+  ): Promise<{
+    success: true;
+    message: string;
+    remaining: number;
+    estado?: string;
+    pedido_uid: string;
+  }> {
+    const id = Math.trunc(Number(albaranId));
+    if (!id || id < 1) {
+      throw new BadRequestException('id de albarán inválido');
+    }
+
+    const canonical = await this.resolveCanonicalPedidoUid(pedidoUid);
+    if (!canonical) {
+      throw new NotFoundException('Pedido no encontrado');
+    }
+
+    const existing = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, nombre_archivo FROM PedidosAlbaranes WHERE id = ${id} AND pedido_uid = ${this.escapeSql(canonical)} LIMIT 1`,
+    );
+    if (!existing?.length) {
+      throw new NotFoundException('Albarán no encontrado para este pedido');
+    }
+    const nombre = String(existing[0].nombre_archivo || 'albarán');
+
+    await this.prisma.$executeRawUnsafe(
+      `DELETE FROM PedidosAlbaranes WHERE id = ${id} AND pedido_uid = ${this.escapeSql(canonical)}`,
+    );
+
+    const countRows = await this.prisma.$queryRawUnsafe<{ c: bigint }[]>(
+      `SELECT COUNT(*) AS c FROM PedidosAlbaranes WHERE pedido_uid = ${this.escapeSql(canonical)}`,
+    );
+    const remaining = Number(countRows[0]?.c ?? 0);
+
+    let estado: string | undefined;
+    if (remaining === 0) {
+      const estadoRows = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT DISTINCT estado FROM PedidosTodos WHERE pedido_uid = ${this.escapeSql(canonical)} LIMIT 1`,
+      );
+      const cur = String(estadoRows[0]?.estado || '').toLowerCase();
+      if (cur === 'entregado') {
+        await this.updatePedidoEstado(canonical, 'enviado', undefined, userInfo);
+        estado = 'enviado';
+      }
+    }
+
+    this.logger.log(
+      `🗑️ Albarán ${id} eliminado de pedido ${canonical} por ${userInfo || 'unknown'} (${remaining} restante(s))`,
+    );
+
+    return {
+      success: true,
+      message:
+        remaining > 0
+          ? `Albarán «${nombre}» eliminado (${remaining} restante(s)).`
+          : estado === 'enviado'
+            ? `Albarán «${nombre}» eliminado. Pedido actualizado a «enviado».`
+            : `Albarán «${nombre}» eliminado.`,
+      remaining,
+      ...(estado ? { estado } : {}),
+      pedido_uid: canonical,
+    };
+  }
 }

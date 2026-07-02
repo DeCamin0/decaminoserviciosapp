@@ -2301,6 +2301,7 @@ const TabGestionarPedidos: React.FC<{
   const [albaranViewMime, setAlbaranViewMime] = useState<string>('');
   const [albaranViewName, setAlbaranViewName] = useState<string>('');
   const [albaranViewLoading, setAlbaranViewLoading] = useState(false);
+  const [albaranViewDeleting, setAlbaranViewDeleting] = useState(false);
   const [albaranViewError, setAlbaranViewError] = useState<string | null>(null);
   const albaranViewBlobUrlRef = React.useRef<string | null>(null);
   const albaranViewPreviewUrlRef = React.useRef<string | null>(null);
@@ -2802,6 +2803,85 @@ const TabGestionarPedidos: React.FC<{
       console.error('Error eliminando pedido:', error);
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
       addToast('error', 'Error', `No se pudo eliminar el pedido: ${errorMessage}`);
+    }
+  };
+
+  const handleDeleteAlbaran = async () => {
+    if (!pedidoViendoAlbaran || albaranViewSelectedId == null) return;
+    const selected = albaranesListaMeta?.find((a) => a.id === albaranViewSelectedId);
+    const label = selected?.nombre_archivo || 'este albarán';
+    if (
+      !confirm(
+        `¿Eliminar «${label}»?\n\nEsta acción no se puede deshacer.${
+          albaranesListaMeta && albaranesListaMeta.length <= 1
+            ? ' Si era el único albarán, el pedido volverá a «enviado».'
+            : ''
+        }`,
+      )
+    ) {
+      return;
+    }
+
+    setAlbaranViewDeleting(true);
+    try {
+      const uid = (pedidoViendoAlbaran || '').replace(/^=+/, '');
+      const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const response = await fetch(routes.deleteAlbaran(uid, albaranViewSelectedId), {
+        method: 'DELETE',
+        headers,
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `Error ${response.status}`);
+      }
+      const result = await response.json();
+      addToast('success', 'Albarán eliminado', result.message || 'Albarán eliminado correctamente.');
+
+      if (albaranViewBlobUrlRef.current) {
+        URL.revokeObjectURL(albaranViewBlobUrlRef.current);
+        albaranViewBlobUrlRef.current = null;
+      }
+      if (albaranViewPreviewUrlRef.current) {
+        URL.revokeObjectURL(albaranViewPreviewUrlRef.current);
+        albaranViewPreviewUrlRef.current = null;
+      }
+      setAlbaranViewBlobUrl(null);
+      setAlbaranViewPreviewUrl(null);
+      setAlbaranViewMime('');
+      setAlbaranViewName('');
+
+      const base = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
+      const listRes = await fetch(`${base}/api/pedidos/${encodeURIComponent(uid)}/albaranes`, {
+        method: 'GET',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!listRes.ok) {
+        throw new Error('No se pudo actualizar la lista de albaranes');
+      }
+      const listData = await listRes.json();
+      const list = Array.isArray(listData) ? listData : [];
+      setAlbaranesListaMeta(list);
+      if (list.length === 0) {
+        setAlbaranViewSelectedId(null);
+        setAlbaranViewError('No hay albaranes guardados para este pedido.');
+      } else {
+        setAlbaranViewSelectedId(list[0].id);
+      }
+
+      await loadPedidos();
+    } catch (error: unknown) {
+      console.error('Error eliminando albarán:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      addToast('error', 'Error', `No se pudo eliminar el albarán: ${errorMessage}`);
+    } finally {
+      setAlbaranViewDeleting(false);
     }
   };
 
@@ -5087,7 +5167,7 @@ const TabGestionarPedidos: React.FC<{
                       );
                     })()}
                   </div>
-                  <div className="flex gap-3 justify-end">
+                  <div className="flex flex-wrap gap-3 justify-end">
                     <a
                       href={albaranViewBlobUrl}
                       download={albaranViewName}
@@ -5095,6 +5175,13 @@ const TabGestionarPedidos: React.FC<{
                     >
                       📥 Descargar
                     </a>
+                    <Button
+                      onClick={handleDeleteAlbaran}
+                      disabled={albaranViewDeleting || albaranViewSelectedId == null}
+                      className="bg-red-600 hover:bg-red-700 text-white"
+                    >
+                      {albaranViewDeleting ? '⏳ Eliminando...' : '🗑️ Borrar albarán'}
+                    </Button>
                     <Button
                       onClick={() => {
                         if (albaranViewBlobUrlRef.current) {

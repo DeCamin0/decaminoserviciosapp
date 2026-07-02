@@ -498,6 +498,8 @@ export const routes = {
   enviarPedidosAprobados: `${BACKEND_BASE}/api/pedidos/enviar-aprobados`,
   generarExcelPedidos: `${BACKEND_BASE}/api/pedidos/generar-excel`,
   deletePedido: (pedidoUid) => `${BACKEND_BASE}/api/pedidos/${encodeURIComponent(pedidoUid)}`,
+  deleteAlbaran: (pedidoUid, albaranId) =>
+    `${BACKEND_BASE}/api/pedidos/${encodeURIComponent(pedidoUid)}/albaran?id=${encodeURIComponent(String(albaranId))}`,
   
   // Pedidos Notas
   getPedidosNotas: `${BACKEND_BASE}/api/pedidos-notas`,

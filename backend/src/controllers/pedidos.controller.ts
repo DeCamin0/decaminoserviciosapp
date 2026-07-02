@@ -120,6 +120,47 @@ export class PedidosController {
     res.send(archivo);
   }
 
+  /**
+   * DELETE /api/pedidos/:pedidoUid/albaran?id=
+   * Elimina un albarán concreto del pedido.
+   */
+  @Delete(':pedidoUid/albaran')
+  async deleteAlbaran(
+    @Param('pedidoUid') pedidoUid: string,
+    @Query('id') albaranIdParam: string | undefined,
+    @CurrentUser() user: any,
+  ) {
+    const decodedUid = decodeURIComponent(pedidoUid);
+    const parsed = albaranIdParam ? parseInt(albaranIdParam, 10) : NaN;
+    if (Number.isNaN(parsed) || parsed < 1) {
+      throw new BadRequestException('Se requiere id de albarán válido (?id=)');
+    }
+
+    let userInfo = 'unknown';
+    try {
+      const codigo = user?.userId || user?.codigo;
+      if (codigo) {
+        const empleado =
+          await this.empleadosService.getEmpleadoByCodigo(codigo);
+        if (empleado) {
+          const nombre = this.empleadosService.getFormattedNombre(empleado);
+          userInfo = `${nombre} (${codigo})`;
+        } else {
+          userInfo = codigo;
+        }
+      } else {
+        userInfo = user?.email || 'unknown';
+      }
+    } catch {
+      userInfo = user?.userId || user?.codigo || user?.email || 'unknown';
+    }
+
+    this.logger.log(
+      `🗑️ [PedidosController] Deleting albarán ${parsed} for pedido ${decodedUid} by user: ${userInfo}`,
+    );
+    return this.pedidosService.deleteAlbaran(decodedUid, parsed, userInfo);
+  }
+
   @Get(':pedidoUid')
   async getPedidoByUid(@Param('pedidoUid') pedidoUid: string) {
     const decodedUid = decodeURIComponent(pedidoUid);
