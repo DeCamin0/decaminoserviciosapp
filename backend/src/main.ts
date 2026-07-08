@@ -2,7 +2,7 @@ import { config as loadEnv } from 'dotenv';
 import { resolve } from 'path';
 import { existsSync } from 'fs';
 
-// Încarcă .env înainte de orice. HERA doar dacă ENV_FILE=.env.client2.local sau există sentinel (nu după PORT, ca să nu pornească ambele pe 3002).
+// Încarcă .env înainte de orice. HERA: ENV_FILE=.env.client2 / .env.client2.local / .env.hera.local sau sentinel.
 const cwd = process.cwd();
 const client2Sentinel = resolve(
   cwd,
@@ -12,6 +12,7 @@ const client2Sentinel = resolve(
 const sentinelExists = existsSync(client2Sentinel);
 const wantClient2 =
   sentinelExists ||
+  process.env.ENV_FILE === '.env.client2' ||
   process.env.ENV_FILE === '.env.client2.local' ||
   process.env.ENV_FILE === '.env.hera.local';
 const envFilePreferred = wantClient2

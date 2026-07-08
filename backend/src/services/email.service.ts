@@ -315,34 +315,26 @@ export class EmailService {
   }
 
   /**
-   * Returnează adresele BCC default din env var
-   * Backward compatible: dacă EMAIL_BCC lipsește, folosește valorile vechi
+   * BCC din env-ul clientului activ (EMAIL_BCC sau COMPANY_EMAIL_BCC via company config).
+   * Fără fallback la process.env — evită scurgerea BCC Decamino când HERA rulează cu .env.client2.
    */
   getDefaultBcc(): string[] {
     const emailBcc = this.configService.get<string>('EMAIL_BCC');
     let list: string[] = [];
     if (emailBcc) {
-      // Suportă multiple adrese separate prin virgulă
       list = emailBcc
         .split(',')
         .map((email) => email.trim())
         .filter(Boolean);
     } else {
       const company = this.configService.get<{ emailBcc?: string }>('company');
-      if (company?.emailBcc) {
-        list = company.emailBcc
-          .split(',')
-          .map((e) => e.trim())
-          .filter(Boolean);
-      } else {
-        const fallback = process.env.COMPANY_EMAIL_BCC || '';
-        list = fallback
-          ? fallback
-              .split(',')
-              .map((e) => e.trim())
-              .filter(Boolean)
-          : [];
-      }
+      const companyBcc = company?.emailBcc?.trim() || '';
+      list = companyBcc
+        ? companyBcc
+            .split(',')
+            .map((e) => e.trim())
+            .filter(Boolean)
+        : [];
     }
     const seen = new Set<string>();
     const out: string[] = [];
