@@ -43,6 +43,30 @@ function mergeFileSelections(existing, fileList) {
   return merged;
 }
 
+const HORAS_CONTRATO_INPUT_CLASS =
+  'w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300';
+
+function HorasContratoField({ id, name, value, onChange }) {
+  return (
+    <div>
+      <input
+        id={id}
+        name={name}
+        type="number"
+        min="0.5"
+        max="60"
+        step="0.5"
+        inputMode="decimal"
+        className={HORAS_CONTRATO_INPUT_CLASS}
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Ej. 17.5 o 40"
+      />
+      <p className="mt-1 text-xs text-gray-500">Decimales permitidos (ej. 17,5 h).</p>
+    </div>
+  );
+}
+
 // Funcție helper pentru transformare automată în majuscule
 const toUpperCaseIfNeeded = (field, value) => {
   // Câmpuri care NU trebuie transformate în majuscule
@@ -80,14 +104,14 @@ const stripHtml = (str) => {
 const getWelcomeEmailDefault = () => {
   const company = config.COMPANY_NAME || 'la empresa';
   const companyLegal = config.COMPANY_NAME_LEGAL || config.COMPANY_NAME || company;
-  const appUrl = config.APP_URL || 'https://app.decaminoservicios.com';
+  const appUrl =
+    (config.APP_URL && String(config.APP_URL).trim()) ||
+    (typeof window !== 'undefined' ? window.location.origin : '');
   return {
     subiect: 'Bienvenido/a – Información sobre la aplicación interna',
-    mensaje: `Hola,
+    mensaje: `Bienvenido/a a **${company}**. Estamos encantados de tenerte en el equipo.
 
-Bienvenido/a a **${company}**. Estamos encantados de tenerte en el equipo.
-
-Una vez recibas tus datos de acceso, deberás utilizar la **aplicación interna de la empresa** para todas tus gestiones laborales.
+Deberás utilizar la **aplicación interna de la empresa** para todas tus gestiones laborales.
 
 El uso de la aplicación es **obligatorio** y sustituye completamente el uso de documentos en papel, así como cualquier otro sistema o aplicación de fichaje o gestión laboral utilizado anteriormente.
 
@@ -104,12 +128,6 @@ La aplicación es la herramienta oficial para:
 
 ---
 
-🔐 Datos de acceso
-
-Tus datos de acceso (usuario y contraseña) **te serán enviados en un correo electrónico separado** por motivos de seguridad.
-
----
-
 📱 Cómo acceder a la aplicación
 
 La aplicación **no se descarga desde Google Play ni App Store**.
@@ -119,7 +137,7 @@ Se utiliza directamente desde el navegador de tu móvil o ordenador:
 1. Abre el navegador de tu teléfono (Chrome, Safari, etc.)
 2. Accede al siguiente enlace:
    👉 ${appUrl}
-3. Introduce tus datos de acceso (cuando los recibas)
+3. Introduce tu usuario y contraseña (ver bloque "Datos de acceso" más abajo)
 4. Sigue las instrucciones para añadir la aplicación a la pantalla de inicio
 5. Confirma para tener acceso rápido como si fuera una app
 
@@ -2821,6 +2839,7 @@ export default function EmpleadosPage() {
           mesaj,
           subiect,
           destinatar: 'toti',
+          includeCredentials: true,
         }),
       });
       const result = response.ok ? await response.json() : { success: false };
@@ -5589,20 +5608,12 @@ export default function EmpleadosPage() {
                       </select>
                     </div>
                   ) : field === 'HORAS DE CONTRATO' ? (
-                    <select
+                    <HorasContratoField
                       id={fieldId}
                       name={field}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
                       value={addForm[field] || ''}
-                      onChange={(e) => setAddForm(prev => ({ ...prev, [field]: e.target.value }))}
-                    >
-                      <option value="">Seleccionar horas...</option>
-                      {Array.from({ length: 40 }, (_, i) => i + 1).map(hours => (
-                        <option key={hours} value={hours}>
-                          {hours} {hours === 1 ? 'hora' : 'horas'}
-                        </option>
-                      )                      )}
-                    </select>
+                      onChange={(v) => setAddForm((prev) => ({ ...prev, [field]: v }))}
+                    />
                   ) : field === 'GRUPO' ? (
                     <div className="relative">
                       <select
@@ -5814,7 +5825,7 @@ export default function EmpleadosPage() {
             ) : errorEstadisticas ? (
               <div className="text-center text-red-600 font-bold py-8">{errorEstadisticas}</div>
             ) : estadisticas.length === 0 ? (
-              <div className="text-center text-gray-500 py-8">No hay estadísticas disponibles</div>
+              <div className="text-center text-gray-500 py-8">Nu există statistici disponibile</div>
             ) : (
               <>
                 {/* Statistici rapide */}
@@ -5880,7 +5891,7 @@ export default function EmpleadosPage() {
                                     key={columna}
                                     className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium flex items-center gap-1"
                                   >
-                                    {columna}: {valor}
+                                    {columna}: {columna === 'horario' && valor === 'Ambele' ? 'Ambos' : valor}
                                     <button
                                       onClick={() => handleFiltroColumna(columna, null)}
                                       className="text-blue-600 hover:text-blue-800"
@@ -5976,9 +5987,9 @@ export default function EmpleadosPage() {
                         >
                           <div className="flex items-center justify-between">
                             <div>
-                              <p className="text-sm font-medium text-purple-700 mb-1">✨ Con Ambele</p>
+                              <p className="text-sm font-medium text-purple-700 mb-1">✨ Con ambos</p>
                               <p className="text-3xl font-bold text-purple-800">{conAmbele}</p>
-                              <p className="text-xs text-purple-600 mt-1">cuadrante + horario</p>
+                              <p className="text-xs text-purple-600 mt-1">cuadrante y horario</p>
                             </div>
                             <div className="text-4xl">⭐</div>
                           </div>
@@ -6336,7 +6347,7 @@ export default function EmpleadosPage() {
                                 }`}
                                 onClick={() => handleFiltroColumna('horario', 'Ambele')}
                               >
-                                Ambele
+                                Ambos
                               </button>
                             </div>
                           </div>
@@ -6605,7 +6616,9 @@ export default function EmpleadosPage() {
                               ? 'bg-green-100 text-green-800'
                               : 'bg-gray-100 text-gray-800'
                           }`}>
-                            {emp.tiene_horario || '-'}
+                            {emp.tiene_horario === 'Ambele'
+                              ? 'Ambos'
+                              : emp.tiene_horario || '-'}
                           </span>
                         </td>
                         <td className="px-3 py-3 text-sm text-gray-600">
@@ -7298,20 +7311,12 @@ export default function EmpleadosPage() {
                     </select>
                   </div>
                 ) : field === 'HORAS DE CONTRATO' ? (
-                  <select
+                  <HorasContratoField
                     id={fieldId}
                     name={field}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
                     value={editForm[field] || ''}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
-                  >
-                    <option value="">Seleccionar horas...</option>
-                    {Array.from({ length: 40 }, (_, i) => i + 1).map(hours => (
-                      <option key={hours} value={hours}>
-                        {hours} {hours === 1 ? 'hora' : 'horas'}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setEditForm((prev) => ({ ...prev, [field]: v }))}
+                  />
                 ) : field === 'NOMBRE / APELLIDOS' ? (
                   <div className="space-y-3">
                     <Input
@@ -7713,7 +7718,7 @@ export default function EmpleadosPage() {
               <span className="text-white text-xl">✉️</span>
             </div>
             <h2 className="text-xl font-bold text-gray-900 mb-1">Email de bienvenida a todos</h2>
-            <p className="text-gray-600 text-sm">Se enviará a todos los empleados activos. Puedes editar el asunto y el mensaje antes de enviar.</p>
+            <p className="text-gray-600 text-sm">Se enviará a todos los empleados activos. Cada uno recibirá su usuario y contraseña personalizados al final del mensaje. Puedes editar el asunto y el texto antes de enviar.</p>
           </div>
           <div className="space-y-4">
             <div>

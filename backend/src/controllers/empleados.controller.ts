@@ -78,6 +78,36 @@ export class EmpleadosController {
       : [];
   }
 
+  private escapeHtmlForEmail(value: string): string {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /** Bloc HTML usuario + contraseña (bienvenida masiva, alta individual, etc.). */
+  private buildCredentialsAccessHtml(
+    usuario: string,
+    password: string | null,
+  ): string {
+    const usuarioSafe = this.escapeHtmlForEmail(usuario);
+    const passwordBlock = password
+      ? `<p style="margin: 5px 0;"><strong>Contraseña:</strong> <code style="background-color: #fff; padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 14px; font-weight: bold; color: #0066CC;">${this.escapeHtmlForEmail(password)}</code></p>
+              <div style="background-color: #fff3cd; padding: 10px; border-left: 4px solid #ffc107; margin-top: 10px; border-radius: 4px;">
+                <p style="margin: 5px 0; color: #856404; font-weight: bold;">⚠️ IMPORTANTE:</p>
+                <p style="margin: 5px 0; color: #856404;">Te recomendamos <strong>cambiarla</strong> después del primer acceso desde la sección "Datos Personales".</p>
+              </div>`
+      : `<p style="margin: 5px 0;">Si no tienes contraseña asignada, solicítala por WhatsApp a un responsable autorizado de la empresa.</p>`;
+
+    return `
+            <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <p style="margin: 5px 0;"><strong>🔐 Datos de acceso</strong></p>
+              <p style="margin: 5px 0;"><strong>Usuario:</strong> ${usuarioSafe}</p>
+              ${passwordBlock}
+            </div>`;
+  }
+
   private extractBearerToken(authorization?: string): string | null {
     if (!authorization || typeof authorization !== 'string') return null;
     const t = authorization.trim();
@@ -2361,7 +2391,13 @@ export class EmpleadosController {
         codigo: body.codigo,
       });
 
-      const { mesaj, subiect, destinatar, grup, codigo } = body;
+      const { mesaj, subiect, destinatar, grup, codigo, includeCredentials } =
+        body;
+
+      const shouldIncludeCredentials =
+        includeCredentials === true ||
+        includeCredentials === 'true' ||
+        includeCredentials === '1';
 
       if (!mesaj || !subiect) {
         throw new BadRequestException(
@@ -2512,7 +2548,29 @@ export class EmpleadosController {
           .map((line) => line.trim())
           .filter((line) => line.length > 0)
           .join('\n');
-        const html = `<html><body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><p>Hola <strong>${recipient.nombre}</strong>,</p>${mesajCleaned ? `<div style="white-space: pre-wrap;">${mesajCleaned.replace(/\n/g, '<br>')}</div>` : ''}<p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>${this.getCompany().legalNameShort ?? ''}</strong></p></body></html>`;
+
+        let credentialsHtml = '';
+        if (shouldIncludeCredentials && recipient.codigo) {
+          try {
+            const password = await this.empleadosService.getPassword(
+              recipient.codigo,
+            );
+            credentialsHtml = this.buildCredentialsAccessHtml(
+              recipient.email,
+              password,
+            );
+          } catch (pwdErr: any) {
+            this.logger.warn(
+              `⚠️ No se pudo obtener contraseña para ${recipient.codigo}: ${pwdErr.message}`,
+            );
+            credentialsHtml = this.buildCredentialsAccessHtml(
+              recipient.email,
+              null,
+            );
+          }
+        }
+
+        const html = `<html><body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><p>Hola <strong>${recipient.nombre}</strong>,</p>${mesajCleaned ? `<div style="white-space: pre-wrap;">${mesajCleaned.replace(/\n/g, '<br>')}</div>` : ''}${credentialsHtml}<p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>${this.getCompany().legalNameShort ?? ''}</strong></p></body></html>`;
 
         try {
           await this.emailService.sendEmail(recipient.email, subiect, html, {

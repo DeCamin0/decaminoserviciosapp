@@ -80,6 +80,7 @@ type UserPermissions = Record<string, unknown> | null;
 type Pedido = {
   pedido_uid: string;
   empleado?: {
+    id?: string;
     nombre?: string;
     email?: string;
   };
@@ -93,6 +94,7 @@ type Pedido = {
     telefono?: string;
     email?: string;
     nif?: string;
+    limite_gasto?: number | null;
   };
   fecha?: string;
   fecha_envio?: string;
@@ -106,6 +108,8 @@ type Pedido = {
   rechazado_en?: string;
   total?: number;
   estado?: string;
+  horario_entrega?: string;
+  telefono_entrega?: string;
   items?: LineaPedido[];
   [key: string]: unknown;
 };
@@ -2280,6 +2284,7 @@ const TabGestionarPedidos: React.FC<{
   const [serviciosEntrega, setServiciosEntrega] = useState<Record<number, string>>({});
   const [loadingServicios, setLoadingServicios] = useState(false);
   const [pedidoCargandoAlbaran, setPedidoCargandoAlbaran] = useState<string | null>(null);
+  const [copiandoPedidoUid, setCopiandoPedidoUid] = useState<string | null>(null);
   const [albaranFiles, setAlbaranFiles] = useState<File[]>([]);
   const [albaranPreview, setAlbaranPreview] = useState<string | null>(null);
   const [uploadingAlbaran, setUploadingAlbaran] = useState(false);
@@ -2803,6 +2808,210 @@ const TabGestionarPedidos: React.FC<{
       console.error('Error eliminando pedido:', error);
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
       addToast('error', 'Error', `No se pudo eliminar el pedido: ${errorMessage}`);
+    }
+  };
+
+  const inferIvaPorcentajeItem = (item: LineaPedido): number => {
+    if (item.iva_porcentaje != null && !Number.isNaN(item.iva_porcentaje)) {
+      return item.iva_porcentaje;
+    }
+    const sub =
+      item.subtotal_linea ??
+      (Number(item.cantidad) || 0) * (Number(item.precio_unitario) || 0);
+    if (sub > 0 && item.iva_linea != null) {
+      return Math.round((item.iva_linea / sub) * 10000) / 100;
+    }
+    return 21;
+  };
+
+  const handleCopiarPedido = async (source: Pedido) => {
+    const uid = source.pedido_uid;
+    if (
+      !confirm(
+        `¿Crear un pedido nuevo copiando los productos y la comunidad de #${uid}? El nuevo pedido quedará en estado «pendiente» con la fecha de hoy.`,
+      )
+    ) {
+      return;
+    }
+
+    setCopiandoPedidoUid(uid);
+    try {
+      const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+        'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
+      };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      let pedido: Pedido = source;
+      if (!pedido.items?.length) {
+        const res = await fetch(routes.getPedidoByUid(uid), { headers });
+        if (!res.ok) throw new Error(await res.text());
+        pedido = await res.json();
+      }
+
+      const items = pedido.items || [];
+      if (!items.length) {
+        addToast('warning', 'Sin productos', 'El pedido no tiene productos para copiar.');
+        return;
+      }
+
+      const sinProductoId = items.filter((i) => !i.producto_id);
+      if (sinProductoId.length > 0) {
+        addToast(
+          'warning',
+          'No se puede copiar',
+          'Algunos productos del pedido no tienen ID de catálogo. Edita el pedido original o añade los productos manualmente.',
+        );
+        return;
+      }
+
+      const horario =
+        String(pedido.horario_entrega || '').trim() ||
+        (pedido.comunidad?.id != null
+          ? String(horariosEntrega[String(pedido.comunidad.id)] || '').trim()
+          : '');
+      const telefono =
+        String(pedido.telefono_entrega || '').trim() ||
+        String(pedido.comunidad?.telefono || '').trim();
+
+      if (!horario) {
+        addToast(
+          'warning',
+          'Horario obligatorio',
+          'El pedido original no tiene horario de entrega. Complétalo antes de copiar.',
+        );
+        return;
+      }
+      if (!telefono) {
+        addToast(
+          'warning',
+          'Teléfono obligatorio',
+          'El pedido original no tiene teléfono de entrega. Complétalo antes de copiar.',
+        );
+        return;
+      }
+
+      const mappedItems = items.map((item) => {
+        const cantidad = Number(item.cantidad) || 0;
+        const precio = Number(item.precio_unitario) || 0;
+        const descuento = Number(item.descuento_linea) || 0;
+        const ivaPct = inferIvaPorcentajeItem(item);
+        const subtotalLinea = Math.max(0, cantidad * precio - descuento);
+        const ivaLinea = subtotalLinea * (ivaPct / 100);
+        return {
+          producto_id: item.producto_id as number,
+          numero_articulo: item.numero_articulo || 'N/A',
+          descripcion: item.descripcion || 'N/A',
+          cantidad,
+          precio_unitario: precio,
+          subtotal_linea: subtotalLinea,
+          descuento_linea: descuento,
+          iva_porcentaje: ivaPct,
+          iva_linea: ivaLinea,
+          total_linea: subtotalLinea + ivaLinea,
+        };
+      });
+
+      const subtotal = mappedItems.reduce((s, i) => s + i.subtotal_linea, 0);
+      const ivaTotal = mappedItems.reduce((s, i) => s + i.iva_linea, 0);
+      const total = subtotal + ivaTotal;
+      const limiteCliente =
+        pedido.comunidad?.limite_gasto != null
+          ? Number(pedido.comunidad.limite_gasto)
+          : 0;
+      const limiteFlags = pedidoLimiteExcedidoFlags(subtotal, limiteCliente);
+
+      const empleadoId =
+        pedido.empleado?.id ||
+        (user as { CODIGO?: string; codigo?: string })?.CODIGO ||
+        (user as { CODIGO?: string; codigo?: string })?.codigo ||
+        '';
+      const empleadoNombre =
+        pedido.empleado?.nombre ||
+        (user as { 'NOMBRE / APELLIDOS'?: string })?.['NOMBRE / APELLIDOS'] ||
+        'Empleado';
+      const empleadoEmail =
+        pedido.empleado?.email ||
+        (user as { email?: string })?.email ||
+        (user as { 'CORREO ELECTRONICO'?: string })?.['CORREO ELECTRONICO'] ||
+        '';
+
+      const payload = {
+        empleado: {
+          id: String(empleadoId),
+          nombre: empleadoNombre,
+          email: empleadoEmail,
+          centro_trabajo: pedido.comunidad?.nombre || '',
+        },
+        comunidad: {
+          id: pedido.comunidad?.id ?? 'N/A',
+          nombre: pedido.comunidad?.nombre || '',
+          direccion: pedido.comunidad?.direccion || pedido.direccion_envio || '',
+          codigo_postal:
+            pedido.comunidad?.codigo_postal || pedido.codigo_postal_envio || '',
+          localidad: pedido.comunidad?.localidad || pedido.localidad_envio || '',
+          provincia: pedido.comunidad?.provincia || pedido.provincia_envio || '',
+          telefono: pedido.comunidad?.telefono || telefono,
+          email: pedido.comunidad?.email || '',
+          nif: pedido.comunidad?.nif || '',
+          limite_gasto: limiteCliente,
+        },
+        pedido: {
+          fecha: new Date().toISOString(),
+          moneda: 'EUR',
+          descuento_global: 0,
+          impuestos: ivaTotal,
+          notas: pedido.notas
+            ? `Copia de ${uid}. ${String(pedido.notas)}`
+            : `Copia de ${uid}`,
+          subtotal,
+          iva_total: ivaTotal,
+          total,
+          limite_excedido: limiteFlags.limite_excedido,
+          exceso_limite: limiteFlags.exceso_limite,
+          estado: 'pendiente',
+          horario_entrega: horario,
+          telefono_entrega: telefono,
+          direccion_envio: pedido.direccion_envio || pedido.comunidad?.direccion || '',
+          codigo_postal_envio:
+            pedido.codigo_postal_envio || pedido.comunidad?.codigo_postal || '',
+          localidad_envio: pedido.localidad_envio || pedido.comunidad?.localidad || '',
+          provincia_envio: pedido.provincia_envio || pedido.comunidad?.provincia || '',
+          items: mappedItems,
+        },
+      };
+
+      const response = await fetch(routes.savePedido, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(errText || `HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (result.status === 'ok') {
+        addToast(
+          'success',
+          'Pedido copiado',
+          `Nuevo pedido ${result.pedido_uid || ''} creado en estado pendiente.`,
+        );
+        await loadPedidos();
+      } else {
+        throw new Error(result.message || 'Error al copiar el pedido');
+      }
+    } catch (error: unknown) {
+      console.error('Error copiando pedido:', error);
+      const msg = error instanceof Error ? error.message : 'Error desconocido';
+      addToast('error', 'Error al copiar', msg);
+    } finally {
+      setCopiandoPedidoUid(null);
     }
   };
 
@@ -4334,6 +4543,17 @@ const TabGestionarPedidos: React.FC<{
                         ➕ Añadir albarán
                       </Button>
                     )}
+                    <Button
+                      onClick={() => handleCopiarPedido(pedido)}
+                      disabled={copiandoPedidoUid === pedido.pedido_uid}
+                      className="bg-purple-600 hover:bg-purple-700 text-white"
+                      size="sm"
+                      title="Crear un pedido nuevo con los mismos productos y comunidad"
+                    >
+                      {copiandoPedidoUid === pedido.pedido_uid
+                        ? '⏳ Copiando...'
+                        : '📋 Crear por copia'}
+                    </Button>
                     <Button
                       onClick={() => setPedidoSeleccionado(
                         pedidoSeleccionado === pedido.pedido_uid ? null : pedido.pedido_uid
@@ -7079,7 +7299,7 @@ const TabNotas: React.FC<{
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-gray-800">Notas</h2>
             <Button onClick={handleNewNota} variant="primary">
-              ➕ Adaugă Notă Nouă
+              ➕ Añadir Nota Nueva
             </Button>
           </div>
         </div>
@@ -7144,14 +7364,14 @@ const TabNotas: React.FC<{
                     variant="outline"
                     className="flex-1"
                   >
-                    ✏️ Edit
+                    ✏️ Editar
                   </Button>
                   <Button
                     onClick={() => handleDeleteNota(nota.id)}
                     variant="outline"
                     className="flex-1 text-red-600 hover:bg-red-50"
                   >
-                    🗑️ Delete
+                    🗑️ Eliminar
                   </Button>
                 </div>
               </div>
@@ -7177,7 +7397,7 @@ const TabNotas: React.FC<{
                   <Input
                     value={formData.titulo}
                     onChange={(e) => setFormData({ ...formData, titulo: e.target.value })}
-                    placeholder="Ej: Nu cumpărăm limpia cristal"
+                    placeholder="Ej: No comprar limpiacristales"
                   />
                 </div>
 

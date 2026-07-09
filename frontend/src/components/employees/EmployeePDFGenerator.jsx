@@ -3,6 +3,7 @@ import { pdf } from '@react-pdf/renderer';
 import { Modal, Button } from '../ui';
 import EmployeePDF from './EmployeePDF';
 import { routes } from '../../utils/routes';
+import { config } from '../../config/env';
 
 const EmployeePDFGenerator = ({ 
   employeeData, 
@@ -301,9 +302,9 @@ const EmployeePDFGenerator = ({
               {/* Informații */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                 <p className="text-sm text-blue-800">
-                  <strong>ℹ️ Información:</strong> Al confirmar, se enviarán tanto los datos del empleado 
-                  como el PDF generado al backend. El PDF incluye toda la información del formulario 
-                  con diseño profesional y branding DeCamino.
+                  <strong>ℹ️ Información:</strong> Al confirmar, se enviarán tanto los datos del empleado
+                  como el PDF generado al backend. El PDF incluye toda la información del formulario
+                  con diseño profesional y branding de {config.COMPANY_NAME || config.APP_NAME || 'la empresa'}.
                 </p>
               </div>
             </div>

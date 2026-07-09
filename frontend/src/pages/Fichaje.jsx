@@ -40,6 +40,23 @@ const CACHE_DURATION = 5 * 60 * 1000; // 5 minute cache pentru a preveni apeluri
 const rawColor = config.PRIMARY_COLOR || '#CC0000';
 const PRIMARY_COLOR = rawColor.startsWith('#') ? rawColor : `#${rawColor}`;
 
+/** Ultimele N luni pentru selector fichaje (ziua 1 evită overflow la setMonth pe 29–31). */
+function getRecentFichajeMonthOptions(count = 12, fromDate = new Date()) {
+  const anchorYear = fromDate.getFullYear();
+  const anchorMonth = fromDate.getMonth();
+  return Array.from({ length: count }, (_, i) => {
+    const date = new Date(anchorYear, anchorMonth - i, 1);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const value = `${year}-${month}`;
+    const monthName = date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+    return {
+      value,
+      label: monthName.charAt(0).toUpperCase() + monthName.slice(1),
+    };
+  });
+}
+
 // Flag global pentru a preveni apelurile simultane de checkConfirmation
 let isCheckingConfirmation = false;
 const CHECK_CONFIRMATION_DEBOUNCE = 2000; // 2 secunde debounce între apeluri
@@ -3791,19 +3808,11 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                       }}
                     >
                       {/* Ultimele 12 luni */}
-                      {Array.from({ length: 12 }, (_, i) => {
-                        const date = new Date();
-                        date.setMonth(date.getMonth() - i);
-                        const year = date.getFullYear();
-                        const month = String(date.getMonth() + 1).padStart(2, '0');
-                        const monthName = date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
-                        const value = `${year}-${month}`;
-                        return (
+                      {getRecentFichajeMonthOptions().map(({ value, label }, i) => (
                           <option key={`month-${i}-${value}`} value={value} className="py-2">
-                            {monthName.charAt(0).toUpperCase() + monthName.slice(1)}
+                            {label}
                           </option>
-                        );
-                      })}
+                      ))}
                     </select>
                     
                     {/* Icon spectaculos pentru dropdown */}
@@ -7588,19 +7597,11 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                       className="appearance-none bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 pr-10 w-full text-sm font-medium text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     >
                       {/* Ultimele 12 luni */}
-                      {Array.from({ length: 12 }, (_, i) => {
-                        const date = new Date();
-                        date.setMonth(date.getMonth() - i);
-                        const year = date.getFullYear();
-                        const month = String(date.getMonth() + 1).padStart(2, '0');
-                        const monthName = date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
-                        const value = `${year}-${month}`;
-                        return (
+                      {getRecentFichajeMonthOptions().map(({ value, label }, i) => (
                           <option key={`modal-month-${i}-${value}`} value={value}>
-                            {monthName.charAt(0).toUpperCase() + monthName.slice(1)}
+                            {label}
                           </option>
-                        );
-                      })}
+                      ))}
                     </select>
                     <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                       <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

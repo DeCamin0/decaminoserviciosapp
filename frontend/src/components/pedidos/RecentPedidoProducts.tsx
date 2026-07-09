@@ -19,6 +19,8 @@ export type RecentPedidoProductsProps = {
   onQuickAdd: (p: PedidoCatalogProduct) => void;
   /** When false, still show title + short empty hint (integration pending). */
   hasHistorySource?: boolean;
+  title?: string;
+  emptyMessage?: string;
 };
 
 /**
@@ -28,17 +30,21 @@ export const RecentPedidoProducts: React.FC<RecentPedidoProductsProps> = ({
   products,
   onQuickAdd,
   hasHistorySource = true,
+  title = 'Recientes',
+  emptyMessage,
 }) => {
+  const defaultEmpty = hasHistorySource
+    ? 'Ningún producto de pedidos anteriores está en el catálogo de este centro todavía.'
+    : 'Aquí aparecerán productos de tus pedidos anteriores para añadirlos rápido.';
+
   return (
     <section className="mb-5 border-b border-zinc-200/90 pb-5 text-zinc-900">
       <h2 className="text-sm font-semibold uppercase tracking-wide !text-zinc-700" style={{ color: '#3f3f46' }}>
-        Recientes
+        {title}
       </h2>
       {products.length === 0 ? (
         <p className="mt-2 text-sm leading-relaxed !text-zinc-600" style={{ color: '#52525b' }}>
-          {hasHistorySource
-            ? 'Ningún producto de pedidos anteriores está en el catálogo de este centro todavía.'
-            : 'Aquí aparecerán productos de tus pedidos anteriores para añadirlos rápido.'}
+          {emptyMessage ?? defaultEmpty}
         </p>
       ) : (
         <div className="mt-3 flex gap-3 overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch]">

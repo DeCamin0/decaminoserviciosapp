@@ -6,6 +6,7 @@ import {
   RecentPedidoProducts,
   ReviewPedidoScreen,
   extractRecentProductIdsFromPedidos,
+  extractFrequentProductIdsFromPedidos,
   sumQtyForProduct,
   lineasAfterSetProductQty,
   type PedidoCatalogProduct,
@@ -1810,6 +1811,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
   const [pedidoSeleccionado, setPedidoSeleccionado] = useState<string | null>(null);
   const [pedidoEditando, setPedidoEditando] = useState<string | null>(null);
   const [productosDisponibles, setProductosDisponibles] = useState<Producto[]>([]);
+  const [busquedaProductosEdicion, setBusquedaProductosEdicion] = useState('');
   const [productosNuevos, setProductosNuevos] = useState<LineaPedido[]>([]);
   const [loadingProductos, setLoadingProductos] = useState(false);
   /** Límite actual del cliente (GET /clientes) al abrir edición; null = sin límite o no cargado. */
@@ -1839,6 +1841,44 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
   const [albaranViewError, setAlbaranViewError] = useState<string | null>(null);
   const albaranViewBlobUrlRef = React.useRef<string | null>(null);
   const albaranViewPreviewUrlRef = React.useRef<string | null>(null);
+
+  const productosDisponiblesEdicionFiltrados = useMemo(() => {
+    const term = busquedaProductosEdicion.trim().toLowerCase();
+    if (!term) return productosDisponibles;
+    return productosDisponibles.filter((p) => {
+      const numero = (p.numero || '').toLowerCase();
+      const descripcion = (p.descripcion || '').toLowerCase();
+      return numero.includes(term) || descripcion.includes(term);
+    });
+  }, [productosDisponibles, busquedaProductosEdicion]);
+
+  const pedidosHistorialCentroEdicion = useMemo(() => {
+    if (!pedidoEditando) return [];
+    const pedido = pedidos.find((p) => p.pedido_uid === pedidoEditando);
+    const comId = Number(pedido?.comunidad?.id);
+    if (!Number.isFinite(comId)) return [];
+    return pedidos.filter(
+      (p) => Number(p.comunidad?.id) === comId && p.pedido_uid !== pedidoEditando,
+    );
+  }, [pedidos, pedidoEditando]);
+
+  const productosFrecuentesEdicionIds = useMemo(
+    () => extractFrequentProductIdsFromPedidos(pedidosHistorialCentroEdicion, 12, productosDisponibles),
+    [pedidosHistorialCentroEdicion, productosDisponibles],
+  );
+
+  const productosFrecuentesEdicion = useMemo((): PedidoCatalogProduct[] => {
+    return productosFrecuentesEdicionIds
+      .map((pid) => productosDisponibles.find((p) => p.id === pid))
+      .filter((p): p is Producto => Boolean(p))
+      .map((p) => ({
+        id: p.id,
+        numero: p.numero,
+        descripcion: p.descripcion,
+        imagen: p.imagen,
+        precio: p.precio,
+      }));
+  }, [productosFrecuentesEdicionIds, productosDisponibles]);
 
   // Lista albaranes când se deschide "Ver Albarán"
   useEffect(() => {
@@ -2201,6 +2241,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
     setLimiteGastoEdicion(null);
     setPedidoEditando(pedido.pedido_uid);
     setProductosNuevos([]);
+    setBusquedaProductosEdicion('');
     
     // Încarcă produsele disponibile pentru comunitate
     if (pedido.comunidad?.id) {
@@ -2448,6 +2489,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
       setLimiteGastoEdicion(null);
       setProductosNuevos([]);
       setProductosDisponibles([]);
+      setBusquedaProductosEdicion('');
       
       // Reîncarcă comenzile
       await loadPedidos();
@@ -2644,13 +2686,14 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-bold text-gray-800">✏️ Editar Pedido: {pedidoEditando}</h2>
+                <h2 className="text-2xl font-bold text-gray-800">✏️ Editar Pedido: {(pedidoEditando || '').replace(/^=+/, '')}</h2>
                 <button
                   onClick={() => {
                     setPedidoEditando(null);
                     setLimiteGastoEdicion(null);
                     setProductosNuevos([]);
                     setProductosDisponibles([]);
+                    setBusquedaProductosEdicion('');
                   }}
                   className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
                 >
@@ -2705,8 +2748,34 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                 ) : productosDisponibles.length === 0 ? (
                   <p className="text-gray-500 text-sm">No hay productos disponibles</p>
                 ) : (
+                  <>
+                    <RecentPedidoProducts
+                      title="Más pedidos en este centro"
+                      products={productosFrecuentesEdicion}
+                      hasHistorySource={pedidosHistorialCentroEdicion.length > 0}
+                      emptyMessage={
+                        pedidosHistorialCentroEdicion.length === 0
+                          ? 'Todavía no hay otros pedidos en este centro para sugerir productos.'
+                          : 'Ningún producto del historial de este centro está en el catálogo actual.'
+                      }
+                      onQuickAdd={(p) => {
+                        const prod = productosDisponibles.find((x) => x.id === p.id);
+                        if (prod) agregarProductoNuevo(prod);
+                      }}
+                    />
+                    <Input
+                      type="text"
+                      placeholder="Buscar por número o descripción (Ej: 20000175 o AMBIENTADOR)"
+                      value={busquedaProductosEdicion}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBusquedaProductosEdicion(e.target.value)}
+                      className="mb-3"
+                      aria-label="Buscar productos para agregar"
+                    />
+                    {productosDisponiblesEdicionFiltrados.length === 0 ? (
+                      <p className="text-gray-500 text-sm">No se encontraron productos</p>
+                    ) : (
                   <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg">
-                    {productosDisponibles.map((producto) => (
+                    {productosDisponiblesEdicionFiltrados.map((producto) => (
                       <div
                         key={producto.id || producto.producto_id}
                         className="flex items-center justify-between p-3 border-b hover:bg-gray-50 cursor-pointer"
@@ -2725,6 +2794,8 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                       </div>
                     ))}
                   </div>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -2808,6 +2879,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                     setLimiteGastoEdicion(null);
                     setProductosNuevos([]);
                     setProductosDisponibles([]);
+                    setBusquedaProductosEdicion('');
                   }}
                   className="bg-gray-600 hover:bg-gray-700 text-white"
                   size="sm"

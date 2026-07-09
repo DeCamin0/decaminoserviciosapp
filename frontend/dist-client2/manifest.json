@@ -8,6 +8,7 @@
   "theme_color": "#E53935",
   "scope": "/",
   "lang": "es",
+  "orientation": "any",
   "icons": [
     {
       "src": "/favicon.ico",

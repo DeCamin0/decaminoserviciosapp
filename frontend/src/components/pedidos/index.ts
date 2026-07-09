@@ -10,4 +10,7 @@ export { ReviewPedidoScreen } from './ReviewPedidoScreen';
 export type { ReviewPedidoScreenProps, ReviewPedidoLine, ReviewPedidoProduct } from './ReviewPedidoScreen';
 export { sumQtyForProduct, lineasAfterSetProductQty } from './pedidoLineQty';
 export type { LineaPedidoLike, ProductoMin } from './pedidoLineQty';
-export { extractRecentProductIdsFromPedidos } from './extractRecentProductIds';
+export {
+  extractRecentProductIdsFromPedidos,
+  extractFrequentProductIdsFromPedidos,
+} from './extractRecentProductIds';

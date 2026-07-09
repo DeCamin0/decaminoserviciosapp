@@ -1,6 +1,7 @@
 type PedidoItemLike = {
   producto_id?: number | string;
   numero_articulo?: string;
+  cantidad?: number | string;
 };
 
 type PedidoLike = {
@@ -44,14 +45,7 @@ export function extractRecentProductIdsFromPedidos(
   for (const p of sorted) {
     const items = Array.isArray(p.items) ? p.items : [];
     for (const it of items) {
-      const fromId = Number(it.producto_id);
-      let resolved: number | null = null;
-      if (Number.isFinite(fromId) && fromId > 0) {
-        resolved = fromId;
-      } else if (numeroToId.size > 0) {
-        const key = normalizeNumero(it.numero_articulo);
-        if (key && numeroToId.has(key)) resolved = numeroToId.get(key)!;
-      }
+      const resolved = resolveProductIdFromItem(it, numeroToId);
       if (resolved == null || seen.has(resolved)) continue;
       seen.add(resolved);
       out.push(resolved);
@@ -59,4 +53,51 @@ export function extractRecentProductIdsFromPedidos(
     }
   }
   return out;
+}
+
+function resolveProductIdFromItem(
+  it: PedidoItemLike,
+  numeroToId: Map<string, number>,
+): number | null {
+  const fromId = Number(it.producto_id);
+  if (Number.isFinite(fromId) && fromId > 0) return fromId;
+  if (numeroToId.size > 0) {
+    const key = normalizeNumero(it.numero_articulo);
+    if (key && numeroToId.has(key)) return numeroToId.get(key)!;
+  }
+  return null;
+}
+
+/**
+ * Ranks catalog product ids by total quantity ordered across pedido history (same centro).
+ */
+export function extractFrequentProductIdsFromPedidos(
+  pedidos: PedidoLike[],
+  max = 12,
+  catalog?: CatalogNumeroLike[],
+): number[] {
+  const numeroToId = new Map<string, number>();
+  if (catalog?.length) {
+    for (const c of catalog) {
+      const key = normalizeNumero(c.numero);
+      if (key && !numeroToId.has(key)) numeroToId.set(key, c.id);
+    }
+  }
+
+  const totals = new Map<number, number>();
+  for (const p of pedidos) {
+    const items = Array.isArray(p.items) ? p.items : [];
+    for (const it of items) {
+      const resolved = resolveProductIdFromItem(it, numeroToId);
+      if (resolved == null) continue;
+      const qty = Number(it.cantidad);
+      const add = Number.isFinite(qty) && qty > 0 ? qty : 1;
+      totals.set(resolved, (totals.get(resolved) || 0) + add);
+    }
+  }
+
+  return [...totals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, max)
+    .map(([id]) => id);
 }
