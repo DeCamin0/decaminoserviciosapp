@@ -71,6 +71,45 @@ export class SentEmailsService {
   }
 
   /**
+   * Emails (lowercase) that already received the same subject successfully.
+   * Used to retry bulk sends without duplicates.
+   */
+  async getSuccessfullySentRecipientEmails(
+    subject: string,
+    recipientEmails?: string[],
+  ): Promise<Set<string>> {
+    const subjectTrim = (subject || '').trim();
+    if (!subjectTrim) return new Set();
+
+    const where: {
+      subject: string;
+      status: 'sent';
+      recipient_email?: { in: string[] };
+    } = {
+      subject: subjectTrim,
+      status: 'sent',
+    };
+
+    if (recipientEmails?.length) {
+      where.recipient_email = {
+        in: recipientEmails.map((e) => e.trim()).filter(Boolean),
+      };
+    }
+
+    const rows = await this.prisma.sentEmail.findMany({
+      where,
+      select: { recipient_email: true },
+    });
+
+    const sent = new Set<string>();
+    for (const row of rows) {
+      const email = (row.recipient_email || '').trim().toLowerCase();
+      if (email) sent.add(email);
+    }
+    return sent;
+  }
+
+  /**
    * Obține toate email-urile trimise cu filtre opționale
    */
   async getSentEmails(filters?: {

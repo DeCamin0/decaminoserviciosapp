@@ -2391,13 +2391,25 @@ export class EmpleadosController {
         codigo: body.codigo,
       });
 
-      const { mesaj, subiect, destinatar, grup, codigo, includeCredentials } =
-        body;
+      const {
+        mesaj,
+        subiect,
+        destinatar,
+        grup,
+        codigo,
+        includeCredentials,
+        excludeAlreadySent,
+      } = body;
 
       const shouldIncludeCredentials =
         includeCredentials === true ||
         includeCredentials === 'true' ||
         includeCredentials === '1';
+
+      const shouldExcludeAlreadySent =
+        excludeAlreadySent === true ||
+        excludeAlreadySent === 'true' ||
+        excludeAlreadySent === '1';
 
       if (!mesaj || !subiect) {
         throw new BadRequestException(
@@ -2510,11 +2522,36 @@ export class EmpleadosController {
         );
       }
 
+      let skippedCount = 0;
+      if (shouldExcludeAlreadySent) {
+        const alreadySent =
+          await this.sentEmailsService.getSuccessfullySentRecipientEmails(
+            subiect,
+            emailRecipients.map((r) => r.email),
+          );
+        const before = emailRecipients.length;
+        emailRecipients = emailRecipients.filter(
+          (r) => !alreadySent.has(r.email.trim().toLowerCase()),
+        );
+        skippedCount = before - emailRecipients.length;
+        if (skippedCount > 0) {
+          this.logger.log(
+            `⏭️ Omitidos ${skippedCount} destinatarios (ya recibieron este asunto con éxito)`,
+          );
+        }
+        if (emailRecipients.length === 0) {
+          throw new BadRequestException(
+            'Todos los destinatarios ya recibieron este correo con éxito. No hay nada que reenviar.',
+          );
+        }
+      }
+
       // Trimite email-uri către toți destinatarii
       // Folosim secvențial cu delay pentru a nu suprasolicita SMTP
       // Pentru număr mare de destinatari, mărim delay-ul pentru a evita rate limiting
       const totalRecipients = emailRecipients.length;
-      const delayMs = totalRecipients > 50 ? 1000 : 500; // 1s pentru >50, 500ms pentru mai puțini
+      const delayMs =
+        totalRecipients > 50 ? 2500 : totalRecipients > 25 ? 2000 : 1000;
 
       // Obține userId-ul utilizatorului curent pentru a trimite progresul
       const currentUserId =
@@ -2732,10 +2769,11 @@ export class EmpleadosController {
 
       return {
         success: true,
-        message: `Email trimis către ${successCount} destinatari${failedCount > 0 ? ` (${failedCount} eșuate)` : ''}`,
+        message: `Email trimis către ${successCount} destinatari${failedCount > 0 ? ` (${failedCount} eșuate)` : ''}${skippedCount > 0 ? ` (${skippedCount} omitidos)` : ''}`,
         destinatari: totalRecipients,
         successCount,
         failedCount,
+        skippedCount,
       };
     } catch (error: any) {
       this.logger.error('❌ Error sending email:', error);

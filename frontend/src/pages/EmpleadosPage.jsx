@@ -2818,7 +2818,7 @@ export default function EmpleadosPage() {
     setShowWelcomeEmailModal(true);
   };
 
-  const handleSendWelcomeEmailToAll = async () => {
+  const handleSendWelcomeEmailToAll = async ({ excludeAlreadySent = false } = {}) => {
     const subiect = (welcomeEmailSubject || '').trim();
     const mesaj = (welcomeEmailMessage || '').trim();
     if (!subiect || !mesaj) {
@@ -2840,17 +2840,30 @@ export default function EmpleadosPage() {
           subiect,
           destinatar: 'toti',
           includeCredentials: true,
+          excludeAlreadySent,
         }),
       });
-      const result = response.ok ? await response.json() : { success: false };
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setWelcomeEmailError(
+          result?.message || result?.error || 'Error al enviar el correo.',
+        );
+        return;
+      }
       if (result && result.success) {
+        const parts = [];
+        if (result.successCount != null) parts.push(`${result.successCount} enviado(s)`);
+        if (result.failedCount > 0) parts.push(`${result.failedCount} fallido(s)`);
+        if (result.skippedCount > 0) parts.push(`${result.skippedCount} omitido(s) (ya recibido)`);
         setNotification({
-          type: 'success',
-          title: 'Email enviado',
-          message: result.destinatari ? `Enviado a ${result.destinatari} empleado(s).` : 'Email de bienvenida enviado correctamente.',
+          type: result.failedCount > 0 ? 'warning' : 'success',
+          title: excludeAlreadySent ? 'Reintento completado' : 'Email enviado',
+          message: parts.length ? parts.join(', ') + '.' : 'Email de bienvenida enviado correctamente.',
           show: true,
         });
-        setShowWelcomeEmailModal(false);
+        if (!result.failedCount) {
+          setShowWelcomeEmailModal(false);
+        }
       } else {
         setWelcomeEmailError(result?.message || 'Error al enviar el correo.');
       }
@@ -7718,7 +7731,7 @@ export default function EmpleadosPage() {
               <span className="text-white text-xl">✉️</span>
             </div>
             <h2 className="text-xl font-bold text-gray-900 mb-1">Email de bienvenida a todos</h2>
-            <p className="text-gray-600 text-sm">Se enviará a todos los empleados activos. Cada uno recibirá su usuario y contraseña personalizados al final del mensaje. Puedes editar el asunto y el texto antes de enviar.</p>
+            <p className="text-gray-600 text-sm">Se enviará a todos los empleados activos. Cada uno recibirá su usuario y contraseña personalizados al final del mensaje. Si algunos fallaron por límite SMTP, usa <strong>Reintentar fallidos</strong> (mismo asunto) para omitir los ya enviados.</p>
           </div>
           <div className="space-y-4">
             <div>
@@ -7746,7 +7759,7 @@ export default function EmpleadosPage() {
               </div>
             )}
           </div>
-          <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-gray-200">
+          <div className="flex flex-wrap gap-3 justify-end mt-6 pt-4 border-t border-gray-200">
             <button
               type="button"
               onClick={() => !welcomeEmailLoading && setShowWelcomeEmailModal(false)}
@@ -7757,7 +7770,23 @@ export default function EmpleadosPage() {
             </button>
             <button
               type="button"
-              onClick={handleSendWelcomeEmailToAll}
+              onClick={() => handleSendWelcomeEmailToAll({ excludeAlreadySent: true })}
+              disabled={welcomeEmailLoading}
+              title="Reenvía solo a quienes no recibieron este asunto con éxito (omite los 33 ya enviados)"
+              className="px-4 py-2 rounded-lg border border-amber-400 bg-amber-50 text-amber-900 font-medium hover:bg-amber-100 disabled:opacity-50 flex items-center gap-2"
+            >
+              {welcomeEmailLoading ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-amber-600 border-t-transparent rounded-full animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                'Reintentar fallidos'
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSendWelcomeEmailToAll({ excludeAlreadySent: false })}
               disabled={welcomeEmailLoading}
               className="px-5 py-2 rounded-lg bg-cyan-600 text-white font-medium hover:bg-cyan-700 disabled:opacity-50 flex items-center gap-2"
             >
