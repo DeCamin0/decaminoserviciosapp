@@ -2289,7 +2289,7 @@ export default function EmpleadosPage() {
             setOriginalEmployeeData(null);
           } catch (error) {
             console.error('Error al retrimite ficha:', error);
-            setAddError('Error al retrimite ficha a gestoria. El empleado se ha EDITADO correctamente.');
+            setAddError('Error al reenviar la ficha a gestoría. El empleado se ha EDITADO correctamente.');
             setShowEditModal(false);
             setRetrimiteFichaEdit(false);
             setEnviarAGestoriaEdit(false);
@@ -6721,7 +6721,7 @@ export default function EmpleadosPage() {
             aria-modal="true"
             aria-labelledby="edit-empleado-modal-title"
           >
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[min(95dvh,calc(100dvh-2rem))] flex flex-col shadow-2xl border border-gray-200 animate-in fade-in duration-300 mb-[env(safe-area-inset-bottom,0px)]">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[min(95dvh,calc(100dvh-2rem))] flex flex-col overflow-hidden shadow-2xl border border-gray-200 animate-in fade-in duration-300 mb-[env(safe-area-inset-bottom,0px)]">
             {/* Header ULTRA MODERN */}
             <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-4 border-b border-blue-200 flex-shrink-0">
               <div className="flex items-center justify-between">
@@ -7457,105 +7457,102 @@ export default function EmpleadosPage() {
                   );
                 })}
               </div>
-            </div>
-            
-            {/* Checkbox-uri și câmpuri pentru gestorie - ÎNAINTE DE FOOTER, FIX */}
-            <div className="flex-shrink-0 border-t border-gray-200 bg-gray-50">
-            {/* Checkbox-uri pentru "Enviar a Gestoria" și "Retrimite Ficha" */}
-            <div className="px-6 pt-4 pb-3 flex flex-col gap-3">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={enviarAGestoriaEdit}
-                  onChange={(e) => {
-                    setEnviarAGestoriaEdit(e.target.checked);
-                    if (!e.target.checked) {
-                      // Reset câmpurile când se debifează
-                      setMensajeAdicionalGestoriaEdit('');
-                      setArchivosGestoriaEdit([]);
-                    }
-                  }}
-                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                />
-                <span className="text-sm font-medium text-gray-700">
-                  📧 Enviar a Gestoria
-                </span>
-              </label>
-              
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={retrimiteFichaEdit}
-                  onChange={(e) => setRetrimiteFichaEdit(e.target.checked)}
-                  disabled={!editForm.CODIGO}
-                  className="w-5 h-5 text-purple-600 border-gray-300 rounded focus:ring-purple-500 focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-                <span className="text-sm font-medium text-gray-700">
-                  📄 Retrimite Ficha a Gestoria
-                </span>
-                {retrimiteFichaEdit && (
-                  <span className="text-xs text-purple-600 italic">
-                    (Se enviará automáticamente al guardar)
-                  </span>
-                )}
-              </label>
-            </div>
-            
-            {/* Câmpuri adiționale pentru gestorie (doar când checkbox-ul "Enviar a Gestoria" este bifat) */}
-            {enviarAGestoriaEdit && (
-              <div className="px-6 pb-4 space-y-4 bg-blue-50 border-t border-blue-200">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Mensaje Adicional (opcional)
+
+              {/* Gestoria în zona scrollabilă — altfel pe ecran scurt (split) împinge Cancelar/Guardar sub viewport */}
+              <div className="mt-6 border-t border-gray-200 bg-gray-50 -mx-6 px-6 pt-4 pb-2 rounded-b-none">
+                <div className="flex flex-col gap-3 pb-3">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={enviarAGestoriaEdit}
+                      onChange={(e) => {
+                        setEnviarAGestoriaEdit(e.target.checked);
+                        if (!e.target.checked) {
+                          setMensajeAdicionalGestoriaEdit('');
+                          setArchivosGestoriaEdit([]);
+                        }
+                      }}
+                      className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                    />
+                    <span className="text-sm font-medium text-gray-700">
+                      📧 Enviar a Gestoria
+                    </span>
                   </label>
-                  <textarea
-                    value={mensajeAdicionalGestoriaEdit}
-                    onChange={(e) => setMensajeAdicionalGestoriaEdit(e.target.value)}
-                    placeholder="Escribe un mensaje adicional que se enviará junto con la actualización..."
-                    rows={3}
-                    className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-                  />
+
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={retrimiteFichaEdit}
+                      onChange={(e) => setRetrimiteFichaEdit(e.target.checked)}
+                      disabled={!editForm.CODIGO}
+                      className="w-5 h-5 text-purple-600 border-gray-300 rounded focus:ring-purple-500 focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    />
+                    <span className="text-sm font-medium text-gray-700">
+                      📄 Reenviar Ficha a Gestoria
+                    </span>
+                    {retrimiteFichaEdit && (
+                      <span className="text-xs text-purple-600 italic">
+                        (Se enviará automáticamente al guardar)
+                      </span>
+                    )}
+                  </label>
                 </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    📎 Archivos Adicionales (opcional)
-                  </label>
-                  <input
-                    type="file"
-                    multiple
-                    onChange={(e) => {
-                      const files = Array.from(e.target.files || []);
-                      setArchivosGestoriaEdit((prev) => mergeFileSelections(prev, files));
-                      e.target.value = '';
-                    }}
-                    className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer bg-white"
-                  />
-                  {archivosGestoriaEdit.length > 0 && (
-                    <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
-                      {archivosGestoriaEdit.map((file, idx) => (
-                        <div key={idx} className="text-sm text-gray-600 flex items-center justify-between bg-white p-2 rounded border border-gray-200">
-                          <span className="truncate flex-1">📎 {file.name}</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setArchivosGestoriaEdit(archivosGestoriaEdit.filter((_, i) => i !== idx));
-                            }}
-                            className="text-red-500 hover:text-red-700 font-bold ml-2 flex-shrink-0"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
+
+                {enviarAGestoriaEdit && (
+                  <div className="pb-4 space-y-4 bg-blue-50 border-t border-blue-200 -mx-6 px-6 pt-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Mensaje Adicional (opcional)
+                      </label>
+                      <textarea
+                        value={mensajeAdicionalGestoriaEdit}
+                        onChange={(e) => setMensajeAdicionalGestoriaEdit(e.target.value)}
+                        placeholder="Escribe un mensaje adicional que se enviará junto con la actualización..."
+                        rows={3}
+                        className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                      />
                     </div>
-                  )}
-                </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        📎 Archivos Adicionales (opcional)
+                      </label>
+                      <input
+                        type="file"
+                        multiple
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          setArchivosGestoriaEdit((prev) => mergeFileSelections(prev, files));
+                          e.target.value = '';
+                        }}
+                        className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer bg-white"
+                      />
+                      {archivosGestoriaEdit.length > 0 && (
+                        <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+                          {archivosGestoriaEdit.map((file, idx) => (
+                            <div key={idx} className="text-sm text-gray-600 flex items-center justify-between bg-white p-2 rounded border border-gray-200">
+                              <span className="truncate flex-1">📎 {file.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setArchivosGestoriaEdit(archivosGestoriaEdit.filter((_, i) => i !== idx));
+                                }}
+                                className="text-red-500 hover:text-red-700 font-bold ml-2 flex-shrink-0"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
             </div>
             
-            {/* Footer cu butoane ULTRA MODERN - FIX */}
-            <div className="flex-shrink-0 flex gap-4 justify-end p-6 border-t border-gray-200 bg-gray-50">
+            {/* Footer fix — mereu vizibil pe split / ecran scurt */}
+            <div className="flex-shrink-0 flex gap-3 sm:gap-4 justify-end p-4 sm:p-6 border-t border-gray-200 bg-gray-50">
               {/* Buton Cancelar */}
               <button
                 onClick={() => {

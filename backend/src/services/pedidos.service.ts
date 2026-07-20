@@ -149,7 +149,9 @@ export class PedidosService {
   ): Promise<string | null> {
     const uidNorm = this.normalizePedidoUidInput(pedidoUid);
     if (!uidNorm) return null;
-    const rows = await this.prisma.$queryRawUnsafe<Array<{ pedido_uid: string }>>(
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ pedido_uid: string }>
+    >(
       `SELECT pedido_uid FROM PedidosTodos WHERE pedido_uid = ${this.escapeSql(uidNorm)} OR pedido_uid = ${this.escapeSql('=' + uidNorm)} LIMIT 1`,
     );
     if (!rows?.length) return null;
@@ -2461,7 +2463,12 @@ export class PedidosService {
       );
       const cur = String(estadoRows[0]?.estado || '').toLowerCase();
       if (cur === 'entregado') {
-        await this.updatePedidoEstado(canonical, 'enviado', undefined, userInfo);
+        await this.updatePedidoEstado(
+          canonical,
+          'enviado',
+          undefined,
+          userInfo,
+        );
         estado = 'enviado';
       }
     }

@@ -1,22 +1,18 @@
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import DesktopLayout from './DesktopLayout';
-import MobileLayout from './MobileLayout';
+import AppShell from './AppShell';
 import ErrorReportNoAssistantModal from '../components/ErrorReportNoAssistantModal';
 
 /**
- * ResponsiveLayout - Wrapper care switch-ează între DesktopLayout și MobileLayout
- * Bazat pe breakpoint (max-width: 767px)
+ * ResponsiveLayout - un singur AppShell stabil.
+ * La resize / rotație / split screen se schimbă doar chrome-ul (header/nav),
+ * nu se remontează pagina — modalele și formularele rămân deschise.
  */
 const ResponsiveLayout = ({ children }) => {
   const { isMobile } = useBreakpoint();
 
   return (
     <>
-      {isMobile ? (
-        <MobileLayout>{children}</MobileLayout>
-      ) : (
-        <DesktopLayout>{children}</DesktopLayout>
-      )}
+      <AppShell isMobile={isMobile}>{children}</AppShell>
       <ErrorReportNoAssistantModal />
     </>
   );
