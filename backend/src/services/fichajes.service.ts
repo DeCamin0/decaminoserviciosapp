@@ -50,6 +50,160 @@ export class FichajesService {
     return `'${escaped}'`;
   }
 
+  private normalizeFecha(fecha: any): string {
+    if (!fecha) return '';
+    if (fecha instanceof Date && !Number.isNaN(fecha.getTime())) {
+      const y = fecha.getFullYear();
+      const m = String(fecha.getMonth() + 1).padStart(2, '0');
+      const d = String(fecha.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    const s = String(fecha).trim();
+    const m = s.match(/(\d{4}-\d{2}-\d{2})/);
+    return m ? m[1] : s.slice(0, 10);
+  }
+
+  private normalizeHora(hora: any): string {
+    if (hora == null || hora === '') return '00:00:00';
+    if (hora instanceof Date && !Number.isNaN(hora.getTime())) {
+      return `${String(hora.getHours()).padStart(2, '0')}:${String(hora.getMinutes()).padStart(2, '0')}:${String(hora.getSeconds()).padStart(2, '0')}`;
+    }
+    const s = String(hora).trim();
+    const m = s.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if (!m) return '00:00:00';
+    return `${m[1].padStart(2, '0')}:${m[2]}:${(m[3] || '00').padStart(2, '0')}`;
+  }
+
+  private formatDurationHms(totalSeconds: number): string {
+    const sec = Math.max(0, Math.floor(totalSeconds));
+    const hh = Math.floor(sec / 3600);
+    const mm = Math.floor((sec % 3600) / 60);
+    const ss = sec % 60;
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  }
+
+  private isEntradaTipo(tipo: string): boolean {
+    return String(tipo || '').trim() === 'Entrada';
+  }
+
+  private isSalidaTipo(tipo: string): boolean {
+    const t = String(tipo || '').trim();
+    return t === 'Salida' || t.startsWith('Salida');
+  }
+
+  /**
+   * Recalculează DURACION pentru toate perechile Entrada→Salida ale unui angajat.
+   * Nu depinde de trigger MySQL — același comportament pe Decamino și HERA.
+   */
+  async recalculateDuracionForCodigo(
+    codigo: string,
+  ): Promise<{ updated: number }> {
+    const codigoClean = String(codigo || '').trim();
+    if (!codigoClean) return { updated: 0 };
+
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        ID: string | number;
+        TIPO: string;
+        FECHA: any;
+        HORA: any;
+        DURACION: string | null;
+      }>
+    >(
+      `
+      SELECT ID, TIPO, FECHA, HORA, DURACION
+      FROM Fichaje
+      WHERE CODIGO = ${this.escapeSql(codigoClean)}
+      ORDER BY FECHA ASC, HORA ASC, ID ASC
+      `,
+    );
+
+    let openEntrada: {
+      id: string;
+      fecha: string;
+      hora: string;
+    } | null = null;
+    const planned = new Map<string, string | null>();
+
+    for (const row of rows) {
+      const id = String(row.ID);
+      const tipo = String(row.TIPO || '').trim();
+      const fecha = this.normalizeFecha(row.FECHA);
+      const hora = this.normalizeHora(row.HORA);
+
+      if (this.isEntradaTipo(tipo)) {
+        openEntrada = { id, fecha, hora };
+        planned.set(id, null);
+        continue;
+      }
+
+      if (this.isSalidaTipo(tipo)) {
+        if (openEntrada) {
+          const start = new Date(`${openEntrada.fecha}T${openEntrada.hora}`);
+          const end = new Date(`${fecha}T${hora}`);
+          const ms = end.getTime() - start.getTime();
+          planned.set(
+            id,
+            Number.isFinite(ms) && ms >= 0
+              ? this.formatDurationHms(ms / 1000)
+              : null,
+          );
+          openEntrada = null;
+        } else {
+          planned.set(id, null);
+        }
+      }
+    }
+
+    let updated = 0;
+    for (const row of rows) {
+      const id = String(row.ID);
+      if (!planned.has(id)) continue;
+
+      const nextDuracion = planned.get(id) ?? null;
+      const prev = row.DURACION == null ? null : String(row.DURACION).trim();
+      const prevNorm = !prev || prev === '' ? null : prev;
+      if (prevNorm === nextDuracion) continue;
+
+      await this.prisma.$executeRawUnsafe(
+        `
+        UPDATE Fichaje
+        SET DURACION = ${nextDuracion == null ? 'NULL' : this.escapeSql(nextDuracion)}
+        WHERE ID = ${this.escapeSql(id)}
+        `,
+      );
+      updated += 1;
+    }
+
+    if (updated > 0) {
+      this.logger.log(
+        `⏱️ DURACION recalculat pentru CODIGO=${codigoClean}: ${updated} registre actualizate`,
+      );
+    }
+
+    return { updated };
+  }
+
+  /**
+   * Backfill: recalculează DURACION pentru toți angajații cu fichajes.
+   */
+  async backfillAllDuraciones(): Promise<{
+    empleados: number;
+    updated: number;
+  }> {
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ CODIGO: string }>>(
+      `SELECT DISTINCT CODIGO FROM Fichaje WHERE CODIGO IS NOT NULL AND TRIM(CODIGO) <> '' ORDER BY CODIGO`,
+    );
+
+    let updated = 0;
+    for (const row of rows) {
+      const result = await this.recalculateDuracionForCodigo(String(row.CODIGO));
+      updated += result.updated;
+    }
+
+    return { empleados: rows.length, updated };
+  }
+
   /**
    * Obtine lista de registros (fichajes) cu filtrare pe CODIGO și MES
    */
@@ -752,6 +906,14 @@ export class FichajesService {
         `✅ Fichaje added: ID=${fichajeData.id}, CODIGO=${fichajeData.codigo}, TIPO=${fichajeData.tipo}, FECHA=${fichajeData.data}`,
       );
 
+      try {
+        await this.recalculateDuracionForCodigo(fichajeData.codigo.trim());
+      } catch (recalcErr: any) {
+        this.logger.warn(
+          `⚠️ DURACION recalc after add failed: ${recalcErr?.message || recalcErr}`,
+        );
+      }
+
       // Verificări pentru Entrada și Salida
       let needs_confirmation = false;
       let confirmation_data = null;
@@ -1093,6 +1255,20 @@ export class FichajesService {
         `✅ Fichaje updated: ID=${id}, fields updated: ${updateFields.length}`,
       );
 
+      const codigosToRecalc = new Set<string>([
+        String(currentCodigo),
+        String(newCodigo),
+      ]);
+      for (const codigoRecalc of codigosToRecalc) {
+        try {
+          await this.recalculateDuracionForCodigo(codigoRecalc);
+        } catch (recalcErr: any) {
+          this.logger.warn(
+            `⚠️ DURACION recalc after update failed (${codigoRecalc}): ${recalcErr?.message || recalcErr}`,
+          );
+        }
+      }
+
       return {
         success: true,
         id: id.trim(),
@@ -1138,6 +1314,8 @@ export class FichajesService {
         String(existing[0].CODIGO),
       );
 
+      const codigoRecalc = String(existing[0].CODIGO);
+
       // Construiește query-ul DELETE
       const deleteQuery = `
         DELETE FROM Fichaje
@@ -1147,6 +1325,14 @@ export class FichajesService {
       await this.prisma.$executeRawUnsafe(deleteQuery);
 
       this.logger.log(`✅ Fichaje deleted: ID=${id}`);
+
+      try {
+        await this.recalculateDuracionForCodigo(codigoRecalc);
+      } catch (recalcErr: any) {
+        this.logger.warn(
+          `⚠️ DURACION recalc after delete failed: ${recalcErr?.message || recalcErr}`,
+        );
+      }
 
       return {
         success: true,
