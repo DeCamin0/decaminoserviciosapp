@@ -13,7 +13,7 @@ import {
 import { useAuth } from '../contexts/AuthContextBase';
 import { useAdminApi } from '../hooks/useAdminApi';
 import { routes } from '../utils/routes';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate } from 'react-router';
 import { isDemoMode } from '../utils/demo';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 import { config } from '../config/env';

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { Button } from '../components/ui';
-import { Navigate } from 'react-router-dom';
+import { Navigate } from 'react-router';
 import { routes } from '../utils/routes';
 import EmpleadosChartsSection from '../components/analytics/EmpleadosChartsSection';
 import Back3DButton from '../components/Back3DButton.jsx';

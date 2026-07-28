@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router';
 import { useEffect } from 'react';
 import { COLORS } from './theme';
 import { AuthProvider } from './contexts/AuthContext';

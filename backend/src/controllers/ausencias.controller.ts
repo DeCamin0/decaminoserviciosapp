@@ -9,17 +9,22 @@ import {
   Body,
   UseGuards,
   Logger,
+  BadRequestException,
 } from '@nestjs/common';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AusenciasService } from '../services/ausencias.service';
+import { AusenciasProximasCronService } from '../services/ausencias-proximas-cron.service';
 
 @Controller('api/ausencias')
 export class AusenciasController {
   private readonly logger = new Logger(AusenciasController.name);
 
-  constructor(private readonly ausenciasService: AusenciasService) {}
+  constructor(
+    private readonly ausenciasService: AusenciasService,
+    private readonly ausenciasProximasCronService: AusenciasProximasCronService,
+  ) {}
 
   /** Fără rate limit: apelat în batch pentru fiecare ausencia (Mis Solicitudes + Todas > Ausencias) */
   @SkipThrottle()
@@ -264,6 +269,40 @@ export class AusenciasController {
     } catch (error: any) {
       this.logger.error('❌ Error actualizando duración manualmente:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Declanșează manual cron-ul „absențe următoarele 10 zile → Telegram”
+   * (fără să aștepți 09:15 / 19:30). Doar Developer / Admin.
+   */
+  @Post('cron-proximas/test-trigger')
+  @UseGuards(JwtAuthGuard)
+  async testTriggerCronProximas(@CurrentUser() user: any) {
+    try {
+      const grupo = user?.GRUPO || user?.grupo || '';
+      if (!['Developer', 'Admin'].includes(grupo)) {
+        throw new BadRequestException(
+          'Nu ai permisiunea de a testa cron job-ul',
+        );
+      }
+
+      this.logger.log('🧪 Manual trigger: cron absente próximas 10 días');
+      const result =
+        await this.ausenciasProximasCronService.processProximasAusencias({
+          throwOnTelegramError: true,
+        });
+
+      return {
+        success: true,
+        message: `Cron OK: ${result.count} aprobadas (${result.chunks} msg) + ${result.pendientesCount} pendientes (${result.pendientesChunks} msg) en Telegram.`,
+        ...result,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error triggering cron absente manually:', error);
+      throw new BadRequestException(
+        `Error al trigger cron absente: ${error.message}`,
+      );
     }
   }
 }

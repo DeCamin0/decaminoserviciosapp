@@ -1,4 +1,4 @@
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router';
 import { X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContextBase';
 import { useAdminApi } from '../../hooks/useAdminApi';

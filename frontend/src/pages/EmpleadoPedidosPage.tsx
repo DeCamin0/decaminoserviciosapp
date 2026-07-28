@@ -13,7 +13,7 @@ import {
 } from '../components/pedidos';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { config } from '../config/env';
 import heic2any from 'heic2any';

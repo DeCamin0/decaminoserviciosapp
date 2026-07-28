@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router';
 import { Home, Users, ClipboardList, Clock, MoreHorizontal, FileText } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContextBase';
 import { useAdminApi } from '../../hooks/useAdminApi';

@@ -89,7 +89,7 @@ function buildPwaManifestIcons(abs, srcFile, mime, intrinsicSizes) {
 }
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   // Încarcă .env ca titlul și logo-ul să fie corecte și la dev
   const env = loadEnv(mode, process.cwd(), '');
   // HERA (client2 sau mode hera): culoarea brand – albastru
@@ -99,6 +99,8 @@ export default defineConfig(({ mode }) => {
   const getEnv = (key) => (env[key] != null && String(env[key]).trim() !== '' ? String(env[key]).trim() : '');
   // HERA build → dist-client2 ca să nu suprascrie dist/ (Decamino)
   const buildOutDir = (mode === 'client2' || mode === 'hera') ? 'dist-client2' : 'dist';
+  // Prod build: scoate console.log/debug/info din bundle (dev/local le păstrează)
+  const stripConsoleNoise = command === 'build';
 
   // PWA: același manifest nu trebuie să listeze favicon.ico partajat + logo.svg Decamino la build Hera.
   const logoPath = (getEnv('VITE_LOGO_PATH') || 'logo.svg').trim();
@@ -152,6 +154,13 @@ export default defineConfig(({ mode }) => {
   // Deploy pe subdomeniu la rădăcină → servește din root
   // Pentru test environment pe /html/app-test, setează VITE_BASE_PATH=/html/app-test/
   base: env.VITE_BASE_PATH || '/',
+  // La `vite build` (prod Decamino/Hera): fără console.log/debug/info în browser.
+  // La `vite` / `npm run dev`: log-urile rămân pentru debug local.
+  esbuild: {
+    pure: stripConsoleNoise
+      ? ['console.log', 'console.debug', 'console.info']
+      : [],
+  },
   plugins: [
     // GET /favicon.ico: tab = VITE_LOGO_PATH (brand); manifest PWA = alt asset (ex. logo-hera-solo.png).
     {
@@ -721,8 +730,8 @@ export default defineConfig(({ mode }) => {
     copyPublicDir: true,
     assetsInclude: ['**/*.html', '**/*.js'],
     // 🚀 OPTIMIZĂRI BUNDLE SPLITTING MAI AGRESIV
-    minify: 'esbuild', // TEMPORAR: Schimbă la esbuild pentru debugging mai ușor (mai rapid și mai puțin agresiv)
-    // Nu mai folosim terserOptions pentru esbuild
+    minify: 'esbuild',
+    // console.log/debug/info se scot via esbuild.pure la build (vezi mai sus)
     // CSS optimizations pentru a evita avertizările
     cssCodeSplit: true,
     cssMinify: false, // Dezactivează minificarea CSS pentru a evita avertizările

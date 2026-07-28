@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router';
 import { useAuth } from '../contexts/AuthContextBase';
 import { useComunicadosApi } from '../hooks/useComunicadosApi';
 import { config } from '../config/env';

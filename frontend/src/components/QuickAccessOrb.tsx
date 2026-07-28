@@ -5,7 +5,7 @@ import {
   useMotionValue,
   useSpring,
 } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import type { ActionItem, QuickAccessOrbProps } from './quick-access/types';
 
 const DEFAULT_RING_SIZE = 560;

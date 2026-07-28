@@ -766,6 +766,12 @@ export class CuadrantesService {
     }
     let h = parseInt(match[1], 10);
     let min = parseInt(match[2], 10);
+    // No inferir +8h desde HE nocturno (22:00-05:59): en Suances/T2 el HE de
+    // tarde (T) va solo y el HS está en banda M; inventar 07:00 crea un T3 falso
+    // y bloquea T2 15:00-23:00. T3 real trae HS explícito o HS en M al día siguiente.
+    if (h >= 22 || h <= 5) {
+      return null;
+    }
     let totalMin = h * 60 + min + 480;
     totalMin %= 24 * 60;
     h = Math.floor(totalMin / 60);
@@ -779,6 +785,67 @@ export class CuadrantesService {
       min = 30;
     }
     return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+  }
+
+  /**
+   * Garaje/Suances: turno de tarde codificado en cruce de bandas —
+   * M solo HS (p.ej. 15:00) + T solo HE (p.ej. 23:00), sin HE en M ni HS en T.
+   * Debe evaluarse antes de aceptar segmentos T inferidos como T3.
+   */
+  private tryResolveCrossBandT2(
+    heStrM: string | null,
+    hsStrM: string | null,
+    heStrT: string | null,
+    hsStrT: string | null,
+    heM: unknown,
+    hsM: unknown,
+    heT: unknown,
+    hsT: unknown,
+  ): string | null {
+    const mHeEmpty =
+      !heStrM || heStrM === 'LIBRE' || heM === 'L' || heM === '' || heM == null;
+    const tHsEmpty =
+      !hsStrT || hsStrT === 'LIBRE' || hsT === 'L' || hsT === '' || hsT == null;
+    if (!mHeEmpty || !tHsEmpty) {
+      return null;
+    }
+    if (
+      !hsStrM ||
+      !heStrT ||
+      hsStrM === 'LIBRE' ||
+      heStrT === 'LIBRE' ||
+      hsM === 'L' ||
+      heT === 'L'
+    ) {
+      return null;
+    }
+
+    const turnoT2 = this.mapTimeToTurno(hsStrM, heStrT);
+    if (turnoT2 === 'T2') {
+      return `T2 ${hsStrM}-${heStrT}`;
+    }
+
+    const hsParts = hsStrM.split(':');
+    const heParts = heStrT.split(':');
+    const hsHour = parseInt(hsParts[0], 10);
+    const heHour = parseInt(heParts[0], 10);
+    if (Number.isNaN(hsHour) || Number.isNaN(heHour)) {
+      return null;
+    }
+    const hsMinutes = hsHour * 60 + parseInt(hsParts[1] || '0', 10);
+    const heMinutes = heHour * 60 + parseInt(heParts[1] || '0', 10);
+    const durationMinutes = heMinutes - hsMinutes;
+
+    if (
+      hsHour >= 14 &&
+      hsHour <= 16 &&
+      heHour >= 22 &&
+      durationMinutes >= 420 &&
+      durationMinutes <= 600
+    ) {
+      return `T2 ${hsStrM}-${heStrT}`;
+    }
+    return null;
   }
 
   private resolveCuadranteWorksheet(workbook: ExcelJS.Workbook): {
@@ -2851,6 +2918,48 @@ export class CuadrantesService {
           const inferM = empleadoData.turnoM.length >= 2;
           const inferT = empleadoData.turnoT.length >= 2;
 
+          const emptyFp = {
+            heStr: null as string | null,
+            hsStr: null as string | null,
+            heRaw: null as any,
+            hsRaw: null as any,
+          };
+          // Sin inferencia: para T2 Suances (M HS + T HE) no debemos inventar HS=07:00.
+          const fpMRaw = pairsM[0]
+            ? this.formatHeHsPairAtZiKey(
+                pairsM[0].heRow,
+                pairsM[0].hsRow,
+                ziKey,
+                formatTime,
+                false,
+              )
+            : { ...emptyFp };
+          const fpTRaw = pairsT[0]
+            ? this.formatHeHsPairAtZiKey(
+                pairsT[0].heRow,
+                pairsT[0].hsRow,
+                ziKey,
+                formatTime,
+                false,
+              )
+            : { ...emptyFp };
+
+          const crossBandT2 = this.tryResolveCrossBandT2(
+            fpMRaw.heStr,
+            fpMRaw.hsStr,
+            fpTRaw.heStr,
+            fpTRaw.hsStr,
+            fpMRaw.heRaw,
+            fpMRaw.hsRaw,
+            fpTRaw.heRaw,
+            fpTRaw.hsRaw,
+          );
+          if (crossBandT2) {
+            cuadranteData[`ZI_${dayNum}`] = crossBandT2;
+            heHsDayStats.p2_t2 += 1;
+            return;
+          }
+
           const segmentsM = this.buildHeHsIntervalSegmentsForZiKey(
             empleadoData.turnoM,
             ziKey,
@@ -2895,12 +3004,7 @@ export class CuadrantesService {
                 formatTime,
                 inferM,
               )
-            : {
-                heStr: null as string | null,
-                hsStr: null as string | null,
-                heRaw: null as any,
-                hsRaw: null as any,
-              };
+            : { ...emptyFp };
           const fpT = pairsT[0]
             ? this.formatHeHsPairAtZiKey(
                 pairsT[0].heRow,
@@ -2909,12 +3013,7 @@ export class CuadrantesService {
                 formatTime,
                 inferT,
               )
-            : {
-                heStr: null as string | null,
-                hsStr: null as string | null,
-                heRaw: null as any,
-                hsRaw: null as any,
-              };
+            : { ...emptyFp };
 
           const heStrM = fpM.heStr;
           const hsStrM = fpM.hsStr;
@@ -2951,44 +3050,6 @@ export class CuadrantesService {
           }
 
           const hsStrMNextDay = hsMNextDay ? formatTime(hsMNextDay) : null;
-
-          if (
-            (!cuadranteData[`ZI_${dayNum}`] ||
-              cuadranteData[`ZI_${dayNum}`] === null) &&
-            hsStrM &&
-            heStrT &&
-            hsStrM !== 'LIBRE' &&
-            heStrT !== 'LIBRE' &&
-            hsM !== 'L' &&
-            heT !== 'L'
-          ) {
-            const turnoT2 = this.mapTimeToTurno(hsStrM, heStrT);
-            if (turnoT2 === 'T2') {
-              cuadranteData[`ZI_${dayNum}`] = `${turnoT2} ${hsStrM}-${heStrT}`;
-              heHsDayStats.p2_t2 += 1;
-              return;
-            }
-
-            const hsParts = hsStrM.split(':');
-            const heParts = heStrT.split(':');
-            const hsHour = parseInt(hsParts[0], 10);
-            const heHour = parseInt(heParts[0], 10);
-            const hsMinutes = hsHour * 60 + parseInt(hsParts[1] || '0', 10);
-            const heMinutes = heHour * 60 + parseInt(heParts[1] || '0', 10);
-            const durationMinutes = heMinutes - hsMinutes;
-
-            if (
-              hsHour >= 14 &&
-              hsHour <= 16 &&
-              heHour >= 22 &&
-              durationMinutes >= 420 &&
-              durationMinutes <= 600
-            ) {
-              cuadranteData[`ZI_${dayNum}`] = `T2 ${hsStrM}-${heStrT}`;
-              heHsDayStats.p2_t2_fallback += 1;
-              return;
-            }
-          }
 
           if (
             (!cuadranteData[`ZI_${dayNum}`] ||

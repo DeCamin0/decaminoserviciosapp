@@ -4,7 +4,7 @@ import activityLogger from '../utils/activityLogger';
 import { Card, Button, Modal, Input } from '../components/ui';
 import Notification from '../components/ui/Notification';
 import Back3DButton from '../components/Back3DButton';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import ClienteForm from '../components/clientes/ClienteForm';
 import { routes } from '../utils/routes';
 import { useLoadingState } from '../hooks/useLoadingState';

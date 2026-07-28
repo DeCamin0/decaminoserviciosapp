@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 
 export default function Back3DButton({ to = '/inicio', title = 'Regresar al Dashboard', className = '' }) {
   return (

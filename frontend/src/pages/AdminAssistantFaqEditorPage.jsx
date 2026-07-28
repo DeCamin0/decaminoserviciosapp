@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import Back3DButton from '../components/Back3DButton.jsx';
 import { Card, Button, Input } from '../components/ui';
 import { routes } from '../utils/routes';

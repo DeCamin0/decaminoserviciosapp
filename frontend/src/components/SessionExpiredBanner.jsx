@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useSessionExpired } from '../contexts/SessionExpiredContext';
-import { useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router';
 import { useAuth } from '../contexts/AuthContextBase';
 import { AlertTriangle, LogOut } from 'lucide-react';
 

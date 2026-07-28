@@ -1,5 +1,5 @@
 import { useAuth } from '../contexts/AuthContextBase';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router';
 import { useEffect, useMemo } from 'react';
 import LocationDisplay from '../components/LocationDisplay';
 import ThemeToggle from '../components/ThemeToggle';

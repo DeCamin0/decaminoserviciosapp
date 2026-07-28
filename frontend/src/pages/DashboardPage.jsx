@@ -1,5 +1,5 @@
 import { useAuth } from '../contexts/AuthContextBase';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Notification, Modal } from '../components/ui';
 import { routes } from '../utils/routes';

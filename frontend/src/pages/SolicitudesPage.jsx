@@ -6592,6 +6592,48 @@ export default function SolicitudesPage() {
     }
   };
 
+  const handleTriggerCronAusenciasProximas = async () => {
+    try {
+      setErrorMsg('');
+      setSuccessMsg('');
+      setOperationLoading('cron-ausencias', true);
+
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        setErrorMsg('No estás autenticado');
+        return;
+      }
+
+      const response = await fetch(routes.testTriggerAusenciasProximas, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const result = await response.json().catch(() => ({}));
+
+      if (response.ok && result.success) {
+        setSuccessMsg(
+          result.message ||
+            'Cron de ausencias ejecutado. Revisa Telegram (chat gestoría).',
+        );
+      } else {
+        setErrorMsg(
+          result.message ||
+            result.error ||
+            'Error al ejecutar el cron de ausencias',
+        );
+      }
+    } catch (error) {
+      console.error('Error triggering cron ausencias:', error);
+      setErrorMsg('Error al ejecutar el cron de ausencias');
+    } finally {
+      setOperationLoading('cron-ausencias', false);
+    }
+  };
+
   const handleExportExcel = async () => {
     try {
       // Import funcția de export Excel
@@ -10318,6 +10360,25 @@ export default function SolicitudesPage() {
                   </div>
                 </button>
               )}
+              {selectedTab === 'ausencias' &&
+                ['Developer', 'Admin'].includes(userGrupo) && (
+                  <button
+                    type="button"
+                    onClick={handleTriggerCronAusenciasProximas}
+                    disabled={isOperationLoading('cron-ausencias')}
+                    title="Envía ahora a Telegram el resumen de ausencias de los próximos 10 días (igual que el cron automático)"
+                    className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-teal-500 to-cyan-600 text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">⚡</span>
+                      <span className="text-sm">
+                        {isOperationLoading('cron-ausencias')
+                          ? 'Enviando…'
+                          : 'Probar cron ausencias'}
+                      </span>
+                    </div>
+                  </button>
+                )}
               <button
                 onClick={() => setShowManagerSolicitudModal(true)}
                   className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-indigo-500 to-indigo-600 text-white"
@@ -11974,6 +12035,11 @@ export default function SolicitudesPage() {
               </div>
             ) : (
               <div className="space-y-4">
+                {errorMsg && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                    {errorMsg}
+                  </div>
+                )}
                 {successMsg && (
                   <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
                     {successMsg}

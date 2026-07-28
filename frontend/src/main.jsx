@@ -101,7 +101,7 @@ import './bootstrap-fetch-native.js';
 
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
+import { BrowserRouter } from 'react-router'
 import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
@@ -225,7 +225,7 @@ async function bootstrap() {
     root.render(
       <React.StrictMode>
         <ErrorBoundary>
-          <BrowserRouter basename={basePath} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <BrowserRouter basename={basePath}>
             <App />
           </BrowserRouter>
         </ErrorBoundary>

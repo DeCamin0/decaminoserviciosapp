@@ -1,7 +1,7 @@
 import { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import IdleWarningModal from '@/components/IdleWarningModal.jsx'
 import { useAuth } from '@/contexts/AuthContextBase'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router'
 import { getValidAccessToken } from '@/utils/tokenRefresh'
 
 export const IdleContext = createContext({

@@ -197,7 +197,9 @@ export class FichajesService {
 
     let updated = 0;
     for (const row of rows) {
-      const result = await this.recalculateDuracionForCodigo(String(row.CODIGO));
+      const result = await this.recalculateDuracionForCodigo(
+        String(row.CODIGO),
+      );
       updated += result.updated;
     }
 

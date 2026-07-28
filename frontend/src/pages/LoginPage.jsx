@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import Footer from '../components/Footer';
 import { isDemoMode } from '../utils/demo';
 import DemoModal from '../components/DemoModal';

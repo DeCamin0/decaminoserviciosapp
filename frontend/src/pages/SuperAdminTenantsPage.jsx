@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
 import Back3DButton from '../components/Back3DButton.jsx';

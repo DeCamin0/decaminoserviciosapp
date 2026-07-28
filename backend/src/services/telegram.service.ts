@@ -91,15 +91,19 @@ export class TelegramService implements OnModuleInit {
 
   /**
    * Trimite un mesaj pe Telegram (bot gestoria)
+   * @param options.throwOnError — dacă true, aruncă eroarea (implicit: doar log, nu oprește flow-ul)
    */
   async sendMessage(
     message: string,
-    options?: { disableMarkdown?: boolean },
+    options?: { disableMarkdown?: boolean; throwOnError?: boolean },
   ): Promise<void> {
     if (!this.isConfigured()) {
       this.logger.warn(
         '⚠️ Telegram gestoria bot not configured. Message not sent.',
       );
+      if (options?.throwOnError) {
+        throw new Error('Telegram gestoria bot not configured');
+      }
       return;
     }
 
@@ -108,7 +112,10 @@ export class TelegramService implements OnModuleInit {
       this.chatId!,
       message,
       'gestoria',
-      { useMarkdown: !options?.disableMarkdown },
+      {
+        useMarkdown: !options?.disableMarkdown,
+        throwOnError: !!options?.throwOnError,
+      },
     );
   }
 
@@ -145,7 +152,9 @@ export class TelegramService implements OnModuleInit {
     chatId: string,
     message: string,
     botType: 'gestoria' | 'general',
-    opts: { useMarkdown: boolean } = { useMarkdown: true },
+    opts: { useMarkdown: boolean; throwOnError?: boolean } = {
+      useMarkdown: true,
+    },
   ): Promise<void> {
     try {
       // Prefix pentru a distinge clientul (ex: [HERA], [DeCamino]) – același chat, mesaje separate
@@ -241,8 +250,10 @@ export class TelegramService implements OnModuleInit {
       this.logger.error(
         `❌ Error stack: ${error.stack || 'No stack trace available'}`,
       );
-      // Nu aruncăm eroarea pentru a nu opri flow-ul principal
-      // doar logăm eroarea
+      if (opts.throwOnError) {
+        throw error;
+      }
+      // Implicit: nu aruncăm eroarea pentru a nu opri flow-ul principal
     }
   }
 

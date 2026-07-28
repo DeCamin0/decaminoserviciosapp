@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import Back3DButton from '../components/Back3DButton.jsx';
 import AccessMatrix from '../components/admin/AccessMatrix';
 import UserStats from '../components/admin/UserStats';

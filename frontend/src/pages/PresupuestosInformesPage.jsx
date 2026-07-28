@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContextBase';
 import { Card, Button, Input, Modal, Notification } from '../components/ui';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import Back3DButton from '../components/Back3DButton';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { routes } from '../utils/routes';
 import { Edit2, Trash2, Plus, CheckCircle2, XCircle, Eye, Upload } from 'lucide-react';
 import ReactQuill from 'react-quill';

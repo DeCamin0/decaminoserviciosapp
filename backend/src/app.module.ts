@@ -89,6 +89,7 @@ import { ScheduledMessagesController } from './controllers/scheduled-messages.co
 import { ScheduledMessagesService } from './services/scheduled-messages.service';
 import { ScheduledMessagesCronService } from './services/scheduled-messages-cron.service';
 import { DespidoAutomationCronService } from './services/despido-automation-cron.service';
+import { AusenciasProximasCronService } from './services/ausencias-proximas-cron.service';
 import { BajaVoluntariaPdfService } from './services/baja-voluntaria-pdf.service';
 import { GestoriaController } from './controllers/gestoria.controller';
 import { GestoriaService } from './services/gestoria.service';
@@ -248,6 +249,7 @@ import { PortalModule } from './portal/portal.module';
     GestoriaService,
     MonitoringService,
     DespidoAutomationCronService,
+    AusenciasProximasCronService,
     BajaVoluntariaPdfService,
     EmployeeExportService,
     PrlDocumentsService,

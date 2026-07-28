@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { Button } from '../components/ui';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate } from 'react-router';
 import { routes } from '../utils/routes';
 
 export default function EstadisticasFichajesPage() {

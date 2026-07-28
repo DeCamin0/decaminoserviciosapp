@@ -385,6 +385,7 @@ export const routes = {
   recalcularDuracion: (id) => `${BACKEND_BASE}/api/ausencias/${id}/recalcular-duracion`,
   updateDuracion: (id) => `${BACKEND_BASE}/api/ausencias/${id}/duracion`,
   addAusencia: `${BACKEND_BASE}/api/ausencias`,
+  testTriggerAusenciasProximas: `${BACKEND_BASE}/api/ausencias/cron-proximas/test-trigger`,
   
   // Admin - Activity Logs
   logActivity: `${BACKEND_BASE}/api/activity-logs`,

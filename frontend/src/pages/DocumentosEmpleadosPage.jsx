@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContextBase';
 import ContractSigner from '../components/ContractSigner';
 import PDFViewerAndroid from '../components/PDFViewerAndroid';
 
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 
 import Back3DButton from '../components/Back3DButton.jsx';
 import ChangeEmployee3DButton from '../components/ChangeEmployee3DButton.jsx';

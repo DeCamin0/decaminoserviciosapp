@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import Back3DButton from '../components/Back3DButton.jsx';
 import { Card, Button, Input } from '../components/ui';
 import { TableLoading } from '../components/ui/LoadingStates';

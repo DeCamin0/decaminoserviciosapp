@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router';
 import { useComunicadosApi } from '../hooks/useComunicadosApi';
 import { ArrowLeft, Save } from 'lucide-react';
 import Notification from '../components/ui/Notification';
