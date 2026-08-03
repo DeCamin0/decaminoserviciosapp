@@ -1251,6 +1251,10 @@ function MobileSolicitudItem({
   onEdit,
   onDelete,
   isDeleting,
+  onApprove,
+  onReject,
+  isApproving,
+  isRejecting,
   allAusencias,
   solicitudesLookup,
   onComprobarJustificante,
@@ -1638,6 +1642,34 @@ function MobileSolicitudItem({
             );
           })()}
           
+          {/* Butoane Aprobar / Rechazar (Vacaciones Pendiente etc.) */}
+          {onApprove && onReject && String(solicitud.estado || '').toLowerCase() === 'pendiente' && (
+            <div className="pt-2 border-t border-gray-200 dark:border-gray-600 flex gap-2">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onApprove(solicitud);
+                }}
+                disabled={isApproving}
+                className="flex-1 px-2 py-1.5 text-[10px] font-medium rounded bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 border border-green-300 dark:border-green-700 hover:bg-green-200 dark:hover:bg-green-800 transition-colors flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                ✅ Aprobar
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onReject(solicitud);
+                }}
+                disabled={isRejecting}
+                className="flex-1 px-2 py-1.5 text-[10px] font-medium rounded bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 hover:bg-amber-200 dark:hover:bg-amber-800 transition-colors flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                ❌ Rechazar
+              </button>
+            </div>
+          )}
+
           {/* Butoane Edit și Delete (doar dacă sunt furnizate) */}
           {onEdit && onDelete && (
             <div className="pt-2 border-t border-gray-200 dark:border-gray-600 flex gap-2">
@@ -6139,8 +6171,68 @@ export default function SolicitudesPage() {
 
   const handleRejectPermisoRetribuidoClick = (solicitud) => {
     const tipo = (solicitud.tipo || solicitud.TIPO || '').toLowerCase();
-    const tipoSolicitud = (tipo.includes('ausencias') && tipo.includes('justificada')) ? 'Ausencias justificada' : 'Permiso Retribuido';
+    let tipoSolicitud = 'Permiso Retribuido';
+    if (tipo.includes('ausencias') && tipo.includes('justificada')) {
+      tipoSolicitud = 'Ausencias justificada';
+    } else if (tipo.includes('vacacion')) {
+      tipoSolicitud = 'Vacaciones';
+    } else if (tipo.includes('asunto') && tipo.includes('propio')) {
+      tipoSolicitud = 'Asunto Propio';
+    }
     setRejectPermisoModal({ isOpen: true, solicitud, mensaje: '', tipoSolicitud });
+  };
+
+  const handleApproveVacaciones = async (solicitud) => {
+    try {
+      setOperationLoading('approve-vacaciones', true);
+      setErrorMsg('');
+      const token = localStorage.getItem('auth_token');
+      const endpoint = routes.getSolicitudesByEmail || `${config.BACKEND_BASE || config.API_URL || ''}/api/solicitudes`;
+
+      const data = {
+        accion: 'update',
+        id: solicitud.id || solicitud.ID,
+        estado: 'Aprobada',
+      };
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify(data),
+      });
+
+      const result = await response.json().catch(() => ({}));
+      const responseData = Array.isArray(result) && result.length > 0 ? result[0] : result;
+      const errText =
+        responseData?.message ||
+        responseData?.error ||
+        (typeof result === 'string' ? result : null) ||
+        (Array.isArray(result?.message) ? result.message.join(' ') : null);
+
+      if (!response.ok) {
+        throw new Error(errText || 'Error al aprobar las vacaciones');
+      }
+
+      if (responseData?.success === true || responseData?.status === 'ok' || responseData?.solicitud_ok === 1) {
+        setSuccessMsg('Vacaciones aprobadas correctamente.');
+        setTimeout(() => {
+          fetchSolicitudes();
+          if (isManager) {
+            fetchAllSolicitudes();
+          }
+        }, 1000);
+      } else {
+        setErrorMsg(errText || 'No se pudo aprobar las vacaciones.');
+      }
+    } catch (error) {
+      console.error('Error al aprobar vacaciones:', error);
+      setErrorMsg(error?.message || 'Error al aprobar las vacaciones');
+    } finally {
+      setOperationLoading('approve-vacaciones', false);
+    }
   };
 
   const handleRejectSolicitudPendiente = async () => {
@@ -8068,14 +8160,15 @@ export default function SolicitudesPage() {
     } else if (selectedTab === 'baja_voluntaria') {
       filtered = filtered.filter(s => s.tipo === 'BAJA_VOLUNTARIA');
     } else if (selectedTab === 'aprobacion') {
-      // Tab pentru cererile pendiente de aprobare (Permiso Retribuido, BAJA_VOLUNTARIA, Ausencias justificada)
+      // Tab para pendientes: Permiso, Baja voluntaria, Ausencias justificada, Vacaciones
       filtered = filtered.filter(s => {
         const tipo = (s.tipo || s.TIPO || '').toLowerCase();
         const estado = (s.estado || s.ESTADO || '').toLowerCase();
         const esPermisoRetribuido = tipo.includes('permiso') && tipo.includes('retribuido');
         const esBajaVoluntaria = tipo.includes('baja') && tipo.includes('voluntaria');
         const esAusenciaJustificada = tipo.includes('ausencias') && tipo.includes('justificada');
-        return estado === 'pendiente' && (esPermisoRetribuido || esBajaVoluntaria || esAusenciaJustificada);
+        const esVacaciones = tipo.includes('vacacion');
+        return estado === 'pendiente' && (esPermisoRetribuido || esBajaVoluntaria || esAusenciaJustificada || esVacaciones);
       });
     }
     if (selectedMonth > 0) {
@@ -10672,14 +10765,15 @@ export default function SolicitudesPage() {
                     <span className="text-lg">⏳</span>
                     <span>Aprobación</span>
                     {(() => {
-                      // Numără cererile pendiente (Permiso Retribuido, BAJA_VOLUNTARIA, Ausencias justificada)
+                      // Numără cererile pendiente (incl. Vacaciones)
                       const pendientes = allSolicitudes.filter(s => {
                         const tipo = (s.tipo || s.TIPO || '').toLowerCase();
                         const estado = (s.estado || s.ESTADO || '').toLowerCase();
                         const esPermisoRetribuido = tipo.includes('permiso') && tipo.includes('retribuido');
                         const esBajaVoluntaria = tipo.includes('baja') && tipo.includes('voluntaria');
                         const esAusenciaJustificada = tipo.includes('ausencias') && tipo.includes('justificada');
-                        return estado === 'pendiente' && (esPermisoRetribuido || esBajaVoluntaria || esAusenciaJustificada);
+                        const esVacaciones = tipo.includes('vacacion');
+                        return estado === 'pendiente' && (esPermisoRetribuido || esBajaVoluntaria || esAusenciaJustificada || esVacaciones);
                       }).length;
                       return pendientes > 0 ? (
                         <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold ${
@@ -12210,6 +12304,22 @@ export default function SolicitudesPage() {
                             onEdit={handleEdit}
                             onDelete={handleDeleteClick}
                             isDeleting={isOperationLoading('delete')}
+                            onApprove={
+                              canAccessAllTabs &&
+                              String(solicitudForMobile.estado || '').toLowerCase() === 'pendiente' &&
+                              String(solicitudForMobile.tipo || '').toLowerCase().includes('vacacion')
+                                ? handleApproveVacaciones
+                                : undefined
+                            }
+                            onReject={
+                              canAccessAllTabs &&
+                              String(solicitudForMobile.estado || '').toLowerCase() === 'pendiente' &&
+                              String(solicitudForMobile.tipo || '').toLowerCase().includes('vacacion')
+                                ? handleRejectPermisoRetribuidoClick
+                                : undefined
+                            }
+                            isApproving={isOperationLoading('approve-vacaciones')}
+                            isRejecting={isOperationLoading('reject-permiso')}
                           />
                         );
                       }
@@ -12386,12 +12496,14 @@ export default function SolicitudesPage() {
                               const esBajaVoluntaria = tipo.includes('baja') && tipo.includes('voluntaria');
                               const esPermisoRetribuido = tipo.includes('permiso') && tipo.includes('retribuido');
                               const esAusenciaJustificada = tipo.includes('ausencias') && tipo.includes('justificada');
+                              const esVacaciones = tipo.includes('vacacion');
                               
                               // Butoane pentru cererile pendiente în tab-ul "aprobacion" sau în tab-urile specifice
                               const showApprovalButtons = canAccessAllTabs && esPendiente && 
-                                ((selectedTab === 'aprobacion' && (esBajaVoluntaria || esPermisoRetribuido || esAusenciaJustificada)) ||
+                                ((selectedTab === 'aprobacion' && (esBajaVoluntaria || esPermisoRetribuido || esAusenciaJustificada || esVacaciones)) ||
                                  (selectedTab === 'baja_voluntaria' && esBajaVoluntaria) ||
-                                 (selectedTab !== 'baja_voluntaria' && selectedTab !== 'aprobacion' && (esPermisoRetribuido || esAusenciaJustificada)));
+                                 (selectedTab === 'vacaciones' && esVacaciones) ||
+                                 (selectedTab !== 'baja_voluntaria' && selectedTab !== 'aprobacion' && selectedTab !== 'vacaciones' && (esPermisoRetribuido || esAusenciaJustificada)));
                               
                               if (showApprovalButtons) {
                                 // Butoane pentru BAJA_VOLUNTARIA (cu preview)
@@ -12467,6 +12579,36 @@ export default function SolicitudesPage() {
                                         title="Rechazar ausencia justificada"
                                       >
                                         <span className="text-2xl">❌</span>
+                                      </button>
+                                    </>
+                                  );
+                                }
+                                // Butoane pentru Vacaciones
+                                if (esVacaciones) {
+                                  return (
+                                    <>
+                                      <button
+                                        onClick={() => handleApproveVacaciones(item)}
+                                        disabled={isOperationLoading('approve-vacaciones')}
+                                        className="group/approve relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Aprobar vacaciones"
+                                      >
+                                        <span className="text-2xl">✅</span>
+                                      </button>
+                                      <button
+                                        onClick={() => handleRejectPermisoRetribuidoClick(item)}
+                                        disabled={isOperationLoading('reject-permiso')}
+                                        className="group/reject relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Rechazar vacaciones"
+                                      >
+                                        <span className="text-2xl">❌</span>
+                                      </button>
+                                      <button
+                                        onClick={() => handleEdit(item)}
+                                        className="group/edit relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-blue-50"
+                                        title="Editar solicitud"
+                                      >
+                                        <Edit className="w-5 h-5 text-blue-600 group-hover/edit:text-blue-700" />
                                       </button>
                                     </>
                                   );

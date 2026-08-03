@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { routes } from '../utils/routes';
-import { useAuth } from '../contexts/AuthContextBase';
 import Back3DButton from '../components/Back3DButton.jsx';
 
 const MESES = [
@@ -47,8 +46,20 @@ function checkKey(clienteId, tipoId, mes) {
   return `${clienteId}:${tipoId}:${mes}`;
 }
 
+function formatCheckStamp(isoOrDate) {
+  if (!isoOrDate) return null;
+  const d = new Date(isoOrDate);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString('es-ES', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export default function ServiciosPeriodicosPage() {
-  const { user } = useAuth();
   const currentYear = new Date().getFullYear();
   const [an, setAn] = useState(currentYear);
   const [loading, setLoading] = useState(true);
@@ -125,8 +136,23 @@ export default function ServiciosPeriodicosPage() {
   const isHecho = (clienteId, tipoId, mes) =>
     checksMap.has(checkKey(clienteId, tipoId, mes));
 
-  const doneCountForCell = (clienteId, mes) =>
-    tipos.reduce((n, t) => n + (isHecho(clienteId, t.id, mes) ? 1 : 0), 0);
+  const getCheck = (clienteId, tipoId, mes) =>
+    checksMap.get(checkKey(clienteId, tipoId, mes)) || null;
+
+  const tiposForCliente = useCallback(
+    (cliente) => {
+      const ids = Array.isArray(cliente?.tipo_ids) ? cliente.tipo_ids : [];
+      if (!ids.length) return [];
+      const set = new Set(ids.map(Number));
+      return tipos.filter((t) => set.has(Number(t.id)));
+    },
+    [tipos],
+  );
+
+  const doneCountForCell = (cliente, mes) => {
+    const list = tiposForCliente(cliente);
+    return list.reduce((n, t) => n + (isHecho(cliente.id, t.id, mes) ? 1 : 0), 0);
+  };
 
   const toggleCheck = async (clienteId, tipoId, mes, hecho) => {
     const key = checkKey(clienteId, tipoId, mes);
@@ -345,8 +371,10 @@ export default function ServiciosPeriodicosPage() {
       {loading ? (
         <div className="py-16 text-center text-gray-500 dark:text-gray-400">Cargando matriz…</div>
       ) : filteredClientes.length === 0 ? (
-        <div className="py-16 text-center text-gray-500 dark:text-gray-400">
-          No hay comunidades{search ? ' con ese filtro' : ''}.
+        <div className="py-16 text-center text-gray-500 dark:text-gray-400 max-w-lg mx-auto px-4">
+          {search
+            ? 'No hay comunidades con ese filtro.'
+            : 'No hay comunidades con «Servicios periódicos» activo. Márcalo en la ficha del cliente y asigna los tipos de servicio.'}
         </div>
       ) : (
         <div className="overflow-auto border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 shadow-sm max-h-[70vh]">
@@ -367,7 +395,9 @@ export default function ServiciosPeriodicosPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredClientes.map((c) => (
+              {filteredClientes.map((c) => {
+                const clienteTipos = tiposForCliente(c);
+                return (
                 <tr key={c.id} className="hover:bg-slate-50/80 dark:hover:bg-gray-800/80">
                   <td className="sticky left-0 z-10 bg-white dark:bg-gray-900 px-3 py-2 border-b border-r border-gray-100 dark:border-gray-800 align-top">
                     <div className="font-medium text-gray-900 dark:text-gray-100 leading-snug">{c.nombre}</div>
@@ -376,29 +406,36 @@ export default function ServiciosPeriodicosPage() {
                         {[c.poblacion, c.nif].filter(Boolean).join(' · ')}
                       </div>
                     )}
+                    {clienteTipos.length === 0 && (
+                      <div className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
+                        Sin tipos asignados
+                      </div>
+                    )}
                   </td>
                   {MESES.map((m) => {
-                    const done = doneCountForCell(c.id, m.n);
-                    const total = tipos.length || 1;
+                    const done = doneCountForCell(c, m.n);
+                    const total = clienteTipos.length;
                     return (
                       <td key={m.n} className="px-1 py-1.5 border-b border-gray-100 dark:border-gray-800 text-center align-middle">
                         <button
                           type="button"
                           onClick={() => setCellModal({ cliente: c, mes: m.n })}
                           className={`w-full min-h-[40px] rounded-lg border px-1 py-1 transition ${
-                            done === 0
+                            total === 0
+                              ? 'border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/60'
+                              : done === 0
                               ? 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-500'
                               : done >= total
                                 ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/50 hover:border-emerald-400'
                                 : 'border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 hover:border-amber-300'
                           }`}
-                          title={`${done}/${tipos.length} servicios`}
+                          title={total ? `${done}/${total} servicios` : 'Sin tipos asignados'}
                         >
                           <div className="flex flex-wrap justify-center gap-0.5">
-                            {tipos.length === 0 ? (
+                            {total === 0 ? (
                               <span className="text-[10px] text-gray-400 dark:text-gray-500">—</span>
                             ) : (
-                              tipos.map((t, i) => {
+                              clienteTipos.map((t, i) => {
                                 const doneDot = isHecho(c.id, t.id, m.n);
                                 return (
                                   <span
@@ -411,9 +448,9 @@ export default function ServiciosPeriodicosPage() {
                               })
                             )}
                           </div>
-                          {tipos.length > 0 && (
+                          {total > 0 && (
                             <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
-                              {done}/{tipos.length}
+                              {done}/{total}
                             </div>
                           )}
                         </button>
@@ -421,7 +458,8 @@ export default function ServiciosPeriodicosPage() {
                     );
                   })}
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         </div>
@@ -454,16 +492,26 @@ export default function ServiciosPeriodicosPage() {
                 ×
               </button>
             </div>
-            {tipos.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                No hay tipos activos. Usa «Gestionar tipos» para añadirlos.
-              </p>
-            ) : (
+            {(() => {
+              const modalTipos = tiposForCliente(cellModal.cliente);
+              if (modalTipos.length === 0) {
+                return (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Esta comunidad no tiene tipos de servicio asignados. Ábrelos en la ficha del cliente.
+                  </p>
+                );
+              }
+              return (
               <ul className="space-y-2">
-                {tipos.map((t, i) => {
-                  const hecho = isHecho(cellModal.cliente.id, t.id, cellModal.mes);
+                {modalTipos.map((t, i) => {
+                  const check = getCheck(cellModal.cliente.id, t.id, cellModal.mes);
+                  const hecho = Boolean(check);
                   const key = checkKey(cellModal.cliente.id, t.id, cellModal.mes);
                   const busy = savingKey === key;
+                  const stampedAt = formatCheckStamp(
+                    check?.actualizado_en || check?.fecha_realizacion,
+                  );
+                  const stampedBy = (check?.hecho_por || '').trim();
                   return (
                     <li key={t.id}>
                       <label
@@ -491,15 +539,26 @@ export default function ServiciosPeriodicosPage() {
                           className="w-2.5 h-2.5 rounded-full shrink-0"
                           style={{ backgroundColor: tipoColor(t, i) }}
                         />
-                        <span className="text-sm font-medium text-gray-800 dark:text-gray-100">{t.nombre}</span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm font-medium text-gray-800 dark:text-gray-100">
+                            {t.nombre}
+                          </span>
+                          {hecho && (stampedAt || stampedBy) && (
+                            <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug">
+                              {stampedAt ? stampedAt : '—'}
+                              {stampedBy ? ` · ${stampedBy}` : ''}
+                            </span>
+                          )}
+                        </span>
                       </label>
                     </li>
                   );
                 })}
               </ul>
-            )}
+              );
+            })()}
             <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-4">
-              {user?.CODIGO || user?.['NOMBRE / APELLIDOS'] || ''} — los cambios se guardan al marcar.
+              Los cambios se guardan al marcar.
             </p>
           </div>
         </div>

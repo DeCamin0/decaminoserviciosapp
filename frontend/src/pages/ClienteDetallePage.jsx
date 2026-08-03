@@ -15,6 +15,14 @@ export default function ClienteDetallePage() {
   const [error, setError] = useState(null);
   const [portalFacturas, setPortalFacturas] = useState([]);
   const [portalFacturasLoading, setPortalFacturasLoading] = useState(false);
+  const [spTipos, setSpTipos] = useState([]);
+  const [spConfig, setSpConfig] = useState({
+    activo: true,
+    servicios_periodicos: false,
+    tipo_ids: [],
+  });
+  const [spSaving, setSpSaving] = useState(false);
+  const [spMsg, setSpMsg] = useState('');
   // Funcție pentru a normaliza coordonatele și a crea link Google Maps
   const getGoogleMapsLink = (lat, lng) => {
     if (!lat || !lng) return null;
@@ -119,6 +127,94 @@ export default function ClienteDetallePage() {
   useEffect(() => {
     fetchPortalFacturas();
   }, [fetchPortalFacturas]);
+
+  const loadSpConfig = useCallback(async (clienteId) => {
+    if (!clienteId) return;
+    const token = localStorage.getItem('auth_token');
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+    try {
+      const [tiposRes, cfgRes] = await Promise.all([
+        fetch(`${routes.serviciosPeriodicosTipos}`, { headers }),
+        fetch(routes.serviciosPeriodicosClienteConfig(clienteId), { headers }),
+      ]);
+      if (tiposRes.ok) {
+        const tipos = await tiposRes.json();
+        setSpTipos(Array.isArray(tipos) ? tipos.filter((t) => t.activo !== false) : []);
+      }
+      if (cfgRes.ok) {
+        const cfg = await cfgRes.json();
+        setSpConfig({
+          activo: cfg.activo !== false,
+          servicios_periodicos: Boolean(cfg.servicios_periodicos),
+          tipo_ids: Array.isArray(cfg.tipo_ids) ? cfg.tipo_ids.map(Number) : [],
+        });
+      }
+    } catch (e) {
+      console.error('Error loading SP config', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (cliente?.id) loadSpConfig(cliente.id);
+  }, [cliente?.id, loadSpConfig]);
+
+  const saveSpConfig = async (next) => {
+    if (!cliente?.id) return;
+    setSpSaving(true);
+    setSpMsg('');
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(routes.serviciosPeriodicosClienteConfig(cliente.id), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(next),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `Error ${res.status}`);
+      }
+      const cfg = await res.json();
+      setSpConfig({
+        activo: cfg.activo !== false,
+        servicios_periodicos: Boolean(cfg.servicios_periodicos),
+        tipo_ids: Array.isArray(cfg.tipo_ids) ? cfg.tipo_ids.map(Number) : [],
+      });
+      setCliente((prev) =>
+        prev
+          ? {
+              ...prev,
+              ESTADO: cfg.activo ? 'Sí' : 'No',
+              servicios_periodicos: Boolean(cfg.servicios_periodicos),
+            }
+          : prev,
+      );
+      setSpMsg('Guardado');
+      setTimeout(() => setSpMsg(''), 2000);
+    } catch (e) {
+      setSpMsg(e.message || 'Error al guardar');
+    } finally {
+      setSpSaving(false);
+    }
+  };
+
+  const toggleSpTipo = (tipoId) => {
+    const id = Number(tipoId);
+    const set = new Set(spConfig.tipo_ids);
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    const next = {
+      ...spConfig,
+      tipo_ids: [...set],
+    };
+    setSpConfig(next);
+    saveSpConfig(next);
+  };
 
   const facturasPorMes = useMemo(() => {
     const map = new Map();
@@ -362,6 +458,103 @@ export default function ClienteDetallePage() {
                     </p>
                   </div>
                 </div>
+              </div>
+            </Card>
+
+            {/* Servicios periódicos + activo */}
+            <Card>
+              <div className="p-6 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <Building className="h-5 w-5" />
+                  Servicios periódicos
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Controla si este cliente aparece en la matriz y qué servicios se hacen.
+                </p>
+              </div>
+              <div className="p-6 space-y-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4"
+                    checked={spConfig.activo}
+                    disabled={spSaving || !cliente?.id}
+                    onChange={(e) => {
+                      const next = { ...spConfig, activo: e.target.checked };
+                      setSpConfig(next);
+                      saveSpConfig(next);
+                    }}
+                  />
+                  <span className="text-sm font-medium text-gray-800">Cliente activo</span>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4"
+                    checked={spConfig.servicios_periodicos}
+                    disabled={spSaving || !cliente?.id}
+                    onChange={(e) => {
+                      const enabled = e.target.checked;
+                      const next = {
+                        ...spConfig,
+                        servicios_periodicos: enabled,
+                        tipo_ids:
+                          enabled && spConfig.tipo_ids.length === 0
+                            ? spTipos.map((t) => Number(t.id))
+                            : spConfig.tipo_ids,
+                      };
+                      setSpConfig(next);
+                      saveSpConfig(next);
+                    }}
+                  />
+                  <span className="text-sm font-medium text-gray-800">
+                    Incluir en Servicios periódicos
+                  </span>
+                </label>
+
+                {spConfig.servicios_periodicos && (
+                  <div className="pt-2 border-t border-gray-100">
+                    <p className="text-sm font-medium text-gray-700 mb-2">
+                      Servicios a realizar en esta comunidad
+                    </p>
+                    {spTipos.length === 0 ? (
+                      <p className="text-sm text-gray-500">
+                        No hay tipos definidos. Créalos en Servicios periódicos → Gestionar tipos.
+                      </p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {spTipos.map((t) => {
+                          const checked = spConfig.tipo_ids.includes(Number(t.id));
+                          return (
+                            <li key={t.id}>
+                              <label className="flex items-center gap-3 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  className="w-4 h-4"
+                                  checked={checked}
+                                  disabled={spSaving}
+                                  onChange={() => toggleSpTipo(t.id)}
+                                />
+                                <span
+                                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                                  style={{ backgroundColor: t.color || '#0ea5e9' }}
+                                />
+                                <span className="text-sm text-gray-800">{t.nombre}</span>
+                              </label>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                )}
+
+                {(spSaving || spMsg) && (
+                  <p className={`text-xs ${spMsg && spMsg !== 'Guardado' ? 'text-red-600' : 'text-gray-500'}`}>
+                    {spSaving ? 'Guardando…' : spMsg}
+                  </p>
+                )}
               </div>
             </Card>
 

@@ -273,6 +273,8 @@ export const routes = {
   serviciosPeriodicoTipo: (id) => `${BACKEND_BASE}/api/servicios-periodicos/tipos/${id}`,
   serviciosPeriodicosMatrix: `${BACKEND_BASE}/api/servicios-periodicos/matrix`,
   serviciosPeriodicosChecks: `${BACKEND_BASE}/api/servicios-periodicos/checks`,
+  serviciosPeriodicosClienteConfig: (clienteId) =>
+    `${BACKEND_BASE}/api/servicios-periodicos/cliente-config/${encodeURIComponent(clienteId)}`,
 
   // GET /api/clientes/:nif/contracts
   /** CRUD contactos (JWT). clienteId = id numérico Clientes */

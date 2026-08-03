@@ -59,6 +59,28 @@ export class ServiciosPeriodicosController {
     return this.service.getMatrix(an);
   }
 
+  @Get('cliente-config/:clienteId')
+  async getClienteConfig(@Param('clienteId', ParseIntPipe) clienteId: number) {
+    return this.service.getClienteConfig(clienteId);
+  }
+
+  @Put('cliente-config/:clienteId')
+  async setClienteConfig(
+    @Param('clienteId', ParseIntPipe) clienteId: number,
+    @Body()
+    body: {
+      servicios_periodicos?: boolean;
+      activo?: boolean;
+      tipo_ids?: number[];
+    },
+  ) {
+    this.logger.log(`Updating SP config for cliente ${clienteId}`);
+    return this.service.setClienteConfig({
+      cliente_id: clienteId,
+      ...body,
+    });
+  }
+
   @Put('checks')
   async upsertCheck(
     @Body()
@@ -73,11 +95,12 @@ export class ServiciosPeriodicosController {
     @CurrentUser() user: any,
   ) {
     const hechoPor =
+      user?.['NOMBRE / APELLIDOS'] ||
+      user?.nombre ||
+      user?.name ||
       user?.CODIGO ||
       user?.codigo ||
       user?.userId ||
-      user?.['NOMBRE / APELLIDOS'] ||
-      user?.nombre ||
       null;
     this.logger.log(
       `Upsert check cliente=${body?.cliente_id} tipo=${body?.tipo_id} ${body?.an}-${body?.mes} hecho=${body?.hecho}`,

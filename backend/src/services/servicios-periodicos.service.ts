@@ -130,12 +130,20 @@ export class ServiciosPeriodicosService {
     return this.updateTipo(id, { activo: false });
   }
 
+  private isClienteActivo(estado?: string | null): boolean {
+    const e = String(estado || '')
+      .trim()
+      .toLowerCase();
+    if (!e) return true;
+    return !['no', 'inactivo', 'inactiva', 'false', '0', 'off'].includes(e);
+  }
+
   async getMatrix(an: number) {
     if (!an || an < 2000 || an > 2100) {
       throw new BadRequestException('Año inválido');
     }
     try {
-      const [tipos, clientesRaw, checks] = await Promise.all([
+      const [tipos, clientesRaw, checks, asignaciones] = await Promise.all([
         this.prisma.servicioPeriodicoTipo.findMany({
           where: { activo: true },
           orderBy: [{ orden: 'asc' }, { id: 'asc' }],
@@ -148,22 +156,39 @@ export class ServiciosPeriodicosService {
             POBLACION: true,
             ESTADO: true,
             TIPO: true,
+            servicios_periodicos: true,
           },
           orderBy: { NOMBRE_O_RAZON_SOCIAL: 'asc' },
         }),
         this.prisma.servicioPeriodicoCheck.findMany({
           where: { an },
         }),
+        this.prisma.servicioPeriodicoClienteTipo.findMany({
+          select: { cliente_id: true, tipo_id: true },
+        }),
       ]);
 
+      const tiposByCliente = new Map<number, number[]>();
+      for (const a of asignaciones) {
+        const list = tiposByCliente.get(a.cliente_id) || [];
+        list.push(a.tipo_id);
+        tiposByCliente.set(a.cliente_id, list);
+      }
+
       const clientes = clientesRaw
-        .filter((c) => (c.TIPO || '').toLowerCase() !== 'proveedor')
+        .filter(
+          (c) =>
+            Boolean(c.servicios_periodicos) &&
+            this.isClienteActivo(c.ESTADO) &&
+            (c.TIPO || '').toLowerCase() !== 'proveedor',
+        )
         .map((c) => ({
           id: c.id,
           nombre: c.NOMBRE_O_RAZON_SOCIAL || `Cliente #${c.id}`,
           nif: c.NIF || '',
           poblacion: c.POBLACION || '',
           estado: c.ESTADO || '',
+          tipo_ids: tiposByCliente.get(c.id) || [],
         }));
 
       return {
@@ -180,6 +205,7 @@ export class ServiciosPeriodicosService {
           fecha_realizacion: ch.fecha_realizacion,
           hecho_por: ch.hecho_por,
           nota: ch.nota,
+          actualizado_en: ch.actualizado_en,
         })),
       };
     } catch (error: any) {
@@ -188,6 +214,104 @@ export class ServiciosPeriodicosService {
         `Error al obtener matriz: ${error.message}`,
       );
     }
+  }
+
+  async getClienteConfig(clienteId: number) {
+    const id = Number(clienteId);
+    if (!id) throw new BadRequestException('cliente_id inválido');
+    const cliente = await this.prisma.clientes.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        NOMBRE_O_RAZON_SOCIAL: true,
+        ESTADO: true,
+        servicios_periodicos: true,
+      },
+    });
+    if (!cliente) throw new NotFoundException(`Cliente ${id} no encontrado`);
+    const asignados = await this.prisma.servicioPeriodicoClienteTipo.findMany({
+      where: { cliente_id: id },
+      select: { tipo_id: true },
+    });
+    return {
+      cliente_id: cliente.id,
+      nombre: cliente.NOMBRE_O_RAZON_SOCIAL,
+      estado: cliente.ESTADO,
+      activo: this.isClienteActivo(cliente.ESTADO),
+      servicios_periodicos: Boolean(cliente.servicios_periodicos),
+      tipo_ids: asignados.map((a) => a.tipo_id),
+    };
+  }
+
+  async setClienteConfig(data: {
+    cliente_id: number;
+    servicios_periodicos?: boolean;
+    activo?: boolean;
+    tipo_ids?: number[];
+  }) {
+    const clienteId = Number(data.cliente_id);
+    if (!clienteId) throw new BadRequestException('cliente_id inválido');
+
+    const existing = await this.prisma.clientes.findUnique({
+      where: { id: clienteId },
+      select: { id: true },
+    });
+    if (!existing) throw new NotFoundException(`Cliente ${clienteId} no encontrado`);
+
+    const patch: { servicios_periodicos?: boolean; ESTADO?: string } = {};
+    if (typeof data.servicios_periodicos === 'boolean') {
+      patch.servicios_periodicos = data.servicios_periodicos;
+    }
+    if (typeof data.activo === 'boolean') {
+      patch.ESTADO = data.activo ? 'Sí' : 'No';
+    }
+
+    if (Object.keys(patch).length > 0) {
+      await this.prisma.clientes.update({
+        where: { id: clienteId },
+        data: patch,
+      });
+    }
+
+    if (Array.isArray(data.tipo_ids)) {
+      const uniqueIds = [
+        ...new Set(
+          data.tipo_ids
+            .map((n) => Number(n))
+            .filter((n) => Number.isInteger(n) && n > 0),
+        ),
+      ];
+      if (uniqueIds.length > 0) {
+        const tiposOk = await this.prisma.servicioPeriodicoTipo.findMany({
+          where: { id: { in: uniqueIds } },
+          select: { id: true },
+        });
+        const validIds = new Set(tiposOk.map((t) => t.id));
+        const toInsert = uniqueIds.filter((id) => validIds.has(id));
+        await this.prisma.$transaction([
+          this.prisma.servicioPeriodicoClienteTipo.deleteMany({
+            where: { cliente_id: clienteId },
+          }),
+          ...(toInsert.length
+            ? [
+                this.prisma.servicioPeriodicoClienteTipo.createMany({
+                  data: toInsert.map((tipo_id) => ({
+                    cliente_id: clienteId,
+                    tipo_id,
+                  })),
+                  skipDuplicates: true,
+                }),
+              ]
+            : []),
+        ]);
+      } else {
+        await this.prisma.servicioPeriodicoClienteTipo.deleteMany({
+          where: { cliente_id: clienteId },
+        });
+      }
+    }
+
+    return this.getClienteConfig(clienteId);
   }
 
   async upsertCheck(data: {
