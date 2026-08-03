@@ -29,6 +29,7 @@ const ROUTE_TO_MODULE = {
   '/documentos-empleados': 'documentos-empleados',
   '/prl-documentos': 'prl-documentos',
   '/presupuestos-informes': 'presupuestos-informes',
+  '/servicios-periodicos': 'servicios-periodicos',
   '/mensajes-enviados': 'admin',
   '/datos': 'datos',
   '/inicio': 'dashboard',
@@ -134,6 +135,15 @@ const ProtectedRoute = ({ children }) => {
     } else if (module === 'fichar') {
       // Pentru fichar, verifică ambele variante noi și vechea permisiune
       hasAccess = hasPermission('fichar-empleados') || hasPermission('fichar-admin') || hasPermission('fichar');
+    } else if (module === 'servicios-periodicos') {
+      // Ca Presupuestos: permiso explícito o acceso a Clientes
+      if (!hasBackendPermissions) {
+        hasAccess = false;
+      } else {
+        hasAccess =
+          hasStrictModuleAccess('servicios-periodicos', getCurrentGroupPermissions) ||
+          hasStrictModuleAccess('clientes', getCurrentGroupPermissions);
+      }
     } else if (module === 'datos' || module === 'empleados' || module === 'documentos' || module === 'cuadrantes-empleado' || module === 'cuadrantes' || module === 'mis-inspecciones' || module === 'inspecciones' || module === 'aprobaciones' || module === 'clientes' || module === 'proveedores' || module === 'comunicados' || module === 'prl-documentos' || module === 'presupuestos-informes') {
       // Matriz: permiso explícito (PRL: ver hasStrictModuleAccess)
       if (!hasBackendPermissions) {

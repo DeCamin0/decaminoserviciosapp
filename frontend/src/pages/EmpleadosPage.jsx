@@ -1690,7 +1690,7 @@ export default function EmpleadosPage() {
   const [searchTerm, setSearchTerm] = useState('');
   // 'nombre', 'codigo', 'email', 'grupo', 'estado', 'centro', 'todos'
   const [searchBy, setSearchBy] = useState('nombre');
-  // Filtru rapid după status ("ALL" | "ACTIVO" | "PENDIENTE")
+  // Filtru rapid după status ("ALL" | "ACTIVO" | "INACTIVO" | "PENDIENTE" | "ONLINE")
   const [statusFilter, setStatusFilter] = useState('ALL');
 
   // Verifica si el usuario es manager
@@ -4382,7 +4382,44 @@ export default function EmpleadosPage() {
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000"></div>
                   </div>
 
-                  {/* Card 3 - Pendientes - YELLOW */}
+                  {/* Card 3 - Inactivos - RED */}
+                  <div 
+                    className="group relative overflow-hidden flex-1 min-w-[140px] cursor-pointer"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(220, 38, 38, 0.08) 100%)',
+                      backdropFilter: 'blur(10px)',
+                      borderRadius: '1rem',
+                      border: '1px solid rgba(239, 68, 68, 0.2)',
+                      boxShadow: '0 4px 15px rgba(239, 68, 68, 0.12)',
+                      padding: '1rem'
+                    }}
+                  onClick={() => setStatusFilter('INACTIVO')}
+                  role="button"
+                  >
+                    <div className="absolute inset-0 rounded-2xl bg-red-400 opacity-0 group-hover:opacity-15 blur-lg transition-opacity duration-300"></div>
+                    
+                    <div className="relative flex items-center gap-3">
+                      <div 
+                        className="w-10 h-10 rounded-xl flex items-center justify-center shadow-md transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
+                        style={{
+                          background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                          boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)'
+                        }}
+                      >
+                        <span className="text-xl">🔴</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-2xl font-black text-red-900">
+                          {users.filter(u => (u['ESTADO'] || u.ESTADO || '').toString().trim().toUpperCase() === 'INACTIVO').length}
+                        </div>
+                        <div className="text-xs font-semibold text-red-700 truncate">Inactivos</div>
+                      </div>
+                    </div>
+                    
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000"></div>
+                  </div>
+
+                  {/* Card 4 - Pendientes - YELLOW */}
                   <div 
                     className="group relative overflow-hidden flex-1 min-w-[140px] cursor-pointer"
                     style={{

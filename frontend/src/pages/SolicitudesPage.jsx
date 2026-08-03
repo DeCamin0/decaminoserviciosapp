@@ -1262,13 +1262,15 @@ function MobileSolicitudItem({
   // Formatează data solicitării
   const formattedFechaSolicitud = formatDate(solicitud.fecha_solicitud);
   
-  // Formatează perioada
-  const formattedPeriodo = solicitud.FECHA 
-    ? formatDateRange(solicitud.FECHA)
-    : (solicitud.fecha_inicio && solicitud.fecha_fin 
-      ? formatDateRange(`${solicitud.fecha_inicio} - ${solicitud.fecha_fin}`)
-      : formatDate(solicitud.fecha_inicio || solicitud.fecha || solicitud["fecha inicio"] || ''));
-  
+  const formattedFechaInicio = formatDate(solicitud.fecha_inicio || solicitud.fecha || solicitud["fecha inicio"] || '')
+    || (solicitud.FECHA
+      ? (solicitud.FECHA.includes(' - ') ? formatDate(solicitud.FECHA.split(' - ')[0].trim()) || solicitud.FECHA.split(' - ')[0].trim() : formatDateRange(solicitud.FECHA) || solicitud.FECHA)
+      : '');
+  const formattedFechaFin = formatDate(solicitud.fecha_fin || solicitud["fecha fin"] || '')
+    || (solicitud.FECHA && solicitud.FECHA.includes(' - ')
+      ? formatDate(solicitud.FECHA.split(' - ')[1].trim()) || solicitud.FECHA.split(' - ')[1].trim()
+      : '');
+ 
   // Verifică dacă are justificante (doar pentru ausencias, nu pentru Vacaciones sau Asunto Propio)
   const tipoNormalized = (solicitud.tipo || '').toLowerCase();
   const isVacaciones = tipoNormalized.includes('vacacion');
@@ -1471,13 +1473,21 @@ function MobileSolicitudItem({
             </span>
           </div>
           
-          {/* Período */}
+          {/* Fecha Inicio / Fecha Fin */}
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Período:</span>
+            <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Fecha Inicio:</span>
             <span className="text-[10px] font-medium text-gray-700 dark:text-gray-300">
-              {formattedPeriodo}
+              {formattedFechaInicio || '—'}
             </span>
           </div>
+          {formattedFechaFin ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Fecha Fin:</span>
+              <span className="text-[10px] font-medium text-gray-700 dark:text-gray-300">
+                {formattedFechaFin}
+              </span>
+            </div>
+          ) : null}
           
           {/* Duration complet */}
           <div className="flex items-center gap-2">
@@ -9667,12 +9677,12 @@ export default function SolicitudesPage() {
                         <p className="text-sm font-semibold text-blue-900 break-words">{formatDate(solicitud.fecha_solicitud)}</p>
                       </div>
                       <div className="bg-gray-50 p-3 rounded-lg">
-            <span className="block text-xs font-medium text-gray-600 mb-1">Período</span>
-                        <p className="text-sm font-semibold text-gray-900 break-words">{solicitud.FECHA || formatDate(solicitud.fecha_inicio || solicitud["fecha inicio"] || solicitud.fecha)}</p>
+            <span className="block text-xs font-medium text-gray-600 mb-1">Fecha Inicio</span>
+                        <p className="text-sm font-semibold text-gray-900 break-words">{formatDate(solicitud.fecha_inicio || solicitud["fecha inicio"] || solicitud.fecha) || (solicitud.FECHA ? (solicitud.FECHA.includes(' - ') ? solicitud.FECHA.split(' - ')[0] : solicitud.FECHA) : '')}</p>
                       </div>
                       <div className="bg-gray-50 p-3 rounded-lg">
-            <span className="block text-xs font-medium text-gray-600 mb-1">Fecha fin</span>
-                        <p className="text-sm font-semibold text-gray-900 break-words">{solicitud.FECHA ? (solicitud.FECHA.includes(' - ') ? solicitud.FECHA.split(' - ')[1] : solicitud.FECHA) : formatDate(solicitud.fecha_fin || solicitud["fecha fin"])}</p>
+            <span className="block text-xs font-medium text-gray-600 mb-1">Fecha Fin</span>
+                        <p className="text-sm font-semibold text-gray-900 break-words">{formatDate(solicitud.fecha_fin || solicitud["fecha fin"]) || (solicitud.FECHA && solicitud.FECHA.includes(' - ') ? solicitud.FECHA.split(' - ')[1] : '')}</p>
                       </div>
                       <div className="bg-gray-50 p-3 rounded-lg">
             <span className="block text-xs font-medium text-gray-600 mb-1">Duración</span>
@@ -12797,12 +12807,12 @@ export default function SolicitudesPage() {
                               <p className="text-sm font-bold text-blue-900">{formatDate(item.fecha_solicitud)}</p>
                             </div>
                             <div className="bg-gray-50 p-4 rounded-lg group-hover:bg-gray-100 transition-colors duración-300">
-                              <span className="block text-xs font-medium text-gray-600 mb-1">Período</span>
-                              <p className="text-sm font-bold text-gray-900">{item.FECHA || formatDate(item.fecha_inicio || item['fecha inicio'] || item.fecha)}</p>
+                              <span className="block text-xs font-medium text-gray-600 mb-1">Fecha Inicio</span>
+                              <p className="text-sm font-bold text-gray-900">{formatDate(item.fecha_inicio || item['fecha inicio'] || item.fecha) || (item.FECHA ? (item.FECHA.includes(' - ') ? item.FECHA.split(' - ')[0] : item.FECHA) : '')}</p>
                             </div>
                             <div className="bg-gray-50 p-4 rounded-lg group-hover:bg-gray-100 transition-colors duración-300">
-                              <span className="block text-xs font-medium text-gray-600 mb-1">Fecha fin</span>
-                              <p className="text-sm font-bold text-gray-900">{item.FECHA ? (item.FECHA.includes(' - ') ? item.FECHA.split(' - ')[1] : item.FECHA) : formatDate(item.fecha_fin || item['fecha fin'])}</p>
+                              <span className="block text-xs font-medium text-gray-600 mb-1">Fecha Fin</span>
+                              <p className="text-sm font-bold text-gray-900">{formatDate(item.fecha_fin || item['fecha fin']) || (item.FECHA && item.FECHA.includes(' - ') ? item.FECHA.split(' - ')[1] : '')}</p>
                             </div>
                             <div className="bg-gray-50 p-4 rounded-lg group-hover:bg-gray-100 transition-colors duración-300">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Duración</span>

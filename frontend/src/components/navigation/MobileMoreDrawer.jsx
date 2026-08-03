@@ -305,6 +305,12 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     if (canAccessPresupuestos) {
       list.push({ id: 'presupuestos-informes', label: 'Presupuestos e Informes', hint: 'Generar presupuestos e informes automáticamente', icon: FileText, href: '/presupuestos-informes', role: 'manager', gradient: 'from-indigo-500 via-purple-500 to-pink-500' });
     }
+    const canAccessServiciosPeriodicos = hasBackendPermissions
+      ? (hasPermission('servicios-periodicos') || canAccessClientes)
+      : (isAdmin || isDeveloper || isManager || user?.GRUPO === 'Supervisor' || canAccessClientes);
+    if (canAccessServiciosPeriodicos) {
+      list.push({ id: 'servicios-periodicos', label: 'Servicios periódicos', hint: 'Checklist mensual por comunidad', icon: Calendar, href: '/servicios-periodicos', role: 'manager', gradient: 'from-cyan-500 via-teal-500 to-emerald-500' });
+    }
     list.push({ id: 'hall-of-fame', label: 'Salón de la Fama', hint: 'Clasament lunar', icon: Trophy, href: '/hall-of-fame', gradient: 'from-yellow-400 via-amber-500 to-orange-500' });
 
     return list;

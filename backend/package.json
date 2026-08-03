@@ -47,7 +47,9 @@
     "db:migrate:decamino": "node scripts/prisma-migrate-env.js .env.decamino.local",
     "db:migrate:hera": "node scripts/prisma-migrate-env.js .env.hera.local",
     "db:migrate:both": "node scripts/prisma-migrate-env.js .env.decamino.local && node scripts/prisma-migrate-env.js .env.hera.local",
-    "db:migrate:contacto-emergencia": "node scripts/run-contacto-emergencia-migration.js .env.decamino.local && node scripts/run-contacto-emergencia-migration.js .env.hera.local"
+    "db:migrate:contacto-emergencia": "node scripts/run-contacto-emergencia-migration.js .env.decamino.local && node scripts/run-contacto-emergencia-migration.js .env.hera.local",
+    "db:migrate:servicios-periodicos": "node scripts/run-servicios-periodicos-migration.js .env.decamino.local",
+    "db:migrate:servicios-periodicos:both": "node scripts/run-servicios-periodicos-migration.js .env.decamino.local && node scripts/run-servicios-periodicos-migration.js .env.hera.local"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.11",

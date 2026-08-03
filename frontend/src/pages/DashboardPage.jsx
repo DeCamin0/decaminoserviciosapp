@@ -1333,6 +1333,21 @@ const InicioPage = () => {
       });
     }
 
+    const canAccessServiciosPeriodicos = hasBackendPermissions
+      ? (hasPermission('servicios-periodicos') || canAccessClientes)
+      : (isAdmin || isDeveloper || isManager || user?.GRUPO === 'Supervisor' || canAccessClientes);
+    if (canAccessServiciosPeriodicos) {
+      list.push({
+        id: 'servicios-periodicos',
+        label: 'Servicios periódicos',
+        hint: 'Checklist mensual por comunidad',
+        icon: <Calendar className="h-6 w-6 text-white" />,
+        gradient: 'from-cyan-500 via-teal-500 to-emerald-500',
+        href: '/servicios-periodicos',
+        role: 'manager',
+      });
+    }
+
     // Salón de la Fama - verifică permisiunea din backend
     const canAccessHallOfFame = shouldUseBackend ? hasPermission('hall-of-fame') : true;
     

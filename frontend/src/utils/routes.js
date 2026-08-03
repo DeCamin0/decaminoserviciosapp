@@ -267,6 +267,13 @@ export const routes = {
   getProveedores: `${BACKEND_BASE}/api/clientes/proveedores`,
   // POST cu action: 'add'|'edit'|'delete'
   crudProveedor: `${BACKEND_BASE}/api/clientes/proveedores`,
+
+  // Servicios periódicos (checklist comunidades × meses)
+  serviciosPeriodicosTipos: `${BACKEND_BASE}/api/servicios-periodicos/tipos`,
+  serviciosPeriodicoTipo: (id) => `${BACKEND_BASE}/api/servicios-periodicos/tipos/${id}`,
+  serviciosPeriodicosMatrix: `${BACKEND_BASE}/api/servicios-periodicos/matrix`,
+  serviciosPeriodicosChecks: `${BACKEND_BASE}/api/servicios-periodicos/checks`,
+
   // GET /api/clientes/:nif/contracts
   /** CRUD contactos (JWT). clienteId = id numérico Clientes */
   clienteContactos: (clienteId) =>

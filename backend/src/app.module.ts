@@ -109,6 +109,8 @@ import { CertificadosRetencionesController } from './controllers/certificados-re
 import { CertificadosRetencionesService } from './services/certificados-retenciones.service';
 import { PedidosNotasController } from './controllers/pedidos-notas.controller';
 import { PedidosNotasService } from './services/pedidos-notas.service';
+import { ServiciosPeriodicosController } from './controllers/servicios-periodicos.controller';
+import { ServiciosPeriodicosService } from './services/servicios-periodicos.service';
 import { SuperAdminTenantsModule } from './super-admin-tenants/super-admin-tenants.module';
 import { LeadsController } from './controllers/leads.controller';
 import { LeadsService } from './services/leads.service';
@@ -197,6 +199,7 @@ import { PortalModule } from './portal/portal.module';
     DiplomasController,
     CertificadosRetencionesController,
     PedidosNotasController,
+    ServiciosPeriodicosController,
     LeadsController,
     // AssistantController se importa din AssistantModule
   ],
@@ -256,6 +259,7 @@ import { PortalModule } from './portal/portal.module';
     DiplomasService,
     CertificadosRetencionesService,
     PedidosNotasService,
+    ServiciosPeriodicosService,
     LeadsService,
     EmpleadoGrupoScopeService,
   ],

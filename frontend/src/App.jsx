@@ -73,7 +73,8 @@ import {
   LazyMensajesEnviadosPage,
   LazyHallOfFamePage,
   LazyPRLDocumentosPage,
-  LazyPresupuestosInformesPage
+  LazyPresupuestosInformesPage,
+  LazyServiciosPeriodicosPage
 } from './pages/lazy/LazyPages';
 
 // i18n este deja importat în main.jsx
@@ -541,6 +542,18 @@ function AppRoutes() {
           <ProtectedRoute>
             <ResponsiveLayout>
               <LazyPresupuestosInformesPage />
+            </ResponsiveLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Ruta para servicios periódicos */}
+      <Route
+        path="/servicios-periodicos"
+        element={
+          <ProtectedRoute>
+            <ResponsiveLayout>
+              <LazyServiciosPeriodicosPage />
             </ResponsiveLayout>
           </ProtectedRoute>
         }

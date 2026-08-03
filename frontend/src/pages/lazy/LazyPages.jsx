@@ -42,6 +42,7 @@ const MensajesEnviadosPage = lazy(() => import('../MensajesEnviadosPage'));
 const HallOfFamePage = lazy(() => import('../HallOfFamePage'));
 const PRLDocumentosPage = lazy(() => import('../PRLDocumentosPage'));
 const PresupuestosInformesPage = lazy(() => import('../PresupuestosInformesPage'));
+const ServiciosPeriodicosPage = lazy(() => import('../ServiciosPeriodicosPage'));
 
 // Lazy page components with loading states
 export const LazyFichajePage = (props) => {
@@ -364,6 +365,14 @@ export const LazyPresupuestosInformesPage = (props) => {
   );
 };
 
+export const LazyServiciosPeriodicosPage = (props) => {
+  return (
+    <Suspense fallback={<PageLoading title="Cargando Servicios periódicos..." />}>
+      <ServiciosPeriodicosPage {...props} />
+    </Suspense>
+  );
+};
+
 export default {
   LazyFichajePage,
   LazyEmpleadosPage,
@@ -399,5 +408,6 @@ export default {
   LazyMensajesEnviadosPage,
   LazyHallOfFamePage,
   LazyPRLDocumentosPage,
-  LazyPresupuestosInformesPage
+  LazyPresupuestosInformesPage,
+  LazyServiciosPeriodicosPage
 };
