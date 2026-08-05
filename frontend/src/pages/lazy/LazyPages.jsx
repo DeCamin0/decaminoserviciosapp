@@ -43,6 +43,7 @@ const HallOfFamePage = lazy(() => import('../HallOfFamePage'));
 const PRLDocumentosPage = lazy(() => import('../PRLDocumentosPage'));
 const PresupuestosInformesPage = lazy(() => import('../PresupuestosInformesPage'));
 const ServiciosPeriodicosPage = lazy(() => import('../ServiciosPeriodicosPage'));
+const FotosTrabajoPage = lazy(() => import('../FotosTrabajoPage'));
 
 // Lazy page components with loading states
 export const LazyFichajePage = (props) => {
@@ -373,6 +374,14 @@ export const LazyServiciosPeriodicosPage = (props) => {
   );
 };
 
+export const LazyFotosTrabajoPage = (props) => {
+  return (
+    <Suspense fallback={<PageLoading title="Cargando Fotos Trabajo..." />}>
+      <FotosTrabajoPage {...props} />
+    </Suspense>
+  );
+};
+
 export default {
   LazyFichajePage,
   LazyEmpleadosPage,
@@ -409,5 +418,6 @@ export default {
   LazyHallOfFamePage,
   LazyPRLDocumentosPage,
   LazyPresupuestosInformesPage,
-  LazyServiciosPeriodicosPage
+  LazyServiciosPeriodicosPage,
+  LazyFotosTrabajoPage
 };

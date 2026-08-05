@@ -1,7 +1,7 @@
 {
   "name": "decamino-web",
   "private": true,
-  "version": "2026.08.03.1331",
+  "version": "2026.08.03.2016",
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/fix-quill-vulnerability.cjs",
@@ -144,8 +144,8 @@
     "esbuild": "^0.28.1",
     "axios": "^1.18.1",
     "body-parser": "^2.2.3",
-    "brace-expansion": "5.0.8",
-    "fast-uri": "^4.1.1",
+    "brace-expansion": "5.0.9",
+    "fast-uri": "^4.1.2",
     "postcss": "^8.5.24",
     "svgo": "^4.0.2",
     "react-router": "^8.3.0",

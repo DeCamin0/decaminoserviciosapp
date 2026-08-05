@@ -26,6 +26,7 @@ import {
   UserCircle,
   Users,
   ShieldCheck,
+  Camera,
 } from 'lucide-react';
 import {
   getCurrentMonthKey,
@@ -1226,6 +1227,21 @@ const InicioPage = () => {
         icon: <ClipboardCheck className="h-6 w-6 text-white" />,
         gradient: 'from-amber-500 via-orange-500 to-yellow-500',
         href: '/inspecciones',
+        role: 'manager',
+      });
+    }
+
+    const canFotosTrabajo = shouldUseBackend
+      ? hasPermission('fotos-trabajo')
+      : isManager || isAdmin || isDeveloper;
+    if (canFotosTrabajo) {
+      list.push({
+        id: 'fotos-trabajo',
+        label: 'Fotos Trabajo',
+        hint: 'Fotos por comunidad y servicio',
+        icon: <Camera className="h-6 w-6 text-white" />,
+        gradient: 'from-cyan-500 via-sky-500 to-blue-600',
+        href: '/fotos-trabajo',
         role: 'manager',
       });
     }

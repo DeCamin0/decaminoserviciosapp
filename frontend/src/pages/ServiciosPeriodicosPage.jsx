@@ -46,17 +46,29 @@ function checkKey(clienteId, tipoId, mes) {
   return `${clienteId}:${tipoId}:${mes}`;
 }
 
-function formatCheckStamp(isoOrDate) {
-  if (!isoOrDate) return null;
+function toDateInputValue(isoOrDate) {
+  if (!isoOrDate) return '';
+  const s = String(isoOrDate);
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
   const d = new Date(isoOrDate);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleString('es-ES', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
+}
+
+/** Default service date: today if same month/year, else day 1 of that month. */
+function defaultFechaForCell(year, mes) {
+  const now = new Date();
+  if (now.getFullYear() === year && now.getMonth() + 1 === mes) {
+    const y = now.getFullYear();
+    const mo = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${y}-${mo}-${day}`;
+  }
+  return `${year}-${String(mes).padStart(2, '0')}-01`;
 }
 
 export default function ServiciosPeriodicosPage() {
@@ -154,20 +166,25 @@ export default function ServiciosPeriodicosPage() {
     return list.reduce((n, t) => n + (isHecho(cliente.id, t.id, mes) ? 1 : 0), 0);
   };
 
-  const toggleCheck = async (clienteId, tipoId, mes, hecho) => {
+  const toggleCheck = async (clienteId, tipoId, mes, hecho, fechaRealizacion) => {
     const key = checkKey(clienteId, tipoId, mes);
     setSavingKey(key);
     try {
+      const payload = {
+        cliente_id: clienteId,
+        tipo_id: tipoId,
+        an,
+        mes,
+        hecho,
+      };
+      if (hecho) {
+        payload.fecha_realizacion =
+          fechaRealizacion || defaultFechaForCell(an, mes);
+      }
       const res = await fetch(routes.serviciosPeriodicosChecks, {
         method: 'PUT',
         headers: authHeaders(),
-        body: JSON.stringify({
-          cliente_id: clienteId,
-          tipo_id: tipoId,
-          an,
-          mes,
-          hecho,
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -508,14 +525,15 @@ export default function ServiciosPeriodicosPage() {
                   const hecho = Boolean(check);
                   const key = checkKey(cellModal.cliente.id, t.id, cellModal.mes);
                   const busy = savingKey === key;
-                  const stampedAt = formatCheckStamp(
-                    check?.actualizado_en || check?.fecha_realizacion,
-                  );
+                  const fechaValue = hecho
+                    ? toDateInputValue(check?.fecha_realizacion) ||
+                      defaultFechaForCell(an, cellModal.mes)
+                    : '';
                   const stampedBy = (check?.hecho_por || '').trim();
                   return (
                     <li key={t.id}>
-                      <label
-                        className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer ${
+                      <div
+                        className={`flex items-start gap-3 p-3 rounded-lg border ${
                           hecho
                             ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/40'
                             : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700'
@@ -531,26 +549,53 @@ export default function ServiciosPeriodicosPage() {
                               t.id,
                               cellModal.mes,
                               e.target.checked,
+                              e.target.checked
+                                ? defaultFechaForCell(an, cellModal.mes)
+                                : undefined,
                             )
                           }
-                          className="w-4 h-4"
+                          className="w-4 h-4 mt-1 shrink-0 cursor-pointer"
                         />
                         <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          className="w-2.5 h-2.5 rounded-full shrink-0 mt-1.5"
                           style={{ backgroundColor: tipoColor(t, i) }}
                         />
-                        <span className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-0">
                           <span className="block text-sm font-medium text-gray-800 dark:text-gray-100">
                             {t.nombre}
                           </span>
-                          {hecho && (stampedAt || stampedBy) && (
-                            <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 leading-snug">
-                              {stampedAt ? stampedAt : '—'}
-                              {stampedBy ? ` · ${stampedBy}` : ''}
-                            </span>
+                          {hecho && (
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <label className="sr-only" htmlFor={`fecha-${key}`}>
+                                Fecha de realización
+                              </label>
+                              <input
+                                id={`fecha-${key}`}
+                                type="date"
+                                value={fechaValue}
+                                disabled={busy}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  if (!v) return;
+                                  toggleCheck(
+                                    cellModal.cliente.id,
+                                    t.id,
+                                    cellModal.mes,
+                                    true,
+                                    v,
+                                  );
+                                }}
+                                className="text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-2 py-1"
+                              />
+                              {stampedBy && (
+                                <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                                  · {stampedBy}
+                                </span>
+                              )}
+                            </div>
                           )}
-                        </span>
-                      </label>
+                        </div>
+                      </div>
                     </li>
                   );
                 })}
@@ -558,7 +603,7 @@ export default function ServiciosPeriodicosPage() {
               );
             })()}
             <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-4">
-              Los cambios se guardan al marcar.
+              Los cambios se guardan al marcar o al cambiar la fecha.
             </p>
           </div>
         </div>

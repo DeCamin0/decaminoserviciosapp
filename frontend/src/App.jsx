@@ -74,7 +74,8 @@ import {
   LazyHallOfFamePage,
   LazyPRLDocumentosPage,
   LazyPresupuestosInformesPage,
-  LazyServiciosPeriodicosPage
+  LazyServiciosPeriodicosPage,
+  LazyFotosTrabajoPage
 } from './pages/lazy/LazyPages';
 
 // i18n este deja importat în main.jsx
@@ -554,6 +555,18 @@ function AppRoutes() {
           <ProtectedRoute>
             <ResponsiveLayout>
               <LazyServiciosPeriodicosPage />
+            </ResponsiveLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Fotos Trabajo – comunidad → álbum → fotos (R2) */}
+      <Route
+        path="/fotos-trabajo"
+        element={
+          <ProtectedRoute>
+            <ResponsiveLayout>
+              <LazyFotosTrabajoPage />
             </ResponsiveLayout>
           </ProtectedRoute>
         }

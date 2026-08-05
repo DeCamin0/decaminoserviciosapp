@@ -20,6 +20,7 @@ import {
   BarChart3,
   Trophy,
   ShieldCheck,
+  Camera,
 } from 'lucide-react';
 import { routes } from '../../utils/routes';
 
@@ -263,6 +264,20 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     }
     if (canInspect) {
       list.push({ id: 'inspecciones', label: 'Inspecciones', hint: 'Realizar auditorías', icon: ClipboardCheck, href: '/inspecciones', role: 'manager', gradient: 'from-amber-500 via-orange-500 to-yellow-500' });
+    }
+    const canFotosTrabajo = shouldUseBackend
+      ? hasPermission('fotos-trabajo')
+      : isManager || isAdmin || isDeveloper;
+    if (canFotosTrabajo) {
+      list.push({
+        id: 'fotos-trabajo',
+        label: 'Fotos Trabajo',
+        hint: 'Fotos por comunidad y servicio',
+        icon: Camera,
+        href: '/fotos-trabajo',
+        role: 'manager',
+        gradient: 'from-cyan-500 via-sky-500 to-blue-600',
+      });
     }
     // ✅ ACTUALIZAT: Butonul "Pedidos" este mereu vizibil pentru toți angajații
     // Verificarea DerechoPedidos se face în EmpleadoPedidosPage

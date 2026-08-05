@@ -91,6 +91,7 @@ export class ServiciosPeriodicosController {
       mes: number;
       hecho: boolean;
       nota?: string | null;
+      fecha_realizacion?: string | null;
     },
     @CurrentUser() user: any,
   ) {

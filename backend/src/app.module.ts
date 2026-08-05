@@ -116,10 +116,14 @@ import { LeadsController } from './controllers/leads.controller';
 import { LeadsService } from './services/leads.service';
 import { EmpleadoGrupoScopeService } from './services/empleado-grupo-scope.service';
 import { PortalModule } from './portal/portal.module';
+import { StorageModule } from './storage/storage.module';
+import { FotosTrabajoModule } from './fotos-trabajo/fotos-trabajo.module';
 
 @Module({
   imports: [
     ConfigModule,
+    StorageModule,
+    FotosTrabajoModule,
     ScheduleModule.forRoot(), // Pentru cron jobs
     // Rate limiting: generos pentru app internă (Todas/Aprobación fac multe request-uri per empleado → 429)
     ThrottlerModule.forRoot([

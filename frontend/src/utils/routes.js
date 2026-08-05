@@ -276,6 +276,18 @@ export const routes = {
   serviciosPeriodicosClienteConfig: (clienteId) =>
     `${BACKEND_BASE}/api/servicios-periodicos/cliente-config/${encodeURIComponent(clienteId)}`,
 
+  // Fotos Trabajo (metadata DB + binaries Cloudflare R2)
+  fotosTrabajoComunidades: `${BACKEND_BASE}/api/fotos-trabajo/comunidades`,
+  fotosTrabajoAlbumes: `${BACKEND_BASE}/api/fotos-trabajo/albumes`,
+  fotosTrabajoAlbum: (id) =>
+    `${BACKEND_BASE}/api/fotos-trabajo/albumes/${encodeURIComponent(id)}`,
+  fotosTrabajoAlbumFotos: (id) =>
+    `${BACKEND_BASE}/api/fotos-trabajo/albumes/${encodeURIComponent(id)}/fotos`,
+  fotosTrabajoFotoUrl: (id) =>
+    `${BACKEND_BASE}/api/fotos-trabajo/fotos/${encodeURIComponent(id)}/url`,
+  fotosTrabajoFoto: (id) =>
+    `${BACKEND_BASE}/api/fotos-trabajo/fotos/${encodeURIComponent(id)}`,
+
   // GET /api/clientes/:nif/contracts
   /** CRUD contactos (JWT). clienteId = id numérico Clientes */
   clienteContactos: (clienteId) =>

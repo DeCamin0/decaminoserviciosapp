@@ -49,9 +49,14 @@
     "db:migrate:both": "node scripts/prisma-migrate-env.js .env.decamino.local && node scripts/prisma-migrate-env.js .env.hera.local",
     "db:migrate:contacto-emergencia": "node scripts/run-contacto-emergencia-migration.js .env.decamino.local && node scripts/run-contacto-emergencia-migration.js .env.hera.local",
     "db:migrate:servicios-periodicos": "node scripts/run-servicios-periodicos-migration.js .env.decamino.local",
-    "db:migrate:servicios-periodicos:both": "node scripts/run-servicios-periodicos-migration.js .env.decamino.local && node scripts/run-servicios-periodicos-migration.js .env.hera.local"
+    "db:migrate:servicios-periodicos:both": "node scripts/run-servicios-periodicos-migration.js .env.decamino.local && node scripts/run-servicios-periodicos-migration.js .env.hera.local",
+    "db:migrate:fotos-trabajo": "node scripts/run-fotos-trabajo-migration.js .env.decamino.local",
+    "db:migrate:fotos-trabajo:both": "node scripts/run-fotos-trabajo-migration.js .env.decamino.local && node scripts/run-fotos-trabajo-migration.js .env.hera.local",
+    "storage:r2-smoke": "node scripts/r2-smoke-test.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1103.0",
+    "@aws-sdk/s3-request-presigner": "^3.1103.0",
     "@nestjs/common": "^11.1.11",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.1.11",
@@ -77,8 +82,8 @@
     "iconv-lite": "^0.7.2",
     "image-size": "^2.0.2",
     "imapflow": "^1.4.2",
-    "multer": "^2.2.0",
     "mammoth": "^1.11.0",
+    "multer": "^2.2.0",
     "mysql2": "^3.15.3",
     "nodemailer": "^9.0.1",
     "openai": "^6.15.0",
@@ -169,8 +174,8 @@
     "axios": "^1.18.1",
     "adm-zip": "^0.6.0",
     "body-parser": "^2.2.3",
-    "brace-expansion": "5.0.8",
-    "fast-uri": "^4.1.1"
+    "brace-expansion": "5.0.9",
+    "fast-uri": "^4.1.2"
   },
   "jest": {
     "moduleFileExtensions": [

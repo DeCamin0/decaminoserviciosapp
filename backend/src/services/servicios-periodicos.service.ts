@@ -256,7 +256,8 @@ export class ServiciosPeriodicosService {
       where: { id: clienteId },
       select: { id: true },
     });
-    if (!existing) throw new NotFoundException(`Cliente ${clienteId} no encontrado`);
+    if (!existing)
+      throw new NotFoundException(`Cliente ${clienteId} no encontrado`);
 
     const patch: { servicios_periodicos?: boolean; ESTADO?: string } = {};
     if (typeof data.servicios_periodicos === 'boolean') {
@@ -314,6 +315,33 @@ export class ServiciosPeriodicosService {
     return this.getClienteConfig(clienteId);
   }
 
+  /** Parse YYYY-MM-DD (or ISO) into a DATE-safe UTC midnight. */
+  private parseFechaRealizacion(value?: string | Date | null): Date | null {
+    if (value == null || value === '') return null;
+    if (value instanceof Date) {
+      if (Number.isNaN(value.getTime())) {
+        throw new BadRequestException('fecha_realizacion inválida');
+      }
+      return value;
+    }
+    const s = String(value).trim();
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+    if (m) {
+      const y = Number(m[1]);
+      const mo = Number(m[2]);
+      const d = Number(m[3]);
+      if (mo < 1 || mo > 12 || d < 1 || d > 31) {
+        throw new BadRequestException('fecha_realizacion inválida');
+      }
+      return new Date(Date.UTC(y, mo - 1, d));
+    }
+    const parsed = new Date(s);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException('fecha_realizacion inválida');
+    }
+    return parsed;
+  }
+
   async upsertCheck(data: {
     cliente_id: number;
     tipo_id: number;
@@ -322,6 +350,7 @@ export class ServiciosPeriodicosService {
     hecho: boolean;
     nota?: string | null;
     hecho_por?: string | null;
+    fecha_realizacion?: string | Date | null;
   }) {
     const clienteId = Number(data.cliente_id);
     const tipoId = Number(data.tipo_id);
@@ -339,6 +368,22 @@ export class ServiciosPeriodicosService {
     if (!tipo) throw new NotFoundException(`Tipo ${tipoId} no encontrado`);
 
     const hecho = Boolean(data.hecho);
+    let fecha: Date | null = null;
+    if (hecho) {
+      if (
+        data.fecha_realizacion !== undefined &&
+        data.fecha_realizacion !== null &&
+        data.fecha_realizacion !== ''
+      ) {
+        fecha = this.parseFechaRealizacion(data.fecha_realizacion);
+      } else {
+        const now = new Date();
+        fecha = new Date(
+          Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()),
+        );
+      }
+    }
+
     try {
       return await this.prisma.servicioPeriodicoCheck.upsert({
         where: {
@@ -355,13 +400,13 @@ export class ServiciosPeriodicosService {
           an,
           mes,
           hecho,
-          fecha_realizacion: hecho ? new Date() : null,
+          fecha_realizacion: fecha,
           hecho_por: data.hecho_por || null,
           nota: data.nota ?? null,
         },
         update: {
           hecho,
-          fecha_realizacion: hecho ? new Date() : null,
+          fecha_realizacion: fecha,
           hecho_por: data.hecho_por || null,
           ...(data.nota !== undefined ? { nota: data.nota } : {}),
         },

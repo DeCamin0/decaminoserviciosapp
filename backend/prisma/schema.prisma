@@ -366,6 +366,7 @@ model Clientes {
   facturasManuales         ClienteFacturaManual[]
   inspeccionDocumentos     ClienteInspeccionDocumento[]
   spClienteTipos           ServicioPeriodicoClienteTipo[]
+  fotosTrabajoAlbumes      FotosTrabajoAlbum[]
 }
 
 /// Personas de contacto por comunidad/cliente (roles flexibles; portal y notificaciones por contacto).
@@ -2127,4 +2128,42 @@ model ServicioPeriodicoCheck {
   @@index([an, mes], map: "idx_sp_check_an_mes")
   @@index([cliente_id, an], map: "idx_sp_check_cliente_an")
   @@map("servicios_periodicos_checks")
+}
+
+// ============================================
+// FOTOS TRABAJO – comunidad (Cliente) → álbum/servicio → fotos en R2
+// ============================================
+
+model FotosTrabajoAlbum {
+  id              Int                 @id @default(autoincrement())
+  cliente_id      Int                 @map("cliente_id")
+  titulo          String              @db.VarChar(500)
+  fecha_servicio  DateTime?           @map("fecha_servicio") @db.Date
+  notas           String?             @db.VarChar(1000)
+  creado_por      String              @map("creado_por") @db.VarChar(50)
+  created_at      DateTime            @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at      DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamp(0)
+  cliente         Clientes            @relation(fields: [cliente_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_ft_album_cliente")
+  fotos           FotosTrabajoFoto[]
+
+  @@index([cliente_id, created_at], map: "idx_ft_album_cliente_created")
+  @@index([fecha_servicio], map: "idx_ft_album_fecha")
+  @@map("fotos_trabajo_albumes")
+}
+
+model FotosTrabajoFoto {
+  id               Int               @id @default(autoincrement())
+  album_id         Int               @map("album_id")
+  storage_key      String            @map("storage_key") @db.VarChar(700)
+  storage_bucket   String?           @map("storage_bucket") @db.VarChar(120)
+  mime_type        String?           @map("mime_type") @db.VarChar(100)
+  tamano_bytes     Int?              @map("tamano_bytes")
+  nombre_original  String?           @map("nombre_original") @db.VarChar(255)
+  uploaded_by      String            @map("uploaded_by") @db.VarChar(50)
+  created_at       DateTime          @default(now()) @map("created_at") @db.Timestamp(0)
+  album            FotosTrabajoAlbum @relation(fields: [album_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_ft_foto_album")
+
+  @@index([album_id, created_at], map: "idx_ft_foto_album_created")
+  @@unique([storage_key], map: "uq_ft_foto_storage_key")
+  @@map("fotos_trabajo_fotos")
 }

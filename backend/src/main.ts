@@ -209,7 +209,7 @@ async function bootstrap() {
       );
       return res.status(413).json({
         success: false,
-        message: 'El archivo es demasiado grande. Tamaño máximo: 50MB',
+        message: 'El archivo es demasiado grande. Tamaño máximo: 100MB',
         error: 'FILE_TOO_LARGE',
       });
     }
@@ -217,7 +217,7 @@ async function bootstrap() {
       console.error(`[Main] File too large error: ${error.message}`);
       return res.status(413).json({
         success: false,
-        message: 'El archivo es demasiado grande. Tamaño máximo: 50MB',
+        message: 'El archivo es demasiado grande. Tamaño máximo: 100MB',
         error: 'FILE_TOO_LARGE',
       });
     }

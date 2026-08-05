@@ -6,6 +6,7 @@ import n8nConfig from './n8n.config';
 import databaseConfig from './database.config';
 import jwtConfig from './jwt.config';
 import companyConfig from './company.config';
+import storageConfig from './storage.config';
 
 const envPath = join(process.cwd(), process.env.ENV_FILE || '.env');
 console.log('[ConfigModule] Looking for .env at:', envPath);
@@ -18,7 +19,13 @@ console.log('[ConfigModule] DB_HOST from process.env:', process.env.DB_HOST);
     NestConfigModule.forRoot({
       isGlobal: true,
       envFilePath: envPath,
-      load: [n8nConfig, databaseConfig, jwtConfig, companyConfig],
+      load: [
+        n8nConfig,
+        databaseConfig,
+        jwtConfig,
+        companyConfig,
+        storageConfig,
+      ],
     }),
   ],
 })
