@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PushService } from '../services/push.service';
@@ -36,7 +37,6 @@ export class ComunicadosService {
         publicado: true,
         nombre_archivo: true,
         storage_key: true,
-        archivo: false, // Nu returnăm conținutul fișierului în listă
         created_at: true,
         updated_at: true,
         leidos: {
@@ -210,7 +210,11 @@ export class ComunicadosService {
   ) {
     const publicado = data.publicado ?? false;
     const hasFile = !!(data.archivo && data.archivo.length > 0);
-    const useR2 = hasFile && this.comunicadosStorage.isWriteEnabled();
+    if (hasFile && !this.comunicadosStorage.isWriteEnabled()) {
+      throw new ServiceUnavailableException(
+        'R2 no está habilitado. Configura R2_ENABLED=true y credenciales.',
+      );
+    }
 
     let comunicado = await this.prisma.comunicado.create({
       data: {
@@ -218,12 +222,11 @@ export class ComunicadosService {
         contenido: data.contenido,
         autor_id: autorId,
         publicado,
-        archivo: useR2 ? null : (data.archivo ?? null),
         nombre_archivo: data.nombre_archivo ?? null,
       },
     });
 
-    if (hasFile && useR2) {
+    if (hasFile) {
       const put = await this.comunicadosStorage.putArchivo(
         data.archivo!,
         comunicado.id,
@@ -236,7 +239,6 @@ export class ComunicadosService {
           storage_key: put.storage_key,
           storage_bucket: put.storage_bucket,
           tamano_bytes: put.tamano_bytes,
-          archivo: null,
           nombre_archivo: data.nombre_archivo ?? null,
         },
       });
@@ -302,39 +304,35 @@ export class ComunicadosService {
       if (data.archivo === null) {
         // Ștergere atașament
         oldStorageKeyToDelete = existing.storage_key;
-        updateData.archivo = null;
         updateData.nombre_archivo = null;
         updateData.storage_key = null;
         updateData.storage_bucket = null;
         updateData.tamano_bytes = null;
       } else if (data.archivo.length > 0) {
-        if (this.comunicadosStorage.isWriteEnabled()) {
-          const put = await this.comunicadosStorage.putArchivo(
-            data.archivo,
-            id,
-            data.nombre_archivo ||
-              existing.nombre_archivo ||
-              `comunicado_${id}`,
-            data.mime_hint,
+        if (!this.comunicadosStorage.isWriteEnabled()) {
+          throw new ServiceUnavailableException(
+            'R2 no está habilitado. Configura R2_ENABLED=true y credenciales.',
           );
-          if (
-            existing.storage_key &&
-            existing.storage_key !== put.storage_key
-          ) {
-            oldStorageKeyToDelete = existing.storage_key;
-          }
-          updateData.storage_key = put.storage_key;
-          updateData.storage_bucket = put.storage_bucket;
-          updateData.tamano_bytes = put.tamano_bytes;
-          updateData.archivo = null;
-          if (data.nombre_archivo !== undefined) {
-            updateData.nombre_archivo = data.nombre_archivo;
-          }
-        } else {
-          updateData.archivo = data.archivo;
-          if (data.nombre_archivo !== undefined) {
-            updateData.nombre_archivo = data.nombre_archivo;
-          }
+        }
+        const put = await this.comunicadosStorage.putArchivo(
+          data.archivo,
+          id,
+          data.nombre_archivo ||
+            existing.nombre_archivo ||
+            `comunicado_${id}`,
+          data.mime_hint,
+        );
+        if (
+          existing.storage_key &&
+          existing.storage_key !== put.storage_key
+        ) {
+          oldStorageKeyToDelete = existing.storage_key;
+        }
+        updateData.storage_key = put.storage_key;
+        updateData.storage_bucket = put.storage_bucket;
+        updateData.tamano_bytes = put.tamano_bytes;
+        if (data.nombre_archivo !== undefined) {
+          updateData.nombre_archivo = data.nombre_archivo;
         }
       }
     } else if (data.nombre_archivo !== undefined) {
@@ -434,45 +432,48 @@ export class ComunicadosService {
   }
 
   /**
-   * Adaugă coloanele archivo și nombre_archivo în tabel (debug/fix)
+   * Asigură metadata R2 pe comunicados (debug/fix). Nu recreează LONGBLOB.
    */
   async addMissingColumns() {
     try {
-      // Verifică dacă coloanele există
       const columns = await this.prisma.$queryRawUnsafe<any[]>(`
         SELECT COLUMN_NAME
         FROM INFORMATION_SCHEMA.COLUMNS 
         WHERE TABLE_SCHEMA = DATABASE() 
         AND TABLE_NAME = 'comunicados'
-        AND COLUMN_NAME IN ('archivo', 'nombre_archivo')
+        AND COLUMN_NAME IN ('nombre_archivo', 'storage_key', 'storage_bucket', 'tamano_bytes')
       `);
 
       const existingColumns = columns.map((col) => col.COLUMN_NAME);
       const toAdd: string[] = [];
 
-      if (!existingColumns.includes('archivo')) {
-        toAdd.push('ADD COLUMN archivo LONGBLOB NULL');
-      }
-
       if (!existingColumns.includes('nombre_archivo')) {
         toAdd.push('ADD COLUMN nombre_archivo VARCHAR(255) NULL');
+      }
+      if (!existingColumns.includes('storage_key')) {
+        toAdd.push('ADD COLUMN storage_key VARCHAR(700) NULL');
+      }
+      if (!existingColumns.includes('storage_bucket')) {
+        toAdd.push('ADD COLUMN storage_bucket VARCHAR(120) NULL');
+      }
+      if (!existingColumns.includes('tamano_bytes')) {
+        toAdd.push('ADD COLUMN tamano_bytes INT NULL');
       }
 
       if (toAdd.length === 0) {
         return {
           success: true,
-          message: 'Todas las columnas ya existen',
+          message: 'Todas las columnas R2 ya existen',
           columns_added: [],
         };
       }
 
-      // Adaugă coloanele
       const alterQuery = `ALTER TABLE comunicados ${toAdd.join(', ')}`;
       await this.prisma.$executeRawUnsafe(alterQuery);
 
       return {
         success: true,
-        message: 'Columnas añadidas correctamente',
+        message: 'Columnas R2 añadidas correctamente',
         columns_added: toAdd,
       };
     } catch (error: any) {
@@ -603,7 +604,6 @@ export class ComunicadosService {
     const comunicado = await this.prisma.comunicado.findUnique({
       where: { id },
       select: {
-        archivo: true,
         nombre_archivo: true,
         storage_key: true,
       },
@@ -614,7 +614,6 @@ export class ComunicadosService {
     }
 
     const archivoBuffer = await this.comunicadosStorage.resolveArchivo({
-      archivo: comunicado.archivo,
       storage_key: comunicado.storage_key,
     });
 

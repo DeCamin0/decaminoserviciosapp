@@ -172,7 +172,6 @@ model Comunicado {
   contenido      String            @db.Text
   autor_id       String            @map("autor_id") @db.VarChar(50)
   publicado      Boolean           @default(false)
-  archivo        Bytes?            @map("archivo")
   nombre_archivo String?           @map("nombre_archivo") @db.VarChar(255)
   storage_key    String?           @map("storage_key") @db.VarChar(700)
   storage_bucket String?           @map("storage_bucket") @db.VarChar(120)

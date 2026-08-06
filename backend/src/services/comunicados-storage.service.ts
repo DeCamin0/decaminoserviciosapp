@@ -8,7 +8,6 @@ import { StorageService } from '../storage/storage.service';
 import { buildObjectKey } from '../storage/object-key.util';
 
 export type ComunicadoStorageRow = {
-  archivo?: unknown;
   storage_key?: string | null;
 };
 
@@ -108,53 +107,19 @@ export class ComunicadosStorageService {
     };
   }
 
-  coerceArchivoBuffer(archivo: unknown): Buffer {
-    if (archivo == null) {
-      throw new BadRequestException(
-        'Columna "archivo" no está disponible para este comunicado',
-      );
-    }
-    if (Buffer.isBuffer(archivo)) return archivo;
-    if (
-      typeof archivo === 'object' &&
-      archivo !== null &&
-      (archivo as { type?: string }).type === 'Buffer' &&
-      Array.isArray((archivo as { data?: unknown }).data)
-    ) {
-      return Buffer.from((archivo as { data: number[] }).data);
-    }
-    if (typeof archivo === 'string') {
-      return Buffer.from(archivo, 'base64');
-    }
-    if (archivo instanceof Uint8Array) {
-      return Buffer.from(archivo);
-    }
-    throw new BadRequestException(
-      'Formato desconocido para el campo "archivo"',
-    );
-  }
-
-  /**
-   * Dual-read: prefer R2 via storage_key, fall back to LONGBLOB archivo.
-   * After drop-archivo migration this becomes R2-only (blob path unused).
-   */
+  /** R2-only after comunicados.archivo DROP. */
   async resolveArchivo(row: ComunicadoStorageRow): Promise<Buffer> {
     const key = row.storage_key ? String(row.storage_key).trim() : '';
-    if (key) {
-      if (!this.storage.isEnabled()) {
-        throw new ServiceUnavailableException(
-          'Comunicado está en R2 pero R2 no está habilitado',
-        );
-      }
-      const obj = await this.storage.get(key);
-      return Buffer.from(obj.body);
+    if (!key) {
+      throw new BadRequestException('Este comunicado no tiene archivo adjunto');
     }
-
-    if (row.archivo != null) {
-      return this.coerceArchivoBuffer(row.archivo);
+    if (!this.storage.isEnabled()) {
+      throw new ServiceUnavailableException(
+        'Comunicado está en R2 pero R2 no está habilitado',
+      );
     }
-
-    throw new BadRequestException('Este comunicado no tiene archivo adjunto');
+    const obj = await this.storage.get(key);
+    return Buffer.from(obj.body);
   }
 
   async deleteObjectIfAny(
