@@ -3,6 +3,10 @@ import { randomUUID } from 'crypto';
 import { NotificationsGateway } from '../gateways/notifications.gateway';
 import { PrismaService } from '../prisma/prisma.service';
 import { PushService } from './push.service';
+import {
+  getNotificationInventory,
+  NotificationKindMeta,
+} from '../notifications/notification-kinds';
 
 /**
  * Service pentru gestionarea notificărilor
@@ -323,6 +327,139 @@ export class NotificationsService {
   }
 
   /**
+   * Inventar central: toate tipurile de notificări cunoscute în app.
+   */
+  getNotificationInventory(): NotificationKindMeta[] {
+    return getNotificationInventory();
+  }
+
+  /**
+   * Historial admin: reminder-uri de fichaje trimise (in-app / push).
+   */
+  async listFichajeReminders(options?: {
+    limit?: number;
+    offset?: number;
+    startDate?: string;
+    endDate?: string;
+    q?: string;
+  }): Promise<{
+    total: number;
+    items: Array<{
+      id: string;
+      userId: string;
+      nombre: string | null;
+      title: string;
+      message: string;
+      type: string;
+      read: boolean;
+      createdAt: Date;
+      tipo: string | null;
+      horario: string | null;
+      estado: string | null;
+      centro: string | null;
+      grupo: string | null;
+    }>;
+  }> {
+    const limit = Math.min(Math.max(Number(options?.limit) || 50, 1), 200);
+    const offset = Math.max(Number(options?.offset) || 0, 0);
+
+    const escape = (v: string) =>
+      `'${String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+
+    const whereParts = [
+      `(n.data LIKE '%"kind":"FICHAJE_REMINDER"%' OR n.data LIKE '%FICHAJE_REMINDER%')`,
+    ];
+
+    if (options?.startDate && /^\d{4}-\d{2}-\d{2}$/.test(options.startDate)) {
+      whereParts.push(`DATE(n.created_at) >= ${escape(options.startDate)}`);
+    }
+    if (options?.endDate && /^\d{4}-\d{2}-\d{2}$/.test(options.endDate)) {
+      whereParts.push(`DATE(n.created_at) <= ${escape(options.endDate)}`);
+    }
+    if (options?.q && String(options.q).trim()) {
+      const q = String(options.q).trim();
+      whereParts.push(
+        `(n.user_id LIKE ${escape(`%${q}%`)} OR e.\`NOMBRE / APELLIDOS\` LIKE ${escape(`%${q}%`)} OR n.title LIKE ${escape(`%${q}%`)} OR n.message LIKE ${escape(`%${q}%`)})`,
+      );
+    }
+
+    const whereSql = whereParts.join(' AND ');
+
+    try {
+      const countRows = await this.prisma.$queryRawUnsafe<
+        Array<{ total: number }>
+      >(
+        `SELECT COUNT(*) AS total
+         FROM notifications n
+         LEFT JOIN \`DatosEmpleados\` e ON TRIM(e.\`CODIGO\`) = TRIM(n.user_id)
+         WHERE ${whereSql}`,
+      );
+      const total = Number(countRows?.[0]?.total || 0);
+
+      const rows = await this.prisma.$queryRawUnsafe<
+        Array<{
+          id: string;
+          userId: string;
+          nombre: string | null;
+          title: string;
+          message: string;
+          type: string;
+          readFlag: number | boolean;
+          createdAt: Date;
+          data: string | null;
+        }>
+      >(
+        `SELECT
+           n.id AS id,
+           n.user_id AS userId,
+           e.\`NOMBRE / APELLIDOS\` AS nombre,
+           n.title AS title,
+           n.message AS message,
+           n.type AS type,
+           n.\`read\` AS readFlag,
+           n.created_at AS createdAt,
+           n.data AS data
+         FROM notifications n
+         LEFT JOIN \`DatosEmpleados\` e ON TRIM(e.\`CODIGO\`) = TRIM(n.user_id)
+         WHERE ${whereSql}
+         ORDER BY n.created_at DESC
+         LIMIT ${limit} OFFSET ${offset}`,
+      );
+
+      const items = (rows || []).map((r) => {
+        let parsed: any = null;
+        if (r.data) {
+          try {
+            parsed = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+          } catch {
+            parsed = null;
+          }
+        }
+        return {
+          id: r.id,
+          userId: r.userId,
+          nombre: r.nombre || null,
+          title: r.title,
+          message: r.message,
+          type: r.type,
+          read: Boolean(r.readFlag),
+          createdAt: r.createdAt,
+          tipo: parsed?.tipo ?? null,
+          horario: parsed?.horario ?? null,
+          estado: parsed?.estado ?? null,
+          centro: parsed?.centro ?? null,
+          grupo: parsed?.grupo ?? null,
+        };
+      });
+
+      return { total, items };
+    } catch (err: any) {
+      this.logger.error(`listFichajeReminders failed: ${err?.message || err}`);
+      return { total: 0, items: [] };
+    }
+  }
+
+  /**
    * Exemplu: Notificare când un fichaje este aprobat
    */
   notifyFichajeApproved(senderId: string, userId: string, fichajeData: any) {
@@ -330,7 +467,7 @@ export class NotificationsService {
       type: 'success',
       title: 'Fichaje aprobat',
       message: `Fichajul tău din ${fichajeData.fecha} a fost aprobat.`,
-      data: fichajeData,
+      data: { ...fichajeData, kind: 'FICHAJE_APPROVED' },
     });
   }
 

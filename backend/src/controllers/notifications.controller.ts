@@ -61,6 +61,52 @@ export class NotificationsController {
   }
 
   /**
+   * Inventar al tipurilor de notificări (kind + canal + surse).
+   */
+  @Get('kinds')
+  getNotificationKinds() {
+    return {
+      success: true,
+      kinds: this.notificationsService.getNotificationInventory(),
+    };
+  }
+
+  /**
+   * Historial admin: recordatorios de fichaje enviados (push / in-app).
+   */
+  @Get('fichaje-reminders')
+  async listFichajeReminders(
+    @CurrentUser() user: any,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('q') q?: string,
+  ) {
+    if (!this.notificationsService.canSendNotifications(user?.grupo || '')) {
+      return {
+        success: false,
+        message: 'Sin permiso',
+        total: 0,
+        items: [],
+      };
+    }
+
+    const result = await this.notificationsService.listFichajeReminders({
+      limit: limit ? parseInt(limit, 10) : 50,
+      offset: offset ? parseInt(offset, 10) : 0,
+      startDate,
+      endDate,
+      q,
+    });
+
+    return {
+      success: true,
+      ...result,
+    };
+  }
+
+  /**
    * Marchează o notificare ca citită
    */
   @Put(':id/read')

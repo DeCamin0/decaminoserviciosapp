@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { routes } from '../utils/routes';
 import Back3DButton from '../components/Back3DButton.jsx';
 import { Button, Modal } from '../components/ui';
@@ -77,8 +77,10 @@ export default function MisTareasPage() {
   const [nota, setNota] = useState('');
   const [files, setFiles] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadingFotos, setUploadingFotos] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const fileInputRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -116,12 +118,46 @@ export default function MisTareasPage() {
 
   const openCompletar = (tarea) => {
     setCompleting(tarea);
-    setNota('');
+    setNota(tarea.nota_completado || '');
     setFiles([]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const clearFileInput = () => {
+    setFiles([]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  /** Sube el lote actual y deja el modal abierto para más fotos. */
+  const submitUploadFotos = async () => {
+    if (!completing || files.length === 0) return;
+    setUploadingFotos(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      for (const f of files) fd.append('files', f);
+      const updated = await apiJson(routes.tareaFotos(completing.id), {
+        method: 'POST',
+        headers: authHeaders(false),
+        body: fd,
+      });
+      setCompleting(updated);
+      clearFileInput();
+      await load();
+    } catch (e) {
+      setError(e.message || 'No se pudieron subir las fotos');
+    } finally {
+      setUploadingFotos(false);
+    }
   };
 
   const submitCompletar = async () => {
     if (!completing) return;
+    if (completing.estado === 'hecha') {
+      // Ya hecha: solo cerrar (fotos se añaden con "Subir fotos")
+      setCompleting(null);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -134,6 +170,7 @@ export default function MisTareasPage() {
         body: fd,
       });
       setCompleting(null);
+      clearFileInput();
       await load();
     } catch (e) {
       setError(e.message || 'No se pudo completar la tarea');
@@ -155,6 +192,8 @@ export default function MisTareasPage() {
 
   const activas = tareas.filter((t) => t.estado === 'pendiente' || t.estado === 'en_curso');
   const historial = tareas.filter((t) => t.estado === 'hecha' || t.estado === 'cancelada');
+  const fotosSubidas = completing?.fotos?.length || 0;
+  const yaHecha = completing?.estado === 'hecha';
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white pb-24">
@@ -214,6 +253,9 @@ export default function MisTareasPage() {
                           <p>Límite: {new Date(t.fecha_limite).toLocaleString()}</p>
                         )}
                         {t.nombre_creador && <p>Asignada por: {t.nombre_creador}</p>}
+                        {t.fotos?.length > 0 && (
+                          <p className="text-emerald-700">{t.fotos.length} foto(s) ya subida(s)</p>
+                        )}
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {t.estado === 'pendiente' && (
@@ -272,6 +314,13 @@ export default function MisTareasPage() {
                           ))}
                         </div>
                       )}
+                      {t.estado === 'hecha' && (
+                        <div className="mt-3">
+                          <Button variant="secondary" onClick={() => openCompletar(t)}>
+                            Añadir más fotos
+                          </Button>
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -283,28 +332,56 @@ export default function MisTareasPage() {
 
       <Modal
         isOpen={Boolean(completing)}
-        onClose={() => !submitting && setCompleting(null)}
-        title="Completar tarea"
+        onClose={() => !submitting && !uploadingFotos && setCompleting(null)}
+        title={yaHecha ? 'Añadir fotos' : 'Completar tarea'}
         size="md"
       >
         {completing && (
           <div className="space-y-4">
             <p className="text-sm font-medium text-slate-800">{completing.titulo}</p>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nota (opcional)</label>
-              <textarea
-                value={nota}
-                onChange={(e) => setNota(e.target.value)}
-                rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--primary-color)] focus:border-[var(--primary-color)]"
-                placeholder="Qué se hizo, observaciones…"
-              />
-            </div>
+            <p className="text-xs text-slate-500">
+              Puedes subir fotos varias veces. Selecciona un lote, pulsa «Subir fotos», y repite si olvidaste alguna.
+            </p>
+
+            {!yaHecha && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nota (opcional)</label>
+                <textarea
+                  value={nota}
+                  onChange={(e) => setNota(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--primary-color)] focus:border-[var(--primary-color)]"
+                  placeholder="Qué se hizo, observaciones…"
+                />
+              </div>
+            )}
+
+            {fotosSubidas > 0 && (
+              <div>
+                <p className="text-xs uppercase text-slate-400 mb-2">
+                  Fotos subidas ({fotosSubidas})
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {completing.fotos.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => openFoto(completing.id, f.id)}
+                      className="text-xs px-2 py-1 rounded bg-slate-50 border border-slate-200 text-sky-700 hover:bg-sky-50"
+                    >
+                      {f.nombre_original || `Foto ${f.id}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Fotos (recomendado)
+                Nuevas fotos
               </label>
               <input
+                ref={fileInputRef}
                 type="file"
                 accept="image/*"
                 multiple
@@ -312,16 +389,36 @@ export default function MisTareasPage() {
                 className="block w-full text-sm text-slate-600"
               />
               {files.length > 0 && (
-                <p className="text-xs text-slate-500 mt-1">{files.length} archivo(s)</p>
+                <p className="text-xs text-slate-500 mt-1">{files.length} archivo(s) pendientes de subir</p>
               )}
             </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <Button variant="secondary" onClick={() => setCompleting(null)} disabled={submitting}>
-                Cancelar
+
+            <div className="flex flex-wrap justify-end gap-3 pt-2">
+              <Button
+                variant="secondary"
+                onClick={() => setCompleting(null)}
+                disabled={submitting || uploadingFotos}
+              >
+                {yaHecha ? 'Cerrar' : 'Cancelar'}
               </Button>
-              <Button variant="primary" onClick={submitCompletar} loading={submitting} disabled={submitting}>
-                {submitting ? 'Enviando…' : 'Marcar hecha'}
+              <Button
+                variant="secondary"
+                onClick={submitUploadFotos}
+                loading={uploadingFotos}
+                disabled={submitting || uploadingFotos || files.length === 0}
+              >
+                {uploadingFotos ? 'Subiendo…' : 'Subir fotos'}
               </Button>
+              {!yaHecha && (
+                <Button
+                  variant="primary"
+                  onClick={submitCompletar}
+                  loading={submitting}
+                  disabled={submitting || uploadingFotos}
+                >
+                  {submitting ? 'Enviando…' : 'Marcar hecha'}
+                </Button>
+              )}
             </div>
           </div>
         )}

@@ -620,43 +620,7 @@ export class TareasService {
       throw new BadRequestException('La tarea ya está completada');
     }
 
-    if (files?.length && !this.storage.isEnabled()) {
-      throw new BadRequestException(
-        'Almacenamiento de fotos no disponible (R2). Completa sin fotos o contacta a administración.',
-      );
-    }
-
-    const uploaded: Array<{
-      storage_key: string;
-      storage_bucket: string | null;
-      mime_type: string | null;
-      tamano_bytes: number | null;
-      nombre_original: string | null;
-      uploaded_by: string;
-    }> = [];
-
-    for (const file of files || []) {
-      const key = this.storage.buildObjectKey({
-        app: 'decamino',
-        tenant: this.tenantSlug(),
-        domain: 'tareas-servicio',
-        scopeId: String(id),
-        originalName: file.originalname,
-      });
-      const put = await this.storage.put({
-        key,
-        body: file.buffer,
-        contentType: file.mimetype || 'application/octet-stream',
-      });
-      uploaded.push({
-        storage_key: put.key,
-        storage_bucket: put.bucket || null,
-        mime_type: file.mimetype || null,
-        tamano_bytes: file.size ?? null,
-        nombre_original: file.originalname || null,
-        uploaded_by: codigo,
-      });
-    }
+    const uploaded = await this.uploadTareaFotos(id, codigo, files || []);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       if (uploaded.length) {
@@ -676,6 +640,100 @@ export class TareasService {
     });
 
     return this.serialize(updated);
+  }
+
+  /**
+   * Sube fotos adicionales sin marcar la tarea como hecha.
+   * Permite varios uploads (también si ya está hecha). No permitido si cancelada.
+   */
+  async addFotos(user: any, id: number, files: Express.Multer.File[]) {
+    const tarea = await this.prisma.tareaServicio.findUnique({ where: { id } });
+    if (!tarea) throw new NotFoundException('Tarea no encontrada');
+
+    const codigo = this.codigoOf(user);
+    const canManage = await this.hasModule(this.grupoOf(user), MODULE_MANAGE);
+    const isAssignee = tarea.codigo_asignado === codigo;
+    if (!canManage && !isAssignee) {
+      throw new ForbiddenException('Sin permiso para subir fotos a esta tarea');
+    }
+    if (tarea.estado === 'cancelada') {
+      throw new BadRequestException('La tarea está cancelada');
+    }
+    if (!files?.length) {
+      throw new BadRequestException('Selecciona al menos una foto');
+    }
+
+    const uploaded = await this.uploadTareaFotos(id, codigo, files);
+    if (!uploaded.length) {
+      throw new BadRequestException('No se pudo subir ninguna foto');
+    }
+
+    await this.prisma.tareaServicioFoto.createMany({
+      data: uploaded.map((u) => ({ ...u, tarea_id: id })),
+    });
+
+    const updated = await this.prisma.tareaServicio.findUnique({
+      where: { id },
+      include: { fotos: { orderBy: { created_at: 'asc' } } },
+    });
+    return this.serialize(updated);
+  }
+
+  private async uploadTareaFotos(
+    tareaId: number,
+    codigo: string,
+    files: Express.Multer.File[],
+  ): Promise<
+    Array<{
+      storage_key: string;
+      storage_bucket: string | null;
+      mime_type: string | null;
+      tamano_bytes: number | null;
+      nombre_original: string | null;
+      uploaded_by: string;
+    }>
+  > {
+    if (!files?.length) return [];
+
+    if (!this.storage.isEnabled()) {
+      throw new BadRequestException(
+        'Almacenamiento de fotos no disponible (R2). Completa sin fotos o contacta a administración.',
+      );
+    }
+
+    const uploaded: Array<{
+      storage_key: string;
+      storage_bucket: string | null;
+      mime_type: string | null;
+      tamano_bytes: number | null;
+      nombre_original: string | null;
+      uploaded_by: string;
+    }> = [];
+
+    for (const file of files) {
+      const key = this.storage.buildObjectKey({
+        app: 'decamino',
+        tenant: this.tenantSlug(),
+        domain: 'tareas-servicio',
+        scopeId: String(tareaId),
+        originalName: file.originalname,
+      });
+      const put = await this.storage.put({
+        key,
+        body: file.buffer,
+        contentType: file.mimetype || 'application/octet-stream',
+      });
+      uploaded.push({
+        storage_key: put.key,
+        storage_bucket: put.bucket || null,
+        mime_type: file.mimetype || null,
+        tamano_bytes: file.size ?? null,
+        nombre_original: file.originalname || null,
+        uploaded_by: codigo,
+      });
+    }
+
+    return uploaded;
   }
 
   private tenantSlug(): string {

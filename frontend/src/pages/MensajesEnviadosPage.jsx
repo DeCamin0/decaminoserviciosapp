@@ -13,7 +13,7 @@ export default function MensajesEnviadosPage() {
   const { user: authUser } = useAuth();
   
   // State pentru formular trimitere email
-  const [activeTab, setActiveTab] = useState('enviar'); // 'enviar' | 'historial' | 'automaticos' | 'chatAi'
+  const [activeTab, setActiveTab] = useState('enviar'); // 'enviar' | 'historial' | 'automaticos' | 'chatAi' | 'fichajeReminders'
   /** Historical Chat AI (arhiva asistent) */
   const [chatAiEmpleadoSearch, setChatAiEmpleadoSearch] = useState('');
   const [chatAiSelectedEmpleado, setChatAiSelectedEmpleado] = useState(null);
@@ -65,6 +65,16 @@ export default function MensajesEnviadosPage() {
   });
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
+
+  // Historial recordatorios fichaje (push)
+  const [fichajeReminders, setFichajeReminders] = useState([]);
+  const [fichajeRemindersTotal, setFichajeRemindersTotal] = useState(0);
+  const [loadingFichajeReminders, setLoadingFichajeReminders] = useState(false);
+  const [fichajeReminderFilters, setFichajeReminderFilters] = useState({
+    q: '',
+    startDate: '',
+    endDate: '',
+  });
   
   // Helper function pentru traducerea tipului de destinatar
   const translateRecipientType = (type) => {
@@ -291,10 +301,49 @@ export default function MensajesEnviadosPage() {
       loadSentEmails(false);
     } else if (activeTab === 'automaticos') {
       loadScheduledMessages();
+    } else if (activeTab === 'fichajeReminders' && canManageEmails) {
+      loadFichajeReminders();
     }
     // Eliminăm loadSentEmails din dependențe pentru a preveni loop-ul infinit
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, filters.recipientType, filters.status, filters.startDate, filters.endDate, canManageEmails]);
+  }, [activeTab, filters.recipientType, filters.status, filters.startDate, filters.endDate, canManageEmails, fichajeReminderFilters.startDate, fichajeReminderFilters.endDate]);
+
+  const loadFichajeReminders = useCallback(async () => {
+    setLoadingFichajeReminders(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) return;
+      const response = await fetch(
+        routes.fichajeRemindersHistorial({
+          limit: 100,
+          offset: 0,
+          q: fichajeReminderFilters.q || undefined,
+          startDate: fichajeReminderFilters.startDate || undefined,
+          endDate: fichajeReminderFilters.endDate || undefined,
+        }),
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.success === false) {
+        setFichajeReminders([]);
+        setFichajeRemindersTotal(0);
+        return;
+      }
+      setFichajeReminders(Array.isArray(data.items) ? data.items : []);
+      setFichajeRemindersTotal(Number(data.total) || 0);
+    } catch (err) {
+      console.error('Error loading fichaje reminders:', err);
+      setFichajeReminders([]);
+      setFichajeRemindersTotal(0);
+    } finally {
+      setLoadingFichajeReminders(false);
+    }
+  }, [fichajeReminderFilters.q, fichajeReminderFilters.startDate, fichajeReminderFilters.endDate]);
 
   // Infinite scroll - detectează când utilizatorul ajunge jos (opțional - funcționează în background)
   useEffect(() => {
@@ -847,6 +896,17 @@ export default function MensajesEnviadosPage() {
             </button>
             <button
               type="button"
+              onClick={() => setActiveTab('fichajeReminders')}
+              className={`px-6 py-3 rounded-xl font-bold transition-all duration-300 ${
+                activeTab === 'fichajeReminders'
+                  ? 'bg-gradient-to-r from-violet-500 to-indigo-600 text-white shadow-lg'
+                  : 'bg-white text-violet-600 border-2 border-violet-200 hover:bg-violet-50'
+              }`}
+            >
+              🔔 Recordatorios fichaje
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveTab('chatAi')}
               className={`px-6 py-3 rounded-xl font-bold transition-all duration-300 ${
                 activeTab === 'chatAi'
@@ -1354,6 +1414,143 @@ export default function MensajesEnviadosPage() {
               {/* Total */}
               <div className="text-sm text-gray-600">
                 Total: {totalEmails} mensajes {sentEmails.length < totalEmails && `(mostrando ${sentEmails.length})`}
+              </div>
+            </div>
+          )}
+
+          {/* Tab Recordatorios fichaje */}
+          {activeTab === 'fichajeReminders' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-800">Recordatorios de fichaje</h2>
+                  <p className="text-sm text-gray-600">
+                    Historial de avisos push / in-app enviados a empleados
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  onClick={() => loadFichajeReminders()}
+                  disabled={loadingFichajeReminders}
+                  loading={loadingFichajeReminders}
+                >
+                  Actualizar
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <Input
+                  label="Buscar"
+                  value={fichajeReminderFilters.q}
+                  onChange={(e) =>
+                    setFichajeReminderFilters((prev) => ({ ...prev, q: e.target.value }))
+                  }
+                  placeholder="Nombre, código, mensaje…"
+                />
+                <Input
+                  label="Desde"
+                  type="date"
+                  value={fichajeReminderFilters.startDate}
+                  onChange={(e) =>
+                    setFichajeReminderFilters((prev) => ({
+                      ...prev,
+                      startDate: e.target.value,
+                    }))
+                  }
+                />
+                <Input
+                  label="Hasta"
+                  type="date"
+                  value={fichajeReminderFilters.endDate}
+                  onChange={(e) =>
+                    setFichajeReminderFilters((prev) => ({
+                      ...prev,
+                      endDate: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="primary"
+                  onClick={() => loadFichajeReminders()}
+                  disabled={loadingFichajeReminders}
+                >
+                  Filtrar
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setFichajeReminderFilters({ q: '', startDate: '', endDate: '' });
+                  }}
+                >
+                  Limpiar
+                </Button>
+              </div>
+
+              {loadingFichajeReminders ? (
+                <TableLoading rows={6} />
+              ) : fichajeReminders.length === 0 ? (
+                <div className="py-12 text-center text-gray-500 rounded-xl border border-dashed border-gray-200">
+                  No hay recordatorios de fichaje registrados aún.
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-gray-200">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-violet-50 text-violet-900">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-semibold">Fecha</th>
+                        <th className="text-left px-3 py-2 font-semibold">Empleado</th>
+                        <th className="text-left px-3 py-2 font-semibold">Tipo</th>
+                        <th className="text-left px-3 py-2 font-semibold">Horario</th>
+                        <th className="text-left px-3 py-2 font-semibold">Mensaje</th>
+                        <th className="text-left px-3 py-2 font-semibold">Leído</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fichajeReminders.map((row) => (
+                        <tr key={row.id} className="border-t border-gray-100 hover:bg-slate-50">
+                          <td className="px-3 py-2 whitespace-nowrap text-gray-600">
+                            {row.createdAt
+                              ? new Date(row.createdAt).toLocaleString('es-ES')
+                              : '—'}
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="font-medium text-gray-900">
+                              {row.nombre || '—'}
+                            </div>
+                            <div className="text-xs text-gray-500">{row.userId}</div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-violet-100 text-violet-800">
+                              {row.tipo || '—'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-gray-700">{row.horario || '—'}</td>
+                          <td className="px-3 py-2 text-gray-700 max-w-xs">
+                            <div className="font-medium text-gray-800">{row.title}</div>
+                            <div className="text-xs text-gray-500 line-clamp-2">{row.message}</div>
+                          </td>
+                          <td className="px-3 py-2">
+                            {row.read ? (
+                              <span className="text-emerald-700 text-xs font-semibold">Sí</span>
+                            ) : (
+                              <span className="text-amber-700 text-xs font-semibold">No</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="text-sm text-gray-600">
+                Total: {fichajeRemindersTotal} recordatorio
+                {fichajeRemindersTotal === 1 ? '' : 's'}
+                {fichajeReminders.length < fichajeRemindersTotal
+                  ? ` (mostrando ${fichajeReminders.length})`
+                  : ''}
               </div>
             </div>
           )}

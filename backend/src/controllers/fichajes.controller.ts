@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { FichajesService } from '../services/fichajes.service';
 import { EmpleadoGrupoScopeService } from '../services/empleado-grupo-scope.service';
+import { FichajeReminderCronService } from '../services/fichaje-reminder-cron.service';
 
 @Controller('api/registros')
 export class FichajesController {
@@ -22,6 +23,7 @@ export class FichajesController {
   constructor(
     private readonly fichajesService: FichajesService,
     private readonly empleadoGrupoScopeService: EmpleadoGrupoScopeService,
+    private readonly fichajeReminderCronService: FichajeReminderCronService,
   ) {}
 
   private scopePayload(user: any) {
@@ -267,6 +269,51 @@ export class FichajesController {
     } catch (error: any) {
       this.logger.error('❌ Error deleting fichaje:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Manual trigger for fichaje reminder cron (dry-run by default).
+   * Query: dryRun=true|false (default true), windowMinutes=number
+   */
+  @Post('fichaje-reminder/test-trigger')
+  @UseGuards(JwtAuthGuard)
+  async triggerFichajeReminder(
+    @Query('dryRun') dryRun?: string,
+    @Query('windowMinutes') windowMinutes?: string,
+  ) {
+    try {
+      const dry =
+        dryRun == null || dryRun === ''
+          ? true
+          : !['0', 'false', 'no', 'off'].includes(
+              String(dryRun).trim().toLowerCase(),
+            );
+      const window =
+        windowMinutes != null && windowMinutes !== ''
+          ? Number(windowMinutes)
+          : undefined;
+
+      this.logger.log(
+        `🧪 Manual trigger: fichaje reminder dryRun=${dry} windowMinutes=${window ?? 'default'}`,
+      );
+
+      const result = await this.fichajeReminderCronService.runReminders({
+        dryRun: dry,
+        windowMinutes:
+          window != null && Number.isFinite(window) ? window : undefined,
+      });
+
+      return {
+        ok: true,
+        enabled: this.fichajeReminderCronService.isEnabled(),
+        ...result,
+      };
+    } catch (error: any) {
+      this.logger.error('❌ Error triggering fichaje reminder:', error);
+      throw new BadRequestException(
+        `Error al trigger reminder fichaje: ${error.message}`,
+      );
     }
   }
 }

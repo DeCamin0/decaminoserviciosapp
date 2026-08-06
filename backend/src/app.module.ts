@@ -94,6 +94,9 @@ import { ScheduledMessagesService } from './services/scheduled-messages.service'
 import { ScheduledMessagesCronService } from './services/scheduled-messages-cron.service';
 import { DespidoAutomationCronService } from './services/despido-automation-cron.service';
 import { AusenciasProximasCronService } from './services/ausencias-proximas-cron.service';
+import { FichajeScheduleResolverService } from './services/fichaje-schedule-resolver.service';
+import { FichajeReminderService } from './services/fichaje-reminder.service';
+import { FichajeReminderCronService } from './services/fichaje-reminder-cron.service';
 import { BajaVoluntariaPdfService } from './services/baja-voluntaria-pdf.service';
 import { GestoriaController } from './controllers/gestoria.controller';
 import { GestoriaService } from './services/gestoria.service';
@@ -277,6 +280,9 @@ import { TareasModule } from './tareas/tareas.module';
     MonitoringService,
     DespidoAutomationCronService,
     AusenciasProximasCronService,
+    FichajeScheduleResolverService,
+    FichajeReminderService,
+    FichajeReminderCronService,
     BajaVoluntariaPdfService,
     EmployeeExportService,
     PrlDocumentsService,

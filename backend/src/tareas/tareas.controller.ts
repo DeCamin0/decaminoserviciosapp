@@ -65,19 +65,30 @@ export class TareasController {
     @Body() body: any,
     @UploadedFiles() files?: Express.Multer.File[],
   ) {
-    const list = (files || []).filter((f) => f?.buffer?.length);
-    const imageFiles = list.filter((f) =>
-      String(f.mimetype || '').startsWith('image/'),
-    );
-    if (list.length && imageFiles.length !== list.length) {
-      throw new BadRequestException('Solo se permiten imágenes');
-    }
+    const imageFiles = this.filterImageFiles(files);
     return this.tareasService.completar(
       user,
       id,
       body?.nota_completado || body?.nota,
       imageFiles,
     );
+  }
+
+  /** Sube fotos en varios lotes (sin marcar hecha). También si ya está hecha. */
+  @Post(':id/fotos')
+  @UseInterceptors(
+    AnyFilesInterceptor({
+      storage: memoryStorage(),
+      limits: { fileSize: 12 * 1024 * 1024, files: 8 },
+    }),
+  )
+  async addFotos(
+    @CurrentUser() user: any,
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFiles() files?: Express.Multer.File[],
+  ) {
+    const imageFiles = this.filterImageFiles(files);
+    return this.tareasService.addFotos(user, id, imageFiles);
   }
 
   @Get(':id/fotos/:fotoId/url')
@@ -87,5 +98,16 @@ export class TareasController {
     @Param('fotoId', ParseIntPipe) fotoId: number,
   ) {
     return this.tareasService.getFotoUrl(user, id, fotoId);
+  }
+
+  private filterImageFiles(files?: Express.Multer.File[]) {
+    const list = (files || []).filter((f) => f?.buffer?.length);
+    const imageFiles = list.filter((f) =>
+      String(f.mimetype || '').startsWith('image/'),
+    );
+    if (list.length && imageFiles.length !== list.length) {
+      throw new BadRequestException('Solo se permiten imágenes');
+    }
+    return imageFiles;
   }
 }

@@ -2221,6 +2221,7 @@ export class FichajeRegularizacionService {
             title: '⚠️ Regularización de jornada solicitada',
             message: `${supervisorName} ha solicitado la regularización de tu jornada del ${fecha}. Diferencia: ${deltaText}. Por favor, confirma en la aplicación.`,
             data: {
+              kind: 'FICHAJE_REGULARIZACION',
               regularizacion_id: created.id,
               fecha,
               delta_minutes,
@@ -2228,6 +2229,7 @@ export class FichajeRegularizacionService {
               scheduled_minutes,
               supervisor_codigo,
               supervisor_nombre: supervisorName,
+              url: '/fichaje',
             },
           },
         );

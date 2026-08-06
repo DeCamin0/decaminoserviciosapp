@@ -4830,6 +4830,11 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
   const [filter, setFilter] = useState({ empleado: '', luna: '', an: '', de: '', pana: '' });
   const [filtered, setFiltered] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [runningFichajeReminder, setRunningFichajeReminder] = useState(false);
+  const [fichajeReminderModalOpen, setFichajeReminderModalOpen] = useState(false);
+  const [fichajeReminderPreviewLoading, setFichajeReminderPreviewLoading] = useState(false);
+  const [fichajeReminderSending, setFichajeReminderSending] = useState(false);
+  const [fichajeReminderPreview, setFichajeReminderPreview] = useState(null);
 
   // Funcție pentru ștergerea unui registro
   const handleDeleteRegistro = useCallback(async (idx) => {
@@ -6384,6 +6389,79 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             <span className={isMobile ? 'text-xs' : 'text-sm'}>{isMobile ? 'Excel' : 'Exportar Excel'}</span>
           </div>
         </button>
+
+        <button
+          type="button"
+          disabled={runningFichajeReminder || fichajeReminderPreviewLoading}
+          onClick={async () => {
+            setFichajeReminderModalOpen(true);
+            setFichajeReminderPreview(null);
+            setFichajeReminderPreviewLoading(true);
+            setRunningFichajeReminder(true);
+            try {
+              const token = localStorage.getItem('auth_token');
+              if (!token) {
+                setNotification?.({
+                  type: 'error',
+                  title: 'Error',
+                  message: 'No estás autenticado',
+                });
+                setFichajeReminderModalOpen(false);
+                return;
+              }
+
+              const response = await fetch(
+                routes.testTriggerFichajeReminder(true),
+                {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                  },
+                },
+              );
+              const result = await response.json().catch(() => ({}));
+
+              if (!response.ok) {
+                setNotification?.({
+                  type: 'error',
+                  title: 'Error',
+                  message:
+                    result.message ||
+                    `No se pudo cargar la vista previa (${response.status})`,
+                });
+                setFichajeReminderModalOpen(false);
+                return;
+              }
+
+              setFichajeReminderPreview(result);
+            } catch (err) {
+              logError('Error previewing fichaje reminder:', err);
+              setNotification?.({
+                type: 'error',
+                title: 'Error',
+                message: err?.message || 'Error al cargar la vista previa',
+              });
+              setFichajeReminderModalOpen(false);
+            } finally {
+              setFichajeReminderPreviewLoading(false);
+              setRunningFichajeReminder(false);
+            }
+          }}
+          className={`group relative ${isMobile ? 'px-4 py-2' : 'px-6 py-3'} rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-violet-500 to-indigo-600 text-white shadow-violet-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none`}
+        >
+          <div className="absolute inset-0 rounded-xl bg-violet-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
+          <div className="relative flex items-center gap-2">
+            <span className={`${isMobile ? 'text-base' : 'text-lg'} group-hover:scale-110 transition-transform duration-300`}>
+              {fichajeReminderPreviewLoading ? '⏳' : '🔔'}
+            </span>
+            <span className={isMobile ? 'text-xs' : 'text-sm'}>
+              {fichajeReminderPreviewLoading
+                ? (isMobile ? '...' : 'Cargando…')
+                : (isMobile ? 'Recordatorio' : 'Probar recordatorio')}
+            </span>
+          </div>
+        </button>
       </div>
 
       {/* Buton adăugare - Moderno */}
@@ -7760,6 +7838,222 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
           </div>
         </Modal>
       )}
+
+      {/* Modal preview + confirm recordatorio fichaje */}
+      <Modal
+        isOpen={fichajeReminderModalOpen}
+        onClose={() => {
+          if (fichajeReminderSending) return;
+          setFichajeReminderModalOpen(false);
+          setFichajeReminderPreview(null);
+        }}
+        title="Recordatorio de fichaje"
+        size="lg"
+        showCloseButton={false}
+        closeOnBackdrop={!fichajeReminderSending}
+      >
+        {fichajeReminderPreviewLoading && (
+          <div className="py-12 text-center text-slate-500">
+            Calculando quién debe recibir la notificación…
+          </div>
+        )}
+
+        {!fichajeReminderPreviewLoading && fichajeReminderPreview && (
+          <div className="space-y-5">
+            <p className="text-sm text-slate-600">
+              Vista previa de la ventana horaria actual. Revisa quién recibe el aviso push y quién queda excluido.
+            </p>
+
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700">
+                Escaneados: {fichajeReminderPreview.scanned ?? 0}
+              </span>
+              <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">
+                Recibirán: {(fichajeReminderPreview.candidates || []).length}
+              </span>
+              <span className="px-2.5 py-1 rounded-full bg-rose-100 text-rose-800">
+                Baja: {fichajeReminderPreview.skippedBaja ?? 0}
+              </span>
+              <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-900">
+                Ausencia: {fichajeReminderPreview.skippedAusencia ?? 0}
+              </span>
+              <span className="px-2.5 py-1 rounded-full bg-violet-100 text-violet-800">
+                Festivo: {fichajeReminderPreview.skippedFiesta ?? 0}
+              </span>
+              <span className="px-2.5 py-1 rounded-full bg-orange-100 text-orange-900">
+                Extrabajador: {fichajeReminderPreview.skippedExtrabajador ?? 0}
+              </span>
+              <span className="px-2.5 py-1 rounded-full bg-sky-100 text-sky-800">
+                Ya ficharon: {fichajeReminderPreview.skippedAlreadyPunched ?? 0}
+              </span>
+              <span className="px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">
+                Aún temprano: {fichajeReminderPreview.skippedOutsideWindow ?? 0}
+              </span>
+              <span className="px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">
+                Sin horario/libre: {fichajeReminderPreview.skippedOff ?? 0}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                <h3 className="text-sm font-semibold text-emerald-900 mb-2">
+                  Recibirán aviso ({(fichajeReminderPreview.candidates || []).length})
+                </h3>
+                <div className="max-h-64 overflow-y-auto space-y-2">
+                  {(fichajeReminderPreview.candidates || []).length === 0 ? (
+                    <p className="text-xs text-emerald-800/70 py-4 text-center">
+                      Nadie en la ventana horaria ahora.
+                    </p>
+                  ) : (
+                    (fichajeReminderPreview.candidates || []).map((c) => (
+                      <div
+                        key={`recv-${c.codigo}`}
+                        className="rounded-lg bg-white border border-emerald-100 px-3 py-2"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-sm font-medium text-slate-900">{c.nombre}</p>
+                          {c.isRetry && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-orange-200 text-orange-900 whitespace-nowrap">
+                              Reaviso
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          {c.tipo} · {c.horario}
+                          {c.estado === 'fichado_otro_tipo' ? ' · tipo incorrecto' : ''}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-3">
+                <h3 className="text-sm font-semibold text-rose-900 mb-2">
+                  No recibirán ({(fichajeReminderPreview.skipped || []).length})
+                </h3>
+                <div className="max-h-64 overflow-y-auto space-y-2">
+                  {(fichajeReminderPreview.skipped || []).length === 0 ? (
+                    <p className="text-xs text-rose-800/70 py-4 text-center">
+                      Sin exclusiones por baja / ausencia / festivo / ya fichado.
+                    </p>
+                  ) : (
+                      (fichajeReminderPreview.skipped || []).map((s) => {
+                      const badge =
+                        s.reason === 'baja_medica'
+                          ? 'bg-rose-200 text-rose-900'
+                          : s.reason === 'ausencia'
+                            ? 'bg-amber-200 text-amber-950'
+                            : s.reason === 'fiesta'
+                              ? 'bg-violet-200 text-violet-900'
+                              : s.reason === 'extrabajador'
+                                ? 'bg-orange-200 text-orange-950'
+                                : s.reason === 'ya_fichado' ||
+                                    s.reason === 'turno_completo'
+                                  ? 'bg-sky-200 text-sky-900'
+                                  : 'bg-slate-200 text-slate-800';
+                      return (
+                        <div
+                          key={`skip-${s.codigo}-${s.reason}-${s.reasonLabel}`}
+                          className="rounded-lg bg-white border border-rose-100 px-3 py-2"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm font-medium text-slate-900">{s.nombre}</p>
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${badge}`}>
+                              {s.reasonLabel}
+                            </span>
+                          </div>
+                          {s.detail && s.detail !== s.reasonLabel && (
+                            <p className="text-xs text-slate-500 mt-0.5">{s.detail}</p>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+                {(fichajeReminderPreview.skippedOutsideWindow > 0 ||
+                  fichajeReminderPreview.skippedOff > 0) && (
+                  <p className="text-[11px] text-slate-500 mt-2">
+                    No se avisa a: {fichajeReminderPreview.skippedOutsideWindow || 0} aún
+                    temprano (no ha llegado su hora) ·{' '}
+                    {fichajeReminderPreview.skippedOff || 0} sin horario / libre.
+                    Si ya pasó la hora y no ficharon, sí reciben aviso.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                disabled={fichajeReminderSending}
+                onClick={() => {
+                  setFichajeReminderModalOpen(false);
+                  setFichajeReminderPreview(null);
+                }}
+                className="px-5 py-2.5 rounded-xl font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 transition disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={
+                  fichajeReminderSending ||
+                  !(fichajeReminderPreview.candidates || []).length
+                }
+                onClick={async () => {
+                  setFichajeReminderSending(true);
+                  try {
+                    const token = localStorage.getItem('auth_token');
+                    const response = await fetch(
+                      routes.testTriggerFichajeReminder(false),
+                      {
+                        method: 'POST',
+                        headers: {
+                          Authorization: `Bearer ${token}`,
+                          'Content-Type': 'application/json',
+                        },
+                      },
+                    );
+                    const result = await response.json().catch(() => ({}));
+                    if (!response.ok) {
+                      setNotification?.({
+                        type: 'error',
+                        title: 'Error',
+                        message:
+                          result.message ||
+                          `No se pudo enviar (${response.status})`,
+                      });
+                      return;
+                    }
+                    setFichajeReminderModalOpen(false);
+                    setFichajeReminderPreview(null);
+                    setNotification?.({
+                      type: 'success',
+                      title: 'Recordatorio enviado',
+                      message: `Push enviados: ${result.sent ?? 0} · Excluidos (baja/ausencia/etc.): ${(result.skipped || []).length}`,
+                    });
+                  } catch (err) {
+                    logError('Error sending fichaje reminder:', err);
+                    setNotification?.({
+                      type: 'error',
+                      title: 'Error',
+                      message: err?.message || 'Error al enviar',
+                    });
+                  } finally {
+                    setFichajeReminderSending(false);
+                  }
+                }}
+                className="px-5 py-2.5 rounded-xl font-semibold bg-gradient-to-r from-violet-500 to-indigo-600 text-white shadow-md hover:opacity-95 transition disabled:opacity-50"
+              >
+                {fichajeReminderSending
+                  ? 'Enviando…'
+                  : `Enviar push (${(fichajeReminderPreview.candidates || []).length})`}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Modal Confirmar Jornada */}
       <ConfirmarJornadaModal

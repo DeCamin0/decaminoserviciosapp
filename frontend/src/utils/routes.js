@@ -140,6 +140,14 @@ export const routes = {
     return `${BACKEND_BASE}/api/registros/no-punch${query ? `?${query}` : ''}`;
   },
   declararNoPunch: `${BACKEND_BASE}/api/registros/no-punch/declare`,
+  testTriggerFichajeReminder: (dryRun = true, windowMinutes) => {
+    const params = new URLSearchParams();
+    params.set('dryRun', dryRun ? 'true' : 'false');
+    if (windowMinutes != null && windowMinutes !== '') {
+      params.set('windowMinutes', String(windowMinutes));
+    }
+    return `${BACKEND_BASE}/api/registros/fichaje-reminder/test-trigger?${params.toString()}`;
+  },
   
   // Email Ingestion (Admin only)
   ingestEmails: `${BACKEND_BASE}/admin/documents/ingest-emails`,
@@ -303,6 +311,8 @@ export const routes = {
   tarea: (id) => `${BACKEND_BASE}/api/tareas/${encodeURIComponent(id)}`,
   tareaCompletar: (id) =>
     `${BACKEND_BASE}/api/tareas/${encodeURIComponent(id)}/completar`,
+  tareaFotos: (id) =>
+    `${BACKEND_BASE}/api/tareas/${encodeURIComponent(id)}/fotos`,
   tareaFotoUrl: (tareaId, fotoId) =>
     `${BACKEND_BASE}/api/tareas/${encodeURIComponent(tareaId)}/fotos/${encodeURIComponent(fotoId)}/url`,
 
@@ -425,6 +435,16 @@ export const routes = {
   updateDuracion: (id) => `${BACKEND_BASE}/api/ausencias/${id}/duracion`,
   addAusencia: `${BACKEND_BASE}/api/ausencias`,
   testTriggerAusenciasProximas: `${BACKEND_BASE}/api/ausencias/cron-proximas/test-trigger`,
+  fichajeRemindersHistorial: (params = {}) => {
+    const q = new URLSearchParams();
+    if (params.limit != null) q.set('limit', String(params.limit));
+    if (params.offset != null) q.set('offset', String(params.offset));
+    if (params.startDate) q.set('startDate', params.startDate);
+    if (params.endDate) q.set('endDate', params.endDate);
+    if (params.q) q.set('q', params.q);
+    const qs = q.toString();
+    return `${BACKEND_BASE}/api/notifications/fichaje-reminders${qs ? `?${qs}` : ''}`;
+  },
   
   // Admin - Activity Logs
   logActivity: `${BACKEND_BASE}/api/activity-logs`,
