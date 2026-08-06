@@ -1785,12 +1785,16 @@ export class SolicitudesService {
       fecha_fin?: string;
       ip?: string; // IP pentru LOCACION în Ausencias
       mensajePersonalizado?: string; // Mesaj personalizat pentru rechazar
+      /** Same bypass as create with origen=MANAGER (Developer/Admin/Manager/Supervisor). */
+      skipCalendarRestrictions?: boolean;
     },
   ): Promise<any> {
     try {
       if (!id) {
         throw new BadRequestException('El id es obligatorio para actualizar');
       }
+
+      const skipCalendarRestrictions = !!data.skipCalendarRestrictions;
 
       // Obține solicitarea înainte de update pentru a verifica estado vechi
       // Folosim query direct pentru a obține solicitud-ul exact
@@ -1936,92 +1940,97 @@ export class SolicitudesService {
           AND codigo = ${this.escapeSql(codigo)}
       `;
 
-      this.logger.log(`📝 Update solicitud: ${id}, estado: ${estado}`);
+      this.logger.log(
+        `📝 Update solicitud: ${id}, estado: ${estado}, skipCalendarRestrictions: ${skipCalendarRestrictions}`,
+      );
 
-      if (
-        tipo === 'Vacaciones' &&
-        fechaInicioForVac &&
-        fechaFinForVac &&
-        (estado === 'Aprobada' || estado === 'Pendiente')
-      ) {
-        const buf = await this.checkVacacionesQuincenaBufferConflict(
-          codigo,
-          fechaInicioForVac,
-          fechaFinForVac,
-          id,
-        );
-        if (buf.hasConflict && buf.conflictInfo) {
-          throw new BadRequestException(
-            `No se puede registrar esta solicitud de vacaciones: debe respetarse un margen de ${this.VACACIONES_QUINCENA_BUFFER_DAYS} días antes y después de otra quincena ya solicitada o aprobada (período ${buf.conflictInfo.fecha_inicio} - ${buf.conflictInfo.fecha_fin}).`,
-          );
-        }
-      }
-
-      // Validare conflict Vacaciones - doar când se aprobă (estado = 'Aprobada')
-      // Verifică dacă este o aprobare nouă (nu era deja Aprobada)
-      const isNewApproval =
-        estado === 'Aprobada' && solicitudBefore?.estado !== 'Aprobada';
-
-      if (tipo === 'Vacaciones' && isNewApproval) {
-        if (fechaInicioForVac && fechaFinForVac) {
-          const conflictCheck = await this.checkVacacionesConflict(
+      // Manager/Developer/Admin/Supervisor: same as create with origen=MANAGER — skip calendar limits
+      if (!skipCalendarRestrictions) {
+        if (
+          tipo === 'Vacaciones' &&
+          fechaInicioForVac &&
+          fechaFinForVac &&
+          (estado === 'Aprobada' || estado === 'Pendiente')
+        ) {
+          const buf = await this.checkVacacionesQuincenaBufferConflict(
             codigo,
             fechaInicioForVac,
             fechaFinForVac,
-            id, // Exclude solicitarea curentă
+            id,
           );
-
-          if (conflictCheck.hasConflict) {
-            const conflict = conflictCheck.conflictInfo;
+          if (buf.hasConflict && buf.conflictInfo) {
             throw new BadRequestException(
-              `No se puede aprobar esta solicitud de vacaciones: ya existe una vacación aprobada para otro empleado del mismo grupo y centro (${conflict.grupo} - ${conflict.centro}) en el período ${conflict.fecha_inicio} - ${conflict.fecha_fin}. Empleado: ${conflict.nombre} (${conflict.codigo})`,
+              `No se puede registrar esta solicitud de vacaciones: debe respetarse un margen de ${this.VACACIONES_QUINCENA_BUFFER_DAYS} días antes y después de otra quincena ya solicitada o aprobada (período ${buf.conflictInfo.fecha_inicio} - ${buf.conflictInfo.fecha_fin}).`,
             );
           }
         }
-      }
 
-      // Validare disponibilitate pe rango (Vacaciones / Asuntos Propios) la update
-      const fechaInicioRange =
-        data.fecha_inicio !== undefined
-          ? data.fecha_inicio
-          : solicitudBefore?.fecha_inicio;
-      const fechaFinRange =
-        data.fecha_fin !== undefined
-          ? data.fecha_fin
-          : solicitudBefore?.fecha_fin;
-      if (fechaInicioRange && fechaFinRange) {
-        const inicioStr =
-          typeof fechaInicioRange === 'string'
-            ? fechaInicioRange
-            : new Date(fechaInicioRange).toISOString().split('T')[0];
-        const finStr =
-          typeof fechaFinRange === 'string'
-            ? fechaFinRange
-            : new Date(fechaFinRange).toISOString().split('T')[0];
-        if (tipo === 'Vacaciones') {
-          const rangeCheck = await this.checkVacacionesRangeAvailability(
-            codigo,
-            inicioStr,
-            finStr,
-            id,
-          );
-          if (!rangeCheck.allowed) {
-            throw new BadRequestException(
-              `El rango seleccionado incluye días sin disponibilidad (ocupados por otras solicitudes o límite de grupo). Primera fecha no disponible: ${rangeCheck.firstBadDate}. Elige solo días disponibles.`,
+        // Validare conflict Vacaciones - doar când se aprobă (estado = 'Aprobada')
+        // Verifică dacă este o aprobare nouă (nu era deja Aprobada)
+        const isNewApproval =
+          estado === 'Aprobada' && solicitudBefore?.estado !== 'Aprobada';
+
+        if (tipo === 'Vacaciones' && isNewApproval) {
+          if (fechaInicioForVac && fechaFinForVac) {
+            const conflictCheck = await this.checkVacacionesConflict(
+              codigo,
+              fechaInicioForVac,
+              fechaFinForVac,
+              id, // Exclude solicitarea curentă
             );
+
+            if (conflictCheck.hasConflict) {
+              const conflict = conflictCheck.conflictInfo;
+              throw new BadRequestException(
+                `No se puede aprobar esta solicitud de vacaciones: ya existe una vacación aprobada para otro empleado del mismo grupo y centro (${conflict.grupo} - ${conflict.centro}) en el período ${conflict.fecha_inicio} - ${conflict.fecha_fin}. Empleado: ${conflict.nombre} (${conflict.codigo})`,
+              );
+            }
           }
         }
-        if (tipo === 'Asunto Propio' || tipo === 'Asuntos Propios') {
-          const rangeCheck = await this.checkAsuntoPropioRangeAvailability(
-            codigo,
-            inicioStr,
-            finStr,
-            id,
-          );
-          if (!rangeCheck.allowed) {
-            throw new BadRequestException(
-              `El rango seleccionado incluye días sin disponibilidad (ocupados, límite por centro o período bloqueado para Asuntos Propios). Primera fecha no disponible: ${rangeCheck.firstBadDate}. Elige solo días disponibles.`,
+
+        // Validare disponibilitate pe rango (Vacaciones / Asuntos Propios) la update
+        const fechaInicioRange =
+          data.fecha_inicio !== undefined
+            ? data.fecha_inicio
+            : solicitudBefore?.fecha_inicio;
+        const fechaFinRange =
+          data.fecha_fin !== undefined
+            ? data.fecha_fin
+            : solicitudBefore?.fecha_fin;
+        if (fechaInicioRange && fechaFinRange) {
+          const inicioStr =
+            typeof fechaInicioRange === 'string'
+              ? fechaInicioRange
+              : new Date(fechaInicioRange).toISOString().split('T')[0];
+          const finStr =
+            typeof fechaFinRange === 'string'
+              ? fechaFinRange
+              : new Date(fechaFinRange).toISOString().split('T')[0];
+          if (tipo === 'Vacaciones') {
+            const rangeCheck = await this.checkVacacionesRangeAvailability(
+              codigo,
+              inicioStr,
+              finStr,
+              id,
             );
+            if (!rangeCheck.allowed) {
+              throw new BadRequestException(
+                `El rango seleccionado incluye días sin disponibilidad (ocupados por otras solicitudes o límite de grupo). Primera fecha no disponible: ${rangeCheck.firstBadDate}. Elige solo días disponibles.`,
+              );
+            }
+          }
+          if (tipo === 'Asunto Propio' || tipo === 'Asuntos Propios') {
+            const rangeCheck = await this.checkAsuntoPropioRangeAvailability(
+              codigo,
+              inicioStr,
+              finStr,
+              id,
+            );
+            if (!rangeCheck.allowed) {
+              throw new BadRequestException(
+                `El rango seleccionado incluye días sin disponibilidad (ocupados, límite por centro o período bloqueado para Asuntos Propios). Primera fecha no disponible: ${rangeCheck.firstBadDate}. Elige solo días disponibles.`,
+              );
+            }
           }
         }
       }

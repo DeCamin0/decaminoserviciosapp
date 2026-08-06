@@ -75,7 +75,11 @@ export class SolicitudesController {
   }
 
   @Post()
-  async createUpdateDeleteSolicitud(@Req() req: Request, @Body() body: any) {
+  async createUpdateDeleteSolicitud(
+    @Req() req: Request,
+    @Body() body: any,
+    @CurrentUser() user: any,
+  ) {
     try {
       const { accion } = body;
 
@@ -98,8 +102,17 @@ export class SolicitudesController {
         ip = '127.0.0.1';
       }
 
+      const actorGrupo = String(user?.grupo || user?.GRUPO || '').trim();
+      // Same roles as /me isManager — bypass calendar limits like create with origen=MANAGER
+      const skipCalendarRestrictions = [
+        'Developer',
+        'Admin',
+        'Manager',
+        'Supervisor',
+      ].includes(actorGrupo);
+
       this.logger.log(
-        `📝 POST solicitud request - accion: ${accion}, id: ${body.id || 'N/A'}, ip: ${ip}`,
+        `📝 POST solicitud request - accion: ${accion}, id: ${body.id || 'N/A'}, ip: ${ip}, actorGrupo: ${actorGrupo || 'N/A'}, skipCalendar: ${skipCalendarRestrictions}`,
       );
 
       if (accion === 'create') {
@@ -141,6 +154,7 @@ export class SolicitudesController {
             fecha_fin: body.fecha_fin,
             ip: ip,
             mensajePersonalizado: body.mensajePersonalizado, // Mesaj personalizat opțional pentru rechazar
+            skipCalendarRestrictions,
           },
         );
 

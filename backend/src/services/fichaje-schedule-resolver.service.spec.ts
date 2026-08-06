@@ -69,4 +69,45 @@ describe('FichajeScheduleResolverService', () => {
       expect(resolver.isReminderDue(12 * 60, 9 * 60, 15)).toBe(true);
     });
   });
+
+  describe('isReminderDueForInterval overnight 19:30-07:30', () => {
+    const night = { horaIn: '19:30', horaOut: '07:30' };
+
+    it('Entrada due from 19:15, not in the morning', () => {
+      expect(
+        resolver.isReminderDueForInterval(7 * 60, night, 'Entrada', 15),
+      ).toBe(false);
+      expect(
+        resolver.isReminderDueForInterval(19 * 60 + 14, night, 'Entrada', 15),
+      ).toBe(false);
+      expect(
+        resolver.isReminderDueForInterval(19 * 60 + 15, night, 'Entrada', 15),
+      ).toBe(true);
+      expect(
+        resolver.isReminderDueForInterval(19 * 60 + 55, night, 'Entrada', 15),
+      ).toBe(true);
+    });
+
+    it('Salida NOT due in the evening after Entrada — only from 07:15 morning', () => {
+      // Bug case: 19:55 after Entrada must NOT request Salida yet
+      expect(
+        resolver.isReminderDueForInterval(19 * 60 + 55, night, 'Salida', 15),
+      ).toBe(false);
+      expect(
+        resolver.isReminderDueForInterval(23 * 60, night, 'Salida', 15),
+      ).toBe(false);
+      expect(
+        resolver.isReminderDueForInterval(0, night, 'Salida', 15),
+      ).toBe(false);
+      expect(
+        resolver.isReminderDueForInterval(7 * 60 + 14, night, 'Salida', 15),
+      ).toBe(false);
+      expect(
+        resolver.isReminderDueForInterval(7 * 60 + 15, night, 'Salida', 15),
+      ).toBe(true);
+      expect(
+        resolver.isReminderDueForInterval(10 * 60, night, 'Salida', 15),
+      ).toBe(true);
+    });
+  });
 });

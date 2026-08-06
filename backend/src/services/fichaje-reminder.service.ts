@@ -307,9 +307,15 @@ export class FichajeReminderService {
     const tipo = needed.tipo!;
     const interval = needed.interval!;
     const margin = tipo === 'Entrada' ? entryMargin : exitMargin;
-    const target = this.resolver.targetMinutesForTipo(interval, tipo);
 
-    if (!this.resolver.isReminderDue(now.minutesOfDay, target, margin)) {
+    if (
+      !this.resolver.isReminderDueForInterval(
+        now.minutesOfDay,
+        interval,
+        tipo,
+        margin,
+      )
+    ) {
       result.skippedOutsideWindow += 1;
       return;
     }
