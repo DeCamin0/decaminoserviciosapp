@@ -352,6 +352,7 @@ export class NotificationsService {
       message: string;
       type: string;
       read: boolean;
+      readAt: Date | null;
       createdAt: Date;
       tipo: string | null;
       horario: string | null;
@@ -405,6 +406,7 @@ export class NotificationsService {
           message: string;
           type: string;
           readFlag: number | boolean;
+          readAt: Date | null;
           createdAt: Date;
           data: string | null;
         }>
@@ -417,6 +419,7 @@ export class NotificationsService {
            n.message AS message,
            n.type AS type,
            n.\`read\` AS readFlag,
+           n.read_at AS readAt,
            n.created_at AS createdAt,
            n.data AS data
          FROM notifications n
@@ -443,6 +446,7 @@ export class NotificationsService {
           message: r.message,
           type: r.type,
           read: Boolean(r.readFlag),
+          readAt: r.readAt ?? null,
           createdAt: r.createdAt,
           tipo: parsed?.tipo ?? null,
           horario: parsed?.horario ?? null,
