@@ -174,12 +174,16 @@ model Comunicado {
   publicado      Boolean           @default(false)
   archivo        Bytes?            @map("archivo")
   nombre_archivo String?           @map("nombre_archivo") @db.VarChar(255)
+  storage_key    String?           @map("storage_key") @db.VarChar(700)
+  storage_bucket String?           @map("storage_bucket") @db.VarChar(120)
+  tamano_bytes   Int?              @map("tamano_bytes")
   created_at     DateTime          @default(now()) @db.Timestamp(0)
   updated_at     DateTime          @updatedAt @db.Timestamp(0)
   leidos         ComunicadoLeido[]
 
   @@index([publicado, created_at], map: "idx_comunicado_publicado_created")
   @@index([autor_id], map: "idx_comunicado_autor")
+  @@index([storage_key], map: "idx_comunicado_storage_key")
   @@map("comunicados")
 }
 
@@ -232,11 +236,16 @@ model RentaCampanaDeclinacion {
 }
 
 model Avatar {
-  CODIGO       String   @id @map("CODIGO") @db.VarChar(50)
-  NOMBRE       String   @map("NOMBRE") @db.VarChar(255)
-  AVATAR       Bytes    @map("AVATAR")
-  FECHA_SUBIDA DateTime @default(now()) @map("FECHA_SUBIDA") @db.Timestamp(0)
+  CODIGO         String    @id @map("CODIGO") @db.VarChar(50)
+  NOMBRE         String?   @map("NOMBRE") @db.VarChar(255)
+  /// LONGBLOB dual-read; nullable after R2 migration; DROP via run-avatar-drop-avatar-column.js
+  AVATAR         Bytes?    @map("AVATAR")
+  FECHA_SUBIDA   DateTime  @default(now()) @map("FECHA_SUBIDA") @db.Timestamp(0)
+  storage_key    String?   @map("storage_key") @db.VarChar(700)
+  storage_bucket String?   @map("storage_bucket") @db.VarChar(120)
+  tamano_bytes   Int?      @map("tamano_bytes")
 
+  @@index([storage_key], map: "idx_avatar_storage_key")
   @@map("Avatar")
 }
 
@@ -298,7 +307,11 @@ model CarpetasDocumentos {
   nombre_archivo     String? @db.VarChar(255)
   nombre_empleado    String? @db.VarChar(500)
   fecha_creacion     String? @default(dbgenerated("(current_timestamp())")) @db.VarChar(50)
-  archivo            Bytes?
+  storage_key        String  @map("storage_key") @db.VarChar(700)
+  storage_bucket     String? @map("storage_bucket") @db.VarChar(120)
+  tamano_bytes       Int?    @map("tamano_bytes")
+
+  @@index([storage_key], map: "idx_carpetas_storage_key")
 }
 
 model DocumentosSolicitados {
@@ -325,8 +338,14 @@ model CatologoProductos {
   N_mero_de_art_culo      String              @map("Número de artículo") @db.VarChar(50)
   Descripci_n_de_art_culo String              @map("Descripción de artículo") @db.Text
   Precio_por_unidad       Decimal             @map("Precio por unidad") @db.Decimal(10, 4)
+  /// Dual-read LONGBLOB; drop via scripts/run-catalogo-drop-fotoproducto.js after backfill
   fotoproducto            Bytes?
+  storage_key             String?             @map("storage_key") @db.VarChar(700)
+  storage_bucket          String?             @map("storage_bucket") @db.VarChar(120)
+  tamano_bytes            Int?                @map("tamano_bytes")
   PermisosProductos       PermisosProductos[]
+
+  @@index([storage_key], map: "idx_catalogo_storage_key")
 }
 
 model Clientes {
@@ -352,7 +371,6 @@ model Clientes {
   Fecha_Ultima_Renovacion  String?             @map("Fecha Ultima Renovacion") @db.VarChar(100)
   Fecha_Proxima_Renovacion String?             @map("Fecha Proxima Renovacion") @db.VarChar(100)
   ESTADO                   String?             @db.VarChar(100)
-  CONTRACTO                Bytes?
   CuantoPuedeGastar        String?             @db.VarChar(100)
   SERVICIO_ENTREGA         String?             @map("SERVICIO ENTREGA") @db.VarChar(255)
   TELEFONO_ENTREGA         String?             @map("TELEFON ENTREGA") @db.VarChar(100)
@@ -430,7 +448,9 @@ model PortalDocumentoGeneral {
   tipo_documento   String    @map("tipo_documento") @db.VarChar(120)
   nombre_documento String    @map("nombre_documento") @db.VarChar(500)
   mime_type        String?   @map("mime_type") @db.VarChar(100)
-  archivo          Bytes
+  storage_key      String    @map("storage_key") @db.VarChar(700)
+  storage_bucket   String?   @map("storage_bucket") @db.VarChar(120)
+  tamano_bytes     Int?      @map("tamano_bytes")
   fecha_subida     DateTime  @default(now()) @map("fecha_subida") @db.Timestamp(0)
   fecha_validez    DateTime? @map("fecha_validez") @db.Date
   estado           String    @default("activo") @db.VarChar(50)
@@ -438,6 +458,7 @@ model PortalDocumentoGeneral {
   updated_at       DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
 
   @@index([estado, tipo_documento], map: "idx_portal_doc_gen_estado_tipo")
+  @@index([storage_key], map: "idx_portal_doc_gen_storage_key")
   @@map("portal_documentos_generales")
 }
 
@@ -448,7 +469,9 @@ model ClienteFacturaManual {
   numero_factura    String?   @map("numero_factura") @db.VarChar(100)
   nombre_archivo    String    @map("nombre_archivo") @db.VarChar(255)
   mime_type         String?   @map("mime_type") @db.VarChar(100)
-  archivo           Bytes
+  storage_key       String    @map("storage_key") @db.VarChar(700)
+  storage_bucket    String?   @map("storage_bucket") @db.VarChar(120)
+  tamano_bytes      Int?      @map("tamano_bytes")
   fecha_emision     DateTime  @map("fecha_emision") @db.Date
   fecha_vencimiento DateTime? @map("fecha_vencimiento") @db.Date
   importe           Decimal?  @map("importe") @db.Decimal(12, 2)
@@ -460,6 +483,7 @@ model ClienteFacturaManual {
   cliente Clientes @relation(fields: [cliente_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_cliente_fact_manual_cliente")
 
   @@index([cliente_id, estado], map: "idx_cliente_fact_manual_cli_estado")
+  @@index([storage_key], map: "idx_cliente_fact_manual_storage_key")
   @@map("cliente_facturas_manuales")
 }
 
@@ -471,7 +495,9 @@ model ClienteInspeccionDocumento {
   centro_trabajo  String?   @map("centro_trabajo") @db.VarChar(500)
   nombre_archivo  String    @map("nombre_archivo") @db.VarChar(255)
   mime_type       String?   @map("mime_type") @db.VarChar(100)
-  archivo         Bytes
+  storage_key     String    @map("storage_key") @db.VarChar(700)
+  storage_bucket  String?   @map("storage_bucket") @db.VarChar(120)
+  tamano_bytes    Int?      @map("tamano_bytes")
   fecha_informe   DateTime? @map("fecha_informe") @db.Date
   estado          String    @default("activo") @db.VarChar(50)
   observaciones   String?   @db.Text
@@ -481,6 +507,7 @@ model ClienteInspeccionDocumento {
   cliente Clientes @relation(fields: [cliente_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_cli_insp_doc_cliente")
 
   @@index([cliente_id, estado], map: "idx_cli_insp_doc_cli_est")
+  @@index([storage_key], map: "idx_cli_insp_doc_storage_key")
   @@map("cliente_inspeccion_documentos")
 }
 
@@ -528,7 +555,6 @@ model DocumentosOficiales {
   nombre_archivo         String?  @db.VarChar(255)
   nombre_empleado        String?  @db.VarChar(500)
   fecha_creacion         String?  @default(dbgenerated("(current_timestamp())")) @db.VarChar(50)
-  archivo                Bytes?
   Permisso_Para_Empleado String?  @map("Permisso Para Empleado") @db.VarChar(50)
   necesita_firma         Boolean? @default(false) @map("necesita_firma")
   
@@ -548,11 +574,15 @@ model DocumentosOficiales {
   approved_at            DateTime? @db.Timestamp(0)
   distributed_at         DateTime? @db.Timestamp(0)
   ingestion_metadata     Json?
+  storage_key            String   @map("storage_key") @db.VarChar(700)
+  storage_bucket         String?  @map("storage_bucket") @db.VarChar(120)
+  tamano_bytes           Int?     @map("tamano_bytes")
 
   @@index([status], map: "idx_documentos_oficiales_status")
   @@index([idempotency_key], map: "idx_documentos_oficiales_idempotency")
   @@index([source_message_id], map: "idx_documentos_oficiales_source_message")
   @@index([status, fecha_creacion], map: "idx_documentos_oficiales_pending_review")
+  @@index([storage_key], map: "idx_docs_oficiales_storage_key")
 }
 
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
@@ -629,7 +659,10 @@ model InspeccionesDocumentos {
   tipo_inspeccion   String?  @db.VarChar(100)
   codigo_empleado   String?  @db.VarChar(50)
   nombre_empleado   String?  @db.VarChar(150)
-  archivo           Bytes?
+  /// NULL for solicitudes without PDF; set when inspección is completed
+  storage_key       String?  @map("storage_key") @db.VarChar(700)
+  storage_bucket    String?  @map("storage_bucket") @db.VarChar(120)
+  tamano_bytes      Int?     @map("tamano_bytes")
   nombre_archivo    String?  @db.VarChar(255)
   fecha_subida      String?  @default(dbgenerated("(current_timestamp())")) @db.VarChar(50)
   Nombre_Supervisor String?  @map("Nombre Supervisor") @db.VarChar(200)
@@ -638,22 +671,27 @@ model InspeccionesDocumentos {
   Locacion          String?  @db.VarChar(500)
   observaciones     String?  @db.Text
   scor_total        Decimal? @map("scor_total") @db.Decimal(5, 2)
+
+  @@index([storage_key], map: "idx_inspecciones_doc_storage_key")
 }
 
 model MaterialesDocumentos {
-  doc_id              Int     @id @default(autoincrement())
-  inspeccion_id       String  @db.VarChar(50)
-  material_index      Int
-  tipo_documento      String? @db.VarChar(50)
-  nombre_archivo      String? @db.VarChar(255)
-  archivo             Bytes?
-  fecha_creacion      String? @default(dbgenerated("(current_timestamp())")) @db.VarChar(50)
-  codigo_empleado     String? @db.VarChar(50)
-  nombre_empleado     String? @db.VarChar(150)
+  doc_id               Int     @id @default(autoincrement())
+  inspeccion_id        String  @db.VarChar(50)
+  material_index       Int
+  tipo_documento       String? @db.VarChar(50)
+  nombre_archivo       String? @db.VarChar(255)
+  storage_key          String  @map("storage_key") @db.VarChar(700)
+  storage_bucket       String? @map("storage_bucket") @db.VarChar(120)
+  tamano_bytes         Int?    @map("tamano_bytes")
+  fecha_creacion       String? @default(dbgenerated("(current_timestamp())")) @db.VarChar(50)
+  codigo_empleado      String? @db.VarChar(50)
+  nombre_empleado      String? @db.VarChar(150)
   descripcion_material String? @db.VarChar(500)
 
   @@index([inspeccion_id], map: "idx_materiales_inspeccion")
   @@index([codigo_empleado], map: "idx_materiales_empleado")
+  @@index([storage_key], map: "idx_materiales_doc_storage_key")
   @@map("MaterialesDocumentos")
 }
 
@@ -744,15 +782,18 @@ model MutuaCasos {
 model Nominas {
   id              Int              @id @default(autoincrement()) @db.UnsignedInt
   nombre          String?          @db.VarChar(255)
-  archivo         Bytes?
   tipo_mime       String?          @db.VarChar(100)
   fecha_subida    DateTime         @default(now()) @db.DateTime(0)
   Mes             String?          @db.VarChar(100)
   Ano             String?          @db.VarChar(100)
   codigo_empleado String?          @map("codigo_empleado") @db.VarChar(50)
+  storage_key     String           @map("storage_key") @db.VarChar(700)
+  storage_bucket  String?          @map("storage_bucket") @db.VarChar(120)
+  tamano_bytes    Int?             @map("tamano_bytes")
   accesos         NominasAccesos[]
 
   @@index([codigo_empleado], map: "idx_nominas_codigo_empleado")
+  @@index([storage_key], map: "idx_nominas_storage_key")
 }
 
 model NominasAccesos {
@@ -933,8 +974,6 @@ model SerieFormato {
 model SignSessions {
   sid        String              @id @db.VarChar(64)
   status     SignSessions_status @default(PENDING)
-  original   Bytes
-  signed     Bytes?
   created_at DateTime            @default(now()) @db.Timestamp(0)
 }
 
@@ -1232,11 +1271,14 @@ model presupuestos_firmas {
   cargo                 String    @map("cargo") @db.VarChar(100)
   email                 String    @map("email") @db.VarChar(255)
   telefono             String    @map("telefono") @db.VarChar(50)
-  firma_imagen_base64   String    @map("firma_imagen_base64") @db.LongText
+  firma_imagen_storage_key String? @map("firma_imagen_storage_key") @db.VarChar(700)
   ip                    String?   @map("ip") @db.VarChar(100)
   user_agent           String?   @map("user_agent") @db.VarChar(500)
   pdf_path              String?   @map("pdf_path") @db.VarChar(500)
   pdf_content           Bytes?    @map("pdf_content") @db.LongBlob
+  storage_key           String?   @map("storage_key") @db.VarChar(700)
+  storage_bucket        String?   @map("storage_bucket") @db.VarChar(120)
+  tamano_bytes          Int?      @map("tamano_bytes")
   original_pdf_sha256   String?   @map("original_pdf_sha256") @db.VarChar(64)
   original_pdf_size_bytes Int?    @map("original_pdf_size_bytes") @db.Int
   signed_pdf_sha256     String?   @map("signed_pdf_sha256") @db.VarChar(64)
@@ -1246,6 +1288,8 @@ model presupuestos_firmas {
   presupuesto           presupuestos_guardados @relation(fields: [presupuesto_id], references: [id], onDelete: Cascade)
 
   @@index([presupuesto_id], map: "idx_presupuestos_firmas_presupuesto")
+  @@index([storage_key], map: "idx_presupuestos_firmas_storage_key")
+  @@index([firma_imagen_storage_key], map: "idx_presupuestos_firmas_firma_img_key")
   @@map("presupuestos_firmas")
 }
 
@@ -1300,15 +1344,20 @@ model informes_firmas {
   cargo                 String   @map("cargo") @db.VarChar(100)
   email                 String   @map("email") @db.VarChar(255)
   telefono              String   @map("telefono") @db.VarChar(50)
-  firma_imagen_base64   String   @map("firma_imagen_base64") @db.LongText
+  firma_imagen_storage_key String? @map("firma_imagen_storage_key") @db.VarChar(700)
   ip                    String?  @map("ip") @db.VarChar(100)
   user_agent            String?  @map("user_agent") @db.VarChar(500)
   pdf_path              String?  @map("pdf_path") @db.VarChar(500)
+  storage_key           String?  @map("storage_key") @db.VarChar(700)
+  storage_bucket        String?  @map("storage_bucket") @db.VarChar(120)
+  tamano_bytes          Int?     @map("tamano_bytes")
   created_at            DateTime @default(now()) @map("created_at") @db.Timestamp(0)
 
   informe               informes_factura_config @relation(fields: [informe_id], references: [id], onDelete: Cascade)
 
   @@index([informe_id], map: "idx_informes_firmas_informe")
+  @@index([storage_key], map: "idx_informes_firmas_storage_key")
+  @@index([firma_imagen_storage_key], map: "idx_informes_firmas_firma_img_key")
   @@map("informes_firmas")
 }
 
@@ -1467,16 +1516,18 @@ model SentEmail {
 }
 
 model EmailAttachment {
-  id           String    @id @default(uuid()) @db.VarChar(36)
-  email_id     String    @map("email_id") @db.VarChar(36)
-  filename     String    @db.VarChar(255)
-  file_content Bytes     @map("file_content")
-  mime_type    String    @map("mime_type") @db.VarChar(100)
-  file_size    Int?      @map("file_size") // Size în bytes
-  created_at   DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
-  email        SentEmail @relation(fields: [email_id], references: [id], onDelete: Cascade, map: "fk_email_attachment_email")
+  id             String    @id @default(uuid()) @db.VarChar(36)
+  email_id       String    @map("email_id") @db.VarChar(36)
+  filename       String    @db.VarChar(255)
+  storage_key    String    @map("storage_key") @db.VarChar(700)
+  storage_bucket String?   @map("storage_bucket") @db.VarChar(120)
+  mime_type      String    @map("mime_type") @db.VarChar(100)
+  file_size      Int?      @map("file_size") // Size în bytes
+  created_at     DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  email          SentEmail @relation(fields: [email_id], references: [id], onDelete: Cascade, map: "fk_email_attachment_email")
 
   @@index([email_id], map: "idx_email_attachment_email")
+  @@index([storage_key], map: "idx_email_attachment_storage_key")
   @@map("email_attachments")
 }
 
@@ -1869,7 +1920,6 @@ model PrlDocumentTemplate {
   grupo_nombre    String   @map("grupo_nombre") @db.VarChar(200) // = User.GRUPO
   tipo_documento  PrlDocumentType
   nombre          String   @db.VarChar(255)
-  archivo         Bytes    // PDF template almacenado en DB
   nombre_archivo  String   @db.VarChar(255)
   requiere_firma  Boolean  @default(false) @map("requiere_firma")
   es_renuncia_rm  Boolean  @default(false) @map("es_renuncia_rm")
@@ -1878,6 +1928,9 @@ model PrlDocumentTemplate {
   activo          Boolean  @default(true)
   created_at      DateTime @default(now()) @db.Timestamp(0)
   updated_at      DateTime @updatedAt @db.Timestamp(0)
+  storage_key     String   @map("storage_key") @db.VarChar(700)
+  storage_bucket  String?  @map("storage_bucket") @db.VarChar(120)
+  tamano_bytes    Int?     @map("tamano_bytes")
   
   employeeDocs    PrlEmployeeDocument[]
   
@@ -1885,6 +1938,7 @@ model PrlDocumentTemplate {
   @@index([tipo_documento], map: "idx_prl_template_tipo")
   @@index([activo], map: "idx_prl_template_activo")
   @@index([grupo_nombre, tipo_documento], map: "idx_prl_template_grupo_tipo") // Unique per grupo+tipo
+  @@index([storage_key], map: "idx_prl_template_storage_key")
   @@map("prl_document_templates")
 }
 
@@ -1897,13 +1951,17 @@ model PrlEmployeeDocument {
   tipo_documento        PrlDocumentType
   estado                PrlDocumentStatus @default(PENDIENTE)
   
-  // Documento original (template)
-  archivo_original      Bytes?   @map("archivo_original")
+  // Documento original (template) — R2 only
   nombre_archivo_original String? @map("nombre_archivo_original") @db.VarChar(255)
+  storage_key_original  String   @map("storage_key_original") @db.VarChar(700)
+  storage_bucket_original String? @map("storage_bucket_original") @db.VarChar(120)
+  tamano_bytes_original Int?     @map("tamano_bytes_original")
   
-  // Documento firmado (si aplica)
-  archivo_firmado       Bytes?   @map("archivo_firmado")
+  // Documento firmado (si aplica) — R2 only when present
   nombre_archivo_firmado String? @map("nombre_archivo_firmado") @db.VarChar(255)
+  storage_key_firmado   String?  @map("storage_key_firmado") @db.VarChar(700)
+  storage_bucket_firmado String? @map("storage_bucket_firmado") @db.VarChar(120)
+  tamano_bytes_firmado  Int?     @map("tamano_bytes_firmado")
   fecha_firma           DateTime? @map("fecha_firma") @db.Timestamp(0)
   ip_firma              String?   @map("ip_firma") @db.VarChar(100)
   
@@ -1912,7 +1970,6 @@ model PrlEmployeeDocument {
   test_fecha_completado DateTime? @map("test_fecha_completado") @db.Timestamp(0)
   test_puntuacion        Int?     @map("test_puntuacion")
   test_respuestas       Json?    @map("test_respuestas")
-  certificado_archivo   Bytes?   @map("certificado_archivo")
   certificado_nombre    String?  @map("certificado_nombre") @db.VarChar(255)
   certificado_fecha     DateTime? @map("certificado_fecha") @db.Timestamp(0)
   
@@ -1931,6 +1988,8 @@ model PrlEmployeeDocument {
   @@index([estado], map: "idx_prl_emp_doc_estado")
   @@index([empleado_id, estado], map: "idx_prl_emp_doc_emp_estado")
   @@index([tipo_documento], map: "idx_prl_emp_doc_tipo")
+  @@index([storage_key_original], map: "idx_prl_emp_doc_storage_key_original")
+  @@index([storage_key_firmado], map: "idx_prl_emp_doc_storage_key_firmado")
   @@map("prl_employee_documents")
 }
 
@@ -1961,15 +2020,18 @@ model PrlAuditLog {
 model Diploma {
   id              Int      @id @default(autoincrement())
   empleado_id     String   @map("empleado_id") @db.VarChar(50)
-  nombre_empleado String   @map("nombre_empleado") @db.VarChar(500) // Snapshot pentru audit
+  nombre_empleado String   @map("nombre_empleado") @db.VarChar(500) // Snapshot para audit
   nombre_archivo  String   @map("nombre_archivo") @db.VarChar(255)
-  archivo         Bytes    // PDF diploma almacenado en DB
   fecha_subida    DateTime @default(now()) @map("fecha_subida") @db.Timestamp(0)
   subido_por      String   @map("subido_por") @db.VarChar(50)
   notas           String?  @db.Text
-  
+  storage_key     String   @map("storage_key") @db.VarChar(700)
+  storage_bucket  String?  @map("storage_bucket") @db.VarChar(120)
+  tamano_bytes    Int?     @map("tamano_bytes")
+
   @@index([empleado_id], map: "idx_diploma_empleado")
   @@index([fecha_subida], map: "idx_diploma_fecha")
+  @@index([storage_key], map: "idx_diploma_storage_key")
   @@map("diplomas")
 }
 
@@ -1982,13 +2044,16 @@ model CertificadoRetencion {
   empleado_id     String   @map("empleado_id") @db.VarChar(50)
   nombre_empleado String   @map("nombre_empleado") @db.VarChar(500)
   nombre_archivo  String   @map("nombre_archivo") @db.VarChar(255)
-  archivo         Bytes
   fecha_subida    DateTime @default(now()) @map("fecha_subida") @db.Timestamp(0)
   subido_por      String   @map("subido_por") @db.VarChar(50)
   notas           String?  @db.Text
+  storage_key     String   @map("storage_key") @db.VarChar(700)
+  storage_bucket  String?  @map("storage_bucket") @db.VarChar(120)
+  tamano_bytes    Int?     @map("tamano_bytes")
 
   @@index([empleado_id], map: "idx_cert_retencion_empleado")
   @@index([fecha_subida], map: "idx_cert_retencion_fecha")
+  @@index([storage_key], map: "idx_cert_retencion_storage_key")
   @@map("certificados_retenciones")
 }
 
@@ -2016,15 +2081,19 @@ model PedidosNotasImagen {
   id              Int       @id @default(autoincrement())
   nota_id         Int       @map("nota_id")
   nombre_archivo  String    @map("nombre_archivo") @db.VarChar(255)
-  ruta_archivo    String    @map("ruta_archivo") @db.VarChar(500)
+  /// Disk path during dual-read; null when object lives only in R2
+  ruta_archivo    String?   @map("ruta_archivo") @db.VarChar(500)
   tipo_mime       String?   @map("tipo_mime") @db.VarChar(100)
   tamano_bytes    Int?      @map("tamano_bytes")
   orden           Int       @default(0)
   creado_en       DateTime  @default(now()) @map("creado_en") @db.Timestamp(0)
-  
+  storage_key     String?   @map("storage_key") @db.VarChar(700)
+  storage_bucket  String?   @map("storage_bucket") @db.VarChar(120)
+
   nota            PedidosNotas @relation(fields: [nota_id], references: [id], onDelete: Cascade)
-  
+
   @@index([nota_id], map: "idx_pedidos_notas_imagen_nota")
+  @@index([storage_key], map: "idx_pedidos_notas_imagen_storage_key")
   @@map("pedidos_notas_imagen")
 }
 
@@ -2036,15 +2105,17 @@ model PedidosAlbaranes {
   id             Int       @id @default(autoincrement())
   /// Un pedido poate avea mai multe albaranes (upload succesive)
   pedido_uid     String    @map("pedido_uid") @db.VarChar(64)
-  archivo        Bytes     @map("archivo") @db.LongBlob
   nombre_archivo String    @map("nombre_archivo") @db.VarChar(255)
   tipo_mime      String?   @map("tipo_mime") @db.VarChar(100)
   tamano_bytes   Int?      @map("tamano_bytes")
+  storage_key    String    @map("storage_key") @db.VarChar(700)
+  storage_bucket String?   @map("storage_bucket") @db.VarChar(120)
   subido_por     String?   @map("subido_por") @db.VarChar(255)
   subido_en      DateTime  @default(now()) @map("subido_en") @db.DateTime(0)
   actualizado_en DateTime  @default(now()) @updatedAt @map("actualizado_en") @db.DateTime(0)
 
   @@index([pedido_uid], map: "idx_pedido_uid")
+  @@index([storage_key], map: "idx_pedidos_albaranes_storage_key")
   @@map("PedidosAlbaranes")
 }
 
@@ -2166,4 +2237,52 @@ model FotosTrabajoFoto {
   @@index([album_id, created_at], map: "idx_ft_foto_album_created")
   @@unique([storage_key], map: "uq_ft_foto_storage_key")
   @@map("fotos_trabajo_fotos")
+}
+
+// ============================================
+// TAREAS DE SERVICIO – órdenes de trabajo (limpieza, etc.)
+// Distinto de TareasDiaria (cuadernos históricos).
+// ============================================
+
+model TareaServicio {
+  id               Int                  @id @default(autoincrement())
+  titulo           String               @db.VarChar(300)
+  descripcion      String?              @db.Text
+  prioridad        String               @default("normal") @db.VarChar(20)
+  estado           String               @default("pendiente") @db.VarChar(20)
+  codigo_asignado  String               @map("codigo_asignado") @db.VarChar(50)
+  nombre_asignado  String?              @map("nombre_asignado") @db.VarChar(255)
+  codigo_creador   String               @map("codigo_creador") @db.VarChar(50)
+  nombre_creador   String?              @map("nombre_creador") @db.VarChar(255)
+  centro           String?              @db.VarChar(300)
+  zona             String?              @db.VarChar(300)
+  cliente_id       Int?                 @map("cliente_id")
+  fecha_limite     DateTime?            @map("fecha_limite") @db.DateTime(0)
+  completado_at    DateTime?            @map("completado_at") @db.DateTime(0)
+  nota_completado  String?              @map("nota_completado") @db.Text
+  created_at       DateTime             @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at       DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamp(0)
+  fotos            TareaServicioFoto[]
+
+  @@index([codigo_asignado, estado, created_at], map: "idx_tarea_asignado_estado")
+  @@index([estado, prioridad, created_at], map: "idx_tarea_estado_prio")
+  @@index([codigo_creador], map: "idx_tarea_creador")
+  @@map("tareas_servicio")
+}
+
+model TareaServicioFoto {
+  id              Int           @id @default(autoincrement())
+  tarea_id        Int           @map("tarea_id")
+  storage_key     String        @map("storage_key") @db.VarChar(700)
+  storage_bucket  String?       @map("storage_bucket") @db.VarChar(120)
+  mime_type       String?       @map("mime_type") @db.VarChar(100)
+  tamano_bytes    Int?          @map("tamano_bytes")
+  nombre_original String?       @map("nombre_original") @db.VarChar(255)
+  uploaded_by     String        @map("uploaded_by") @db.VarChar(50)
+  created_at      DateTime      @default(now()) @map("created_at") @db.Timestamp(0)
+  tarea           TareaServicio @relation(fields: [tarea_id], references: [id], onDelete: Cascade, onUpdate: Restrict, map: "fk_tarea_foto")
+
+  @@index([tarea_id, created_at], map: "idx_tarea_foto_tarea")
+  @@unique([storage_key], map: "uq_tarea_foto_storage_key")
+  @@map("tareas_servicio_fotos")
 }

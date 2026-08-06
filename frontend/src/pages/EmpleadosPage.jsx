@@ -14,6 +14,7 @@ import Back3DButton from '../components/Back3DButton.jsx';
 import EmployeePDFGenerator from '../components/employees/EmployeePDFGenerator.jsx';
 import { fetchAvatarOnce, getCachedAvatar, setCachedAvatar, DEFAULT_AVATAR } from '../utils/avatarCache';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { usePermissions } from '../hooks/usePermissions';
 
 import activityLogger from '../utils/activityLogger';
 import { getFormattedNombre, getEmployeeInitials } from '../utils/employeeNameHelper';
@@ -229,6 +230,8 @@ const calcularAntiguedad = (fechaAntiguedad, fechaBaja) => {
 
 export default function EmpleadosPage() {
   const { user: authUser, authToken, logout } = useAuth();
+  const { hasPermission } = usePermissions();
+  const canCreateTareas = hasPermission('tareas');
   const { callApi } = useApi();
   
   // State pentru estadísticas
@@ -881,6 +884,19 @@ export default function EmpleadosPage() {
     observaciones: ''
   });
   const [creatingSolicitud, setCreatingSolicitud] = useState(false);
+
+  // Modal crear tarea de servicio
+  const [showCrearTareaModal, setShowCrearTareaModal] = useState(false);
+  const [empleadoParaTarea, setEmpleadoParaTarea] = useState(null);
+  const [tareaFormData, setTareaFormData] = useState({
+    titulo: '',
+    descripcion: '',
+    prioridad: 'normal',
+    centro: '',
+    zona: '',
+    fecha_limite: '',
+  });
+  const [creatingTarea, setCreatingTarea] = useState(false);
 
   // Lista de países del mundo para nacionalidad
   const paises = [
@@ -1563,6 +1579,115 @@ export default function EmpleadosPage() {
       });
     } finally {
       setCreatingSolicitud(false);
+    }
+  };
+
+  const handleCrearTarea = (empleado) => {
+    setEmpleadoParaTarea(empleado);
+    const centro =
+      empleado.centro ||
+      empleado.CENTRO ||
+      empleado['CENTRO TRABAJO'] ||
+      empleado.CENTRO_TRABAJO ||
+      empleado['CENTRO_DE_TRABAJO'] ||
+      empleado['CENTRO LABORAL'] ||
+      '';
+    setTareaFormData({
+      titulo: '',
+      descripcion: '',
+      prioridad: 'normal',
+      centro,
+      zona: '',
+      fecha_limite: '',
+    });
+    setShowCrearTareaModal(true);
+  };
+
+  const handleSubmitCrearTarea = async () => {
+    if (!empleadoParaTarea) return;
+    const titulo = String(tareaFormData.titulo || '').trim();
+    if (!titulo) {
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'El título es obligatorio',
+        show: true,
+      });
+      return;
+    }
+
+    setCreatingTarea(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const codigoEmpleado =
+        empleadoParaTarea.CODIGO || empleadoParaTarea.codigo || '';
+      const nombreEmpleado =
+        empleadoParaTarea.nombre ||
+        empleadoParaTarea['NOMBRE / APELLIDOS'] ||
+        '';
+
+      if (!codigoEmpleado) {
+        setNotification({
+          type: 'error',
+          title: 'Error',
+          message: 'No se pudo obtener el código del empleado',
+          show: true,
+        });
+        return;
+      }
+
+      const response = await fetch(routes.tareas, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify({
+          codigo_asignado: codigoEmpleado,
+          nombre_asignado: nombreEmpleado || undefined,
+          titulo,
+          descripcion: tareaFormData.descripcion?.trim() || undefined,
+          prioridad: tareaFormData.prioridad || 'normal',
+          centro: tareaFormData.centro?.trim() || undefined,
+          zona: tareaFormData.zona?.trim() || undefined,
+          fecha_limite: tareaFormData.fecha_limite || undefined,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response
+          .json()
+          .catch(() => ({ message: 'Error desconocido' }));
+        throw new Error(errorData.message || 'Error al crear la tarea');
+      }
+
+      setNotification({
+        type: 'success',
+        title: 'Éxito',
+        message: 'Tarea creada y asignada correctamente',
+        show: true,
+      });
+
+      setShowCrearTareaModal(false);
+      setEmpleadoParaTarea(null);
+      setTareaFormData({
+        titulo: '',
+        descripcion: '',
+        prioridad: 'normal',
+        centro: '',
+        zona: '',
+        fecha_limite: '',
+      });
+    } catch (error) {
+      console.error('Error creating tarea:', error);
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: error.message || 'Error al crear la tarea',
+        show: true,
+      });
+    } finally {
+      setCreatingTarea(false);
     }
   };
 
@@ -5123,6 +5248,18 @@ export default function EmpleadosPage() {
                                   filter: 'drop-shadow(0 2px 4px rgba(59, 130, 246, 0.4))',
                                 }}>🔍</span>
                               </button>
+
+                              {canCreateTareas && (
+                                <button
+                                  onClick={() => handleCrearTarea(user)}
+                                  className="group relative p-1.5 rounded-lg transition-all duration-300 transform hover:scale-125"
+                                  title="Crear solicitud de tarea"
+                                >
+                                  <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
+                                    filter: 'drop-shadow(0 2px 4px rgba(16, 185, 129, 0.4))',
+                                  }}>✅</span>
+                                </button>
+                              )}
                               
                               {/* Icon Despido Improcedente - SOLO ADMIN */}
                               {(authUser?.GRUPO === 'Admin' || authUser?.grupo === 'Admin' || authUser?.GRUPO === 'Developer' || authUser?.grupo === 'Developer') && (
@@ -6681,13 +6818,24 @@ export default function EmpleadosPage() {
                           )}
                         </td>
                         <td className="px-3 py-3 text-sm">
-                          <button
-                            onClick={() => handleCrearSolicitudInspeccion(emp)}
-                            className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg text-xs font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap"
-                            title="Crear solicitud de inspección"
-                          >
-                            🔍 Solicitar Inspección
-                          </button>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              onClick={() => handleCrearSolicitudInspeccion(emp)}
+                              className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg text-xs font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap"
+                              title="Crear solicitud de inspección"
+                            >
+                              🔍 Solicitar Inspección
+                            </button>
+                            {canCreateTareas && (
+                              <button
+                                onClick={() => handleCrearTarea(emp)}
+                                className="px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg text-xs font-semibold hover:from-emerald-600 hover:to-teal-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap"
+                                title="Crear solicitud de tarea"
+                              >
+                                ✅ Crear tarea
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -9255,6 +9403,145 @@ export default function EmpleadosPage() {
               disabled={creatingSolicitud}
             >
               {creatingSolicitud ? 'Creando...' : 'Crear Solicitud'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showCrearTareaModal}
+        onClose={() => {
+          if (creatingTarea) return;
+          setShowCrearTareaModal(false);
+          setEmpleadoParaTarea(null);
+        }}
+        title="Crear solicitud de tarea"
+        size="md"
+      >
+        <div className="space-y-4">
+          {empleadoParaTarea && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-2">
+              <p className="text-sm font-semibold text-emerald-900">Empleado:</p>
+              <p className="text-base text-emerald-800">
+                {empleadoParaTarea.nombre ||
+                  empleadoParaTarea['NOMBRE / APELLIDOS'] ||
+                  'N/A'}
+              </p>
+              <p className="text-xs text-emerald-700 mt-1">
+                Código: {empleadoParaTarea.CODIGO || empleadoParaTarea.codigo || 'N/A'}
+              </p>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Título *
+            </label>
+            <input
+              type="text"
+              value={tareaFormData.titulo}
+              onChange={(e) =>
+                setTareaFormData({ ...tareaFormData, titulo: e.target.value })
+              }
+              placeholder="Ej. Limpiar patios comunidad X"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Descripción
+            </label>
+            <textarea
+              value={tareaFormData.descripcion}
+              onChange={(e) =>
+                setTareaFormData({ ...tareaFormData, descripcion: e.target.value })
+              }
+              placeholder="Detalle de lo que debe hacerse"
+              rows={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Prioridad
+            </label>
+            <select
+              value={tareaFormData.prioridad}
+              onChange={(e) =>
+                setTareaFormData({ ...tareaFormData, prioridad: e.target.value })
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            >
+              <option value="normal">Normal</option>
+              <option value="alta">Alta</option>
+              <option value="urgente">Urgente</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Centro / comunidad
+            </label>
+            <input
+              type="text"
+              value={tareaFormData.centro}
+              onChange={(e) =>
+                setTareaFormData({ ...tareaFormData, centro: e.target.value })
+              }
+              placeholder="Centro o comunidad"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Zona (opcional)
+            </label>
+            <input
+              type="text"
+              value={tareaFormData.zona}
+              onChange={(e) =>
+                setTareaFormData({ ...tareaFormData, zona: e.target.value })
+              }
+              placeholder="Ej. patios, portal, garaje…"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Fecha límite (opcional)
+            </label>
+            <input
+              type="datetime-local"
+              value={tareaFormData.fecha_limite}
+              onChange={(e) =>
+                setTareaFormData({ ...tareaFormData, fecha_limite: e.target.value })
+              }
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowCrearTareaModal(false);
+                setEmpleadoParaTarea(null);
+              }}
+              disabled={creatingTarea}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleSubmitCrearTarea}
+              loading={creatingTarea}
+              disabled={creatingTarea || !tareaFormData.titulo.trim()}
+            >
+              {creatingTarea ? 'Creando...' : 'Crear tarea'}
             </Button>
           </div>
         </div>

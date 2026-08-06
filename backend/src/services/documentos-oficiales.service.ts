@@ -6,7 +6,17 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from './telegram.service';
+import { DocumentosOficialesStorageService } from './documentos-oficiales-storage.service';
 import * as path from 'path';
+import { PDFDocument } from 'pdf-lib';
+
+/** Slot sello empresa — same ratios as frontend contratoPdfSignatureLayout.js */
+const CONTRATO_EMPRESA_SELLO_SLOT = {
+  xRatio: 0.36,
+  yBottomRatio: 0.21,
+  widthRatio: 0.26,
+  heightRatio: 0.085,
+};
 
 @Injectable()
 export class DocumentosOficialesService {
@@ -15,6 +25,7 @@ export class DocumentosOficialesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegramService: TelegramService,
+    private readonly docsOficialesStorage: DocumentosOficialesStorageService,
   ) {}
 
   /**
@@ -201,7 +212,7 @@ export class DocumentosOficialesService {
           tipo_documento,
           nombre_archivo,
           nombre_empleado,
-          archivo
+          storage_key
         FROM \`DocumentosOficiales\`
         WHERE ${whereClause}
         LIMIT 1;
@@ -220,31 +231,7 @@ export class DocumentosOficialesService {
       }
 
       const row = result[0];
-
-      if (row.archivo == null) {
-        throw new BadRequestException(
-          'Columna "archivo" no está disponible para este documento oficial',
-        );
-      }
-
-      // Convertește archivo la Buffer
-      let archivoBuffer: Buffer;
-      if (Buffer.isBuffer(row.archivo)) {
-        archivoBuffer = row.archivo;
-      } else if (
-        typeof row.archivo === 'object' &&
-        row.archivo?.type === 'Buffer' &&
-        Array.isArray(row.archivo.data)
-      ) {
-        archivoBuffer = Buffer.from(row.archivo.data);
-      } else if (typeof row.archivo === 'string') {
-        // Dacă vine deja base64, decodează
-        archivoBuffer = Buffer.from(row.archivo, 'base64');
-      } else {
-        throw new BadRequestException(
-          'Formato desconocido para el campo "archivo"',
-        );
-      }
+      const archivoBuffer = await this.docsOficialesStorage.resolveArchivo(row);
 
       // Detectează tipul MIME din extensia fișierului
       const nombreArchivo =
@@ -424,7 +411,22 @@ export class DocumentosOficialesService {
         // Clean filename (remove diacritics, problematic characters)
         const nombreArchivo = this.cleanFilenameKeepExt(nombreArchivoRaw);
 
-        // Insert into DocumentosOficiales table
+        if (!file.buffer?.length) {
+          throw new BadRequestException(`Archivo vacío: ${nombreArchivo}`);
+        }
+        if (!this.docsOficialesStorage.isWriteEnabled()) {
+          throw new BadRequestException(
+            'R2 no está habilitado; no se pueden subir documentos oficiales',
+          );
+        }
+
+        const put = await this.docsOficialesStorage.putDocumento(
+          file.buffer,
+          id,
+          nombreArchivo,
+          file.mimetype,
+        );
+
         const query = `
           INSERT INTO \`DocumentosOficiales\` (
             \`id\`,
@@ -433,7 +435,9 @@ export class DocumentosOficialesService {
             \`nombre_archivo\`,
             \`nombre_empleado\`,
             \`fecha_creacion\`,
-            \`archivo\`
+            \`storage_key\`,
+            \`storage_bucket\`,
+            \`tamano_bytes\`
           ) VALUES (
             ${this.escapeSql(id)},
             ${this.escapeSql(correoElectronico)},
@@ -441,7 +445,9 @@ export class DocumentosOficialesService {
             ${this.escapeSql(nombreArchivo)},
             ${this.escapeSql(nombreEmpleado)},
             ${fechaMysql ? this.escapeSql(fechaMysql) : 'NOW()'},
-            ${file.buffer ? `0x${file.buffer.toString('hex')}` : 'NULL'}
+            ${this.escapeSql(put.storage_key)},
+            ${this.escapeSql(put.storage_bucket)},
+            ${put.tamano_bytes}
           )
         `;
 
@@ -450,7 +456,7 @@ export class DocumentosOficialesService {
           inserted++;
           processed++;
           this.logger.log(
-            `✅ Documento oficial ${index + 1}/${files.length} insertado: ${nombreArchivo} (${file.size} bytes, original: ${nombreArchivoRaw})`,
+            `✅ Documento oficial ${index + 1}/${files.length} insertado en R2: ${nombreArchivo} (${file.size} bytes, original: ${nombreArchivoRaw})`,
           );
         } catch (insertError: any) {
           this.logger.error(
@@ -517,6 +523,7 @@ export class DocumentosOficialesService {
           doc_id,
           id,
           nombre_archivo,
+          storage_key,
           LENGTH(nombre_archivo) as nombre_length,
           HEX(nombre_archivo) as nombre_hex
         FROM \`DocumentosOficiales\`
@@ -541,6 +548,16 @@ export class DocumentosOficialesService {
           `  ${idx + 1}. nombre_archivo: "${doc.nombre_archivo}" (length: ${doc.nombre_length})`,
         );
       });
+
+      const storageKeyToDelete =
+        existingDocs.length === 1
+          ? existingDocs[0]?.storage_key
+          : existingDocs.find(
+              (d) =>
+                String(d.nombre_archivo || '').trim() ===
+                  nombreArchivoNormalized.trim() ||
+                String(d.nombre_archivo || '').trim() === nombreArchivo.trim(),
+            )?.storage_key || existingDocs[0]?.storage_key;
 
       // If only one document exists with this doc_id, delete it regardless of filename
       // This handles cases where filename might have slight differences (spaces, encoding, etc.)
@@ -583,6 +600,8 @@ export class DocumentosOficialesService {
             `Documento existente tiene nombre_archivo: "${actualFilename}"`,
         );
       }
+
+      await this.docsOficialesStorage.deleteObjectIfAny(storageKeyToDelete);
 
       this.logger.log(
         `✅ Documento oficial eliminado: doc_id=${docIdNumber}, nombre_archivo="${nombreArchivo.trim()}"`,
@@ -651,6 +670,8 @@ export class DocumentosOficialesService {
     mime?: string;
     doc_id?: number; // Dacă este prezent, face UPDATE în loc de INSERT
     update_existing?: boolean | number | string; // Flag pentru a forța UPDATE (acceptă boolean, number sau string pentru compatibilitate)
+    /** doc_id al originalului nesemnat (angajat): după INSERT _FIRMADO, se ascunde de angajat */
+    source_doc_id?: number | string;
   }): Promise<{ success: true; message: string; doc_id: number }> {
     try {
       // Log imediat ce primește backend-ul
@@ -684,6 +705,16 @@ export class DocumentosOficialesService {
         throw new BadRequestException(
           '"signed_b64" no es válido o está vacío (se requiere Base64 válido)',
         );
+      }
+
+      let signedBuffer: Buffer;
+      try {
+        signedBuffer = Buffer.from(b64, 'base64');
+      } catch {
+        throw new BadRequestException('"signed_b64" no es Base64 válido');
+      }
+      if (!signedBuffer.length) {
+        throw new BadRequestException('"signed_b64" decodificado está vacío');
       }
 
       // Extract fields
@@ -720,24 +751,46 @@ export class DocumentosOficialesService {
         `🔍 [saveSignedDocument] Decisión: shouldUpdate=${shouldUpdate}, docIdToUpdate=${docIdToUpdate}`,
       );
 
+      if (!this.docsOficialesStorage.isWriteEnabled()) {
+        throw new BadRequestException(
+          'R2 no está habilitado; no se pueden guardar documentos firmados',
+        );
+      }
+
+      const put = await this.docsOficialesStorage.putDocumento(
+        signedBuffer,
+        idPayload,
+        fileNameRaw,
+        body.mime || 'application/pdf',
+      );
+      const storageKeySql = this.escapeSql(put.storage_key);
+      const storageBucketSql = this.escapeSql(put.storage_bucket);
+      const tamanoSql = String(put.tamano_bytes);
+      const newStorageKey = put.storage_key;
+
       let finalDocId: number;
 
       if (shouldUpdate && docIdToUpdate) {
         // UPDATE: Înlocuiește documentul existent cu cel semnat
-        // NU schimbăm tipo_documento (rămâne la fel, nu devine "CONTRATO firmado")
-        // NU schimbăm necesita_firma (rămâne la fel)
-        // NU schimbăm Permisso_Para_Empleado (rămâne la fel)
-        // Doar actualizăm archivo (fișierul) cu cel semnat
+        const oldRows = await this.prisma.$queryRawUnsafe<
+          Array<{ storage_key: string | null }>
+        >(
+          `SELECT storage_key FROM \`DocumentosOficiales\` WHERE doc_id = ${docIdToUpdate} LIMIT 1`,
+        );
+        const oldKey = oldRows?.[0]?.storage_key;
+
         const updateQuery = `
           UPDATE \`DocumentosOficiales\`
           SET 
-            archivo = FROM_BASE64(${this.escapeSql(b64)}),
+            storage_key = ${storageKeySql},
+            storage_bucket = ${storageBucketSql},
+            tamano_bytes = ${tamanoSql},
             fecha_creacion = ${fechaMysql ? this.escapeSql(fechaMysql) : 'NOW()'}
           WHERE doc_id = ${docIdToUpdate}
         `.trim();
 
         this.logger.log(
-          `💾 Update signed document request - doc_id: ${docIdToUpdate}, id: ${idPayload}, nombre_archivo: "${fileNameRaw}"`,
+          `💾 Update signed document request - doc_id: ${docIdToUpdate}, id: ${idPayload}, nombre_archivo: "${fileNameRaw}" (R2)`,
         );
 
         try {
@@ -747,6 +800,14 @@ export class DocumentosOficialesService {
           this.logger.error(`❌ Error executing UPDATE query:`, updateError);
           this.logger.error(`❌ Query was: ${updateQuery.substring(0, 1000)}`);
           throw updateError;
+        }
+
+        if (
+          oldKey &&
+          newStorageKey &&
+          String(oldKey).trim() !== String(newStorageKey).trim()
+        ) {
+          await this.docsOficialesStorage.deleteObjectIfAny(oldKey);
         }
 
         this.logger.log(
@@ -769,7 +830,9 @@ export class DocumentosOficialesService {
             nombre_archivo,
             nombre_empleado,
             fecha_creacion,
-            archivo,
+            storage_key,
+            storage_bucket,
+            tamano_bytes,
             necesita_firma,
             \`Permisso Para Empleado\`
           ) VALUES (
@@ -780,14 +843,16 @@ export class DocumentosOficialesService {
             ${this.escapeSql(fileNameRaw)},
             ${this.escapeSql(nombreEmpleado)},
             ${fechaMysql ? this.escapeSql(fechaMysql) : 'NOW()'},
-            FROM_BASE64(${this.escapeSql(b64)}),
+            ${storageKeySql},
+            ${storageBucketSql},
+            ${tamanoSql},
             0,
             'SI'
           )
         `.trim();
 
         this.logger.log(
-          `💾 Save signed document request - id: ${idPayload}, nombre_archivo: "${fileNameRaw}", nombre_empleado: "${nombreEmpleado || '(derivado)'}"`,
+          `💾 Save signed document request - id: ${idPayload}, nombre_archivo: "${fileNameRaw}", nombre_empleado: "${nombreEmpleado || '(derivado)'}" (R2)`,
         );
 
         try {
@@ -807,6 +872,14 @@ export class DocumentosOficialesService {
         this.logger.log(
           `✅ Documento firmado guardado: doc_id=${finalDocId}, id="${idPayload}", nombre_archivo="${fileNameRaw}"`,
         );
+
+        // Ascunde originalul nesemnat pentru angajat (rămâne doar _FIRMADO vizibil)
+        await this.hideUnsignedOriginalForEmpleado({
+          empleadoId: idPayload,
+          signedFileName: fileNameRaw,
+          newDocId: finalDocId,
+          sourceDocId: body.source_doc_id ?? body.doc_id,
+        });
       }
 
       // Trimite notificare Telegram către gestoria
@@ -904,6 +977,76 @@ ${firmadoPor}
       }
       throw new BadRequestException(
         `Error al guardar el documento firmado: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * După ce angajatul semnează (INSERT _FIRMADO), originalul rămâne în DB pentru admin
+   * dar nu mai e vizibil angajatului (Permisso = NO, necesita_firma = 0).
+   */
+  private async hideUnsignedOriginalForEmpleado(opts: {
+    empleadoId: string;
+    signedFileName: string;
+    newDocId: number;
+    sourceDocId?: number | string | null;
+  }): Promise<void> {
+    try {
+      const empleadoId = String(opts.empleadoId || '').trim();
+      if (!empleadoId || !opts.newDocId) return;
+
+      const idsToHide = new Set<number>();
+      const sourceNum = Number(opts.sourceDocId);
+      if (
+        Number.isFinite(sourceNum) &&
+        sourceNum > 0 &&
+        sourceNum !== opts.newDocId
+      ) {
+        idsToHide.add(sourceNum);
+      }
+
+      const signedName = String(opts.signedFileName || '').trim();
+      const baseName = signedName
+        .replace(/_FIRMADO(?=\.[^.]+$)/i, '')
+        .replace(/\s+_FIRMADO(?=\.[^.]+$)/i, '');
+      if (baseName && baseName.toLowerCase() !== signedName.toLowerCase()) {
+        const rows = await this.prisma.$queryRawUnsafe<
+          Array<{ doc_id: number }>
+        >(
+          `SELECT doc_id FROM \`DocumentosOficiales\`
+           WHERE \`id\` = ${this.escapeSql(empleadoId)}
+             AND doc_id <> ${Number(opts.newDocId)}
+             AND \`nombre_archivo\` = ${this.escapeSql(baseName)}
+           LIMIT 20`,
+        );
+        for (const r of rows || []) {
+          const id = Number(r.doc_id);
+          if (Number.isFinite(id) && id > 0) idsToHide.add(id);
+        }
+      }
+
+      if (idsToHide.size === 0) {
+        this.logger.log(
+          `ℹ️ No se encontró original unsigned para ocultar (empleado=${empleadoId}, firmado=${signedName})`,
+        );
+        return;
+      }
+
+      const idList = [...idsToHide].join(',');
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE \`DocumentosOficiales\`
+         SET \`Permisso Para Empleado\` = 'NO',
+             necesita_firma = 0
+         WHERE doc_id IN (${idList})
+           AND doc_id <> ${Number(opts.newDocId)}`,
+      );
+
+      this.logger.log(
+        `👁️ Original(es) oculto(s) para empleado: doc_id=[${idList}] (firmado doc_id=${opts.newDocId})`,
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `⚠️ No se pudo ocultar el original unsigned (non-blocking): ${err?.message}`,
       );
     }
   }
@@ -1266,5 +1409,134 @@ ${firmadoPor}
       );
       return 0;
     }
+  }
+
+  /**
+   * Lipește sello de empresa pe ultima pagină a unui contract și înlocuiește fișierul (R2 + DB).
+   */
+  async aplicarSelloEmpresa(docId: string | number): Promise<{
+    message: string;
+    doc_id: number;
+    nombre_archivo: string;
+  }> {
+    const idNum = Number(docId);
+    if (!Number.isFinite(idNum) || idNum <= 0) {
+      throw new BadRequestException(`docId inválido: ${docId}`);
+    }
+
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        doc_id: number;
+        id: string | null;
+        nombre_archivo: string | null;
+        tipo_documento: string | null;
+        storage_key: string | null;
+      }>
+    >(
+      `SELECT doc_id, \`id\`, nombre_archivo, tipo_documento, storage_key
+       FROM \`DocumentosOficiales\`
+       WHERE doc_id = ${idNum}
+       LIMIT 1`,
+    );
+
+    const row = rows?.[0];
+    if (!row) {
+      throw new NotFoundException(`Documento oficial no encontrado: ${idNum}`);
+    }
+
+    const haystack = [row.nombre_archivo, row.tipo_documento]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    if (!/contrato/.test(haystack)) {
+      throw new BadRequestException(
+        'Solo se puede aplicar el sello a documentos de tipo contrato',
+      );
+    }
+
+    const nombreArchivo = String(row.nombre_archivo || 'contrato.pdf');
+    if (!/\.pdf$/i.test(nombreArchivo)) {
+      throw new BadRequestException('El contrato debe ser un PDF');
+    }
+
+    const pdfBuffer = await this.docsOficialesStorage.resolveArchivo(row);
+    const selloBuffer =
+      await this.docsOficialesStorage.resolveSelloEmpresaPng();
+
+    const pdfDoc = await PDFDocument.load(pdfBuffer, {
+      ignoreEncryption: true,
+    });
+    const pages = pdfDoc.getPages();
+    if (!pages.length) {
+      throw new BadRequestException('El PDF no tiene páginas');
+    }
+    const lastPage = pages[pages.length - 1];
+    const { width: pageWidth, height: pageHeight } = lastPage.getSize();
+
+    const slotW = CONTRATO_EMPRESA_SELLO_SLOT.widthRatio * pageWidth;
+    const slotH = CONTRATO_EMPRESA_SELLO_SLOT.heightRatio * pageHeight;
+    const slotX = CONTRATO_EMPRESA_SELLO_SLOT.xRatio * pageWidth;
+    const slotY = CONTRATO_EMPRESA_SELLO_SLOT.yBottomRatio * pageHeight;
+
+    const pngImage = await pdfDoc.embedPng(selloBuffer);
+    const imgW = pngImage.width;
+    const imgH = pngImage.height;
+    const scale = Math.min(slotW / imgW, slotH / imgH);
+    const drawW = imgW * scale;
+    const drawH = imgH * scale;
+    const drawX = slotX + (slotW - drawW) / 2;
+    const drawY = slotY + (slotH - drawH) / 2;
+
+    lastPage.drawImage(pngImage, {
+      x: drawX,
+      y: drawY,
+      width: drawW,
+      height: drawH,
+    });
+
+    const stampedBytes = await pdfDoc.save();
+    const stampedBuffer = Buffer.from(stampedBytes);
+
+    if (!this.docsOficialesStorage.isWriteEnabled()) {
+      throw new BadRequestException(
+        'R2 no está habilitado; no se puede actualizar el contrato',
+      );
+    }
+
+    const put = await this.docsOficialesStorage.putDocumento(
+      stampedBuffer,
+      row.id,
+      nombreArchivo,
+      'application/pdf',
+    );
+
+    const oldKey = row.storage_key ? String(row.storage_key).trim() : '';
+    const newKey = put.storage_key;
+
+    await this.prisma.$executeRawUnsafe(
+      `
+      UPDATE \`DocumentosOficiales\`
+      SET
+        storage_key = ${this.escapeSql(put.storage_key)},
+        storage_bucket = ${this.escapeSql(put.storage_bucket)},
+        tamano_bytes = ${put.tamano_bytes},
+        fecha_creacion = NOW()
+      WHERE doc_id = ${idNum}
+    `.trim(),
+    );
+
+    if (oldKey && newKey && oldKey !== newKey) {
+      await this.docsOficialesStorage.deleteObjectIfAny(oldKey);
+    }
+
+    this.logger.log(
+      `✅ Sello empresa aplicado y archivo reemplazado: doc_id=${idNum}, archivo="${nombreArchivo}"`,
+    );
+
+    return {
+      message: 'Sello de empresa aplicado y archivo reemplazado',
+      doc_id: idNum,
+      nombre_archivo: nombreArchivo,
+    };
   }
 }

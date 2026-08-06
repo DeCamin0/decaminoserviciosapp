@@ -5,6 +5,8 @@ import { ImapConnector } from '../connectors/imap.connector';
 import { EmailMessage } from '../interfaces/email-connector.interface';
 import { classifyDocument } from '../utils/document-classifier.util';
 import { EmpleadosService } from '../../services/empleados.service';
+import { DocumentosOficialesStorageService } from '../../services/documentos-oficiales-storage.service';
+import { NominasStorageService } from '../../services/nominas-storage.service';
 import * as pdfParseModule from 'pdf-parse';
 import * as crypto from 'crypto';
 
@@ -23,7 +25,45 @@ export class DocumentIngestionService {
     private readonly imapConnector: ImapConnector,
     private readonly empleadosService: EmpleadosService,
     private readonly configService: ConfigService,
+    private readonly docsOficialesStorage: DocumentosOficialesStorageService,
+    private readonly nominasStorage: NominasStorageService,
   ) {}
+
+  /**
+   * Build archivo / R2 SQL fragments for DocumentosOficiales INSERT.
+   */
+  private async buildArchivoStorageSql(
+    buffer: Buffer,
+    empleadoId: string | null | undefined,
+    filename: string,
+    mimeHint?: string | null,
+  ): Promise<{
+    storageKeySql: string;
+    storageBucketSql: string;
+    tamanoSql: string;
+  }> {
+    if (!buffer?.length) {
+      throw new BadRequestException(
+        `Documento vacío: ${filename || 'sin-nombre'}`,
+      );
+    }
+    if (!this.docsOficialesStorage.isWriteEnabled()) {
+      throw new BadRequestException(
+        'R2 no está habilitado; no se pueden guardar documentos oficiales',
+      );
+    }
+    const put = await this.docsOficialesStorage.putDocumento(
+      buffer,
+      empleadoId,
+      filename,
+      mimeHint,
+    );
+    return {
+      storageKeySql: this.escapeSql(put.storage_key),
+      storageBucketSql: this.escapeSql(put.storage_bucket),
+      tamanoSql: String(put.tamano_bytes),
+    };
+  }
 
   /**
    * Preview emails and extract documents without saving them
@@ -1265,6 +1305,13 @@ export class DocumentIngestionService {
             const nombreToSave =
               empleadoNombreFromDb || classification.empleadoNombre || null;
 
+            const storageParts = await this.buildArchivoStorageSql(
+              attachment.content,
+              classification.empleadoId,
+              normalizedFilename,
+              attachment.contentType,
+            );
+
             const query = `
               INSERT INTO \`DocumentosOficiales\` (
                 \`id\`,
@@ -1273,7 +1320,9 @@ export class DocumentIngestionService {
                 \`nombre_archivo\`,
                 \`nombre_empleado\`,
                 \`fecha_creacion\`,
-                \`archivo\`,
+                \`storage_key\`,
+                \`storage_bucket\`,
+                \`tamano_bytes\`,
                 \`status\`,
                 \`source_message_id\`,
                 \`source_attachment_id\`,
@@ -1289,7 +1338,9 @@ export class DocumentIngestionService {
                 ${this.escapeSql(normalizedFilename)},
                 ${this.escapeSql(nombreToSave)},
                 NOW(),
-                ${attachment.content.length > 0 ? `0x${attachment.content.toString('hex')}` : 'NULL'},
+                ${storageParts.storageKeySql},
+                ${storageParts.storageBucketSql},
+                ${storageParts.tamanoSql},
                 'PENDING_REVIEW',
                 ${this.escapeSql(message.messageId)},
                 ${this.escapeSql(attachment.attachmentId)},
@@ -1596,6 +1647,13 @@ export class DocumentIngestionService {
               attachment.filename,
             );
 
+            const storageParts = await this.buildArchivoStorageSql(
+              attachment.content,
+              classification.empleadoId,
+              normalizedFilename,
+              attachment.contentType,
+            );
+
             // Insert document as PENDING_REVIEW
             const query = `
               INSERT INTO \`DocumentosOficiales\` (
@@ -1605,7 +1663,9 @@ export class DocumentIngestionService {
                 \`nombre_archivo\`,
                 \`nombre_empleado\`,
                 \`fecha_creacion\`,
-                \`archivo\`,
+                \`storage_key\`,
+                \`storage_bucket\`,
+                \`tamano_bytes\`,
                 \`status\`,
                 \`source_message_id\`,
                 \`source_attachment_id\`,
@@ -1621,7 +1681,9 @@ export class DocumentIngestionService {
                 ${this.escapeSql(normalizedFilename)},
                 NULL,
                 NOW(),
-                ${attachment.content.length > 0 ? `0x${attachment.content.toString('hex')}` : 'NULL'},
+                ${storageParts.storageKeySql},
+                ${storageParts.storageBucketSql},
+                ${storageParts.tamanoSql},
                 'PENDING_REVIEW',
                 ${this.escapeSql(message.messageId)},
                 ${this.escapeSql(attachment.attachmentId)},
@@ -2098,6 +2160,13 @@ export class DocumentIngestionService {
             const nombreToSave =
               empleadoNombreFromDb || classification.empleadoNombre || null;
 
+            const storageParts = await this.buildArchivoStorageSql(
+              attachment.content,
+              classification.empleadoId,
+              normalizedFilename,
+              attachment.contentType,
+            );
+
             // Insert document as PENDING_REVIEW
             const query = `
               INSERT INTO \`DocumentosOficiales\` (
@@ -2107,7 +2176,9 @@ export class DocumentIngestionService {
                 \`nombre_archivo\`,
                 \`nombre_empleado\`,
                 \`fecha_creacion\`,
-                \`archivo\`,
+                \`storage_key\`,
+                \`storage_bucket\`,
+                \`tamano_bytes\`,
                 \`status\`,
                 \`source_message_id\`,
                 \`source_attachment_id\`,
@@ -2123,7 +2194,9 @@ export class DocumentIngestionService {
                 ${this.escapeSql(normalizedFilename)},
                 ${this.escapeSql(nombreToSave)},
                 NOW(),
-                ${attachment.content.length > 0 ? `0x${attachment.content.toString('hex')}` : 'NULL'},
+                ${storageParts.storageKeySql},
+                ${storageParts.storageBucketSql},
+                ${storageParts.tamanoSql},
                 'PENDING_REVIEW',
                 ${this.escapeSql(message.messageId)},
                 ${this.escapeSql(attachment.attachmentId)},
@@ -2208,7 +2281,7 @@ export class DocumentIngestionService {
           SELECT doc_id 
           FROM DocumentosOficiales 
           WHERE nombre_archivo = ${this.escapeSql(normalizedFilename)}
-            AND LENGTH(archivo) = ${size}
+            AND tamano_bytes = ${size}
         `;
 
         // If we have empleadoId, also check that it matches (more accurate detection)
@@ -2276,9 +2349,10 @@ export class DocumentIngestionService {
         // Optimized query: check only documents from same employee (if available) or recent documents
         // This is much faster than checking all documents
         let query = `
-          SELECT doc_id, archivo
+          SELECT doc_id, storage_key, tamano_bytes
           FROM DocumentosOficiales 
-          WHERE archivo IS NOT NULL
+          WHERE storage_key IS NOT NULL AND storage_key <> ''
+          AND tamano_bytes = ${content.length}
         `;
 
         // If we have empleadoId, filter by it (much faster)
@@ -2290,25 +2364,30 @@ export class DocumentIngestionService {
         }
 
         // Limit to reasonable number
-        query += ` LIMIT 500`;
+        query += ` LIMIT 100`;
 
-        const results =
-          await this.prisma.$queryRawUnsafe<
-            Array<{ doc_id: number; archivo: Buffer }>
-          >(query);
+        const results = await this.prisma.$queryRawUnsafe<
+          Array<{
+            doc_id: number;
+            storage_key: string | null;
+            tamano_bytes: number | null;
+          }>
+        >(query);
 
         for (const doc of results) {
-          if (doc.archivo) {
-            const docHash = crypto
-              .createHash('md5')
-              .update(doc.archivo)
-              .digest('hex');
+          try {
+            const buf = await this.docsOficialesStorage.resolveArchivo(doc);
+            const docHash = crypto.createHash('md5').update(buf).digest('hex');
             if (docHash === hash) {
               this.logger.log(
                 `🔍 Duplicate detected by content hash: ${hash.substring(0, 8)}... (empleado: ${empleadoId || 'unknown'})`,
               );
               return true;
             }
+          } catch (resolveErr: any) {
+            this.logger.warn(
+              `⚠️ Skip hash compare doc_id=${doc.doc_id}: ${resolveErr?.message || resolveErr}`,
+            );
           }
         }
 
@@ -3169,30 +3248,47 @@ export class DocumentIngestionService {
         return;
       }
 
-      // Insert into Nominas table (save month name in Spanish, not number)
+      // Insert into Nominas table (R2)
+      if (!pdfContent?.length) {
+        throw new BadRequestException('Finiquito PDF vacío');
+      }
+      if (!this.nominasStorage.isWriteEnabled()) {
+        throw new BadRequestException(
+          'R2 no está habilitado; no se pueden guardar finiquitos en Nominas',
+        );
+      }
+      const put = await this.nominasStorage.putNominaPdf(
+        pdfContent,
+        empleadoId,
+        `${nombreFinalConTipo}.pdf`,
+      );
       const insertQuery = `
         INSERT INTO \`Nominas\` (
           \`nombre\`,
-          \`archivo\`,
           \`tipo_mime\`,
           \`fecha_subida\`,
           \`Mes\`,
           \`Ano\`,
-          \`codigo_empleado\`
+          \`codigo_empleado\`,
+          \`storage_key\`,
+          \`storage_bucket\`,
+          \`tamano_bytes\`
         ) VALUES (
           ${this.escapeSql(nombreFinalConTipo)},
-          ${pdfContent.length > 0 ? `0x${pdfContent.toString('hex')}` : 'NULL'},
           ${this.escapeSql('application/pdf')},
           NOW(),
           ${this.escapeSql(mesNombre)},
           ${this.escapeSql(ano.toString())},
-          ${this.escapeSql(empleadoId)}
+          ${this.escapeSql(empleadoId)},
+          ${this.escapeSql(put.storage_key)},
+          ${this.escapeSql(put.storage_bucket)},
+          ${put.tamano_bytes}
         )
       `;
 
       await this.prisma.$executeRawUnsafe(insertQuery);
       this.logger.log(
-        `✅ Finiquito saved to Nominas: ${nombreFinalConTipo} - ${mesNombre}/${ano} (empleado: ${empleadoId})`,
+        `✅ Finiquito saved to Nominas (R2): ${nombreFinalConTipo} - ${mesNombre}/${ano} (empleado: ${empleadoId})`,
       );
 
       // Set employee status to INACTIVO if currently ACTIVO
@@ -4077,6 +4173,12 @@ export class DocumentIngestionService {
         );
         const sourceMessageId = `folder:${normalizedFolderPath}`;
 
+        const storageParts = await this.buildArchivoStorageSql(
+          contentBuffer,
+          doc.classification.empleadoId,
+          doc.normalizedFilename,
+        );
+
         // Insert document as PENDING_REVIEW
         const query = `
           INSERT INTO \`DocumentosOficiales\` (
@@ -4086,7 +4188,9 @@ export class DocumentIngestionService {
             \`nombre_archivo\`,
             \`nombre_empleado\`,
             \`fecha_creacion\`,
-            \`archivo\`,
+            \`storage_key\`,
+            \`storage_bucket\`,
+            \`tamano_bytes\`,
             \`status\`,
             \`source_message_id\`,
             \`source_attachment_id\`,
@@ -4102,7 +4206,9 @@ export class DocumentIngestionService {
             ${this.escapeSql(doc.normalizedFilename)},
             ${this.escapeSql(nombreToSave)},
             NOW(),
-            ${contentBuffer.length > 0 ? `0x${contentBuffer.toString('hex')}` : 'NULL'},
+            ${storageParts.storageKeySql},
+            ${storageParts.storageBucketSql},
+            ${storageParts.tamanoSql},
             'PENDING_REVIEW',
             ${this.escapeSql(sourceMessageId)},
             ${this.escapeSql(doc.normalizedFilename)},

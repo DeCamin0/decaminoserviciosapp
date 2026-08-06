@@ -20,6 +20,7 @@ import {
   expandOfertaInvernalPiscinaDesdePayload,
 } from '../services/presupuesto-documento.service';
 import { PresupuestosGuardadosService } from '../services/presupuestos-guardados.service';
+import { PresupuestosFirmasStorageService } from '../services/presupuestos-firmas-storage.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -152,6 +153,7 @@ export class PresupuestosFirmadoController {
     private readonly emailService: EmailService,
     private readonly presupuestoDocumentoService: PresupuestoDocumentoService,
     private readonly presupuestosGuardadosService: PresupuestosGuardadosService,
+    private readonly presupuestosFirmasStorage: PresupuestosFirmasStorageService,
   ) {}
 
   /** Endpoint público (sin JWT): devuelve numero_presupuesto, cliente_nombre, cif y direccion para prellenar la página de firma. */
@@ -408,6 +410,9 @@ export class PresupuestosFirmadoController {
 
     let pdfPath: string | null = null;
     let pdfBuffer: Buffer | null = null;
+    let storageKey: string | null = null;
+    let storageBucket: string | null = null;
+    let tamanoBytes: number | null = null;
     let originalPdfSha256: string | null = null;
     let originalPdfSizeBytes: number | null = null;
     let signedPdfSha256: string | null = null;
@@ -465,22 +470,63 @@ export class PresupuestosFirmadoController {
         });
 
       pdfBuffer = pdfBufferFinal;
-      const dir = path.join(process.cwd(), 'uploads', 'presupuestos-firmas');
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
       const fileName = `presupuesto-${presupuestoId}-firmado-${Date.now()}.pdf`;
-      const filePath = path.join(dir, fileName);
-      fs.writeFileSync(filePath, pdfBuffer);
-      pdfPath = `uploads/presupuestos-firmas/${fileName}`;
-      this.logger.log(
-        `PDF presupuesto con firma generado: ${pdfBuffer.length} bytes, guardado en ${fileName}; original_sha256=${originalPdfSha256.slice(0, 16)}..., signed_sha256=${signedPdfSha256.slice(0, 16)}...`,
-      );
+
+      if (this.presupuestosFirmasStorage.isWriteEnabled()) {
+        try {
+          const put = await this.presupuestosFirmasStorage.putFirmaPdf(
+            pdfBuffer,
+            presupuestoId,
+            fileName,
+          );
+          storageKey = put.storage_key;
+          storageBucket = put.storage_bucket;
+          tamanoBytes = put.tamano_bytes;
+          this.logger.log(
+            `PDF presupuesto firmado en R2: ${pdfBuffer.length} bytes, key=${put.storage_key}; original_sha256=${originalPdfSha256.slice(0, 16)}..., signed_sha256=${signedPdfSha256.slice(0, 16)}...`,
+          );
+        } catch (r2Err: any) {
+          this.logger.warn(
+            'R2 put falló para presupuesto firmado; fallback a disco/LONGBLOB: ' +
+              (r2Err?.message || r2Err),
+          );
+        }
+      }
+
+      if (!storageKey) {
+        const dir = path.join(process.cwd(), 'uploads', 'presupuestos-firmas');
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        const filePath = path.join(dir, fileName);
+        fs.writeFileSync(filePath, pdfBuffer);
+        pdfPath = `uploads/presupuestos-firmas/${fileName}`;
+        this.logger.log(
+          `PDF presupuesto con firma generado: ${pdfBuffer.length} bytes, guardado en ${fileName}; original_sha256=${originalPdfSha256.slice(0, 16)}..., signed_sha256=${signedPdfSha256.slice(0, 16)}...`,
+        );
+      }
     } catch (err: any) {
       this.logger.warn(
         'No se pudo generar o guardar el PDF de aceptación',
         err?.message || err,
       );
+    }
+
+    let firmaImagenStorageKey: string | null = null;
+    const imgBuf = this.presupuestosFirmasStorage.parseFirmaImagenBase64(
+      body.firma_base64,
+    );
+    if (imgBuf) {
+      if (!this.presupuestosFirmasStorage.isWriteEnabled()) {
+        throw new BadRequestException(
+          'R2 no está habilitado; no se puede guardar la imagen de firma',
+        );
+      }
+      const imgPut = await this.presupuestosFirmasStorage.putFirmaImagenPng(
+        imgBuf,
+        presupuestoId,
+      );
+      firmaImagenStorageKey = imgPut.storage_key;
     }
 
     await this.prisma.presupuestos_firmas.create({
@@ -494,11 +540,18 @@ export class PresupuestosFirmadoController {
         cargo: (body.cargo || '').trim() || '—',
         email: (body.email || '').trim() || '—',
         telefono: (body.telefono || '').trim() || '—',
-        firma_imagen_base64: body.firma_base64 || '',
+        firma_imagen_storage_key: firmaImagenStorageKey,
         ip: ip || null,
         user_agent: userAgent || null,
         pdf_path: pdfPath,
-        pdf_content: pdfBuffer && pdfBuffer.length > 0 ? pdfBuffer : undefined,
+        // Prefer R2: skip LONGBLOB when storage_key is set
+        pdf_content:
+          !storageKey && pdfBuffer && pdfBuffer.length > 0
+            ? pdfBuffer
+            : undefined,
+        storage_key: storageKey,
+        storage_bucket: storageBucket,
+        tamano_bytes: tamanoBytes,
         original_pdf_sha256: originalPdfSha256 ?? undefined,
         original_pdf_size_bytes: originalPdfSizeBytes ?? undefined,
         signed_pdf_sha256: signedPdfSha256 ?? undefined,

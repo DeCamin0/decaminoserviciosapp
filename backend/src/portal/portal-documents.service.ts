@@ -10,6 +10,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresupuestosGuardadosService } from '../services/presupuestos-guardados.service';
+import { DocumentosOficialesStorageService } from '../services/documentos-oficiales-storage.service';
+import { PortalDocumentsStorageService } from './portal-documents-storage.service';
 import type { PortalAuthUserPayload } from './portal.types';
 
 @Injectable()
@@ -19,6 +21,8 @@ export class PortalDocumentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly presupuestosGuardadosService: PresupuestosGuardadosService,
+    private readonly docsOficialesStorage: DocumentosOficialesStorageService,
+    private readonly portalDocsStorage: PortalDocumentsStorageService,
   ) {}
 
   async listContratos(user: PortalAuthUserPayload) {
@@ -149,14 +153,17 @@ export class PortalDocumentsService {
   }> {
     const row = await this.prisma.portalDocumentoGeneral.findFirst({
       where: { id, estado: 'activo' },
+      select: {
+        id: true,
+        nombre_documento: true,
+        mime_type: true,
+        storage_key: true,
+      },
     });
     if (!row) {
       throw new NotFoundException('Documento no encontrado');
     }
-    const raw = row.archivo;
-    const buffer = Buffer.isBuffer(raw)
-      ? raw
-      : Buffer.from(raw as ArrayLike<number>);
+    const buffer = await this.portalDocsStorage.resolveArchivo(row);
     const mime = row.mime_type?.trim() || 'application/pdf';
     const name = row.nombre_documento || `documento-${id}`;
     const safe = name.replace(/[^\w\-.]+/g, '_').slice(0, 120);
@@ -185,14 +192,16 @@ export class PortalDocumentsService {
   ): Promise<{ buffer: Buffer; filename: string; mime: string }> {
     const row = await this.prisma.clienteFacturaManual.findFirst({
       where: { id, cliente_id: user.cliente_id },
+      select: {
+        nombre_archivo: true,
+        mime_type: true,
+        storage_key: true,
+      },
     });
     if (!row) {
       throw new NotFoundException('Factura no encontrada');
     }
-    const raw = row.archivo;
-    const buffer = Buffer.isBuffer(raw)
-      ? raw
-      : Buffer.from(raw as ArrayLike<number>);
+    const buffer = await this.portalDocsStorage.resolveArchivo(row);
     const mime = row.mime_type?.trim() || 'application/pdf';
     return { buffer, filename: row.nombre_archivo, mime };
   }
@@ -217,14 +226,16 @@ export class PortalDocumentsService {
   ): Promise<{ buffer: Buffer; filename: string; mime: string }> {
     const row = await this.prisma.clienteInspeccionDocumento.findFirst({
       where: { id, cliente_id: user.cliente_id, estado: 'activo' },
+      select: {
+        nombre_archivo: true,
+        mime_type: true,
+        storage_key: true,
+      },
     });
     if (!row) {
       throw new NotFoundException('Informe no encontrado');
     }
-    const raw = row.archivo;
-    const buffer = Buffer.isBuffer(raw)
-      ? raw
-      : Buffer.from(raw as ArrayLike<number>);
+    const buffer = await this.portalDocsStorage.resolveArchivo(row);
     const mime = row.mime_type?.trim() || 'application/pdf';
     return { buffer, filename: row.nombre_archivo, mime };
   }
@@ -401,30 +412,8 @@ export class PortalDocumentsService {
     return null;
   }
 
-  private bufferFromDocumentosOficialesArchivo(raw: unknown): Buffer {
-    if (Buffer.isBuffer(raw)) {
-      return raw;
-    }
-    if (
-      typeof raw === 'object' &&
-      raw !== null &&
-      (raw as { type?: string }).type === 'Buffer' &&
-      Array.isArray((raw as { data?: number[] }).data)
-    ) {
-      return Buffer.from((raw as { data: number[] }).data);
-    }
-    if (typeof raw === 'string') {
-      return Buffer.from(raw, 'base64');
-    }
-    throw new BadRequestException('Formato de archivo no soportado');
-  }
-
   private mimeFromNombreArchivo(nombre: string): string {
-    const ext = path.extname(nombre || '').toLowerCase();
-    if (ext === '.pdf') return 'application/pdf';
-    if (ext === '.png') return 'image/png';
-    if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
-    return 'application/octet-stream';
+    return this.docsOficialesStorage.guessContentType(nombre);
   }
 
   /**
@@ -442,7 +431,7 @@ export class PortalDocumentsService {
     const codigos = [...codigoSet];
     const docs = await this.prisma.documentosOficiales.findMany({
       where: {
-        archivo: { not: null },
+        storage_key: { not: null },
         OR: [
           { id: { in: codigos } },
           { detected_empleado_id: { in: codigos } },
@@ -457,6 +446,7 @@ export class PortalDocumentsService {
         tipo_documento: true,
         nombre_archivo: true,
         Permisso_Para_Empleado: true,
+        storage_key: true,
       },
       orderBy: { doc_id: 'desc' },
     });
@@ -504,8 +494,18 @@ export class PortalDocumentsService {
     }
     const row = await this.prisma.documentosOficiales.findFirst({
       where: { doc_id: docId },
+      select: {
+        doc_id: true,
+        id: true,
+        detected_empleado_id: true,
+        confirmed_empleado_id: true,
+        tipo_documento: true,
+        nombre_archivo: true,
+        Permisso_Para_Empleado: true,
+        storage_key: true,
+      },
     });
-    if (!row?.archivo) {
+    if (!row?.storage_key) {
       throw new NotFoundException('Documento no encontrado o sin archivo');
     }
     const codigo = PortalDocumentsService.resolveDocCodigoEmpleado(row);
@@ -522,7 +522,7 @@ export class PortalDocumentsService {
     ) {
       throw new ForbiddenException('Tipo de documento no permitido en portal');
     }
-    const buffer = this.bufferFromDocumentosOficialesArchivo(row.archivo);
+    const buffer = await this.docsOficialesStorage.resolveArchivo(row);
     const nombre =
       row.nombre_archivo?.trim() || `contrato-empleado-${docId}.pdf`;
     const safe = nombre.replace(/[^\w.-]+/g, '_').slice(0, 180);
@@ -556,14 +556,17 @@ export class PortalDocumentsService {
   }> {
     const row = await this.prisma.portalDocumentoGeneral.findFirst({
       where: { id },
+      select: {
+        id: true,
+        nombre_documento: true,
+        mime_type: true,
+        storage_key: true,
+      },
     });
     if (!row) {
       throw new NotFoundException('Documento no encontrado');
     }
-    const raw = row.archivo;
-    const buffer = Buffer.isBuffer(raw)
-      ? raw
-      : Buffer.from(raw as ArrayLike<number>);
+    const buffer = await this.portalDocsStorage.resolveArchivo(row);
     const mime = row.mime_type?.trim() || 'application/pdf';
     const name = row.nombre_documento || `documento-${id}`;
     const safe = name.replace(/[^\w\-.]+/g, '_').slice(0, 120);
@@ -594,25 +597,39 @@ export class PortalDocumentsService {
       throw new BadRequestException('Archivo vacío');
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      if (params.reemplazar_version_anterior) {
-        await tx.portalDocumentoGeneral.updateMany({
-          where: { tipo_documento: tipo, estado: 'activo' },
-          data: { estado: 'historico' },
+    const mime = params.mime_type?.trim() || 'application/pdf';
+    const put = await this.portalDocsStorage.putGeneral(
+      params.buffer,
+      nombre,
+      mime,
+    );
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        if (params.reemplazar_version_anterior) {
+          await tx.portalDocumentoGeneral.updateMany({
+            where: { tipo_documento: tipo, estado: 'activo' },
+            data: { estado: 'historico' },
+          });
+        }
+        await tx.portalDocumentoGeneral.create({
+          data: {
+            tipo_documento: tipo,
+            nombre_documento: nombre,
+            mime_type: mime,
+            storage_key: put.storage_key,
+            storage_bucket: put.storage_bucket,
+            tamano_bytes: put.tamano_bytes,
+            fecha_validez: params.fecha_validez,
+            estado: 'activo',
+            created_by: params.created_by,
+          },
         });
-      }
-      await tx.portalDocumentoGeneral.create({
-        data: {
-          tipo_documento: tipo,
-          nombre_documento: nombre,
-          mime_type: params.mime_type?.trim() || 'application/pdf',
-          archivo: params.buffer,
-          fecha_validez: params.fecha_validez,
-          estado: 'activo',
-          created_by: params.created_by,
-        },
       });
-    });
+    } catch (err) {
+      await this.portalDocsStorage.deleteObjectIfAny(put.storage_key);
+      throw err;
+    }
     return { ok: true as const };
   }
 

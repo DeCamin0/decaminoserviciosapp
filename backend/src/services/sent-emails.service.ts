@@ -1,11 +1,20 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailAttachmentsStorageService } from './email-attachments-storage.service';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class SentEmailsService {
   private readonly logger = new Logger(SentEmailsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly emailAttachmentsStorage: EmailAttachmentsStorageService,
+  ) {}
 
   /**
    * Salvează un email trimis în baza de date
@@ -30,8 +39,41 @@ export class SentEmailsService {
     }>;
   }): Promise<{ id: string }> {
     try {
+      const emailId = randomUUID();
+      const attachmentCreates: Array<{
+        filename: string;
+        storage_key: string;
+        storage_bucket: string;
+        mime_type: string;
+        file_size: number;
+      }> = [];
+
+      if (data.attachments?.length) {
+        if (!this.emailAttachmentsStorage.isWriteEnabled()) {
+          throw new ServiceUnavailableException(
+            'R2 no está habilitado. Configura R2_ENABLED=true y credenciales.',
+          );
+        }
+        for (const att of data.attachments) {
+          const put = await this.emailAttachmentsStorage.putAttachment(
+            att.fileContent,
+            emailId,
+            att.filename,
+            att.mimeType,
+          );
+          attachmentCreates.push({
+            filename: att.filename,
+            storage_key: put.storage_key,
+            storage_bucket: put.storage_bucket,
+            mime_type: att.mimeType,
+            file_size: att.fileSize || att.fileContent.length,
+          });
+        }
+      }
+
       const sentEmail = await this.prisma.sentEmail.create({
         data: {
+          id: emailId,
           sender_id: data.senderId,
           recipient_type: data.recipientType,
           recipient_id: data.recipientId || null,
@@ -44,15 +86,8 @@ export class SentEmailsService {
           error_message: data.errorMessage || null,
           scheduled_message_id: data.scheduledMessageId || null,
           sent_at: data.status === 'sent' ? new Date() : null,
-          attachments: data.attachments
-            ? {
-                create: data.attachments.map((att) => ({
-                  filename: att.filename,
-                  file_content: att.fileContent,
-                  mime_type: att.mimeType,
-                  file_size: att.fileSize || att.fileContent.length,
-                })),
-              }
+          attachments: attachmentCreates.length
+            ? { create: attachmentCreates }
             : undefined,
         },
       });
@@ -171,6 +206,7 @@ export class SentEmailsService {
                 filename: true,
                 mime_type: true,
                 file_size: true,
+                storage_key: true,
                 created_at: true,
               },
             },
@@ -197,14 +233,23 @@ export class SentEmailsService {
   }
 
   /**
-   * Obține un email specific după ID
+   * Obține un email specific după ID (fără blob / fără a încărca conținutul din R2)
    */
   async getSentEmailById(id: string) {
     try {
       const email = await this.prisma.sentEmail.findUnique({
         where: { id },
         include: {
-          attachments: true,
+          attachments: {
+            select: {
+              id: true,
+              filename: true,
+              mime_type: true,
+              file_size: true,
+              storage_key: true,
+              created_at: true,
+            },
+          },
         },
       });
 
@@ -222,7 +267,7 @@ export class SentEmailsService {
   }
 
   /**
-   * Obține un attachment după ID
+   * Obține un attachment după ID (metadata + buffer din R2 / dual-read)
    */
   async getAttachmentById(attachmentId: string) {
     try {
@@ -234,7 +279,13 @@ export class SentEmailsService {
         throw new Error(`No se encontró el adjunto con ID ${attachmentId}`);
       }
 
-      return attachment;
+      const fileContent =
+        await this.emailAttachmentsStorage.resolveFileContent(attachment);
+
+      return {
+        ...attachment,
+        file_content: fileContent,
+      };
     } catch (error: any) {
       this.logger.error(
         `❌ Eroare la obținerea attachment-ului ${attachmentId}: ${error.message}`,
@@ -244,14 +295,22 @@ export class SentEmailsService {
   }
 
   /**
-   * Șterge un email din baza de date
+   * Șterge un email din baza de date (+ obiecte R2 pentru attachments)
    */
   async deleteSentEmail(id: string): Promise<void> {
     try {
-      // Prisma va șterge automat și attachment-urile datorită onDelete: Cascade
+      const attachments = await this.prisma.emailAttachment.findMany({
+        where: { email_id: id },
+        select: { storage_key: true },
+      });
+
       await this.prisma.sentEmail.delete({
         where: { id },
       });
+
+      for (const att of attachments) {
+        await this.emailAttachmentsStorage.deleteObjectIfAny(att.storage_key);
+      }
 
       this.logger.log(`✅ Email șters din BD: ${id}`);
     } catch (error: any) {

@@ -5,24 +5,47 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PedidosNotasStorageService } from './pedidos-notas-storage.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
 @Injectable()
 export class PedidosNotasService {
   private readonly logger = new Logger(PedidosNotasService.name);
-  private readonly uploadsDir = path.join(
-    process.cwd(),
-    'uploads',
-    'pedidos-notas',
-  );
 
-  constructor(private readonly prisma: PrismaService) {
-    // Creează directorul pentru upload-uri dacă nu există
-    if (!fs.existsSync(this.uploadsDir)) {
-      fs.mkdirSync(this.uploadsDir, { recursive: true });
-      this.logger.log(`📁 Created uploads directory: ${this.uploadsDir}`);
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pedidosNotasStorage: PedidosNotasStorageService,
+  ) {
+    const uploadsDir = this.pedidosNotasStorage.getUploadsDir();
+    if (
+      !this.pedidosNotasStorage.isWriteEnabled() &&
+      !fs.existsSync(uploadsDir)
+    ) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+      this.logger.log(`Created uploads directory: ${uploadsDir}`);
     }
+  }
+
+  private imagenDownloadUrl(imagenId: number): string {
+    return `/api/pedidos-notas/imagenes/${imagenId}/archivo`;
+  }
+
+  private mapImagen(imagen: any) {
+    return {
+      ...imagen,
+      url_archivo: this.imagenDownloadUrl(imagen.id),
+    };
+  }
+
+  private mapNota(nota: any) {
+    if (!nota) return nota;
+    return {
+      ...nota,
+      imagenes: Array.isArray(nota.imagenes)
+        ? nota.imagenes.map((img: any) => this.mapImagen(img))
+        : nota.imagenes,
+    };
   }
 
   /**
@@ -46,10 +69,10 @@ export class PedidosNotasService {
         },
       });
 
-      this.logger.log(`✅ Retrieved ${notas.length} notas`);
-      return notas;
+      this.logger.log(`Retrieved ${notas.length} notas`);
+      return notas.map((n) => this.mapNota(n));
     } catch (error: any) {
-      this.logger.error('❌ Error getting notas:', error);
+      this.logger.error('Error getting notas:', error);
       throw new BadRequestException(`Error al obtener notas: ${error.message}`);
     }
   }
@@ -74,12 +97,12 @@ export class PedidosNotasService {
         throw new NotFoundException(`Nota con id=${id} no encontrada`);
       }
 
-      return nota;
+      return this.mapNota(nota);
     } catch (error: any) {
       if (error instanceof NotFoundException) {
         throw error;
       }
-      this.logger.error(`❌ Error getting nota ${id}:`, error);
+      this.logger.error(`Error getting nota ${id}:`, error);
       throw new BadRequestException(`Error al obtener nota: ${error.message}`);
     }
   }
@@ -108,13 +131,13 @@ export class PedidosNotasService {
         },
       });
 
-      this.logger.log(`✅ Created nota with id=${nota.id}`);
-      return nota;
+      this.logger.log(`Created nota with id=${nota.id}`);
+      return this.mapNota(nota);
     } catch (error: any) {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      this.logger.error('❌ Error creating nota:', error);
+      this.logger.error('Error creating nota:', error);
       throw new BadRequestException(`Error al crear nota: ${error.message}`);
     }
   }
@@ -130,7 +153,6 @@ export class PedidosNotasService {
     },
   ): Promise<any> {
     try {
-      // Verifică dacă nota există
       const existingNota = await this.prisma.pedidosNotas.findUnique({
         where: { id },
       });
@@ -164,8 +186,8 @@ export class PedidosNotasService {
         },
       });
 
-      this.logger.log(`✅ Updated nota with id=${id}`);
-      return nota;
+      this.logger.log(`Updated nota with id=${id}`);
+      return this.mapNota(nota);
     } catch (error: any) {
       if (
         error instanceof NotFoundException ||
@@ -173,7 +195,7 @@ export class PedidosNotasService {
       ) {
         throw error;
       }
-      this.logger.error(`❌ Error updating nota ${id}:`, error);
+      this.logger.error(`Error updating nota ${id}:`, error);
       throw new BadRequestException(
         `Error al actualizar nota: ${error.message}`,
       );
@@ -196,36 +218,34 @@ export class PedidosNotasService {
         throw new NotFoundException(`Nota con id=${id} no encontrada`);
       }
 
-      // Șterge pozele fizice
       for (const imagen of existingNota.imagenes) {
-        await this.deleteImagenFile(imagen.ruta_archivo);
+        await this.pedidosNotasStorage.deleteObjectIfAny(imagen.storage_key);
+        this.pedidosNotasStorage.deleteDiskFileIfAny(imagen.ruta_archivo);
       }
 
-      // Soft delete - setează activo = false
       await this.prisma.pedidosNotas.update({
         where: { id },
         data: { activo: false },
       });
 
-      this.logger.log(`✅ Deleted (soft) nota with id=${id}`);
+      this.logger.log(`Deleted (soft) nota with id=${id}`);
     } catch (error: any) {
       if (error instanceof NotFoundException) {
         throw error;
       }
-      this.logger.error(`❌ Error deleting nota ${id}:`, error);
+      this.logger.error(`Error deleting nota ${id}:`, error);
       throw new BadRequestException(`Error al eliminar nota: ${error.message}`);
     }
   }
 
   /**
-   * Adaugă poze la o notă
+   * Adaugă poze la o notă — R2 when enabled, otherwise disk.
    */
   async addImagenesToNota(
     notaId: number,
     files: Express.Multer.File[],
   ): Promise<any[]> {
     try {
-      // Verifică dacă nota există
       const nota = await this.prisma.pedidosNotas.findUnique({
         where: { id: notaId },
         include: {
@@ -237,40 +257,59 @@ export class PedidosNotasService {
         throw new NotFoundException(`Nota con id=${notaId} no encontrada`);
       }
 
+      const useR2 = this.pedidosNotasStorage.isWriteEnabled();
       const imagenesCreadas = [];
+      let nextOrden =
+        nota.imagenes.length > 0
+          ? Math.max(...nota.imagenes.map((img) => img.orden)) + 1
+          : 0;
 
       for (const file of files) {
-        // Generează nume unic pentru fișier
-        const timestamp = Date.now();
-        const randomStr = Math.random().toString(36).substring(2, 15);
-        const extension = path.extname(file.originalname);
-        const fileName = `${timestamp}_${randomStr}${extension}`;
-        const filePath = path.join(this.uploadsDir, fileName);
+        let storageKey: string | null = null;
+        let storageBucket: string | null = null;
+        let rutaArchivo: string | null = null;
+        const tamanoBytes = file.size || file.buffer?.length || null;
 
-        // Salvează fișierul
-        fs.writeFileSync(filePath, file.buffer);
+        if (useR2) {
+          const put = await this.pedidosNotasStorage.putImagen(
+            file.buffer,
+            notaId,
+            file.originalname,
+            file.mimetype,
+          );
+          storageKey = put.storage_key;
+          storageBucket = put.storage_bucket;
+        } else {
+          const uploadsDir = this.pedidosNotasStorage.getUploadsDir();
+          if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+          }
+          const timestamp = Date.now();
+          const randomStr = Math.random().toString(36).substring(2, 15);
+          const extension = path.extname(file.originalname);
+          const fileName = `${timestamp}_${randomStr}${extension}`;
+          const filePath = path.join(uploadsDir, fileName);
+          fs.writeFileSync(filePath, file.buffer);
+          rutaArchivo = `/uploads/pedidos-notas/${fileName}`;
+        }
 
-        // Obține următorul ordin
-        const maxOrden =
-          nota.imagenes.length > 0
-            ? Math.max(...nota.imagenes.map((img) => img.orden))
-            : -1;
-
-        // Salvează în baza de date
         const imagen = await this.prisma.pedidosNotasImagen.create({
           data: {
             nota_id: notaId,
             nombre_archivo: file.originalname,
-            ruta_archivo: `/uploads/pedidos-notas/${fileName}`,
+            ruta_archivo: rutaArchivo,
             tipo_mime: file.mimetype || null,
-            tamano_bytes: file.size || null,
-            orden: maxOrden + 1,
+            tamano_bytes: tamanoBytes,
+            orden: nextOrden,
+            storage_key: storageKey,
+            storage_bucket: storageBucket,
           },
         });
 
-        imagenesCreadas.push(imagen);
+        nextOrden += 1;
+        imagenesCreadas.push(this.mapImagen(imagen));
         this.logger.log(
-          `✅ Added imagen ${imagen.id} to nota ${notaId}: ${file.originalname}`,
+          `Added imagen ${imagen.id} to nota ${notaId}: ${file.originalname} (${useR2 ? 'R2' : 'disk'})`,
         );
       }
 
@@ -279,11 +318,42 @@ export class PedidosNotasService {
       if (error instanceof NotFoundException) {
         throw error;
       }
-      this.logger.error(`❌ Error adding imagenes to nota ${notaId}:`, error);
+      this.logger.error(`Error adding imagenes to nota ${notaId}:`, error);
       throw new BadRequestException(
         `Error al agregar imágenes: ${error.message}`,
       );
     }
+  }
+
+  /**
+   * Descarcă / streamează o imagine (R2 sau disk fallback).
+   */
+  async getImagenArchivo(imagenId: number): Promise<{
+    buffer: Buffer;
+    contentType: string;
+    nombre_archivo: string;
+  }> {
+    const imagen = await this.prisma.pedidosNotasImagen.findUnique({
+      where: { id: imagenId },
+    });
+
+    if (!imagen) {
+      throw new NotFoundException(`Imagen con id=${imagenId} no encontrada`);
+    }
+
+    this.pedidosNotasStorage.assertHasReadableSource(imagen);
+    const resolved = await this.pedidosNotasStorage.resolveArchivo({
+      storage_key: imagen.storage_key,
+      ruta_archivo: imagen.ruta_archivo,
+      tipo_mime: imagen.tipo_mime,
+      nombre_archivo: imagen.nombre_archivo,
+    });
+
+    return {
+      buffer: resolved.buffer,
+      contentType: resolved.contentType,
+      nombre_archivo: imagen.nombre_archivo,
+    };
   }
 
   /**
@@ -299,44 +369,22 @@ export class PedidosNotasService {
         throw new NotFoundException(`Imagen con id=${imagenId} no encontrada`);
       }
 
-      // Șterge fișierul fizic
-      await this.deleteImagenFile(imagen.ruta_archivo);
+      await this.pedidosNotasStorage.deleteObjectIfAny(imagen.storage_key);
+      this.pedidosNotasStorage.deleteDiskFileIfAny(imagen.ruta_archivo);
 
-      // Șterge din baza de date
       await this.prisma.pedidosNotasImagen.delete({
         where: { id: imagenId },
       });
 
-      this.logger.log(`✅ Deleted imagen ${imagenId}`);
+      this.logger.log(`Deleted imagen ${imagenId}`);
     } catch (error: any) {
       if (error instanceof NotFoundException) {
         throw error;
       }
-      this.logger.error(`❌ Error deleting imagen ${imagenId}:`, error);
+      this.logger.error(`Error deleting imagen ${imagenId}:`, error);
       throw new BadRequestException(
         `Error al eliminar imagen: ${error.message}`,
       );
-    }
-  }
-
-  /**
-   * Șterge fișierul fizic al unei imagini
-   */
-  private async deleteImagenFile(rutaArchivo: string): Promise<void> {
-    try {
-      // Extrage numele fișierului din ruta
-      const fileName = path.basename(rutaArchivo);
-      const filePath = path.join(this.uploadsDir, fileName);
-
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        this.logger.log(`🗑️ Deleted file: ${filePath}`);
-      }
-    } catch (error: any) {
-      this.logger.warn(
-        `⚠️ Error deleting file ${rutaArchivo}: ${error.message}`,
-      );
-      // Nu aruncăm eroare - fișierul poate să nu existe deja
     }
   }
 }

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from './notifications.service';
+import { NominasStorageService } from './nominas-storage.service';
 import * as ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 import archiver from 'archiver';
@@ -22,6 +23,7 @@ export class GestoriaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly nominasStorage: NominasStorageService,
   ) {}
 
   /**
@@ -2273,23 +2275,42 @@ export class GestoriaService {
       const codigoParaSalvare =
         codigo || (await this.obtenerCodigoPorNombre(nombreFinal));
 
+      if (!file.buffer?.length) {
+        throw new BadRequestException('Archivo de nómina vacío');
+      }
+      if (!this.nominasStorage.isWriteEnabled()) {
+        throw new BadRequestException(
+          'R2 no está habilitado; no se pueden subir nóminas',
+        );
+      }
+
+      const put = await this.nominasStorage.putNominaPdf(
+        file.buffer,
+        codigoParaSalvare,
+        file.originalname || `${nombreFinalConTipo}.pdf`,
+      );
+
       const insertQuery = `
         INSERT INTO \`Nominas\` (
           \`nombre\`,
-          \`archivo\`,
           \`tipo_mime\`,
           \`fecha_subida\`,
           \`Mes\`,
           \`Ano\`,
-          \`codigo_empleado\`
+          \`codigo_empleado\`,
+          \`storage_key\`,
+          \`storage_bucket\`,
+          \`tamano_bytes\`
         ) VALUES (
           ${this.escapeSql(nombreFinalConTipo)},
-          ${file.buffer ? `FROM_BASE64(${this.escapeSql(file.buffer.toString('base64'))})` : 'NULL'},
           ${this.escapeSql(file.mimetype || 'application/pdf')},
           NOW(),
           ${this.escapeSql(mes.toString())},
           ${this.escapeSql(ano.toString())},
-          ${codigoParaSalvare ? this.escapeSql(codigoParaSalvare) : 'NULL'}
+          ${codigoParaSalvare ? this.escapeSql(codigoParaSalvare) : 'NULL'},
+          ${this.escapeSql(put.storage_key)},
+          ${this.escapeSql(put.storage_bucket)},
+          ${put.tamano_bytes}
         )
       `;
 
@@ -2451,7 +2472,7 @@ export class GestoriaService {
               title: '💰 Nueva Nómina Disponible',
               message: `Tu nómina de ${mesNombre} ${ano} está disponible para descargar`,
               data: {
-                nominaId: inserted[0]?.id || 0,
+                nominaId: Number(inserted[0]?.id || 0),
                 mes: mesNombre,
                 ano: ano.toString(),
                 nombre: nombreFinal,
@@ -2475,7 +2496,7 @@ export class GestoriaService {
 
       return {
         success: true,
-        id: inserted[0]?.id || 0,
+        id: Number(inserted[0]?.id || 0),
         nombre: nombreFinalConTipo,
         esFiniquito,
         actualizaraEstado: false, // Deja actualizat
@@ -3428,46 +3449,83 @@ export class GestoriaService {
 
             // Dacă este duplicate dar e marcat pentru înlocuire, facem UPDATE
             if (duplicate.length > 0 && shouldForceReplace) {
+              const pageBuf = Buffer.from(pagePdfBytes);
+              if (!this.nominasStorage.isWriteEnabled()) {
+                throw new BadRequestException(
+                  'R2 no está habilitado; no se pueden actualizar nóminas',
+                );
+              }
+              const oldKeyRows = await this.prisma.$queryRawUnsafe<
+                Array<{ storage_key: string | null }>
+              >(
+                `SELECT \`storage_key\` FROM \`Nominas\` WHERE \`id\` = ${duplicate[0].id} LIMIT 1`,
+              );
+              const put = await this.nominasStorage.putNominaPdf(
+                pageBuf,
+                codigo,
+                `${nombreFinal}.pdf`,
+              );
               const updateQuery = `
-                UPDATE \`Nominas\`
-                SET 
-                  \`archivo\` = FROM_BASE64(${this.escapeSql(Buffer.from(pagePdfBytes).toString('base64'))}),
-                  \`fecha_subida\` = NOW(),
-                  \`tipo_mime\` = 'application/pdf',
-                  \`codigo_empleado\` = ${codigo ? this.escapeSql(codigo) : 'NULL'}
-                WHERE \`id\` = ${duplicate[0].id}
-              `;
+                  UPDATE \`Nominas\`
+                  SET
+                    \`fecha_subida\` = NOW(),
+                    \`tipo_mime\` = 'application/pdf',
+                    \`codigo_empleado\` = ${codigo ? this.escapeSql(codigo) : 'NULL'},
+                    \`storage_key\` = ${this.escapeSql(put.storage_key)},
+                    \`storage_bucket\` = ${this.escapeSql(put.storage_bucket)},
+                    \`tamano_bytes\` = ${put.tamano_bytes}
+                  WHERE \`id\` = ${duplicate[0].id}
+                `;
               await this.prisma.$executeRawUnsafe(updateQuery);
+              await this.nominasStorage.deleteObjectIfAny(
+                oldKeyRows[0]?.storage_key,
+              );
               this.logger.log(
-                `🔄 Nómina actualizată (forceReplace): ${nombreFinal} - ID: ${duplicate[0].id}, codigo: ${codigo || 'NULL'}`,
+                `🔄 Nómina actualizată (forceReplace): ${nombreFinal} - ID: ${duplicate[0].id}, codigo: ${codigo || 'NULL'} (R2)`,
               );
               inserted = true;
             } else if (!duplicate.length || shouldForceReplace) {
               // INSERT normal (dacă nu e duplicate sau e marcat pentru înlocuire dar nu e duplicate - caz rar)
+              const pageBuf = Buffer.from(pagePdfBytes);
+              if (!this.nominasStorage.isWriteEnabled()) {
+                throw new BadRequestException(
+                  'R2 no está habilitado; no se pueden subir nóminas',
+                );
+              }
+              const put = await this.nominasStorage.putNominaPdf(
+                pageBuf,
+                codigo,
+                `${nombreFinal}.pdf`,
+              );
+
               const insertQuery = `
                 INSERT INTO \`Nominas\` (
                   \`nombre\`,
-                  \`archivo\`,
                   \`tipo_mime\`,
                   \`fecha_subida\`,
                   \`Mes\`,
                   \`Ano\`,
-                  \`codigo_empleado\`
+                  \`codigo_empleado\`,
+                  \`storage_key\`,
+                  \`storage_bucket\`,
+                  \`tamano_bytes\`
                 ) VALUES (
                   ${this.escapeSql(nombreFinal)},
-                  FROM_BASE64(${this.escapeSql(Buffer.from(pagePdfBytes).toString('base64'))}),
                   'application/pdf',
                   NOW(),
                   ${this.escapeSql(mesNombre)},
                   ${this.escapeSql(anoFinal.toString())},
-                  ${codigo ? this.escapeSql(codigo) : 'NULL'}
+                  ${codigo ? this.escapeSql(codigo) : 'NULL'},
+                  ${this.escapeSql(put.storage_key)},
+                  ${this.escapeSql(put.storage_bucket)},
+                  ${put.tamano_bytes}
                 )
               `;
 
               await this.prisma.$executeRawUnsafe(insertQuery);
               inserted = true;
               this.logger.log(
-                `✅ Nómina insertată: ${nombreFinal} - mes=${mesNombre}, ano=${anoFinal}, codigo: ${codigo || 'NULL'}`,
+                `✅ Nómina insertată: ${nombreFinal} - mes=${mesNombre}, ano=${anoFinal}, codigo: ${codigo || 'NULL'} (R2)`,
               );
             }
 
@@ -3825,22 +3883,27 @@ export class GestoriaService {
   }> {
     try {
       const query = `
-        SELECT \`archivo\`, \`nombre\`, \`tipo_mime\`
+        SELECT \`nombre\`, \`tipo_mime\`, \`storage_key\`
         FROM \`Nominas\`
         WHERE \`id\` = ${this.escapeSql(id.toString())}
         LIMIT 1
       `;
-      const result =
-        await this.prisma.$queryRawUnsafe<
-          Array<{ archivo: Buffer; nombre: string; tipo_mime: string }>
-        >(query);
+      const result = await this.prisma.$queryRawUnsafe<
+        Array<{
+          nombre: string;
+          tipo_mime: string;
+          storage_key: string | null;
+        }>
+      >(query);
 
       if (result.length === 0) {
         throw new NotFoundException(`Nómina con ID ${id} no encontrada`);
       }
 
+      const archivo = await this.nominasStorage.resolveArchivo(result[0]);
+
       return {
-        archivo: result[0].archivo,
+        archivo,
         nombre: result[0].nombre || 'nomina.pdf',
         tipo_mime: result[0].tipo_mime || 'application/pdf',
       };
@@ -3860,11 +3923,20 @@ export class GestoriaService {
    */
   async deleteNomina(id: number): Promise<{ success: true }> {
     try {
+      const existing = await this.prisma.$queryRawUnsafe<
+        Array<{ storage_key: string | null }>
+      >(
+        `SELECT \`storage_key\` FROM \`Nominas\` WHERE \`id\` = ${this.escapeSql(id.toString())} LIMIT 1`,
+      );
+      const storageKey = existing[0]?.storage_key || null;
+
       const deleteQuery = `
         DELETE FROM \`Nominas\`
         WHERE \`id\` = ${this.escapeSql(id.toString())}
       `;
       await this.prisma.$executeRawUnsafe(deleteQuery);
+
+      await this.nominasStorage.deleteObjectIfAny(storageKey);
 
       this.logger.log(`✅ Nómina ${id} eliminada`);
       return { success: true };
@@ -8178,7 +8250,7 @@ export class GestoriaService {
         SELECT 
           n.\`id\`,
           n.\`nombre\`,
-          n.\`archivo\`,
+          n.\`storage_key\`,
           n.\`Mes\`,
           n.\`Ano\`
         FROM \`Nominas\` n
@@ -8213,8 +8285,8 @@ export class GestoriaService {
 
       for (const nomina of nominas) {
         try {
-          // Extragem textul din PDF
-          const pdfBuffer = Buffer.from(nomina.archivo);
+          // Extragem textul din PDF (dual-read R2 / LONGBLOB)
+          const pdfBuffer = await this.nominasStorage.resolveArchivo(nomina);
           const pdfInstance = new PDFParse({ data: new Uint8Array(pdfBuffer) });
           const pageTextResult = await pdfInstance.getText();
           const textContent =
@@ -8433,7 +8505,7 @@ export class GestoriaService {
         SELECT 
           n.\`id\`,
           n.\`nombre\`,
-          n.\`archivo\`,
+          n.\`storage_key\`,
           n.\`Mes\`,
           n.\`Ano\`
         FROM \`Nominas\` n
@@ -8470,8 +8542,8 @@ export class GestoriaService {
 
       for (const nomina of nominas) {
         try {
-          // Extragem textul din PDF
-          const pdfBuffer = Buffer.from(nomina.archivo);
+          // Extragem textul din PDF (dual-read R2 / LONGBLOB)
+          const pdfBuffer = await this.nominasStorage.resolveArchivo(nomina);
           const pdfInstance = new PDFParse({ data: new Uint8Array(pdfBuffer) });
           const pageTextResult = await pdfInstance.getText();
           const textContent =

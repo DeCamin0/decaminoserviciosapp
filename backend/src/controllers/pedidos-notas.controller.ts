@@ -11,9 +11,12 @@ import {
   UseInterceptors,
   UploadedFiles,
   ParseIntPipe,
+  Res,
+  BadRequestException,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { SkipThrottle } from '@nestjs/throttler';
+import type { Response } from 'express';
 import { PedidosNotasService } from '../services/pedidos-notas.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -33,8 +36,29 @@ export class PedidosNotasController {
    */
   @Get()
   async getAllNotas() {
-    this.logger.log('📝 Getting all notas');
+    this.logger.log('Getting all notas');
     return this.pedidosNotasService.getAllNotas();
+  }
+
+  /**
+   * GET /api/pedidos-notas/imagenes/:imagenId/archivo
+   * Stream imagine from R2 (or disk dual-read). Declared before :id.
+   */
+  @Get('imagenes/:imagenId/archivo')
+  async getImagenArchivo(
+    @Param('imagenId', ParseIntPipe) imagenId: number,
+    @Res() res: Response,
+  ) {
+    this.logger.log(`Streaming imagen archivo id=${imagenId}`);
+    const result = await this.pedidosNotasService.getImagenArchivo(imagenId);
+    res.setHeader('Content-Type', result.contentType);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${encodeURIComponent(result.nombre_archivo)}"`,
+    );
+    res.setHeader('Content-Length', result.buffer.length);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.send(result.buffer);
   }
 
   /**
@@ -43,7 +67,7 @@ export class PedidosNotasController {
    */
   @Get(':id')
   async getNotaById(@Param('id', ParseIntPipe) id: number) {
-    this.logger.log(`📝 Getting nota with id=${id}`);
+    this.logger.log(`Getting nota with id=${id}`);
     return this.pedidosNotasService.getNotaById(id);
   }
 
@@ -56,7 +80,7 @@ export class PedidosNotasController {
     @Body() body: { titulo?: string; contenido: string },
     @CurrentUser() user: any,
   ) {
-    this.logger.log(`📝 Creating nota: ${body.titulo || 'Sin título'}`);
+    this.logger.log(`Creating nota: ${body.titulo || 'Sin título'}`);
     const creadoPor =
       user?.CODIGO ||
       user?.codigo ||
@@ -79,7 +103,7 @@ export class PedidosNotasController {
     @Param('id', ParseIntPipe) id: number,
     @Body() body: { titulo?: string; contenido?: string },
   ) {
-    this.logger.log(`📝 Updating nota with id=${id}`);
+    this.logger.log(`Updating nota with id=${id}`);
     return this.pedidosNotasService.updateNota(id, body);
   }
 
@@ -89,7 +113,7 @@ export class PedidosNotasController {
    */
   @Delete(':id')
   async deleteNota(@Param('id', ParseIntPipe) id: number) {
-    this.logger.log(`📝 Deleting nota with id=${id}`);
+    this.logger.log(`Deleting nota with id=${id}`);
     await this.pedidosNotasService.deleteNota(id);
     return { success: true, message: 'Nota eliminada correctamente' };
   }
@@ -104,11 +128,9 @@ export class PedidosNotasController {
     @Param('id', ParseIntPipe) notaId: number,
     @UploadedFiles() files: Express.Multer.File[],
   ) {
-    this.logger.log(
-      `📝 Adding ${files?.length || 0} imagenes to nota ${notaId}`,
-    );
+    this.logger.log(`Adding ${files?.length || 0} imagenes to nota ${notaId}`);
     if (!files || files.length === 0) {
-      throw new Error('No se proporcionaron archivos');
+      throw new BadRequestException('No se proporcionaron archivos');
     }
     return this.pedidosNotasService.addImagenesToNota(notaId, files);
   }
@@ -119,7 +141,7 @@ export class PedidosNotasController {
    */
   @Delete('imagenes/:imagenId')
   async deleteImagen(@Param('imagenId', ParseIntPipe) imagenId: number) {
-    this.logger.log(`📝 Deleting imagen with id=${imagenId}`);
+    this.logger.log(`Deleting imagen with id=${imagenId}`);
     await this.pedidosNotasService.deleteImagen(imagenId);
     return { success: true, message: 'Imagen eliminada correctamente' };
   }

@@ -153,11 +153,7 @@ export class AusenciasProximasCronService {
     }
   }
 
-  private withPartSuffix(
-    text: string,
-    index: number,
-    total: number,
-  ): string {
+  private withPartSuffix(text: string, index: number, total: number): string {
     if (total <= 1) return text;
     return `${text}\n\n_(mensaje ${index + 1} de ${total})_`;
   }
@@ -356,9 +352,7 @@ ORDER BY s.fecha_inicio, s.nombre
     const startStr = this.formatYmd(r._realStart);
     const endStr = this.formatYmd(r._realEnd);
     const periodo =
-      startStr === endStr
-        ? `📅 *${startStr}*`
-        : `📅 *${startStr} → ${endStr}*`;
+      startStr === endStr ? `📅 *${startStr}*` : `📅 *${startStr} → ${endStr}*`;
 
     let text =
       `• ${periodo} – ${r.nombre} – ${r.tipo}${motivo}\n` +
@@ -396,11 +390,7 @@ ORDER BY s.fecha_inicio, s.nombre
 
     const parsed = new Date(str);
     if (isNaN(parsed.getTime())) return null;
-    return new Date(
-      parsed.getFullYear(),
-      parsed.getMonth(),
-      parsed.getDate(),
-    );
+    return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
   }
 
   private daysInclusive(a: Date, b: Date): number {

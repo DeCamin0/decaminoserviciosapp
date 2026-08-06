@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import heic2any from 'heic2any';
 import { routes } from '../utils/routes';
 import Back3DButton from '../components/Back3DButton.jsx';
+import FotosTrabajoImportModal from '../components/FotosTrabajoImportModal.jsx';
 import { usePermissions } from '../hooks/usePermissions';
 
 function authHeaders(json = true) {
@@ -33,6 +35,47 @@ function isVideoMime(mime) {
   return String(mime || '').toLowerCase().startsWith('video/');
 }
 
+function isHeicFile(mime, name) {
+  const m = String(mime || '').toLowerCase();
+  // Already browser-safe (e.g. HEIC converted to JPEG at upload)
+  if (
+    m === 'image/jpeg' ||
+    m === 'image/jpg' ||
+    m === 'image/png' ||
+    m === 'image/webp' ||
+    m === 'image/gif'
+  ) {
+    return false;
+  }
+  const n = String(name || '').toLowerCase();
+  return (
+    m === 'image/heic' ||
+    m === 'image/heif' ||
+    n.endsWith('.heic') ||
+    n.endsWith('.heif')
+  );
+}
+
+/** Signed URL as-is for normal images; HEIC/HEIF via API + heic2any → JPEG (same as Pedidos). */
+async function resolvePreviewUrl(fotoId, mime, name) {
+  if (!isHeicFile(mime, name)) {
+    const u = await apiJson(routes.fotosTrabajoFotoUrl(fotoId), {
+      headers: authHeaders(),
+    });
+    if (!u?.url) throw new Error('Sin URL');
+    return { url: u.url, isObjectUrl: false };
+  }
+  const res = await fetch(routes.fotosTrabajoFotoFile(fotoId), {
+    headers: authHeaders(false),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const blob = await res.blob();
+  const converted = await heic2any({ blob, toType: 'image/jpeg', quality: 0.9 });
+  const b = Array.isArray(converted) ? converted[0] : converted;
+  if (!b) throw new Error('HEIC conversion failed');
+  return { url: URL.createObjectURL(b), isObjectUrl: true };
+}
+
 export default function FotosTrabajoPage() {
   const { hasPermission, loading: permLoading } = usePermissions();
   const canAccess = hasPermission('fotos-trabajo');
@@ -51,6 +94,28 @@ export default function FotosTrabajoPage() {
   const [nuevaFecha, setNuevaFecha] = useState('');
   const [uploading, setUploading] = useState(false);
   const [lightbox, setLightbox] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
+  /** fotoId → object URL created from HEIC conversion (must revoke) */
+  const heicObjectUrlsRef = useRef(new Map());
+  /** Bumps on each album open so stale HEIC conversions don't update UI */
+  const albumLoadGenRef = useRef(0);
+
+  const revokeHeicObjectUrl = useCallback((fotoId) => {
+    const u = heicObjectUrlsRef.current.get(fotoId);
+    if (u) {
+      URL.revokeObjectURL(u);
+      heicObjectUrlsRef.current.delete(fotoId);
+    }
+  }, []);
+
+  const revokeAllHeicObjectUrls = useCallback(() => {
+    for (const u of heicObjectUrlsRef.current.values()) {
+      URL.revokeObjectURL(u);
+    }
+    heicObjectUrlsRef.current.clear();
+  }, []);
+
+  useEffect(() => () => revokeAllHeicObjectUrls(), [revokeAllHeicObjectUrls]);
 
   const loadComunidades = useCallback(async (term = '', tab = listTab) => {
     setLoading(true);
@@ -80,6 +145,7 @@ export default function FotosTrabajoPage() {
     setCliente(c);
     setAlbum(null);
     setFotos([]);
+    revokeAllHeicObjectUrls();
     setUrls({});
     setLoading(true);
     setError('');
@@ -126,29 +192,57 @@ export default function FotosTrabajoPage() {
     setAlbum(a);
     setLoading(true);
     setError('');
+    setUrls({});
+    revokeAllHeicObjectUrls();
+    const loadGen = ++albumLoadGenRef.current;
     try {
       const data = await apiJson(routes.fotosTrabajoAlbumFotos(a.id), {
         headers: authHeaders(),
       });
+      if (loadGen !== albumLoadGenRef.current) return;
       const list = data.fotos || [];
       setFotos(list);
-      const nextUrls = {};
-      await Promise.all(
-        list.slice(0, 40).map(async (f) => {
-          try {
-            const u = await apiJson(routes.fotosTrabajoFotoUrl(f.id), {
-              headers: authHeaders(),
-            });
-            nextUrls[f.id] = u.url;
-          } catch {
-            /* ignore single url failure */
-          }
-        }),
+      setLoading(false);
+
+      const toLoad = list.slice(0, 40);
+      const normal = toLoad.filter(
+        (f) => !isHeicFile(f.mime_type, f.nombre_original),
       );
-      setUrls(nextUrls);
+      const heic = toLoad.filter((f) =>
+        isHeicFile(f.mime_type, f.nombre_original),
+      );
+
+      const applyOne = async (f) => {
+        if (loadGen !== albumLoadGenRef.current) return;
+        try {
+          const resolved = await resolvePreviewUrl(
+            f.id,
+            f.mime_type,
+            f.nombre_original,
+          );
+          if (loadGen !== albumLoadGenRef.current) {
+            if (resolved.isObjectUrl) URL.revokeObjectURL(resolved.url);
+            return;
+          }
+          if (resolved.isObjectUrl) {
+            heicObjectUrlsRef.current.set(f.id, resolved.url);
+          }
+          setUrls((prev) => ({ ...prev, [f.id]: resolved.url }));
+        } catch {
+          /* ignore single url / HEIC conversion failure */
+        }
+      };
+
+      // JPG/PNG/video first (fast), then HEIC a few at a time (heavy convert)
+      await Promise.all(normal.map(applyOne));
+      const HEIC_CONCURRENCY = 2;
+      for (let i = 0; i < heic.length; i += HEIC_CONCURRENCY) {
+        if (loadGen !== albumLoadGenRef.current) return;
+        await Promise.all(heic.slice(i, i + HEIC_CONCURRENCY).map(applyOne));
+      }
     } catch (err) {
+      if (loadGen !== albumLoadGenRef.current) return;
       setError(err.message || 'No se pudieron cargar las fotos');
-    } finally {
       setLoading(false);
     }
   };
@@ -190,6 +284,7 @@ export default function FotosTrabajoPage() {
         headers: authHeaders(),
       });
       setFotos((prev) => prev.filter((f) => f.id !== fotoId));
+      revokeHeicObjectUrl(fotoId);
       setUrls((prev) => {
         const n = { ...prev };
         delete n[fotoId];
@@ -313,6 +408,13 @@ export default function FotosTrabajoPage() {
               className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700"
             >
               Buscar
+            </button>
+            <button
+              type="button"
+              onClick={() => setImportOpen(true)}
+              className="rounded-lg border border-emerald-600 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 dark:border-emerald-500 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+            >
+              Importar
             </button>
           </div>
           {loading ? (
@@ -526,6 +628,14 @@ export default function FotosTrabajoPage() {
           )}
         </button>
       )}
+
+      <FotosTrabajoImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onDone={() => {
+          loadComunidades(q, listTab);
+        }}
+      />
     </div>
   );
 }

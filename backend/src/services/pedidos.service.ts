@@ -3,12 +3,14 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from './email.service';
 import { TelegramService } from './telegram.service';
 import { SentEmailsService } from './sent-emails.service';
+import { PedidosAlbaranesStorageService } from './pedidos-albaranes-storage.service';
 import * as ExcelJS from 'exceljs';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -23,6 +25,7 @@ export class PedidosService {
     private readonly telegramService: TelegramService,
     private readonly sentEmailsService: SentEmailsService,
     private readonly configService: ConfigService,
+    private readonly albaranesStorage: PedidosAlbaranesStorageService,
   ) {}
 
   private getCompanyName(): string {
@@ -2196,10 +2199,18 @@ export class PedidosService {
         );
       }
 
-      // Șterge toate albaranes asociate (pot fi mai multe rânduri per pedido)
+      // Șterge toate albaranes asociate (R2 + rânduri DB; pot fi mai multe per pedido)
       const uidAlt = pedidoUid.trim().startsWith('=')
         ? pedidoUid.trim()
         : '=' + pedidoUid.trim();
+      const albaranRows = await this.prisma.$queryRawUnsafe<
+        { id: number; storage_key: string | null }[]
+      >(
+        `SELECT id, storage_key FROM PedidosAlbaranes WHERE pedido_uid = ${pedidoUidEscaped} OR pedido_uid = ${this.escapeSql(uidAlt)}`,
+      );
+      for (const row of albaranRows || []) {
+        await this.albaranesStorage.deleteObjectIfAny(row.storage_key);
+      }
       await this.prisma.$executeRawUnsafe(
         `DELETE FROM PedidosAlbaranes WHERE pedido_uid = ${pedidoUidEscaped} OR pedido_uid = ${this.escapeSql(uidAlt)}`,
       );
@@ -2257,31 +2268,42 @@ export class PedidosService {
 
       const uid = String(pedidoExists[0].pedido_uid);
 
-      // Convertește fișierul la Buffer
       const fileBuffer = file.buffer || Buffer.from(file.buffer);
-
-      // Salvează albarán-ul în baza de date
-      // Folosim un tabel nou PedidosAlbaranes (sau adăugăm câmpuri în PedidosTodos)
-      // Pentru moment, salvăm direct în PedidosTodos folosind un câmp albaran_bytes
+      const nombre = file.originalname || 'albaran.pdf';
+      const mime = file.mimetype || 'application/pdf';
       const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
-      // Un nou rând per upload (mai multe albaranes per pedido)
+      if (!this.albaranesStorage.isWriteEnabled()) {
+        throw new ServiceUnavailableException(
+          'R2 no está habilitado. Configura R2_ENABLED=true y credenciales.',
+        );
+      }
+
+      const put = await this.albaranesStorage.putAlbaran(
+        fileBuffer,
+        uid,
+        nombre,
+        mime,
+      );
+
       await this.prisma.$executeRawUnsafe(
         `INSERT INTO PedidosAlbaranes (
           pedido_uid,
-          archivo,
           nombre_archivo,
           tipo_mime,
           tamano_bytes,
+          storage_key,
+          storage_bucket,
           subido_por,
           subido_en,
           actualizado_en
         ) VALUES (
           ${this.escapeSql(uid)},
-          0x${fileBuffer.toString('hex')},
-          ${this.escapeSql(file.originalname || 'albaran.pdf')},
-          ${this.escapeSql(file.mimetype || 'application/pdf')},
+          ${this.escapeSql(nombre)},
+          ${this.escapeSql(mime)},
           ${fileBuffer.length},
+          ${this.escapeSql(put.storage_key)},
+          ${this.escapeSql(put.storage_bucket)},
           ${this.escapeSql(userInfo)},
           ${this.escapeSql(now)},
           ${this.escapeSql(now)}
@@ -2307,8 +2329,8 @@ export class PedidosService {
         albaran_id: newAlbaranId,
         albaran: {
           id: newAlbaranId,
-          nombre_archivo: file.originalname || 'albaran.pdf',
-          tipo_mime: file.mimetype || 'application/pdf',
+          nombre_archivo: nombre,
+          tipo_mime: mime,
           tamano_bytes: fileBuffer.length,
           subido_por: userInfo,
           subido_en: now,
@@ -2321,7 +2343,8 @@ export class PedidosService {
       );
       if (
         error instanceof BadRequestException ||
-        error instanceof NotFoundException
+        error instanceof NotFoundException ||
+        error instanceof ServiceUnavailableException
       ) {
         throw error;
       }
@@ -2395,19 +2418,21 @@ export class PedidosService {
     let sel: any[];
     if (albaranId != null && albaranId > 0) {
       sel = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT archivo, nombre_archivo, tipo_mime FROM PedidosAlbaranes WHERE id = ${albaranId} AND pedido_uid = ${this.escapeSql(canonical)} LIMIT 1`,
+        `SELECT storage_key, nombre_archivo, tipo_mime FROM PedidosAlbaranes WHERE id = ${albaranId} AND pedido_uid = ${this.escapeSql(canonical)} LIMIT 1`,
       );
     } else {
       sel = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT archivo, nombre_archivo, tipo_mime FROM PedidosAlbaranes WHERE pedido_uid = ${this.escapeSql(canonical)} ORDER BY id ASC LIMIT 1`,
+        `SELECT storage_key, nombre_archivo, tipo_mime FROM PedidosAlbaranes WHERE pedido_uid = ${this.escapeSql(canonical)} ORDER BY id ASC LIMIT 1`,
       );
     }
-    if (!sel?.length || !sel[0].archivo) {
+    if (!sel?.length) {
       throw new NotFoundException('No existe albarán para este pedido');
     }
     const row = sel[0];
-    const archivo =
-      row.archivo instanceof Buffer ? row.archivo : Buffer.from(row.archivo);
+    if (!row.storage_key || !String(row.storage_key).trim()) {
+      throw new NotFoundException('No existe albarán para este pedido');
+    }
+    const archivo = await this.albaranesStorage.resolveArchivo(row);
     return {
       archivo,
       nombre_archivo: row.nombre_archivo || 'albaran.pdf',
@@ -2440,12 +2465,14 @@ export class PedidosService {
     }
 
     const existing = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT id, nombre_archivo FROM PedidosAlbaranes WHERE id = ${id} AND pedido_uid = ${this.escapeSql(canonical)} LIMIT 1`,
+      `SELECT id, nombre_archivo, storage_key FROM PedidosAlbaranes WHERE id = ${id} AND pedido_uid = ${this.escapeSql(canonical)} LIMIT 1`,
     );
     if (!existing?.length) {
       throw new NotFoundException('Albarán no encontrado para este pedido');
     }
     const nombre = String(existing[0].nombre_archivo || 'albarán');
+
+    await this.albaranesStorage.deleteObjectIfAny(existing[0].storage_key);
 
     await this.prisma.$executeRawUnsafe(
       `DELETE FROM PedidosAlbaranes WHERE id = ${id} AND pedido_uid = ${this.escapeSql(canonical)}`,

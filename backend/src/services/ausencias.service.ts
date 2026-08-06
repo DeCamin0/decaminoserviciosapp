@@ -5,6 +5,7 @@ import { TelegramService } from './telegram.service';
 import { EmailService } from './email.service';
 import { SentEmailsService } from './sent-emails.service';
 import { EmpleadosService } from './empleados.service';
+import { CarpetasDocumentosStorageService } from './carpetas-documentos-storage.service';
 
 @Injectable()
 export class AusenciasService {
@@ -17,6 +18,7 @@ export class AusenciasService {
     private readonly sentEmailsService: SentEmailsService,
     private readonly empleadosService: EmpleadosService,
     private readonly configService: ConfigService,
+    private readonly carpetasStorage: CarpetasDocumentosStorageService,
   ) {}
 
   private getSolicitudesEmail(): string {
@@ -1128,8 +1130,16 @@ export class AusenciasService {
         );
         const refCount = Number(refs?.[0]?.n ?? 0);
         if (refCount === 0) {
+          const keyRows = await tx.$queryRawUnsafe<
+            Array<{ storage_key: string | null }>
+          >(
+            `SELECT storage_key FROM CarpetasDocumentos WHERE doc_id = ${docId} LIMIT 1`,
+          );
           await tx.$executeRawUnsafe(
             `DELETE FROM CarpetasDocumentos WHERE doc_id = ${docId}`,
+          );
+          await this.carpetasStorage.deleteObjectIfAny(
+            keyRows?.[0]?.storage_key,
           );
         }
       }

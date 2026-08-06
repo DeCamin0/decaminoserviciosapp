@@ -20,6 +20,9 @@ function pad2(n: number): string {
 /**
  * Canonical R2 key:
  * `{app}/{tenant}/{domain}/{scope_id}/{yyyy}/{mm}/{uuid}__{safeName}.{ext}`
+ *
+ * `scopeId` may include `/` path segments (e.g. `templates/Limpiador`,
+ * `employees/emp_1/original`); each segment is sanitized separately.
  */
 export function buildObjectKey(input: BuildObjectKeyInput): string {
   const at = input.at ?? new Date();
@@ -43,11 +46,16 @@ export function buildObjectKey(input: BuildObjectKeyInput): string {
 
   const filePart = ext ? `${id}__${safeName}.${ext}` : `${id}__${safeName}`;
 
+  const scopeParts = String(input.scopeId || '')
+    .split('/')
+    .map((p) => p.trim())
+    .filter(Boolean);
+
   return [
     input.app,
     input.tenant,
     input.domain,
-    input.scopeId,
+    ...scopeParts,
     yyyy,
     mm,
     filePart,

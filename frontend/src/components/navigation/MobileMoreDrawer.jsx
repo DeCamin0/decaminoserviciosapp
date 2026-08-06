@@ -21,6 +21,8 @@ import {
   Trophy,
   ShieldCheck,
   Camera,
+  ListTodo,
+  CheckSquare,
 } from 'lucide-react';
 import { routes } from '../../utils/routes';
 
@@ -37,6 +39,7 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
   const [loadingPermissions, setLoadingPermissions] = useState(true);
   const [comunicadosUnreadCount, setComunicadosUnreadCount] = useState(0);
   const [documentosSolicitadosCount, setDocumentosSolicitadosCount] = useState(0);
+  const [misTareasPendientesCount, setMisTareasPendientesCount] = useState(0);
 
   const userGrupo = useMemo(() => user?.GRUPO || user?.grupo || 'Empleado', [user?.GRUPO, user?.grupo]);
   const isManager = useMemo(() => user?.isManager || false, [user?.isManager]);
@@ -193,6 +196,61 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     };
   }, [user?.CODIGO, user?.isDemo]);
 
+  // Badge Mis tareas (pendiente + en_curso)
+  useEffect(() => {
+    const fetchMisTareasPendientesCount = async () => {
+      if (!user?.CODIGO || user?.isDemo) {
+        setMisTareasPendientesCount(0);
+        return;
+      }
+      try {
+        const token = localStorage.getItem('auth_token');
+        const response = await fetch(routes.tareasMias, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+        });
+        if (!response.ok) {
+          setMisTareasPendientesCount(0);
+          return;
+        }
+        const data = await response.json();
+        const list = Array.isArray(data) ? data : data?.data || [];
+        const abiertas = list.filter((t) => {
+          const e = String(t?.estado || '').toLowerCase();
+          return e === 'pendiente' || e === 'en_curso';
+        });
+        setMisTareasPendientesCount(abiertas.length);
+      } catch {
+        setMisTareasPendientesCount(0);
+      }
+    };
+    fetchMisTareasPendientesCount();
+    let interval = null;
+    const startPolling = () => {
+      if (document.hidden) return;
+      interval = setInterval(() => {
+        if (!document.hidden) fetchMisTareasPendientesCount();
+      }, 60000);
+    };
+    startPolling();
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (interval) clearInterval(interval);
+      } else {
+        fetchMisTareasPendientesCount();
+        startPolling();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      if (interval) clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user?.CODIGO, user?.isDemo]);
+
   // Construiește lista de iteme (similar cu DashboardPage)
   const allItems = useMemo(() => {
     const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
@@ -208,6 +266,7 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     const canAccessCuadrantesEmpleado = hasBackendPermissions ? hasPermission('cuadrantes-empleado') : false;
     // Pentru mis-inspecciones, folosim DOAR permisiunile din backend (fără fallback)
     const canAccessMisInspecciones = hasBackendPermissions ? hasPermission('mis-inspecciones') : false;
+    const canAccessMisTareas = hasBackendPermissions ? hasPermission('mis-tareas') : false;
     // Pentru comunicados, folosim DOAR permisiunile din backend (fără fallback)
     const canAccessComunicados = hasBackendPermissions ? hasPermission('comunicados') : false;
     const canManageEmployees = shouldUseBackend ? hasPermission('empleados') : isManager;
@@ -218,6 +277,7 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     const canApprove = hasBackendPermissions ? hasPermission('aprobaciones') : false;
     // Pentru inspecciones, folosim DOAR permisiunile din backend (fără fallback)
     const canInspect = hasBackendPermissions ? hasPermission('inspecciones') : false;
+    const canManageTareas = hasBackendPermissions ? hasPermission('tareas') : false;
     const canAccessAdmin = shouldUseBackend ? hasPermission('admin') : (isAdmin || isDeveloper);
     const canAccessStats = shouldUseBackend ? hasPermission('estadisticas') : (isAdmin || isDeveloper || user?.GRUPO === 'Supervisor');
     // Pentru clientes, folosim DOAR permisiunile din backend (fără fallback)
@@ -243,6 +303,18 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     if (canAccessMisInspecciones) {
       list.push({ id: 'mis-inspecciones', label: 'Mis inspecciones', hint: 'Inspecciones asignadas', icon: ClipboardCheck, href: '/mis-inspecciones', gradient: 'from-cyan-500 via-sky-500 to-blue-500' });
     }
+    if (canAccessMisTareas) {
+      list.push({
+        id: 'mis-tareas',
+        label: 'Mis tareas',
+        hint: 'Confirmar y subir fotos',
+        icon: CheckSquare,
+        href: '/mis-tareas',
+        notificationCount:
+          misTareasPendientesCount > 0 ? misTareasPendientesCount : undefined,
+        gradient: 'from-lime-500 via-green-500 to-emerald-600',
+      });
+    }
     if (canAccessComunicados) {
       list.push({ id: 'comunicados', label: 'Comunicados', hint: 'Anuncios y comunicaciones oficiales', icon: FileText, href: '/comunicados', notificationCount: comunicadosUnreadCount > 0 ? comunicadosUnreadCount : undefined, gradient: 'from-green-500 via-emerald-500 to-teal-500' });
     }
@@ -264,6 +336,9 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
     }
     if (canInspect) {
       list.push({ id: 'inspecciones', label: 'Inspecciones', hint: 'Realizar auditorías', icon: ClipboardCheck, href: '/inspecciones', role: 'manager', gradient: 'from-amber-500 via-orange-500 to-yellow-500' });
+    }
+    if (canManageTareas) {
+      list.push({ id: 'tareas', label: 'Tareas', hint: 'Gestionar tareas del equipo', icon: ListTodo, href: '/tareas', role: 'manager', gradient: 'from-emerald-500 via-teal-500 to-cyan-600' });
     }
     const canFotosTrabajo = shouldUseBackend
       ? hasPermission('fotos-trabajo')
@@ -332,7 +407,7 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
   }, [
     userPermissions, loadingPermissions, userGrupo, findGrupoKey, hasPermission,
     isManager, isAdmin, isDeveloper, user?.GRUPO,
-    comunicadosUnreadCount, documentosSolicitadosCount
+    comunicadosUnreadCount, documentosSolicitadosCount, misTareasPendientesCount
   ]);
 
   // Filtrează itemele care sunt deja în bottom nav

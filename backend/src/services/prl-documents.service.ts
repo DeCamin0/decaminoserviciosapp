@@ -12,6 +12,7 @@ import * as mammoth from 'mammoth';
 import { NotificationsService } from './notifications.service';
 import { EmailService } from './email.service';
 import { TelegramService } from './telegram.service';
+import { PrlDocumentsStorageService } from './prl-documents-storage.service';
 import {
   buildAutoevaluacionReview,
   getPublicAutoevaluacionQuestions,
@@ -36,6 +37,7 @@ export class PrlDocumentsService {
     private readonly emailService: EmailService,
     private readonly telegramService: TelegramService,
     private readonly configService: ConfigService,
+    private readonly prlStorage: PrlDocumentsStorageService,
   ) {}
 
   private getCompanyName(): string {
@@ -471,9 +473,24 @@ export class PrlDocumentsService {
           const nombreNormalizado = this.normalizarNombreArchivo(
             doc.nombreArchivo,
           );
-          // Convertim buffer-ul la hex pentru MySQL
-          const archivoHex = `0x${doc.archivoBuffer.toString('hex')}`;
           const isInactivo = existingTemplate[0].activo === 0;
+
+          const oldKeys = await this.prisma.$queryRawUnsafe<
+            Array<{ storage_key: string | null }>
+          >(
+            `SELECT storage_key FROM prl_document_templates WHERE id = ${templateId} LIMIT 1`,
+          );
+          const oldStorageKey = oldKeys?.[0]?.storage_key ?? null;
+
+          const put = await this.prlStorage.putTemplate(
+            doc.archivoBuffer,
+            grupoNombre,
+            nombreNormalizado,
+          );
+          const storageKeySql = this.escapeSql(put.storage_key);
+          const storageBucketSql = this.escapeSql(put.storage_bucket);
+          const tamanoSql = String(put.tamano_bytes);
+          const newStorageKey = put.storage_key;
 
           // Setează charset UTF-8 pentru această sesiune
           await this.prisma.$executeRawUnsafe(
@@ -485,17 +502,27 @@ export class PrlDocumentsService {
             UPDATE prl_document_templates
             SET 
               nombre = ${this.escapeSql(nombreNormalizado)},
-              archivo = ${archivoHex},
               nombre_archivo = ${this.escapeSql(nombreNormalizado)},
               requiere_firma = ${requiereFirma ? 1 : 0},
               es_renuncia_rm = ${esRenunciaRm ? 1 : 0},
               es_manual_test = ${esManualTest ? 1 : 0},
               version = ${nuevaVersion},
               activo = 1,
+              storage_key = ${storageKeySql},
+              storage_bucket = ${storageBucketSql},
+              tamano_bytes = ${tamanoSql},
               updated_at = CURRENT_TIMESTAMP
             WHERE id = ${templateId}
             `,
           );
+
+          if (
+            oldStorageKey &&
+            newStorageKey &&
+            oldStorageKey !== newStorageKey
+          ) {
+            await this.prlStorage.deleteObjectIfAny(oldStorageKey);
+          }
 
           templatesActualizados++;
           this.logger.log(
@@ -538,8 +565,14 @@ export class PrlDocumentsService {
             );
           }
 
-          // Convertim buffer-ul la hex pentru MySQL
-          const archivoHex = `0x${doc.archivoBuffer.toString('hex')}`;
+          const put = await this.prlStorage.putTemplate(
+            doc.archivoBuffer,
+            grupoNombre,
+            nombreNormalizado,
+          );
+          const storageKeySql = this.escapeSql(put.storage_key);
+          const storageBucketSql = this.escapeSql(put.storage_bucket);
+          const tamanoSql = String(put.tamano_bytes);
 
           // Setează charset UTF-8 pentru această sesiune
           await this.prisma.$executeRawUnsafe(
@@ -558,26 +591,30 @@ export class PrlDocumentsService {
                 grupo_nombre,
                 tipo_documento,
                 nombre,
-                archivo,
                 nombre_archivo,
                 requiere_firma,
                 es_renuncia_rm,
                 es_manual_test,
                 version,
                 activo,
+                storage_key,
+                storage_bucket,
+                tamano_bytes,
                 created_at,
                 updated_at
               ) VALUES (
                 ${this.escapeSql(grupoNombre)},
                 ${this.escapeSql(tipo)},
                 ${this.escapeSql(nombreNormalizado)},
-                ${archivoHex},
                 ${this.escapeSql(nombreNormalizado)},
                 ${requiereFirma ? 1 : 0},
                 ${esRenunciaRm ? 1 : 0},
                 ${esManualTest ? 1 : 0},
                 1,
                 1,
+                ${storageKeySql},
+                ${storageBucketSql},
+                ${tamanoSql},
                 CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP
               )
@@ -649,21 +686,30 @@ export class PrlDocumentsService {
         `,
       );
 
-      const archivoHex = `0x${archivoBuffer.toString('hex')}`;
+      const put = await this.prlStorage.putTemplate(
+        archivoBuffer,
+        grupoNombre,
+        nombreArchivo,
+      );
+      const storageKeySql = this.escapeSql(put.storage_key);
+      const storageBucketSql = this.escapeSql(put.storage_bucket);
+      const tamanoSql = String(put.tamano_bytes);
+      const newStorageKey = put.storage_key;
 
       if (existingTemplate && existingTemplate.length > 0) {
         // Actualizează
         const templateId = existingTemplate[0].id;
         const currentVersion = await this.prisma.$queryRawUnsafe<
-          Array<{ version: number }>
+          Array<{ version: number; storage_key: string | null }>
         >(
           `
-          SELECT version FROM prl_document_templates
+          SELECT version, storage_key FROM prl_document_templates
           WHERE id = ${templateId}
           `,
         );
 
         const nuevaVersion = (currentVersion[0]?.version || 1) + 1;
+        const oldStorageKey = currentVersion[0]?.storage_key ?? null;
         const isInactivo = existingTemplate[0]?.activo === 0;
         // Asigură că numele este normalizat (deși ar trebui să fie deja)
         const nombreFinal = this.normalizarNombreArchivo(nombreArchivo);
@@ -673,17 +719,23 @@ export class PrlDocumentsService {
           UPDATE prl_document_templates
           SET 
             nombre = ${this.escapeSql(nombreFinal)},
-            archivo = ${archivoHex},
             nombre_archivo = ${this.escapeSql(nombreFinal)},
             requiere_firma = ${requiereFirma ? 1 : 0},
             es_renuncia_rm = ${esRenunciaRm ? 1 : 0},
             es_manual_test = ${esManualTest ? 1 : 0},
             version = ${nuevaVersion},
             activo = 1,
+            storage_key = ${storageKeySql},
+            storage_bucket = ${storageBucketSql},
+            tamano_bytes = ${tamanoSql},
             updated_at = CURRENT_TIMESTAMP
           WHERE id = ${templateId}
           `,
         );
+
+        if (oldStorageKey && newStorageKey && oldStorageKey !== newStorageKey) {
+          await this.prlStorage.deleteObjectIfAny(oldStorageKey);
+        }
 
         this.logger.log(
           `✅ Template ${isInactivo ? 'reactivado y actualizado' : 'actualizado'}: ${nombreFinal} (versión ${nuevaVersion})`,
@@ -705,26 +757,30 @@ export class PrlDocumentsService {
             grupo_nombre,
             tipo_documento,
             nombre,
-            archivo,
             nombre_archivo,
             requiere_firma,
             es_renuncia_rm,
             es_manual_test,
             version,
             activo,
+            storage_key,
+            storage_bucket,
+            tamano_bytes,
             created_at,
             updated_at
           ) VALUES (
             ${this.escapeSql(grupoNombre)},
             ${this.escapeSql(tipo)},
             ${this.escapeSql(nombreFinal)},
-            ${archivoHex},
             ${this.escapeSql(nombreFinal)},
             ${requiereFirma ? 1 : 0},
             ${esRenunciaRm ? 1 : 0},
             ${esManualTest ? 1 : 0},
             1,
             1,
+            ${storageKeySql},
+            ${storageBucketSql},
+            ${tamanoSql},
             CURRENT_TIMESTAMP,
             CURRENT_TIMESTAMP
           )
@@ -960,6 +1016,17 @@ export class PrlDocumentsService {
         };
       } else {
         // Hard delete: dacă nu există documente, se pot șterge fizic
+        const keysToDelete = await this.prisma.$queryRawUnsafe<
+          Array<{ storage_key: string | null }>
+        >(
+          `
+          SELECT storage_key
+          FROM prl_document_templates
+          WHERE grupo_nombre = ${this.escapeSql(grupoNombre)}
+            AND activo = 1
+          `,
+        );
+
         await this.prisma.$executeRawUnsafe(
           `
           DELETE FROM prl_document_templates
@@ -967,6 +1034,10 @@ export class PrlDocumentsService {
             AND activo = 1
           `,
         );
+
+        for (const row of keysToDelete || []) {
+          await this.prlStorage.deleteObjectIfAny(row.storage_key);
+        }
 
         this.logger.log(
           `✅ ${count} templates eliminados permanentemente para GRUPO ${grupoNombre} por usuario ${usuarioId} (no hay documentos que los usen)`,
@@ -1043,12 +1114,25 @@ export class PrlDocumentsService {
         };
       } else {
         // Hard delete: dacă nu există documente, se poate șterge fizic
+        const keysToDelete = await this.prisma.$queryRawUnsafe<
+          Array<{ storage_key: string | null }>
+        >(
+          `
+          SELECT storage_key
+          FROM prl_document_templates
+          WHERE id = ${templateId}
+          LIMIT 1
+          `,
+        );
+
         await this.prisma.$executeRawUnsafe(
           `
           DELETE FROM prl_document_templates
           WHERE id = ${templateId}
           `,
         );
+
+        await this.prlStorage.deleteObjectIfAny(keysToDelete?.[0]?.storage_key);
 
         this.logger.log(
           `✅ Template ${templateId} eliminado permanentemente por usuario ${usuarioId} (no hay documentos que lo usen)`,
@@ -1128,13 +1212,13 @@ export class PrlDocumentsService {
     try {
       const template = await this.prisma.$queryRawUnsafe<
         Array<{
-          archivo: Buffer;
+          storage_key: string | null;
           nombre_archivo: string;
           grupo_nombre: string;
         }>
       >(
         `
-        SELECT archivo, nombre_archivo, grupo_nombre
+        SELECT storage_key, nombre_archivo, grupo_nombre
         FROM prl_document_templates
         WHERE id = ${templateId}
           AND activo = 1
@@ -1153,8 +1237,12 @@ export class PrlDocumentsService {
         );
       }
 
+      const archivo = await this.prlStorage.resolveArchivo({
+        storage_key: template[0].storage_key,
+      });
+
       return {
-        archivo: template[0].archivo,
+        archivo,
         nombre_archivo: template[0].nombre_archivo,
       };
     } catch (error: any) {
@@ -1430,7 +1518,7 @@ export class PrlDocumentsService {
           tipo_documento: string;
           nombre: string;
           nombre_archivo: string;
-          archivo: Buffer;
+          storage_key: string | null;
           requiere_firma: number;
           es_renuncia_rm: number;
           es_manual_test: number;
@@ -1442,7 +1530,7 @@ export class PrlDocumentsService {
           tipo_documento,
           nombre,
           nombre_archivo,
-          archivo,
+          storage_key,
           requiere_firma,
           es_renuncia_rm,
           es_manual_test
@@ -1508,10 +1596,13 @@ export class PrlDocumentsService {
           }
 
           // Generează documentul cu placeholder-urile completate
-          let archivoFinal = template.archivo;
+          let archivoFinal: Buffer;
           try {
+            const templateBuffer = await this.prlStorage.resolveArchivo({
+              storage_key: template.storage_key,
+            });
             archivoFinal = await this.generarDocumentoConPlaceholders(
-              template.archivo,
+              templateBuffer,
               empleadoNombre,
               empleadoDNI,
               empleadoGrupo,
@@ -1523,11 +1614,19 @@ export class PrlDocumentsService {
             this.logger.warn(
               `⚠️ Error generando documento con placeholders, usando template original: ${genError.message}`,
             );
-            // Continuă cu template-ul original dacă generarea eșuează
+            archivoFinal = await this.prlStorage.resolveArchivo({
+              storage_key: template.storage_key,
+            });
           }
 
-          // Creează PrlEmployeeDocument cu documentul generat
-          const archivoHex = `0x${archivoFinal.toString('hex')}`;
+          const put = await this.prlStorage.putEmployeeOriginal(
+            archivoFinal,
+            empleadoCodigo,
+            template.nombre_archivo,
+          );
+          const storageKeyOriginalSql = this.escapeSql(put.storage_key);
+          const storageBucketOriginalSql = this.escapeSql(put.storage_bucket);
+          const tamanoOriginalSql = String(put.tamano_bytes);
 
           await this.prisma.$executeRawUnsafe(
             `
@@ -1537,8 +1636,10 @@ export class PrlDocumentsService {
               template_id,
               tipo_documento,
               estado,
-              archivo_original,
               nombre_archivo_original,
+              storage_key_original,
+              storage_bucket_original,
+              tamano_bytes_original,
               asignado_por,
               asignado_en
             ) VALUES (
@@ -1547,8 +1648,10 @@ export class PrlDocumentsService {
               ${template.id},
               ${this.escapeSql(template.tipo_documento)},
               ${this.escapeSql(estadoInicial)},
-              ${archivoHex},
               ${this.escapeSql(template.nombre_archivo)},
+              ${storageKeyOriginalSql},
+              ${storageBucketOriginalSql},
+              ${tamanoOriginalSql},
               ${this.escapeSql(usuarioId)},
               CURRENT_TIMESTAMP
             )
@@ -1906,14 +2009,14 @@ export class PrlDocumentsService {
     try {
       const documento = await this.prisma.$queryRawUnsafe<
         Array<{
-          archivo_original: Buffer;
+          storage_key_original: string | null;
           nombre_archivo_original: string;
           empleado_id: string;
         }>
       >(
         `
         SELECT 
-          archivo_original,
+          storage_key_original,
           nombre_archivo_original,
           empleado_id
         FROM prl_employee_documents
@@ -1932,8 +2035,12 @@ export class PrlDocumentsService {
       // Creează audit log pentru descărcare
       await this.crearAuditLog(documentoId, empleadoId, 'DESCARGADO');
 
+      const archivo = await this.prlStorage.resolveArchivo({
+        storage_key: documento[0].storage_key_original,
+      });
+
       return {
-        archivo: documento[0].archivo_original,
+        archivo,
         nombre_archivo: documento[0].nombre_archivo_original,
       };
     } catch (error: any) {
@@ -1960,7 +2067,7 @@ export class PrlDocumentsService {
     try {
       const documento = await this.prisma.$queryRawUnsafe<
         Array<{
-          archivo_firmado: Buffer;
+          storage_key_firmado: string | null;
           nombre_archivo_firmado: string;
           empleado_id: string;
           estado: string;
@@ -1968,7 +2075,7 @@ export class PrlDocumentsService {
       >(
         `
         SELECT 
-          archivo_firmado,
+          storage_key_firmado,
           nombre_archivo_firmado,
           empleado_id,
           estado
@@ -1985,7 +2092,10 @@ export class PrlDocumentsService {
         );
       }
 
-      if (!documento[0].archivo_firmado) {
+      const hasFirmado =
+        documento[0].storage_key_firmado &&
+        String(documento[0].storage_key_firmado).trim();
+      if (!hasFirmado) {
         throw new NotFoundException(
           `Documento ${documentoId} no tiene archivo firmado`,
         );
@@ -1998,8 +2108,12 @@ export class PrlDocumentsService {
         'VISUALIZADO', // Folosim VISUALIZADO pentru descărcarea documentului firmat
       );
 
+      const archivo = await this.prlStorage.resolveArchivo({
+        storage_key: documento[0].storage_key_firmado,
+      });
+
       return {
-        archivo: documento[0].archivo_firmado,
+        archivo,
         nombre_archivo:
           documento[0].nombre_archivo_firmado || 'documento_firmado.pdf',
       };
@@ -2734,15 +2848,23 @@ export class PrlDocumentsService {
       // Normalizează numele fișierului
       const nombreNormalizado = this.normalizarNombreArchivo(nombreArchivo);
 
-      // Convertim buffer-ul la hex pentru MySQL
-      const archivoHex = `0x${archivoFirmado.toString('hex')}`;
+      const put = await this.prlStorage.putEmployeeFirmado(
+        archivoFirmado,
+        empleadoId,
+        nombreNormalizado,
+      );
+      const storageKeyFirmadoSql = this.escapeSql(put.storage_key);
+      const storageBucketFirmadoSql = this.escapeSql(put.storage_bucket);
+      const tamanoFirmadoSql = String(put.tamano_bytes);
 
       // Actualizează documentul cu fișierul semnat
       await this.prisma.$executeRawUnsafe(
         `
         UPDATE prl_employee_documents
-        SET archivo_firmado = ${archivoHex},
-            nombre_archivo_firmado = ${this.escapeSql(nombreNormalizado)},
+        SET nombre_archivo_firmado = ${this.escapeSql(nombreNormalizado)},
+            storage_key_firmado = ${storageKeyFirmadoSql},
+            storage_bucket_firmado = ${storageBucketFirmadoSql},
+            tamano_bytes_firmado = ${tamanoFirmadoSql},
             estado = 'FIRMADO',
             fecha_firma = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP

@@ -13,12 +13,11 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
-import * as path from 'path';
-import * as fs from 'fs';
 import { PrismaService } from '../prisma/prisma.service';
 import { InformePdfService } from '../services/informe-pdf.service';
 import { EmailService } from '../services/email.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { InformesFirmasStorageService } from '../services/informes-firmas-storage.service';
 
 const CONFIG_ID = 1;
 
@@ -30,6 +29,7 @@ export class InformesFacturaConfigController {
     private readonly informePdfService: InformePdfService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
+    private readonly informesFirmasStorage: InformesFirmasStorageService,
   ) {}
 
   /** Lista todos los informes guardados (con última firma si existe). Excluye id=CONFIG_ID que es solo la plantilla del formulario Factura. */
@@ -191,17 +191,19 @@ export class InformesFacturaConfigController {
     const firma = await this.prisma.informes_firmas.findFirst({
       where: { informe_id: numId },
       orderBy: { created_at: 'desc' },
-      select: { pdf_path: true },
+      select: { storage_key: true, pdf_path: true },
     });
-    if (!firma?.pdf_path)
+    if (!firma) {
       throw new NotFoundException('No hay PDF firmado para este informe');
-    const fullPath = path.join(process.cwd(), firma.pdf_path);
-    if (!fs.existsSync(fullPath))
+    }
+    const buffer = await this.informesFirmasStorage.resolvePdf(firma);
+    if (!buffer || buffer.length === 0) {
       throw new NotFoundException('Archivo PDF no encontrado');
+    }
     const filename = `informe-${numId}-firmado.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.sendFile(fullPath);
+    res.send(buffer);
   }
 
   /** Enviar por email el PDF del informe. Body: { email: string, mensaje?: string } */

@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from './email.service';
+import { NominasStorageService } from './nominas-storage.service';
 
 @Injectable()
 export class NominasService {
@@ -31,6 +32,7 @@ export class NominasService {
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
+    private readonly nominasStorage: NominasStorageService,
   ) {}
 
   /**
@@ -292,11 +294,11 @@ export class NominasService {
         SELECT
           id,
           nombre,
-          archivo,
           tipo_mime,
           fecha_subida,
           Mes,
-          Ano
+          Ano,
+          storage_key
         FROM Nominas
         WHERE id = ${id}
           AND (
@@ -320,31 +322,7 @@ export class NominasService {
       }
 
       const row = result[0];
-
-      if (row.archivo == null) {
-        throw new BadRequestException(
-          'Columna "archivo" no está disponible para esta nómina',
-        );
-      }
-
-      // Convertește archivo la Buffer
-      let archivoBuffer: Buffer;
-      if (Buffer.isBuffer(row.archivo)) {
-        archivoBuffer = row.archivo;
-      } else if (
-        typeof row.archivo === 'object' &&
-        row.archivo?.type === 'Buffer' &&
-        Array.isArray(row.archivo.data)
-      ) {
-        archivoBuffer = Buffer.from(row.archivo.data);
-      } else if (typeof row.archivo === 'string') {
-        // Dacă vine deja base64, decodează
-        archivoBuffer = Buffer.from(row.archivo, 'base64');
-      } else {
-        throw new BadRequestException(
-          'Formato desconocido para el campo "archivo"',
-        );
-      }
+      const archivoBuffer = await this.nominasStorage.resolveArchivo(row);
 
       const fileName = row.nombre ? `${row.nombre}.pdf` : `nomina_${id}.pdf`;
       const mimeType = row.tipo_mime || 'application/pdf';
@@ -888,24 +866,42 @@ export class NominasService {
           file.mimetype ||
           'application/octet-stream';
 
-        // Insert into Nominas table
-        // Note: id is auto-increment, so we don't insert it
-        // fecha_subida has default now(), so we don't insert it either
+        if (!file.buffer?.length) {
+          throw new BadRequestException(
+            `Archivo vacío: ${file.originalname || nombre}`,
+          );
+        }
+        if (!this.nominasStorage.isWriteEnabled()) {
+          throw new BadRequestException(
+            'R2 no está habilitado; no se pueden subir nóminas',
+          );
+        }
+
+        const put = await this.nominasStorage.putNominaPdf(
+          file.buffer,
+          codigoEmpleado,
+          file.originalname || `${nombre}.pdf`,
+        );
+
         const query = `
           INSERT INTO \`Nominas\` (
             \`nombre\`,
-            \`archivo\`,
             \`tipo_mime\`,
             \`Mes\`,
             \`Ano\`,
-            \`codigo_empleado\`
+            \`codigo_empleado\`,
+            \`storage_key\`,
+            \`storage_bucket\`,
+            \`tamano_bytes\`
           ) VALUES (
             ${this.escapeSql(nombre)},
-            ${file.buffer ? `0x${file.buffer.toString('hex')}` : 'NULL'},
             ${this.escapeSql(tipoMime)},
             ${this.escapeSql(mes)},
             ${this.escapeSql(ano)},
-            ${codigoEmpleado ? this.escapeSql(codigoEmpleado) : 'NULL'}
+            ${codigoEmpleado ? this.escapeSql(codigoEmpleado) : 'NULL'},
+            ${this.escapeSql(put.storage_key)},
+            ${this.escapeSql(put.storage_bucket)},
+            ${put.tamano_bytes}
           )
         `;
 
@@ -914,7 +910,7 @@ export class NominasService {
           inserted++;
           processed++;
           this.logger.log(
-            `✅ Nómina ${index + 1}/${files.length} insertada: ${file.originalname} (${file.size} bytes), codigo: ${codigoEmpleado || 'NULL'}`,
+            `✅ Nómina ${index + 1}/${files.length} insertada: ${file.originalname} (${file.size} bytes), codigo: ${codigoEmpleado || 'NULL'}, r2=true`,
           );
         } catch (insertError: any) {
           this.logger.error(
@@ -960,6 +956,20 @@ export class NominasService {
         );
       }
 
+      // Fetch storage_key before delete (for R2 cleanup)
+      const selectQuery = `
+        SELECT \`storage_key\`
+        FROM \`Nominas\`
+        WHERE id = CAST(${idNumber} AS UNSIGNED)
+          AND TRIM(nombre) = TRIM(${this.escapeSql(nombre.trim())})
+        LIMIT 1
+      `;
+      const existing =
+        await this.prisma.$queryRawUnsafe<
+          Array<{ storage_key: string | null }>
+        >(selectQuery);
+      const storageKey = existing[0]?.storage_key || null;
+
       // Build DELETE query (matching n8n snapshot logic)
       const query = `
         DELETE FROM \`Nominas\`
@@ -980,6 +990,8 @@ export class NominasService {
           `Nómina no encontrada para id=${idNumber} y nombre="${nombre.trim()}"`,
         );
       }
+
+      await this.nominasStorage.deleteObjectIfAny(storageKey);
 
       this.logger.log(
         `✅ Nómina eliminada: id=${idNumber}, nombre="${nombre.trim()}"`,

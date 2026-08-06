@@ -645,8 +645,7 @@ ${assistantSelect}`;
       const cnt = await this.prisma.$queryRawUnsafe<{ c: bigint }[]>(
         `SELECT COUNT(*) AS c FROM CarpetasDocumentos
          WHERE id = ${this.escapeSql(userId)}
-           AND archivo IS NOT NULL
-           AND LENGTH(archivo) > 0
+           AND storage_key IS NOT NULL AND storage_key <> ''
            AND (
              LOWER(COALESCE(tipo_documento,'')) LIKE '%contrato%'
              OR LOWER(COALESCE(nombre_archivo,'')) LIKE '%contrato%'

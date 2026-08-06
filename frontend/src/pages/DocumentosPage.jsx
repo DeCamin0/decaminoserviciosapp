@@ -10,6 +10,7 @@ import {
   resolvePrlManualFooterLayout,
   buildPrlManualFooterFields,
 } from '../constants/prlManualPdfFooterFields.js';
+import { isContratoDocumento } from '../constants/contratoPdfSignatureLayout.js';
 import PDFViewerAndroid from '../components/PDFViewerAndroid';
 import { routes } from '../utils/routes.js';
 import { config } from '../config/env';
@@ -472,9 +473,39 @@ export default function DocumentosPage() {
 
       // Procesar solo los documentos oficiales válidos
       // Filtrar solo los documentos visibles para el empleado (Permisso_Para_Empleado = 'SI')
-      const documentosVisibles = documentosOficialesValidos.filter(doc => 
+      // + dacă există versiune _FIRMADO, ascunde originalul nesemnat din listă
+      let documentosVisibles = documentosOficialesValidos.filter(doc => 
         doc.permisso_para_empleado === 'SI' || doc.permisso_para_empleado === 'YES' || doc.permisso_para_empleado === '1'
       );
+
+      const baseNameKey = (name) =>
+        String(name || '')
+          .trim()
+          .toLowerCase()
+          .replace(/_firmado(?=\.[^.]+$)/i, '')
+          .replace(/\s+_firmado(?=\.[^.]+$)/i, '');
+
+      const firmadoBases = new Set(
+        documentosVisibles
+          .filter((doc) => {
+            const name = String(doc.nombre_archivo || doc.fileName || '');
+            const tipo = String(doc.tipo_documento || doc.tipo || '').toLowerCase();
+            return /_firmado/i.test(name) || /firmado/i.test(tipo);
+          })
+          .map((doc) => baseNameKey(doc.nombre_archivo || doc.fileName))
+          .filter(Boolean)
+      );
+
+      if (firmadoBases.size > 0) {
+        documentosVisibles = documentosVisibles.filter((doc) => {
+          const name = String(doc.nombre_archivo || doc.fileName || '');
+          const tipo = String(doc.tipo_documento || doc.tipo || '').toLowerCase();
+          const isFirmado = /_firmado/i.test(name) || /firmado/i.test(tipo);
+          if (isFirmado) return true;
+          const base = baseNameKey(name);
+          return !firmadoBases.has(base);
+        });
+      }
       
       let documentosOficialesProcesados = [];
       
@@ -4915,6 +4946,7 @@ export default function DocumentosPage() {
           pdfUrl={documentoOficialPdfUrl}
           docId={documentoOficialToSign.doc_id || documentoOficialToSign.id || ''}
           originalFileName={documentoOficialToSign.fileName || ''}
+          autoStampMode={isContratoDocumento(documentoOficialToSign)}
           onClose={() => {
             setShowOficialSigner(false);
             setDocumentoOficialToSign(null);

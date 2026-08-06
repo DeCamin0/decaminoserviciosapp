@@ -7,12 +7,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PortalDocumentsStorageService } from '../portal/portal-documents-storage.service';
 
 @Injectable()
 export class ClientesService {
   private readonly logger = new Logger(ClientesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly portalDocsStorage: PortalDocumentsStorageService,
+  ) {}
 
   /**
    * Escapă string-uri pentru SQL (prevenire SQL injection)
@@ -106,7 +110,6 @@ export class ClientesService {
           data.fecha_proxima_renovacion ||
           null,
         ESTADO: data.ESTADO || data.estado || data.activo || 'Sí',
-        CONTRACTO: data.CONTRACTO || data.contrato || null,
         CuantoPuedeGastar:
           data.CuantoPuedeGastar ||
           data.CuantoPuedeGastar ||
@@ -514,8 +517,6 @@ export class ClientesService {
             : null;
       }
 
-      if (data.CONTRACTO !== undefined || data.contrato !== undefined)
-        updateData.CONTRACTO = data.CONTRACTO || data.contrato || null;
       if (
         data.CuantoPuedeGastar !== undefined ||
         data.limite_gasto !== undefined
@@ -1365,14 +1366,16 @@ export class ClientesService {
     await this.assertClienteExists(clienteId);
     const row = await this.prisma.clienteFacturaManual.findFirst({
       where: { id: facturaId, cliente_id: clienteId },
+      select: {
+        nombre_archivo: true,
+        mime_type: true,
+        storage_key: true,
+      },
     });
     if (!row) {
       throw new NotFoundException('Factura no encontrada');
     }
-    const raw = row.archivo;
-    const buffer = Buffer.isBuffer(raw)
-      ? raw
-      : Buffer.from(raw as ArrayLike<number>);
+    const buffer = await this.portalDocsStorage.resolveArchivo(row);
     const mime = row.mime_type?.trim() || 'application/pdf';
     return { buffer, filename: row.nombre_archivo, mime };
   }

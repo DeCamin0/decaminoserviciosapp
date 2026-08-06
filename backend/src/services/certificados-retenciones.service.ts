@@ -1,5 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CertificadosRetencionesStorageService } from './certificados-retenciones-storage.service';
 import AdmZip from 'adm-zip';
 import * as pdfParseModule from 'pdf-parse';
 import * as iconv from 'iconv-lite';
@@ -9,7 +10,10 @@ import { PDFDocument } from 'pdf-lib';
 export class CertificadosRetencionesService {
   private readonly logger = new Logger(CertificadosRetencionesService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly certificadosStorage: CertificadosRetencionesStorageService,
+  ) {}
 
   /**
    * Escapează string-uri pentru SQL
@@ -1192,7 +1196,6 @@ export class CertificadosRetencionesService {
           continue;
         }
 
-        const archivoHex = `0x${c.archivoBuffer.toString('hex')}`;
         const nombreNormalizado = c.nombreArchivo
           .replace(/[^\w\s.-]/g, '_')
           .substring(0, 255);
@@ -1201,24 +1204,53 @@ export class CertificadosRetencionesService {
             ? this.escapeSql(String(c.notas).trim())
             : 'NULL';
 
+        if (!this.certificadosStorage.isWriteEnabled()) {
+          throw new BadRequestException(
+            'R2 no está habilitado; no se pueden guardar certificados de retenciones',
+          );
+        }
+        if (!c.archivoBuffer?.length) {
+          throw new BadRequestException(
+            `Certificado ${c.nombreArchivo} sin contenido`,
+          );
+        }
+
+        const put = await this.certificadosStorage.putCertificadoPdf(
+          c.archivoBuffer,
+          c.empleadoCodigo,
+          nombreNormalizado,
+        );
+
         await this.prisma.$executeRawUnsafe(
           `
-          INSERT INTO certificados_retenciones (empleado_id, nombre_empleado, nombre_archivo, archivo, subido_por, fecha_subida, notas)
+          INSERT INTO certificados_retenciones (
+            empleado_id,
+            nombre_empleado,
+            nombre_archivo,
+            subido_por,
+            fecha_subida,
+            notas,
+            storage_key,
+            storage_bucket,
+            tamano_bytes
+          )
           VALUES (
             ${this.escapeSql(c.empleadoCodigo)},
             ${this.escapeSql(c.empleadoNombre)},
             ${this.escapeSql(nombreNormalizado)},
-            ${archivoHex},
             ${this.escapeSql(usuarioId)},
             CURRENT_TIMESTAMP,
-            ${notasSql}
+            ${notasSql},
+            ${this.escapeSql(put.storage_key)},
+            ${this.escapeSql(put.storage_bucket)},
+            ${put.tamano_bytes}
           )
           `,
         );
 
         guardados++;
         this.logger.log(
-          `✅ Certificado guardado: ${c.nombreArchivo} para empleado ${c.empleadoCodigo}`,
+          `✅ Certificado guardado en R2: ${c.nombreArchivo} para empleado ${c.empleadoCodigo}`,
         );
       } catch (error: any) {
         this.logger.error(
@@ -1326,13 +1358,13 @@ export class CertificadosRetencionesService {
           : '';
       const rows = await this.prisma.$queryRawUnsafe<
         Array<{
-          archivo: Buffer;
           nombre_archivo: string;
           empleado_id: string;
+          storage_key: string | null;
         }>
       >(
         `
-        SELECT archivo, nombre_archivo, empleado_id
+        SELECT nombre_archivo, empleado_id, storage_key
         FROM certificados_retenciones
         WHERE id = ${certificadoId}${andEmpleado}
         LIMIT 1
@@ -1347,8 +1379,10 @@ export class CertificadosRetencionesService {
         );
       }
 
+      const archivo = await this.certificadosStorage.resolveArchivo(rows[0]);
+
       return {
-        archivo: rows[0].archivo,
+        archivo,
         nombre_archivo: rows[0].nombre_archivo,
       };
     } catch (error: any) {

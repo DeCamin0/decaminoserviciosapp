@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PushService } from '../services/push.service';
+import { ComunicadosStorageService } from '../services/comunicados-storage.service';
 
 @Injectable()
 export class ComunicadosService {
@@ -14,6 +15,7 @@ export class ComunicadosService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pushService: PushService,
+    private readonly comunicadosStorage: ComunicadosStorageService,
   ) {}
 
   /**
@@ -33,6 +35,7 @@ export class ComunicadosService {
         autor_id: true,
         publicado: true,
         nombre_archivo: true,
+        storage_key: true,
         archivo: false, // Nu returnăm conținutul fișierului în listă
         created_at: true,
         updated_at: true,
@@ -85,7 +88,18 @@ export class ComunicadosService {
   async findOne(id: bigint) {
     const comunicado = await this.prisma.comunicado.findUnique({
       where: { id },
-      include: {
+      select: {
+        id: true,
+        titulo: true,
+        contenido: true,
+        autor_id: true,
+        publicado: true,
+        nombre_archivo: true,
+        storage_key: true,
+        storage_bucket: true,
+        tamano_bytes: true,
+        created_at: true,
+        updated_at: true,
         leidos: {
           select: {
             user_id: true,
@@ -191,20 +205,42 @@ export class ComunicadosService {
       publicado?: boolean;
       archivo?: Buffer | null;
       nombre_archivo?: string | null;
+      mime_hint?: string | null;
     },
   ) {
     const publicado = data.publicado ?? false;
+    const hasFile = !!(data.archivo && data.archivo.length > 0);
+    const useR2 = hasFile && this.comunicadosStorage.isWriteEnabled();
 
-    const comunicado = await this.prisma.comunicado.create({
+    let comunicado = await this.prisma.comunicado.create({
       data: {
         titulo: data.titulo,
         contenido: data.contenido,
         autor_id: autorId,
         publicado,
-        archivo: data.archivo,
-        nombre_archivo: data.nombre_archivo,
+        archivo: useR2 ? null : (data.archivo ?? null),
+        nombre_archivo: data.nombre_archivo ?? null,
       },
     });
+
+    if (hasFile && useR2) {
+      const put = await this.comunicadosStorage.putArchivo(
+        data.archivo!,
+        comunicado.id,
+        data.nombre_archivo || `comunicado_${comunicado.id}`,
+        data.mime_hint,
+      );
+      comunicado = await this.prisma.comunicado.update({
+        where: { id: comunicado.id },
+        data: {
+          storage_key: put.storage_key,
+          storage_bucket: put.storage_bucket,
+          tamano_bytes: put.tamano_bytes,
+          archivo: null,
+          nombre_archivo: data.nombre_archivo ?? null,
+        },
+      });
+    }
 
     // Dacă este publicat, trimite push notification către toți userii
     if (publicado) {
@@ -224,6 +260,7 @@ export class ComunicadosService {
 
     return {
       ...comunicado,
+      archivo: undefined,
       autor_nombre: autorNombre,
     };
   }
@@ -239,6 +276,7 @@ export class ComunicadosService {
       publicado?: boolean;
       archivo?: Buffer | null | undefined;
       nombre_archivo?: string | null | undefined;
+      mime_hint?: string | null;
     },
   ) {
     const existing = await this.prisma.comunicado.findUnique({
@@ -257,14 +295,60 @@ export class ComunicadosService {
     if (data.titulo !== undefined) updateData.titulo = data.titulo;
     if (data.contenido !== undefined) updateData.contenido = data.contenido;
     if (data.publicado !== undefined) updateData.publicado = data.publicado;
-    if (data.archivo !== undefined) updateData.archivo = data.archivo;
-    if (data.nombre_archivo !== undefined)
+
+    let oldStorageKeyToDelete: string | null = null;
+
+    if (data.archivo !== undefined) {
+      if (data.archivo === null) {
+        // Ștergere atașament
+        oldStorageKeyToDelete = existing.storage_key;
+        updateData.archivo = null;
+        updateData.nombre_archivo = null;
+        updateData.storage_key = null;
+        updateData.storage_bucket = null;
+        updateData.tamano_bytes = null;
+      } else if (data.archivo.length > 0) {
+        if (this.comunicadosStorage.isWriteEnabled()) {
+          const put = await this.comunicadosStorage.putArchivo(
+            data.archivo,
+            id,
+            data.nombre_archivo ||
+              existing.nombre_archivo ||
+              `comunicado_${id}`,
+            data.mime_hint,
+          );
+          if (
+            existing.storage_key &&
+            existing.storage_key !== put.storage_key
+          ) {
+            oldStorageKeyToDelete = existing.storage_key;
+          }
+          updateData.storage_key = put.storage_key;
+          updateData.storage_bucket = put.storage_bucket;
+          updateData.tamano_bytes = put.tamano_bytes;
+          updateData.archivo = null;
+          if (data.nombre_archivo !== undefined) {
+            updateData.nombre_archivo = data.nombre_archivo;
+          }
+        } else {
+          updateData.archivo = data.archivo;
+          if (data.nombre_archivo !== undefined) {
+            updateData.nombre_archivo = data.nombre_archivo;
+          }
+        }
+      }
+    } else if (data.nombre_archivo !== undefined) {
       updateData.nombre_archivo = data.nombre_archivo;
+    }
 
     const comunicado = await this.prisma.comunicado.update({
       where: { id },
       data: updateData,
     });
+
+    if (oldStorageKeyToDelete) {
+      await this.comunicadosStorage.deleteObjectIfAny(oldStorageKeyToDelete);
+    }
 
     // Dacă se publică pentru prima dată (nu era publicat înainte), trimite push
     if (!wasPublished && willBePublished) {
@@ -284,6 +368,7 @@ export class ComunicadosService {
 
     return {
       ...comunicado,
+      archivo: undefined,
       autor_nombre: autorNombre,
     };
   }
@@ -402,6 +487,10 @@ export class ComunicadosService {
   async remove(id: bigint) {
     const comunicado = await this.prisma.comunicado.findUnique({
       where: { id },
+      select: {
+        id: true,
+        storage_key: true,
+      },
     });
 
     if (!comunicado) {
@@ -411,6 +500,8 @@ export class ComunicadosService {
     await this.prisma.comunicado.delete({
       where: { id },
     });
+
+    await this.comunicadosStorage.deleteObjectIfAny(comunicado.storage_key);
 
     return { message: 'Comunicado eliminado correctamente' };
   }
@@ -514,6 +605,7 @@ export class ComunicadosService {
       select: {
         archivo: true,
         nombre_archivo: true,
+        storage_key: true,
       },
     });
 
@@ -521,9 +613,10 @@ export class ComunicadosService {
       throw new NotFoundException(`No se encontró el comunicado con id ${id}`);
     }
 
-    if (!comunicado.archivo) {
-      throw new BadRequestException('Este comunicado no tiene archivo adjunto');
-    }
+    const archivoBuffer = await this.comunicadosStorage.resolveArchivo({
+      archivo: comunicado.archivo,
+      storage_key: comunicado.storage_key,
+    });
 
     // Detectăm tipul MIME din extensie sau din magic bytes
     const nombreArchivo = comunicado.nombre_archivo || `comunicado_${id}.bin`;
@@ -531,7 +624,6 @@ export class ComunicadosService {
 
     // Detectăm tipul MIME din magic bytes
     let mimeType = 'application/octet-stream';
-    const archivoBuffer = Buffer.from(comunicado.archivo);
     const firstBytes = archivoBuffer.slice(0, 10);
     const firstBytesHex = firstBytes.toString('hex');
     const firstBytesAscii = firstBytes.toString('ascii');

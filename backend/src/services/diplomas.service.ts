@@ -1,5 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { DiplomasStorageService } from './diplomas-storage.service';
 import AdmZip from 'adm-zip';
 import * as pdfParseModule from 'pdf-parse';
 import * as iconv from 'iconv-lite';
@@ -8,7 +9,10 @@ import * as iconv from 'iconv-lite';
 export class DiplomasService {
   private readonly logger = new Logger(DiplomasService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly diplomasStorage: DiplomasStorageService,
+  ) {}
 
   /**
    * Escapează string-uri pentru SQL
@@ -616,28 +620,55 @@ export class DiplomasService {
           continue;
         }
 
-        const archivoHex = `0x${diploma.archivoBuffer.toString('hex')}`;
+        if (!this.diplomasStorage.isWriteEnabled()) {
+          throw new BadRequestException(
+            'R2 no está habilitado; no se pueden guardar diplomas',
+          );
+        }
+        if (!diploma.archivoBuffer?.length) {
+          throw new BadRequestException(
+            `Diploma ${diploma.nombreArchivo} sin contenido`,
+          );
+        }
+
         const nombreNormalizado = diploma.nombreArchivo
           .replace(/[^\w\s.-]/g, '_')
           .substring(0, 255);
 
+        const put = await this.diplomasStorage.putDiplomaPdf(
+          diploma.archivoBuffer,
+          diploma.empleadoCodigo,
+          nombreNormalizado,
+        );
+
         await this.prisma.$executeRawUnsafe(
           `
-          INSERT INTO diplomas (empleado_id, nombre_empleado, nombre_archivo, archivo, subido_por, fecha_subida)
+          INSERT INTO diplomas (
+            empleado_id,
+            nombre_empleado,
+            nombre_archivo,
+            subido_por,
+            fecha_subida,
+            storage_key,
+            storage_bucket,
+            tamano_bytes
+          )
           VALUES (
             ${this.escapeSql(diploma.empleadoCodigo)},
             ${this.escapeSql(diploma.empleadoNombre)},
             ${this.escapeSql(nombreNormalizado)},
-            ${archivoHex},
             ${this.escapeSql(usuarioId)},
-            CURRENT_TIMESTAMP
+            CURRENT_TIMESTAMP,
+            ${this.escapeSql(put.storage_key)},
+            ${this.escapeSql(put.storage_bucket)},
+            ${put.tamano_bytes}
           )
           `,
         );
 
         guardados++;
         this.logger.log(
-          `✅ Diploma guardado: ${diploma.nombreArchivo} para empleado ${diploma.empleadoCodigo}`,
+          `✅ Diploma guardado en R2: ${diploma.nombreArchivo} para empleado ${diploma.empleadoCodigo}`,
         );
       } catch (error: any) {
         this.logger.error(
@@ -750,13 +781,13 @@ export class DiplomasService {
           : '';
       const diploma = await this.prisma.$queryRawUnsafe<
         Array<{
-          archivo: Buffer;
           nombre_archivo: string;
           empleado_id: string;
+          storage_key: string | null;
         }>
       >(
         `
-        SELECT archivo, nombre_archivo, empleado_id
+        SELECT nombre_archivo, empleado_id, storage_key
         FROM diplomas
         WHERE id = ${diplomaId}${andEmpleado}
         LIMIT 1
@@ -771,8 +802,10 @@ export class DiplomasService {
         );
       }
 
+      const archivo = await this.diplomasStorage.resolveArchivo(diploma[0]);
+
       return {
-        archivo: diploma[0].archivo,
+        archivo,
         nombre_archivo: diploma[0].nombre_archivo,
       };
     } catch (error: any) {

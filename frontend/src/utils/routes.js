@@ -220,6 +220,7 @@ export const routes = {
   updateDocumentoOficialVisibility: `${BACKEND_BASE}/api/documentos-oficiales`,
   updateDocumentoOficialNecesitaFirma: `${BACKEND_BASE}/api/documentos-oficiales`,
   marcarContratoComoFirmado: `${BACKEND_BASE}/api/documentos-oficiales`,
+  aplicarSelloEmpresaContrato: (docId) => `${BACKEND_BASE}/api/documentos-oficiales/${docId}/aplicar-sello-empresa`,
   getEmpleadosConStatusContratos: `${BACKEND_BASE}/api/documentos-oficiales/empleados-contratos`,
   countDocumentosNecesitanFirma: (codigo) => `${BACKEND_BASE}/api/documentos-oficiales/count-necesitan-firma?codigo=${codigo}`,
   deleteDocumento: `${BACKEND_BASE}/api/documentos/delete`,
@@ -285,8 +286,25 @@ export const routes = {
     `${BACKEND_BASE}/api/fotos-trabajo/albumes/${encodeURIComponent(id)}/fotos`,
   fotosTrabajoFotoUrl: (id) =>
     `${BACKEND_BASE}/api/fotos-trabajo/fotos/${encodeURIComponent(id)}/url`,
+  fotosTrabajoFotoFile: (id) =>
+    `${BACKEND_BASE}/api/fotos-trabajo/fotos/${encodeURIComponent(id)}/file`,
   fotosTrabajoFoto: (id) =>
     `${BACKEND_BASE}/api/fotos-trabajo/fotos/${encodeURIComponent(id)}`,
+  fotosTrabajoImportClientes: `${BACKEND_BASE}/api/fotos-trabajo/import/clientes`,
+  fotosTrabajoImportMatch: `${BACKEND_BASE}/api/fotos-trabajo/import/match`,
+  fotosTrabajoImportPreviewPaths: `${BACKEND_BASE}/api/fotos-trabajo/import/preview-paths`,
+  fotosTrabajoImportZip: `${BACKEND_BASE}/api/fotos-trabajo/import/zip`,
+  fotosTrabajoImportCommit: `${BACKEND_BASE}/api/fotos-trabajo/import/commit`,
+  fotosTrabajoImportCleanup: `${BACKEND_BASE}/api/fotos-trabajo/import/cleanup`,
+
+  // Tareas de servicio (asignación + fotos evidencia)
+  tareas: `${BACKEND_BASE}/api/tareas`,
+  tareasMias: `${BACKEND_BASE}/api/tareas/mias`,
+  tarea: (id) => `${BACKEND_BASE}/api/tareas/${encodeURIComponent(id)}`,
+  tareaCompletar: (id) =>
+    `${BACKEND_BASE}/api/tareas/${encodeURIComponent(id)}/completar`,
+  tareaFotoUrl: (tareaId, fotoId) =>
+    `${BACKEND_BASE}/api/tareas/${encodeURIComponent(tareaId)}/fotos/${encodeURIComponent(fotoId)}/url`,
 
   // GET /api/clientes/:nif/contracts
   /** CRUD contactos (JWT). clienteId = id numérico Clientes */
@@ -531,6 +549,8 @@ export const routes = {
   deletePedidosNota: (id) => `${BACKEND_BASE}/api/pedidos-notas/${id}`,
   uploadPedidosNotaImagenes: (id) => `${BACKEND_BASE}/api/pedidos-notas/${id}/imagenes`,
   deletePedidosNotaImagen: (imagenId) => `${BACKEND_BASE}/api/pedidos-notas/imagenes/${imagenId}`,
+  getPedidosNotaImagenArchivo: (imagenId) =>
+    `${BACKEND_BASE}/api/pedidos-notas/imagenes/${imagenId}/archivo`,
   
   // Sent Emails (Mensajes Enviados)
   getSentEmails: `${BACKEND_BASE}/api/sent-emails`,
@@ -552,6 +572,12 @@ export const routes = {
   // PRL Documentos
   prlListarGrupos: `${BACKEND_BASE}/api/prl/grupos`,
   prlListarEmpleadosConDocumentos: `${BACKEND_BASE}/api/prl/empleados-con-documentos`,
+  prlDocumentosEmpleado: (empleadoId) =>
+    `${BACKEND_BASE}/api/prl/empleados/${encodeURIComponent(empleadoId)}/documentos`,
+  prlDescargarDocumentoEmpleadoAdmin: (empleadoId, documentoId) =>
+    `${BACKEND_BASE}/api/prl/empleados/${encodeURIComponent(empleadoId)}/documentos/${documentoId}/descargar`,
+  prlDescargarDocumentoFirmadoAdmin: (empleadoId, documentoId) =>
+    `${BACKEND_BASE}/api/prl/empleados/${encodeURIComponent(empleadoId)}/documentos/${documentoId}/descargar-firmado`,
   prlListarTemplates: (grupoNombre) => {
     const encoded = encodeURIComponent(grupoNombre);
     return `${BACKEND_BASE}/api/prl/grupos/${encoded}/templates`;

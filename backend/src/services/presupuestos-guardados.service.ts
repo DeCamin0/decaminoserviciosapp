@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PresupuestosFirmasStorageService } from './presupuestos-firmas-storage.service';
 
 export interface PresupuestoGuardadoDto {
   id?: number;
@@ -60,6 +61,7 @@ export class PresupuestosGuardadosService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly presupuestosFirmasStorage: PresupuestosFirmasStorageService,
   ) {}
 
   async findAll(): Promise<PresupuestoGuardadoDto[]> {
@@ -69,7 +71,12 @@ export class PresupuestosGuardadosService {
         firmas: {
           orderBy: { created_at: 'desc' },
           take: 1,
-          select: { fecha_hora: true, created_at: true, pdf_path: true },
+          select: {
+            fecha_hora: true,
+            created_at: true,
+            pdf_path: true,
+            storage_key: true,
+          },
         },
       },
     });
@@ -87,30 +94,36 @@ export class PresupuestosGuardadosService {
         updated_at: r.updated_at,
         firma_fecha: ultimaFirma?.fecha_hora ?? null,
         firma_at: ultimaFirma?.created_at ?? null,
-        firma_pdf_path: ultimaFirma?.pdf_path ?? null,
+        firma_pdf_path:
+          ultimaFirma?.pdf_path ?? (ultimaFirma?.storage_key ? 'r2' : null),
       };
     });
   }
 
-  /** Devuelve el buffer del PDF firmado si está guardado en BD (pdf_content). */
+  /** Devuelve el buffer del PDF firmado: R2 → pdf_content → disco. */
   async getSignedPdfBuffer(presupuestoId: number): Promise<Buffer | null> {
     const firma = await this.prisma.presupuestos_firmas.findFirst({
       where: { presupuesto_id: presupuestoId },
       orderBy: { created_at: 'desc' },
-      select: { pdf_content: true },
+      select: {
+        storage_key: true,
+        pdf_content: true,
+        pdf_path: true,
+      },
     });
-    const raw = firma?.pdf_content;
-    if (!raw || (Array.isArray(raw) && raw.length === 0)) return null;
-    return Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+    if (!firma) return null;
+    return this.presupuestosFirmasStorage.resolvePdf(firma);
   }
 
-  /** Devuelve la ruta relativa del PDF firmado (fichero en disco) si existe. Fallback cuando no hay pdf_content en BD. */
+  /** Devuelve la ruta relativa del PDF firmado (fichero en disco) si existe. Fallback cuando no hay R2/pdf_content. */
   async getSignedPdfPath(presupuestoId: number): Promise<string | null> {
     const firma = await this.prisma.presupuestos_firmas.findFirst({
       where: { presupuesto_id: presupuestoId, pdf_path: { not: null } },
       orderBy: { created_at: 'desc' },
-      select: { pdf_path: true },
+      select: { pdf_path: true, storage_key: true },
     });
+    // Prefer callers use getSignedPdfBuffer (dual-read); path only when no R2 key
+    if (firma?.storage_key) return null;
     return firma?.pdf_path ?? null;
   }
 

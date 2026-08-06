@@ -11,6 +11,9 @@ import { EmailService } from '../services/email.service';
 import { SentEmailsService } from '../services/sent-emails.service';
 import { EmpleadosService } from '../services/empleados.service';
 import { DocumentosSolicitadosService } from '../services/documentos-solicitados.service';
+import { CarpetasDocumentosStorageService } from '../services/carpetas-documentos-storage.service';
+import { DocumentosOficialesStorageService } from '../services/documentos-oficiales-storage.service';
+import { NominasStorageService } from '../services/nominas-storage.service';
 
 @Module({
   imports: [
@@ -27,6 +30,9 @@ import { DocumentosSolicitadosService } from '../services/documentos-solicitados
     EmailService,
     SentEmailsService, // Required by DocumentosSolicitadosService
     DocumentosSolicitadosService, // Required by EmpleadosService
+    CarpetasDocumentosStorageService, // Required by EmpleadosService (R2 carpetas)
+    DocumentosOficialesStorageService, // Required by DocumentIngestionService (R2)
+    NominasStorageService, // Required by DocumentIngestionService (finiquito → Nominas R2)
     EmpleadosService,
   ],
   exports: [

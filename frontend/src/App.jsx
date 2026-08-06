@@ -75,7 +75,9 @@ import {
   LazyPRLDocumentosPage,
   LazyPresupuestosInformesPage,
   LazyServiciosPeriodicosPage,
-  LazyFotosTrabajoPage
+  LazyFotosTrabajoPage,
+  LazyMisTareasPage,
+  LazyTareasPage
 } from './pages/lazy/LazyPages';
 
 // i18n este deja importat în main.jsx
@@ -596,7 +598,27 @@ function AppRoutes() {
         }
       />
 
-      {/* ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN (TareasPage, ControlCorreoPage, IncidenciasPage) */}
+      <Route
+        path="/mis-tareas"
+        element={
+          <ProtectedRoute>
+            <ResponsiveLayout>
+              <LazyMisTareasPage />
+            </ResponsiveLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/tareas"
+        element={
+          <ProtectedRoute>
+            <ResponsiveLayout>
+              <LazyTareasPage />
+            </ResponsiveLayout>
+          </ProtectedRoute>
+        }
+      />
 
       {/* Ruta para cuadernos */}
       <Route

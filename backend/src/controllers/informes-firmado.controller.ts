@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { Request } from 'express';
 import * as crypto from 'crypto';
@@ -16,6 +17,7 @@ import * as path from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { InformePdfService } from '../services/informe-pdf.service';
 import { EmailService } from '../services/email.service';
+import { InformesFirmasStorageService } from '../services/informes-firmas-storage.service';
 
 export interface InformeFirmadoDto {
   informe_id: number;
@@ -34,10 +36,13 @@ export interface InformeFirmadoDto {
 
 @Controller('api/informes-firma')
 export class InformesFirmadoController {
+  private readonly logger = new Logger(InformesFirmadoController.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly informePdfService: InformePdfService,
     private readonly emailService: EmailService,
+    private readonly informesFirmasStorage: InformesFirmasStorageService,
   ) {}
 
   /** Endpoint público (sin JWT): devuelve numero_informe, cliente_nombre, cif, direccion para prellenar la página de firma. */
@@ -117,6 +122,9 @@ export class InformesFirmadoController {
 
     let pdfPath: string | null = null;
     let pdfBuffer: Buffer | null = null;
+    let storageKey: string | null = null;
+    let storageBucket: string | null = null;
+    let tamanoBytes: number | null = null;
 
     const datosFirma = {
       fecha_hora: body.fecha_hora || new Date().toISOString(),
@@ -158,14 +166,55 @@ export class InformesFirmadoController {
         },
       });
       pdfBuffer = buffer;
-      const dir = path.join(process.cwd(), 'uploads', 'informes-firmas');
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       const fileName = `informe-${informeId}-firmado-${Date.now()}.pdf`;
-      const filePath = path.join(dir, fileName);
-      fs.writeFileSync(filePath, pdfBuffer);
-      pdfPath = `uploads/informes-firmas/${fileName}`;
+
+      if (this.informesFirmasStorage.isWriteEnabled()) {
+        try {
+          const put = await this.informesFirmasStorage.putFirmaPdf(
+            pdfBuffer,
+            informeId,
+            fileName,
+          );
+          storageKey = put.storage_key;
+          storageBucket = put.storage_bucket;
+          tamanoBytes = put.tamano_bytes;
+          this.logger.log(
+            `PDF informe firmado en R2: ${pdfBuffer.length} bytes, key=${put.storage_key}`,
+          );
+        } catch (r2Err: any) {
+          this.logger.warn(
+            'R2 put falló para informe firmado; fallback a disco: ' +
+              (r2Err?.message || r2Err),
+          );
+        }
+      }
+
+      if (!storageKey) {
+        const dir = path.join(process.cwd(), 'uploads', 'informes-firmas');
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const filePath = path.join(dir, fileName);
+        fs.writeFileSync(filePath, pdfBuffer);
+        pdfPath = `uploads/informes-firmas/${fileName}`;
+      }
     } catch {
       // log but continue to save firma
+    }
+
+    let firmaImagenStorageKey: string | null = null;
+    const imgBuf = this.informesFirmasStorage.parseFirmaImagenBase64(
+      body.firma_base64,
+    );
+    if (imgBuf) {
+      if (!this.informesFirmasStorage.isWriteEnabled()) {
+        throw new BadRequestException(
+          'R2 no está habilitado; no se puede guardar la imagen de firma',
+        );
+      }
+      const imgPut = await this.informesFirmasStorage.putFirmaImagenPng(
+        imgBuf,
+        informeId,
+      );
+      firmaImagenStorageKey = imgPut.storage_key;
     }
 
     await this.prisma.informes_firmas.create({
@@ -179,10 +228,13 @@ export class InformesFirmadoController {
         cargo: (body.cargo || '').trim() || '—',
         email: (body.email || '').trim() || '—',
         telefono: (body.telefono || '').trim() || '—',
-        firma_imagen_base64: body.firma_base64 || '',
+        firma_imagen_storage_key: firmaImagenStorageKey,
         ip: ip || null,
         user_agent: userAgent || null,
         pdf_path: pdfPath,
+        storage_key: storageKey,
+        storage_bucket: storageBucket,
+        tamano_bytes: tamanoBytes,
       },
     });
 

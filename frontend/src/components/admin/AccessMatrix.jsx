@@ -40,8 +40,8 @@ export default function AccessMatrix() {
   const modules = useMemo(() => ([
     { id: 'dashboard', name: 'Panel Principal', icon: '🏠', description: 'Vista general e inicio' },
     { id: 'datos', name: 'Datos Personales', icon: '🆔', description: 'Información del empleado' },
-    // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN
-    // { id: 'tareas', name: 'Tareas Diarias', icon: '📋', description: 'Gestión de tareas por día' },
+    { id: 'mis-tareas', name: 'Mis Tareas', icon: '✅', description: 'Tareas asignadas al empleado (confirmar y subir fotos)' },
+    { id: 'tareas', name: 'Tareas', icon: '📋', description: 'Gestión de todas las tareas (crear, asignar, prioridad, seguimiento)' },
     { id: 'empleados', name: 'Empleados', icon: '👥', description: 'Gestión de empleados' },
     { id: 'fichar-empleados', name: 'Fichar Empleados', icon: '⏰', description: 'Registro de jornada limitado (solo mis fichajes)' },
     { id: 'fichar-admin', name: 'Fichar Admin', icon: '⏰', description: 'Registro de jornada completo (todos los fichajes y gestión)' },
@@ -92,8 +92,8 @@ export default function AccessMatrix() {
       Supervisor: {
         dashboard: true,
         datos: true,
-        // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN
-        // tareas: true,
+        'mis-tareas': true,
+        tareas: true,
         empleados: true,
         'fichar-empleados': false,
         'fichar-admin': true,
@@ -123,8 +123,8 @@ export default function AccessMatrix() {
       Manager: {
         dashboard: true,
         datos: true,
-        // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN
-        // tareas: true,
+        'mis-tareas': true,
+        tareas: true,
         empleados: true,
         'fichar-empleados': false,
         'fichar-admin': true,
@@ -154,8 +154,8 @@ export default function AccessMatrix() {
       Empleado: {
         dashboard: true,
         datos: true,
-        // ⚠️ PAGINI MUTATE ÎN OLD - NU SE FOLOSESC MOMENTAN
-        // tareas: false,
+        'mis-tareas': true,
+        tareas: false,
         empleados: false,
         'fichar-empleados': true,
         'fichar-admin': false,

@@ -398,6 +398,40 @@ export class DocumentosOficialesController {
   }
 
   /**
+   * Aplica sello de empresa en la última página del contrato y reemplaza el archivo.
+   * POST /api/documentos-oficiales/:docId/aplicar-sello-empresa
+   */
+  @Post(':docId/aplicar-sello-empresa')
+  @UseGuards(JwtAuthGuard)
+  async aplicarSelloEmpresa(@Param('docId') docId: string) {
+    try {
+      this.logger.log(`🔏 Aplicar sello empresa - docId: ${docId}`);
+      const result =
+        await this.documentosOficialesService.aplicarSelloEmpresa(docId);
+      return {
+        success: true,
+        message: result.message,
+        doc_id: result.doc_id,
+        nombre_archivo: result.nombre_archivo,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        '❌ Error in DocumentosOficialesController.aplicarSelloEmpresa:',
+        error,
+      );
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error al aplicar el sello de empresa: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Endpoint pentru a obține lista de angajați cu statusul contractelor
    * GET /api/documentos-oficiales/empleados-contratos
    */

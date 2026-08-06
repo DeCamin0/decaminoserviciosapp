@@ -1,65 +1,61 @@
-import { config } from '../config/env.js';
-
-// Logo DeCamino (desarrollador) – interiorul rămâne ca în SVG; la HERA doar marginile (border + glow) sunt albastre
+// Logo DeCamino (desarrollador) – branding del proveedor de la aplicación
 const getLogoUrl = () => '/DeCamino-04.svg';
-const isClient2 = () => (config.LOGO_PATH || '').toLowerCase().includes('hera');
-const hoverBorder = isClient2() ? 'group-hover:border-primary-500 dark:group-hover:border-primary-400' : 'group-hover:border-red-500 dark:group-hover:border-red-400';
-const hoverGlow = isClient2() ? 'group-hover:bg-primary-400 dark:group-hover:bg-primary-500' : 'group-hover:bg-red-400 dark:group-hover:bg-red-500';
 
 const Footer = () => {
   return (
-    <footer className="bg-transparent py-6 mt-8 relative z-0 transition-colors duration-300">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col items-center justify-center space-y-4">
-          <p className="text-gray-900 dark:text-white text-sm sm:text-base text-center font-bold">
+    <footer className="relative z-0 mt-4 border-t border-gray-200/80 bg-transparent py-3 transition-colors duration-300 dark:border-gray-700/80">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center justify-center gap-2.5 sm:gap-3">
+          <p className="text-center text-xs font-semibold text-gray-800 dark:text-gray-100 sm:text-sm">
             Esta aplicación ha sido diseñada y desarrollada por DeCamino
           </p>
-          {/* Logo: interior = DeCamino (roșu); la HERA marginile (border + glow) la hover = albastru */}
-          <a 
-            href="https://decamino.es" 
-            target="_blank" 
+          <a
+            href="https://decamino.es"
+            target="_blank"
             rel="noopener noreferrer"
-            className="relative group transition-all duration-300 transform hover:scale-110 hover:shadow-xl"
+            className="group relative rounded-full outline-none transition-transform duration-200 hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-[var(--primary-color)] focus-visible:ring-offset-2"
             title="Visita el sitio web de DeCamino"
           >
-            <div className={`w-12 h-12 sm:w-16 sm:h-16 bg-white dark:bg-gray-100 rounded-full flex items-center justify-center shadow-lg border-2 sm:border-3 border-gray-800 dark:border-gray-300 ${hoverBorder} transition-colors duration-300`}>
-              <img 
-                src={getLogoUrl()} 
-                alt="DeCamino Logo" 
-                className="h-8 w-8 sm:h-10 sm:w-10 object-contain group-hover:scale-110 transition-transform duration-300"
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 bg-white shadow-sm transition-colors duration-200 group-hover:border-[var(--primary-color)] dark:border-gray-500 dark:bg-gray-100 sm:h-12 sm:w-12">
+              <img
+                src={getLogoUrl()}
+                alt="DeCamino Logo"
+                className="h-6 w-6 object-contain transition-transform duration-200 group-hover:scale-105 sm:h-7 sm:w-7"
                 onError={(e) => {
                   e.target.style.display = 'none';
                   e.target.nextSibling.style.display = 'block';
                 }}
               />
-              <div className="hidden text-gray-800 dark:text-gray-900 font-bold text-sm sm:text-base group-hover:text-red-600 dark:group-hover:text-red-500 transition-colors duration-300">DC</div>
+              <div className="hidden text-xs font-bold text-gray-800 transition-colors duration-200 group-hover:text-[var(--primary-color)] dark:text-gray-900 sm:text-sm">
+                DC
+              </div>
             </div>
-            <div className={`absolute inset-0 w-12 h-12 sm:w-16 sm:h-16 bg-gray-600 dark:bg-gray-500 rounded-full opacity-20 dark:opacity-30 blur-md animate-pulse ${hoverGlow} group-hover:opacity-30 dark:group-hover:opacity-40 transition-all duration-300`}></div>
           </a>
-          <div className="flex items-center justify-center gap-2 text-gray-700 dark:text-gray-200 text-xs sm:text-sm">
+          <div className="flex flex-wrap items-center justify-center gap-1.5 text-[11px] text-gray-600 dark:text-gray-300 sm:gap-2 sm:text-xs">
             <span>© {new Date().getFullYear()}</span>
-            <a 
-              href="https://decamino.es" 
-              target="_blank" 
+            <a
+              href="https://decamino.es"
+              target="_blank"
               rel="noopener noreferrer"
-              className="relative group transition-all duration-300 transform hover:scale-110"
+              className="group relative rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-color)] focus-visible:ring-offset-1"
               title="Visita el sitio web de DeCamino"
             >
-              <div className={`w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7 bg-white dark:bg-gray-100 rounded-full flex items-center justify-center shadow-md border border-gray-800 dark:border-gray-300 ${hoverBorder} transition-colors duration-300`}>
-                <img 
-                  src={getLogoUrl()} 
-                  alt="DeCamino" 
-                  className="h-3 w-3 sm:h-4 sm:w-4 lg:h-5 lg:w-5 object-contain group-hover:scale-110 transition-transform duration-300"
+              <div className="flex h-5 w-5 items-center justify-center rounded-full border border-gray-300 bg-white shadow-sm transition-colors duration-200 group-hover:border-[var(--primary-color)] dark:border-gray-500 dark:bg-gray-100 sm:h-6 sm:w-6">
+                <img
+                  src={getLogoUrl()}
+                  alt="DeCamino"
+                  className="h-3 w-3 object-contain sm:h-3.5 sm:w-3.5"
                   onError={(e) => {
                     e.target.style.display = 'none';
                     if (e.target.nextSibling) e.target.nextSibling.style.display = 'block';
                   }}
                 />
-                <span className="hidden text-gray-800 dark:text-gray-900 font-bold text-xs group-hover:text-red-600 dark:group-hover:text-red-500 transition-colors duration-300">DC</span>
+                <span className="hidden text-[10px] font-bold text-gray-800 group-hover:text-[var(--primary-color)] dark:text-gray-900">
+                  DC
+                </span>
               </div>
-              <div className={`absolute inset-0 w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7 bg-gray-600 dark:bg-gray-500 rounded-full opacity-15 dark:opacity-25 blur-sm animate-pulse ${hoverGlow} group-hover:opacity-25 dark:group-hover:opacity-35 transition-all duration-300`}></div>
             </a>
-            <span className="text-gray-600 dark:text-gray-300">- Todos los derechos reservados</span>
+            <span className="text-gray-500 dark:text-gray-400">- Todos los derechos reservados</span>
           </div>
         </div>
       </div>

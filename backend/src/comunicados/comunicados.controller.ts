@@ -48,7 +48,7 @@ export class ComunicadosController {
         autor_nombre: c.autor_nombre || c.autor_id,
         publicado: c.publicado,
         nombre_archivo: c.nombre_archivo,
-        has_archivo: !!c.nombre_archivo,
+        has_archivo: !!(c.nombre_archivo || (c as any).storage_key),
         created_at: c.created_at,
         updated_at: c.updated_at,
         leidos_count: c.leidos.length,
@@ -91,7 +91,9 @@ export class ComunicadosController {
         autor_nombre: comunicado.autor_nombre || comunicado.autor_id,
         publicado: comunicado.publicado,
         nombre_archivo: comunicado.nombre_archivo,
-        has_archivo: !!comunicado.nombre_archivo,
+        has_archivo: !!(
+          comunicado.nombre_archivo || (comunicado as any).storage_key
+        ),
         created_at: comunicado.created_at,
         updated_at: comunicado.updated_at,
         leidos: comunicado.leidos.map((l: any) => ({
@@ -189,6 +191,7 @@ export class ComunicadosController {
       publicado,
       archivo: archivoBuffer,
       nombre_archivo: nombreArchivo,
+      mime_hint: file?.mimetype,
     });
 
     return {
@@ -201,7 +204,9 @@ export class ComunicadosController {
         autor_nombre: comunicado.autor_nombre || comunicado.autor_id,
         publicado: comunicado.publicado,
         nombre_archivo: comunicado.nombre_archivo,
-        has_archivo: !!comunicado.nombre_archivo,
+        has_archivo: !!(
+          comunicado.nombre_archivo || (comunicado as any).storage_key
+        ),
         created_at: comunicado.created_at,
         updated_at: comunicado.updated_at,
       },
@@ -289,6 +294,7 @@ export class ComunicadosController {
       publicado,
       archivo: archivoBuffer,
       nombre_archivo: nombreArchivo,
+      mime_hint: file?.mimetype,
     });
 
     return {
@@ -301,7 +307,9 @@ export class ComunicadosController {
         autor_nombre: comunicado.autor_nombre || comunicado.autor_id,
         publicado: comunicado.publicado,
         nombre_archivo: comunicado.nombre_archivo,
-        has_archivo: !!comunicado.nombre_archivo,
+        has_archivo: !!(
+          comunicado.nombre_archivo || (comunicado as any).storage_key
+        ),
         created_at: comunicado.created_at,
         updated_at: comunicado.updated_at,
       },
@@ -378,7 +386,9 @@ export class ComunicadosController {
         autor_nombre: comunicado.autor_nombre || comunicado.autor_id,
         publicado: comunicado.publicado,
         nombre_archivo: comunicado.nombre_archivo,
-        has_archivo: !!comunicado.nombre_archivo,
+        has_archivo: !!(
+          comunicado.nombre_archivo || (comunicado as any).storage_key
+        ),
         created_at: comunicado.created_at,
         updated_at: comunicado.updated_at,
       },

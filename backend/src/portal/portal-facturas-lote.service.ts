@@ -3,12 +3,14 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PDFDocument } from 'pdf-lib';
 import * as pdfParseModule from 'pdf-parse';
 import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PortalDocumentsStorageService } from './portal-documents-storage.service';
 
 const BATCH_TTL_MS = 45 * 60 * 1000;
 const MAX_PAGES = 120;
@@ -340,7 +342,10 @@ export class PortalFacturasLoteService {
   private readonly logger = new Logger(PortalFacturasLoteService.name);
   private readonly batches = new Map<string, LoteBatch>();
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly portalDocsStorage: PortalDocumentsStorageService,
+  ) {
     const iv = setInterval(() => this.purgeExpired(), 5 * 60 * 1000);
     if (typeof (iv as any).unref === 'function') (iv as any).unref();
   }
@@ -673,21 +678,41 @@ export class PortalFacturasLoteService {
       nombreArchivoCounts.set(countKey, n);
       const nombre_archivo =
         n > 1 ? `${baseNombre}_${n}.pdf` : `${baseNombre}.pdf`;
-      const row = await this.prisma.clienteFacturaManual.create({
-        data: {
-          cliente_id: clienteId,
-          nombre_archivo,
-          mime_type: 'application/pdf',
-          archivo,
-          fecha_emision: fechaEmision,
-          fecha_vencimiento,
-          numero_factura,
-          importe: totalImporte,
-          estado: 'activo',
-          observaciones: `import_pdf_lote:${batchId};page:${idx}`,
-        },
-      });
-      ids.push(row.id);
+
+      if (!this.portalDocsStorage.isWriteEnabled()) {
+        throw new ServiceUnavailableException(
+          'R2 no está habilitado. Configura R2_ENABLED=true y credenciales.',
+        );
+      }
+      const put = await this.portalDocsStorage.putFactura(
+        archivo,
+        clienteId,
+        nombre_archivo,
+        'application/pdf',
+      );
+
+      try {
+        const row = await this.prisma.clienteFacturaManual.create({
+          data: {
+            cliente_id: clienteId,
+            nombre_archivo,
+            mime_type: 'application/pdf',
+            storage_key: put.storage_key,
+            storage_bucket: put.storage_bucket,
+            tamano_bytes: put.tamano_bytes,
+            fecha_emision: fechaEmision,
+            fecha_vencimiento,
+            numero_factura,
+            importe: totalImporte,
+            estado: 'activo',
+            observaciones: `import_pdf_lote:${batchId};page:${idx}`,
+          },
+        });
+        ids.push(row.id);
+      } catch (err) {
+        await this.portalDocsStorage.deleteObjectIfAny(put.storage_key);
+        throw err;
+      }
     }
 
     this.batches.delete(batchId);

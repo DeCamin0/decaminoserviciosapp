@@ -44,6 +44,8 @@ const PRLDocumentosPage = lazy(() => import('../PRLDocumentosPage'));
 const PresupuestosInformesPage = lazy(() => import('../PresupuestosInformesPage'));
 const ServiciosPeriodicosPage = lazy(() => import('../ServiciosPeriodicosPage'));
 const FotosTrabajoPage = lazy(() => import('../FotosTrabajoPage'));
+const MisTareasPage = lazy(() => import('../MisTareasPage'));
+const TareasPage = lazy(() => import('../TareasPage'));
 
 // Lazy page components with loading states
 export const LazyFichajePage = (props) => {
@@ -382,6 +384,22 @@ export const LazyFotosTrabajoPage = (props) => {
   );
 };
 
+export const LazyMisTareasPage = (props) => {
+  return (
+    <Suspense fallback={<PageLoading title="Cargando Mis tareas..." />}>
+      <MisTareasPage {...props} />
+    </Suspense>
+  );
+};
+
+export const LazyTareasPage = (props) => {
+  return (
+    <Suspense fallback={<PageLoading title="Cargando Tareas..." />}>
+      <TareasPage {...props} />
+    </Suspense>
+  );
+};
+
 export default {
   LazyFichajePage,
   LazyEmpleadosPage,
@@ -419,5 +437,7 @@ export default {
   LazyPRLDocumentosPage,
   LazyPresupuestosInformesPage,
   LazyServiciosPeriodicosPage,
-  LazyFotosTrabajoPage
+  LazyFotosTrabajoPage,
+  LazyMisTareasPage,
+  LazyTareasPage
 };

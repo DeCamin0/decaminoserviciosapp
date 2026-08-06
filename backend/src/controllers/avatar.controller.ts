@@ -95,6 +95,8 @@ export class AvatarController {
         codigo,
         nombre,
         fileBuffer,
+        uploadedFile.originalname || null,
+        uploadedFile.mimetype || null,
       );
 
       return {

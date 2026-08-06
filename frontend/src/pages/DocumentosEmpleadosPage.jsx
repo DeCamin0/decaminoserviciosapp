@@ -23,6 +23,7 @@ import activityLogger from '../utils/activityLogger';
 import NominasMatrixTab from '../components/gestoria/NominasMatrixTab';
 import CostePersonalTab from '../components/gestoria/CostePersonalTab';
 import CertificadosRetencionesTab from '../components/gestoria/CertificadosRetencionesTab';
+import { isContratoDocumento } from '../constants/contratoPdfSignatureLayout';
 import { exportToExcelWithHeader } from '../utils/exportExcel';
 import { config } from '../config/env.js';
 import { getPdfMake } from '../utils/getPdfMake';
@@ -419,7 +420,7 @@ export default function DocumentosEmpleadosPage() {
   }, [bulkAvatarsLoaded, empleados, enqueueAvatar]);
 
   const [activeTab, setActiveTab] = useState('empleados'); // 'empleados', 'gestoria-nominas', 'coste-personal', 'diplomas', 'certificados-retenciones'
-  const [activeEmpleadoTab, setActiveEmpleadoTab] = useState('documentos'); // 'documentos', 'nominas', 'documentos-empresa', 'subir-documentos'
+  const [activeEmpleadoTab, setActiveEmpleadoTab] = useState('documentos'); // 'documentos', 'nominas', 'documentos-empresa', 'documentos-prl', 'subir-documentos'
 
   const [uploading, setUploading] = useState(false);
 
@@ -484,6 +485,14 @@ export default function DocumentosEmpleadosPage() {
   const [documentosOficialesLoading, setDocumentosOficialesLoading] = useState(false);
 
   const [documentosOficialesError, setDocumentosOficialesError] = useState(null);
+  const [aplicandoSelloDocId, setAplicandoSelloDocId] = useState(null);
+  const [documentoSelloToConfirm, setDocumentoSelloToConfirm] = useState(null);
+
+  // Estado para documentos PRL del empleado
+  const [documentosPrl, setDocumentosPrl] = useState([]);
+  const [documentosPrlLoading, setDocumentosPrlLoading] = useState(false);
+  const [documentosPrlError, setDocumentosPrlError] = useState(null);
+  const fetchDocumentosPrlInProgressRef = useRef(false);
 
   // Estado para diplomas
   const [diplomasPreview, setDiplomasPreview] = useState(null);
@@ -833,6 +842,8 @@ export default function DocumentosEmpleadosPage() {
     setSelectedEmpleado(empleado);
 
     setActiveEmpleadoTab('documentos'); // Folosim activeEmpleadoTab în loc de activeTab
+    setDocumentosPrl([]);
+    setDocumentosPrlError(null);
 
     
 
@@ -1909,12 +1920,34 @@ export default function DocumentosEmpleadosPage() {
           const blob = await resp.blob();
           if (blob.size === 0) throw new Error('Blob vacío para nómina');
 
-          if (contentType.includes('application/pdf')) {
+          // Detectare PDF: Content-Type SAU magic bytes (R2 poate trimite octet-stream)
+          const head = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
+          const looksLikePdf =
+            head.length >= 4 &&
+            head[0] === 0x25 &&
+            head[1] === 0x50 &&
+            head[2] === 0x44 &&
+            head[3] === 0x46; // %PDF
+
+          if (contentType.includes('application/pdf') || looksLikePdf) {
+            const pdfBlob =
+              contentType.includes('application/pdf')
+                ? blob
+                : new Blob([blob], { type: 'application/pdf' });
             const url = (isIOS || isAndroid)
-              ? `data:application/pdf;base64,${await blobToBase64(blob)}`
-              : URL.createObjectURL(blob);
+              ? `data:application/pdf;base64,${await blobToBase64(pdfBlob)}`
+              : URL.createObjectURL(pdfBlob);
             console.log('✅ Nómina PDF -> URL listo');
-            setPreviewDocument({ ...documento, previewUrl: url, tipo: 'Nómina', isPdf: true, isImage: false });
+            setPreviewDocument({
+              ...documento,
+              previewUrl: url,
+              tipo: 'Nómina',
+              isPdf: true,
+              isImage: false,
+              fileName: documento.fileName?.toLowerCase().endsWith('.pdf')
+                ? documento.fileName
+                : `${documento.fileName || 'nomina'}.pdf`,
+            });
           } else if (contentType.startsWith('image/')) {
             const url = URL.createObjectURL(blob);
             console.log('✅ Nómina IMAGEN -> URL listo');
@@ -1957,9 +1990,33 @@ export default function DocumentosEmpleadosPage() {
               setPreviewDocument({ ...documento, previewUrl: null });
             }
           } else {
-            // Fallback genérico: mostrar blob como objeto
-            const url = URL.createObjectURL(blob);
-            setPreviewDocument({ ...documento, previewUrl: url, tipo: 'Nómina' });
+            // Fallback: sniff PDF, altfel blob generic
+            const headFb = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
+            const looksPdfFb =
+              headFb.length >= 4 &&
+              headFb[0] === 0x25 &&
+              headFb[1] === 0x50 &&
+              headFb[2] === 0x44 &&
+              headFb[3] === 0x46;
+            if (looksPdfFb) {
+              const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+              const url = (isIOS || isAndroid)
+                ? `data:application/pdf;base64,${await blobToBase64(pdfBlob)}`
+                : URL.createObjectURL(pdfBlob);
+              setPreviewDocument({
+                ...documento,
+                previewUrl: url,
+                tipo: 'Nómina',
+                isPdf: true,
+                isImage: false,
+                fileName: documento.fileName?.toLowerCase().endsWith('.pdf')
+                  ? documento.fileName
+                  : `${documento.fileName || 'nomina'}.pdf`,
+              });
+            } else {
+              const url = URL.createObjectURL(blob);
+              setPreviewDocument({ ...documento, previewUrl: url, tipo: 'Nómina' });
+            }
           }
           setPreviewLoading(false);
           setPreviewError(null);
@@ -3525,7 +3582,136 @@ export default function DocumentosEmpleadosPage() {
     return () => clearTimeout(timeoutId);
   }, [selectedEmpleado, activeEmpleadoTab, fetchDocumentosOficiales]);
 
+  const getPrlEstadoColor = (estado, requiereFirma) => {
+    if (!requiereFirma && estado !== 'FIRMADO') {
+      return 'bg-gray-100 text-gray-700 border-gray-300';
+    }
+    switch (estado) {
+      case 'FIRMADO':
+        return 'bg-green-100 text-green-800 border-green-300';
+      case 'PENDIENTE':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+      case 'NO_APLICA':
+        return 'bg-blue-100 text-blue-800 border-blue-300';
+      case 'RECHAZADO':
+        return 'bg-red-100 text-red-800 border-red-300';
+      case 'INFORMATIVO':
+        return 'bg-slate-100 text-slate-700 border-slate-300';
+      default:
+        return 'bg-gray-100 text-gray-700 border-gray-300';
+    }
+  };
 
+  const getPrlEstadoLabel = (estado) => {
+    switch (estado) {
+      case 'FIRMADO':
+        return '✅ Firmado';
+      case 'PENDIENTE':
+        return '⏳ Pendiente';
+      case 'NO_APLICA':
+        return 'ℹ️ No aplica';
+      case 'RECHAZADO':
+        return '❌ Rechazado';
+      case 'INFORMATIVO':
+        return '📄 Informativo';
+      default:
+        return estado || '—';
+    }
+  };
+
+  const getPrlTipoLabel = (tipo) => {
+    const tipos = {
+      EVALUACION_RIESGOS: 'Evaluación de Riesgos Laborales',
+      ACTA_INFORMATIVA: 'Acta Informativa del Puesto',
+      ENTREGA_EPIS: 'Entrega de EPIs',
+      RENUNCIA_RM: 'Renuncia Reconocimiento Médico',
+      MANUAL_TEST: 'Manual del Puesto + Test',
+    };
+    return tipos[tipo] || tipo || 'Documento PRL';
+  };
+
+  const fetchDocumentosPrl = useCallback(async (empleado) => {
+    if (!empleado?.CODIGO) return;
+    if (fetchDocumentosPrlInProgressRef.current) return;
+    if (authUser?.isDemo) {
+      setDocumentosPrl([]);
+      setDocumentosPrlLoading(false);
+      return;
+    }
+
+    fetchDocumentosPrlInProgressRef.current = true;
+    setDocumentosPrlLoading(true);
+    setDocumentosPrlError(null);
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const response = await fetch(routes.prlDocumentosEmpleado(empleado.CODIGO), {
+        method: 'GET',
+        headers,
+      });
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        throw new Error(errText || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      const list = Array.isArray(data?.documentos)
+        ? data.documentos
+        : Array.isArray(data)
+          ? data
+          : [];
+      setDocumentosPrl(list);
+    } catch (err) {
+      console.error('Error cargando documentos PRL:', err);
+      setDocumentosPrl([]);
+      setDocumentosPrlError(err?.message || 'Error al cargar documentos PRL');
+    } finally {
+      setDocumentosPrlLoading(false);
+      fetchDocumentosPrlInProgressRef.current = false;
+    }
+  }, [authUser?.isDemo]);
+
+  useEffect(() => {
+    if (!selectedEmpleado || activeEmpleadoTab !== 'documentos-prl') return;
+    if (fetchDocumentosPrlInProgressRef.current) return;
+    fetchDocumentosPrl(selectedEmpleado);
+  }, [selectedEmpleado, activeEmpleadoTab, fetchDocumentosPrl]);
+
+  const descargarPrlDocumento = useCallback(async (empleado, doc, firmado = false) => {
+    if (!empleado?.CODIGO || !doc?.id) return;
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const url = firmado
+        ? routes.prlDescargarDocumentoFirmadoAdmin(empleado.CODIGO, doc.id)
+        : routes.prlDescargarDocumentoEmpleadoAdmin(empleado.CODIGO, doc.id);
+      const response = await fetch(url, { method: 'GET', headers });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const blob = await response.blob();
+      const nombre =
+        (firmado ? doc.nombre_archivo_firmado : doc.nombre_archivo_original) ||
+        doc.template_nombre ||
+        `prl-${doc.id}`;
+      const objectUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = nombre;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      console.error('Error descargando documento PRL:', err);
+      alert('No se pudo descargar el documento PRL');
+    }
+  }, []);
 
   // Función para descargar documentos normales
 
@@ -4309,6 +4495,55 @@ export default function DocumentosEmpleadosPage() {
         'Error',
         `No se pudo marcar el contrato como firmado: ${error.message}`
       );
+    }
+  };
+
+  const handleAplicarSelloEmpresa = async (documento) => {
+    try {
+      if (!documento?.doc_id) {
+        showNotification('error', 'Error', 'No se pudo identificar el documento');
+        return;
+      }
+      if (!isContratoDocumento(documento)) {
+        showNotification('error', 'Error', 'Solo disponible para contratos');
+        return;
+      }
+
+      setDocumentoSelloToConfirm(null);
+      setAplicandoSelloDocId(documento.doc_id);
+
+      const token = localStorage.getItem('auth_token');
+      const fetchHeaders = { 'Content-Type': 'application/json' };
+      if (token) fetchHeaders['Authorization'] = `Bearer ${token}`;
+
+      const response = await fetch(routes.aplicarSelloEmpresaContrato(documento.doc_id), {
+        method: 'POST',
+        headers: fetchHeaders,
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || `Error HTTP: ${response.status}`);
+      }
+
+      showNotification(
+        'success',
+        'Sello aplicado',
+        'El sello de empresa se ha añadido y el archivo se ha reemplazado'
+      );
+
+      if (selectedEmpleado) {
+        fetchDocumentosOficiales(selectedEmpleado);
+      }
+    } catch (error) {
+      console.error('❌ Error aplicando sello empresa:', error);
+      showNotification(
+        'error',
+        'Error',
+        `No se pudo aplicar el sello: ${error.message}`
+      );
+    } finally {
+      setAplicandoSelloDocId(null);
     }
   };
 
@@ -5131,6 +5366,24 @@ export default function DocumentosEmpleadosPage() {
                   <div className="relative flex items-center gap-2">
                     <span className="text-base">🏢</span>
                     <span>Empresa</span>
+                  </div>
+                </button>
+
+                {/* Tab Documentos PRL */}
+                <button
+                  onClick={() => setActiveEmpleadoTab('documentos-prl')}
+                  className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
+                    activeEmpleadoTab === 'documentos-prl'
+                      ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-200'
+                      : 'text-gray-600 hover:text-amber-700 hover:bg-amber-50/50'
+                  }`}
+                >
+                  {activeEmpleadoTab === 'documentos-prl' && (
+                    <div className="absolute inset-0 bg-amber-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
+                  )}
+                  <div className="relative flex items-center gap-2">
+                    <span className="text-base">🦺</span>
+                    <span>PRL</span>
                   </div>
                 </button>
 
@@ -6806,6 +7059,22 @@ export default function DocumentosEmpleadosPage() {
                             <span className="hidden sm:inline">Firmar</span>
                           </button>
 
+                          {isContratoDocumento(documento) && (
+                            <button
+                              onClick={() => setDocumentoSelloToConfirm(documento)}
+                              disabled={aplicandoSelloDocId === documento.doc_id}
+                              className="px-3 py-1.5 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 disabled:opacity-60 disabled:cursor-wait text-white text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1"
+                              title="Añadir sello de empresa y reemplazar el PDF"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                              <span className="hidden sm:inline">
+                                {aplicandoSelloDocId === documento.doc_id ? 'Sellando…' : 'Añadir sello'}
+                              </span>
+                            </button>
+                          )}
+
                           <button
                             onClick={() => handleDownloadDocumentOficial(documento)}
                             className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1"
@@ -6897,7 +7166,163 @@ export default function DocumentosEmpleadosPage() {
 
           )}
 
+          {activeEmpleadoTab === 'documentos-prl' && selectedEmpleado && (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-lg sm:text-xl font-bold text-amber-700 truncate">
+                    🦺 Documentos PRL de {selectedEmpleado['NOMBRE / APELLIDOS'] || 'Empleado'}
+                  </h2>
+                  <button
+                    onClick={() => fetchDocumentosPrl(selectedEmpleado)}
+                    className="p-2 text-gray-600 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors duration-200 flex-shrink-0"
+                    title="Actualizar documentos PRL"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
+                </div>
+                <ChangeEmployee3DButton
+                  onClick={() => {
+                    setActiveTab('empleados');
+                    setSelectedEmpleado(null);
+                  }}
+                  title="Cambiar Empleado"
+                />
+              </div>
 
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-3 rounded-xl border border-amber-200/50">
+                  <p className="text-xs font-medium text-amber-700 uppercase tracking-wide">Total</p>
+                  <p className="text-2xl font-bold text-amber-900">{documentosPrl.length}</p>
+                </div>
+                <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-3 rounded-xl border border-yellow-200/50">
+                  <p className="text-xs font-medium text-yellow-700 uppercase tracking-wide">Pendientes</p>
+                  <p className="text-2xl font-bold text-yellow-900">
+                    {documentosPrl.filter((d) => d.estado === 'PENDIENTE').length}
+                  </p>
+                </div>
+                <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-xl border border-green-200/50">
+                  <p className="text-xs font-medium text-green-700 uppercase tracking-wide">Firmados</p>
+                  <p className="text-2xl font-bold text-green-900">
+                    {documentosPrl.filter((d) => d.estado === 'FIRMADO').length}
+                  </p>
+                </div>
+                <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-3 rounded-xl border border-blue-200/50">
+                  <p className="text-xs font-medium text-blue-700 uppercase tracking-wide">Otros</p>
+                  <p className="text-2xl font-bold text-blue-900">
+                    {documentosPrl.filter((d) => d.estado !== 'PENDIENTE' && d.estado !== 'FIRMADO').length}
+                  </p>
+                </div>
+              </div>
+
+              {documentosPrlLoading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600 mx-auto mb-4"></div>
+                  <p className="text-gray-600">Cargando documentos PRL...</p>
+                </div>
+              ) : documentosPrlError ? (
+                <div className="text-center py-8">
+                  <div className="text-4xl mb-4">❌</div>
+                  <p className="text-red-600 mb-2">Error al cargar documentos PRL</p>
+                  <p className="text-gray-600 text-sm">{documentosPrlError}</p>
+                  <button
+                    onClick={() => fetchDocumentosPrl(selectedEmpleado)}
+                    className="mt-4 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+                  >
+                    Reintentar
+                  </button>
+                </div>
+              ) : documentosPrl.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="text-5xl mb-3">🦺</div>
+                  <p className="text-gray-600">Este empleado no tiene documentos PRL asignados</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {documentosPrl.map((doc) => (
+                    <div
+                      key={doc.id}
+                      className={`border rounded-xl p-4 hover:shadow-md transition-shadow ${
+                        doc.estado === 'PENDIENTE' && doc.requiere_firma
+                          ? 'border-yellow-300 bg-yellow-50/60'
+                          : 'border-gray-200 bg-white'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <h3 className="font-semibold text-gray-900 truncate">
+                              {doc.template_nombre || doc.nombre_archivo_original || `Documento #${doc.id}`}
+                            </h3>
+                            <span
+                              className={`inline-block px-2 py-1 rounded text-xs font-medium border ${getPrlEstadoColor(
+                                doc.estado,
+                                doc.requiere_firma,
+                              )}`}
+                            >
+                              {getPrlEstadoLabel(doc.estado)}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600 mb-2">{getPrlTipoLabel(doc.tipo_documento)}</p>
+                          <div className="text-xs text-gray-500 space-y-1">
+                            {doc.asignado_en && (
+                              <p>
+                                📅 Asignado:{' '}
+                                {new Date(doc.asignado_en).toLocaleString('es-ES')}
+                              </p>
+                            )}
+                            {doc.fecha_firma && (
+                              <p>
+                                ✍️ Firmado:{' '}
+                                {new Date(doc.fecha_firma).toLocaleString('es-ES')}
+                              </p>
+                            )}
+                            {doc.es_manual_test && (
+                              <p>
+                                📝 Test:{' '}
+                                {doc.test_completado
+                                  ? `Completado${
+                                      doc.test_puntuacion != null
+                                        ? ` (${doc.test_puntuacion} pts)`
+                                        : ''
+                                    }`
+                                  : 'Pendiente'}
+                              </p>
+                            )}
+                            {doc.requiere_firma && (
+                              <p>🔏 Requiere firma</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => descargarPrlDocumento(selectedEmpleado, doc, false)}
+                            className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-colors"
+                            title="Descargar original"
+                          >
+                            Descargar
+                          </button>
+                          {(doc.estado === 'FIRMADO' || doc.nombre_archivo_firmado) && (
+                            <button
+                              type="button"
+                              onClick={() => descargarPrlDocumento(selectedEmpleado, doc, true)}
+                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors"
+                              title="Descargar firmado"
+                            >
+                              Firmado
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {activeEmpleadoTab === 'subir-documentos' && selectedEmpleado && (
 
@@ -7650,19 +8075,15 @@ export default function DocumentosEmpleadosPage() {
                       </div>
 
                     ) : (
-                      // PDF viewer activ doar dacă știm că e PDF (flag sau extensie),
-                      // pentru a evita trimiterea imaginilor prin PDF.js
-                      // IMPORTANT: Verificăm DOAR extensia .pdf pentru a evita erorile cu ContractSigner
-                      (previewDocument?.isPdf === true || previewDocument?.fileName?.toLowerCase().endsWith('.pdf')) &&
-                      // NU folosim ContractSigner pentru fișiere non-PDF
+                      // PDF: isPdf flag (nóminas fără extensie în fileName) SAU extensie .pdf
+                      previewDocument?.isPdf === true ||
                       previewDocument?.fileName?.toLowerCase().endsWith('.pdf')
                     ) ? (
 
                       <div className="pdf-preview-container">
-                        {/* Pentru documentele oficiale: folosim viewer simplu (fără sistem de firmă) */}
-                        {/* Pentru alte documente: folosim ContractSigner pe desktop */}
-                        {previewDocument?.esOficial === true ? (
-                          // Viewer simplu pentru documente oficiale (fără sistem de firmă)
+                        {/* Nóminas / oficiales: viewer simplu. Altele: ContractSigner pe desktop */}
+                        {previewDocument?.esOficial === true || previewDocument?.tipo === 'Nómina' ? (
+                          // Viewer simplu (fără sistem de firmă)
                           <div className="w-full h-[75vh]">
                             {isAndroid || isIOS ? (
                               <PDFViewerAndroid 
@@ -7691,6 +8112,7 @@ export default function DocumentosEmpleadosPage() {
                                 pdfUrl={previewDocument?.previewUrl || ''}
                                 docId={previewDocument?.id || ''}
                                 originalFileName={previewDocument?.fileName || ''}
+                                autoStampMode={isContratoDocumento(previewDocument)}
                                 onClose={handleClosePreview}
                               />
                             )}
@@ -8547,6 +8969,67 @@ export default function DocumentosEmpleadosPage() {
 
       )}
 
+      {documentoSelloToConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border-4 border-teal-100">
+            <div className="flex items-center justify-between p-6 border-b-2 border-teal-200 bg-gradient-to-r from-teal-50 to-white">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center">
+                  <span className="text-teal-700 text-2xl">🔏</span>
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">Añadir sello</h3>
+                  <p className="text-sm text-teal-700 font-medium">Reemplaza el PDF actual</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDocumentoSelloToConfirm(null)}
+                disabled={!!aplicandoSelloDocId}
+                className="w-10 h-10 bg-teal-100 hover:bg-teal-200 text-teal-700 rounded-full flex items-center justify-center text-xl font-bold transition-all duration-200 hover:scale-110 disabled:opacity-50"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-6">
+              <div className="text-center mb-2">
+                <div className="w-20 h-20 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <span className="text-teal-700 text-4xl">📄</span>
+                </div>
+                <h4 className="text-lg font-semibold text-gray-900 mb-2">
+                  ¿Añadir el sello de empresa a este contrato?
+                </h4>
+                <p className="text-gray-600 mb-4">
+                  <span className="font-medium text-teal-700">
+                    {documentoSelloToConfirm.nombre_archivo || documentoSelloToConfirm.fileName}
+                  </span>
+                </p>
+                <p className="text-sm text-gray-500">
+                  Se colocará el sello en la última página (casilla empresa) y se reemplazará el archivo actual.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center p-6 border-t-2 border-teal-200 bg-gradient-to-r from-white to-teal-50">
+              <button
+                onClick={() => setDocumentoSelloToConfirm(null)}
+                disabled={!!aplicandoSelloDocId}
+                className="px-6 py-3 border-2 border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg font-medium transition-all duration-200 disabled:opacity-50"
+              >
+                ✕ Cancelar
+              </button>
+              <button
+                onClick={() => handleAplicarSelloEmpresa(documentoSelloToConfirm)}
+                disabled={!!aplicandoSelloDocId}
+                className="px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-60 disabled:cursor-wait"
+              >
+                {aplicandoSelloDocId ? 'Sellando…' : '✓ Sí, añadir sello'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal pentru lista de angajați cu statusul contractelor */}
       {showContratosModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -8968,6 +9451,7 @@ export default function DocumentosEmpleadosPage() {
           documentoDocId={documentoOficialToSign.doc_id ? Number(documentoOficialToSign.doc_id) : null}
           updateExisting={!!(documentoOficialToSign.doc_id && Number(documentoOficialToSign.doc_id) > 0)} // Face UPDATE doar dacă există doc_id valid
           tipoDocumento={documentoOficialToSign.tipo || documentoOficialToSign.tipo_documento || null} // Păstrează tipo_documento original
+          autoStampMode={isContratoDocumento(documentoOficialToSign)}
           onClose={() => {
             setShowOficialSigner(false);
             setDocumentoOficialToSign(null);

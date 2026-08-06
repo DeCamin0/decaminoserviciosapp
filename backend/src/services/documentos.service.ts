@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { DocumentosSolicitadosService } from './documentos-solicitados.service';
+import { CarpetasDocumentosStorageService } from './carpetas-documentos-storage.service';
 
 @Injectable()
 export class DocumentosService {
@@ -15,6 +16,7 @@ export class DocumentosService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly carpetasStorage: CarpetasDocumentosStorageService,
     @Inject(forwardRef(() => DocumentosSolicitadosService))
     private readonly documentosSolicitadosService?: DocumentosSolicitadosService,
   ) {}
@@ -149,7 +151,7 @@ export class DocumentosService {
           tipo_documento,
           nombre_archivo,
           nombre_empleado,
-          archivo
+          storage_key
         FROM \`CarpetasDocumentos\`
         WHERE ${whereClause}
         LIMIT 1;
@@ -168,49 +170,11 @@ export class DocumentosService {
       }
 
       const row = result[0];
-
-      if (row.archivo == null) {
-        throw new BadRequestException(
-          'Columna "archivo" no está disponible para este documento',
-        );
-      }
-
-      // Convertește archivo la Buffer
-      let archivoBuffer: Buffer;
-      if (Buffer.isBuffer(row.archivo)) {
-        archivoBuffer = row.archivo;
-      } else if (
-        typeof row.archivo === 'object' &&
-        row.archivo?.type === 'Buffer' &&
-        Array.isArray(row.archivo.data)
-      ) {
-        archivoBuffer = Buffer.from(row.archivo.data);
-      } else if (typeof row.archivo === 'string') {
-        // Dacă vine deja base64, decodează
-        archivoBuffer = Buffer.from(row.archivo, 'base64');
-      } else {
-        throw new BadRequestException(
-          'Formato desconocido para el campo "archivo"',
-        );
-      }
+      const archivoBuffer = await this.carpetasStorage.resolveArchivo(row);
 
       // Detectează tipul MIME din extensia fișierului
       const nombreArchivo = row.nombre_archivo || `documento_${documentId}`;
-      const extension = nombreArchivo.split('.').pop()?.toLowerCase() || 'bin';
-      const mimeTypes: { [key: string]: string } = {
-        pdf: 'application/pdf',
-        png: 'image/png',
-        jpg: 'image/jpeg',
-        jpeg: 'image/jpeg',
-        gif: 'image/gif',
-        webp: 'image/webp',
-        txt: 'text/plain',
-        doc: 'application/msword',
-        docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        xls: 'application/vnd.ms-excel',
-        xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      };
-      const mimeType = mimeTypes[extension] || 'application/octet-stream';
+      const mimeType = this.carpetasStorage.guessContentType(nombreArchivo);
 
       this.logger.log(
         `✅ Documento descargado: doc_id=${documentId}, nombre=${nombreArchivo}, tamaño=${archivoBuffer.length} bytes`,
@@ -404,7 +368,19 @@ export class DocumentosService {
           );
         }
 
-        // Insert into CarpetasDocumentos table
+        if (!this.carpetasStorage.isWriteEnabled()) {
+          throw new BadRequestException(
+            'R2 no está habilitado; no se pueden subir documentos de carpetas',
+          );
+        }
+
+        const put = await this.carpetasStorage.putDocumento(
+          file.buffer,
+          id,
+          nombreArchivo,
+          file.mimetype,
+        );
+
         const query = `
           INSERT INTO \`CarpetasDocumentos\` (
             \`id\`,
@@ -413,7 +389,9 @@ export class DocumentosService {
             \`nombre_archivo\`,
             \`nombre_empleado\`,
             \`fecha_creacion\`,
-            \`archivo\`
+            \`storage_key\`,
+            \`storage_bucket\`,
+            \`tamano_bytes\`
           ) VALUES (
             ${this.escapeSql(id)},
             ${this.escapeSql(email)},
@@ -421,7 +399,9 @@ export class DocumentosService {
             ${this.escapeSql(nombreArchivo)},
             ${this.escapeSql(nombreEmpleado)},
             ${fecha ? this.escapeSql(fecha) : 'CURRENT_TIMESTAMP'},
-            ${file.buffer && file.buffer.length > 0 ? `0x${file.buffer.toString('hex')}` : 'NULL'}
+            ${this.escapeSql(put.storage_key)},
+            ${this.escapeSql(put.storage_bucket)},
+            ${put.tamano_bytes}
           )
         `;
 
@@ -461,7 +441,7 @@ export class DocumentosService {
           }
 
           this.logger.log(
-            `✅ Documento ${index + 1}/${files.length} insertado: ${nombreArchivo} (${file.size} bytes, buffer: ${file.buffer.length} bytes, mimetype: ${file.mimetype || 'N/A'})`,
+            `✅ Documento ${index + 1}/${files.length} insertado en R2: ${nombreArchivo} (${file.size} bytes, buffer: ${file.buffer.length} bytes, mimetype: ${file.mimetype || 'N/A'})`,
           );
 
           // Verificare automată: dacă există o solicitare pentru acest tip de document,
@@ -626,16 +606,17 @@ export class DocumentosService {
         );
       }
 
-      // Obtener doc_id antes de borrar para limpiar ausencia_justificantes
+      // Obtener doc_id + storage_key antes de borrar
       const docIdRows = await this.prisma.$queryRawUnsafe<
-        Array<{ doc_id: number }>
+        Array<{ doc_id: number; storage_key: string | null }>
       >(
-        `SELECT doc_id FROM \`CarpetasDocumentos\`
+        `SELECT doc_id, storage_key FROM \`CarpetasDocumentos\`
          WHERE id = ${this.escapeSql(idString.trim())}
            AND TRIM(nombre_archivo) = TRIM(${this.escapeSql(nombreArchivo.trim())})
          LIMIT 1`,
       );
       const docIdToClear = docIdRows?.[0]?.doc_id;
+      const storageKeyToDelete = docIdRows?.[0]?.storage_key;
 
       // Build DELETE query (matching n8n snapshot logic)
       // Note: id is String (VarChar(50)) in CarpetasDocumentos, not UNSIGNED INT
@@ -658,6 +639,8 @@ export class DocumentosService {
           `Documento no encontrado para id="${idString.trim()}" y nombre_archivo="${nombreArchivo.trim()}"`,
         );
       }
+
+      await this.carpetasStorage.deleteObjectIfAny(storageKeyToDelete);
 
       // Limpiar referencias en ausencia_justificantes para que no queden doc_id huérfanos
       if (docIdToClear != null && Number.isFinite(Number(docIdToClear))) {

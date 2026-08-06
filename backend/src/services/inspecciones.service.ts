@@ -4,10 +4,12 @@ import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from './telegram.service';
 import { EmpleadoGrupoScopeService } from './empleado-grupo-scope.service';
+import { InspeccionesMaterialesStorageService } from './inspecciones-materiales-storage.service';
 
 @Injectable()
 export class InspeccionesService {
@@ -17,6 +19,7 @@ export class InspeccionesService {
     private readonly prisma: PrismaService,
     private readonly telegramService: TelegramService,
     private readonly empleadoGrupoScopeService: EmpleadoGrupoScopeService,
+    private readonly inspeccionesStorage: InspeccionesMaterialesStorageService,
   ) {}
 
   /** Filtro SQL sobre codigo_empleado; sin ámbito = sin filtro. */
@@ -45,7 +48,8 @@ export class InspeccionesService {
       tipo_inspeccion: string | null;
       codigo_empleado: string | null;
       nombre_empleado: string | null;
-      archivo: Buffer | null;
+      archivo: null;
+      tiene_archivo: boolean;
       nombre_archivo: string | null;
       fecha_subida: string | null;
       Nombre_Supervisor: string | null;
@@ -70,7 +74,6 @@ export class InspeccionesService {
         codigoEmpleado,
       );
 
-      // Execute query matching n8n snapshot logic (using Prisma escape for security)
       const escapedCodigo = this.escapeSql(codigoEmpleado.trim());
       const query = `
         SELECT 
@@ -78,13 +81,13 @@ export class InspeccionesService {
           tipo_inspeccion,
           codigo_empleado,
           nombre_empleado,
-          archivo,
           nombre_archivo,
           fecha_subida,
           \`Nombre Supervisor\`,
           Centro,
           Locacion,
-          scor_total
+          scor_total,
+          storage_key
         FROM InspeccionesDocumentos
         WHERE codigo_empleado = ${escapedCodigo}
         ORDER BY fecha_subida DESC
@@ -96,30 +99,35 @@ export class InspeccionesService {
           tipo_inspeccion: string | null;
           codigo_empleado: string | null;
           nombre_empleado: string | null;
-          archivo: Buffer | null;
           nombre_archivo: string | null;
           fecha_subida: string | null;
           'Nombre Supervisor': string | null;
           Centro: string | null;
           Locacion: string | null;
           scor_total: number | null;
+          storage_key: string | null;
         }>
       >(query);
 
-      // Map results to match expected format (convert 'Nombre Supervisor' to Nombre_Supervisor)
-      const mappedResults = results.map((row) => ({
-        id: row.id,
-        tipo_inspeccion: row.tipo_inspeccion,
-        codigo_empleado: row.codigo_empleado,
-        nombre_empleado: row.nombre_empleado,
-        archivo: row.archivo,
-        nombre_archivo: row.nombre_archivo,
-        fecha_subida: row.fecha_subida,
-        Nombre_Supervisor: row['Nombre Supervisor'] || null,
-        Centro: row.Centro,
-        Locacion: row.Locacion,
-        scor_total: row.scor_total !== null ? Number(row.scor_total) : null,
-      }));
+      const mappedResults = results.map((row) => {
+        const tiene = Boolean(
+          row.storage_key && String(row.storage_key).trim(),
+        );
+        return {
+          id: row.id,
+          tipo_inspeccion: row.tipo_inspeccion,
+          codigo_empleado: row.codigo_empleado,
+          nombre_empleado: row.nombre_empleado,
+          archivo: null as null,
+          tiene_archivo: tiene,
+          nombre_archivo: row.nombre_archivo,
+          fecha_subida: row.fecha_subida,
+          Nombre_Supervisor: row['Nombre Supervisor'] || null,
+          Centro: row.Centro,
+          Locacion: row.Locacion,
+          scor_total: row.scor_total !== null ? Number(row.scor_total) : null,
+        };
+      });
 
       this.logger.log(
         `✅ Found ${mappedResults.length} inspecciones for codigo_empleado: ${codigoEmpleado}`,
@@ -298,19 +306,35 @@ export class InspeccionesService {
 
       this.logger.log(`📝 Creating inspeccion with ID: ${inspeccionId}`);
 
+      if (!this.inspeccionesStorage.isWriteEnabled()) {
+        throw new ServiceUnavailableException(
+          'R2 no está habilitado. Configura R2_ENABLED=true y credenciales.',
+        );
+      }
+
+      const put = await this.inspeccionesStorage.putInspeccionPdf(
+        pdfBuffer,
+        inspeccionId,
+        nombreArchivo.endsWith('.pdf') ? nombreArchivo : `${nombreArchivo}.pdf`,
+      );
+
       // Check if inspeccion already exists
       const existing = await this.prisma.$queryRawUnsafe<
         Array<{
           id: string;
-          archivo: Buffer | null;
+          storage_key: string | null;
           nombre_archivo: string | null;
         }>
       >(
-        `SELECT id, archivo, nombre_archivo FROM InspeccionesDocumentos WHERE id = ${this.escapeSql(inspeccionId)}`,
+        `SELECT id, storage_key, nombre_archivo FROM InspeccionesDocumentos WHERE id = ${this.escapeSql(inspeccionId)}`,
       );
 
-      // Dacă există și este o inspecție completă (are PDF), aruncă eroare
-      if (existing && existing.length > 0 && existing[0].archivo !== null) {
+      const hasFile = (row: { storage_key: string | null }) =>
+        Boolean(row.storage_key && String(row.storage_key).trim());
+
+      // Dacă există și este o inspecție completă (are PDF pe R2), aruncă eroare
+      if (existing && existing.length > 0 && hasFile(existing[0])) {
+        await this.inspeccionesStorage.deleteObjectIfAny(put.storage_key);
         this.logger.warn(
           `⚠️ Inspeccion with ID ${inspeccionId} already exists and has PDF`,
         );
@@ -318,7 +342,7 @@ export class InspeccionesService {
       }
 
       // Dacă există dar este o cerere (fără PDF), facem UPDATE pentru a transforma cererea în inspecție completă
-      if (existing && existing.length > 0 && existing[0].archivo === null) {
+      if (existing && existing.length > 0 && !hasFile(existing[0])) {
         this.logger.log(
           `🔄 Updating solicitud ${inspeccionId} to complete inspeccion`,
         );
@@ -328,7 +352,9 @@ export class InspeccionesService {
             tipo_inspeccion = ${this.escapeSql(tipoInspeccion)},
             codigo_empleado = ${this.escapeSql(codigoEmpleado)},
             nombre_empleado = ${this.escapeSql(empleadoNombre)},
-            archivo = ${pdfBuffer ? `0x${pdfBuffer.toString('hex')}` : 'NULL'},
+            storage_key = ${this.escapeSql(put.storage_key)},
+            storage_bucket = ${this.escapeSql(put.storage_bucket)},
+            tamano_bytes = ${put.tamano_bytes},
             nombre_archivo = ${this.escapeSql(nombreArchivo)},
             fecha_subida = ${this.escapeSql(timestamp)},
             \`Nombre Supervisor\` = ${this.escapeSql(nombreInspector)},
@@ -345,15 +371,15 @@ export class InspeccionesService {
           `✅ Solicitud ${inspeccionId} updated to complete inspeccion`,
         );
       } else {
-        // Insert inspeccion nouă în database
-        // Use Prisma raw query to match n8n snapshot behavior
         const query = `
           INSERT INTO InspeccionesDocumentos (
             id,
             tipo_inspeccion,
             codigo_empleado,
             nombre_empleado,
-            archivo,
+            storage_key,
+            storage_bucket,
+            tamano_bytes,
             nombre_archivo,
             fecha_subida,
             \`Nombre Supervisor\`,
@@ -367,7 +393,9 @@ export class InspeccionesService {
             ${this.escapeSql(tipoInspeccion)},
             ${this.escapeSql(codigoEmpleado)},
             ${this.escapeSql(empleadoNombre)},
-            ${pdfBuffer ? `0x${pdfBuffer.toString('hex')}` : 'NULL'},
+            ${this.escapeSql(put.storage_key)},
+            ${this.escapeSql(put.storage_bucket)},
+            ${put.tamano_bytes},
             ${this.escapeSql(nombreArchivo)},
             ${this.escapeSql(timestamp)},
             ${this.escapeSql(nombreInspector)},
@@ -424,14 +452,21 @@ export class InspeccionesService {
               const descripcionMaterial =
                 material.descripcion || material.desc || material.text || null;
 
-              // Salvează documentul în MaterialesDocumentos
+              // Salvează documentul în MaterialesDocumentos (R2)
+              const matPut = await this.inspeccionesStorage.putMaterialArchivo(
+                documentoBuffer,
+                inspeccionId,
+                nombreArchivo,
+              );
               const materialQuery = `
                 INSERT INTO MaterialesDocumentos (
                   inspeccion_id,
                   material_index,
                   tipo_documento,
                   nombre_archivo,
-                  archivo,
+                  storage_key,
+                  storage_bucket,
+                  tamano_bytes,
                   fecha_creacion,
                   codigo_empleado,
                   nombre_empleado,
@@ -441,7 +476,9 @@ export class InspeccionesService {
                   ${index},
                   ${this.escapeSql(tipoDocumento)},
                   ${this.escapeSql(nombreArchivo)},
-                  ${documentoBuffer ? `0x${documentoBuffer.toString('hex')}` : 'NULL'},
+                  ${this.escapeSql(matPut.storage_key)},
+                  ${this.escapeSql(matPut.storage_bucket)},
+                  ${matPut.tamano_bytes},
                   ${this.escapeSql(timestamp)},
                   ${this.escapeSql(codigoEmpleado)},
                   ${this.escapeSql(empleadoNombre)},
@@ -478,7 +515,8 @@ export class InspeccionesService {
       this.logger.error('❌ Error creating inspeccion:', error);
       if (
         error instanceof BadRequestException ||
-        error instanceof ForbiddenException
+        error instanceof ForbiddenException ||
+        error instanceof ServiceUnavailableException
       ) {
         throw error;
       }
@@ -551,7 +589,7 @@ export class InspeccionesService {
         );
       }
 
-      // Insert solicitud into database (without PDF, archivo is NULL)
+      // Insert solicitud (fără PDF → storage_key NULL)
       // Use tipo_inspeccion to indicate it's a solicitud
       // NOTA: Locacion este pentru locația fizică, nu pentru observații
       // Pentru cereri, Locacion este NULL deoarece nu există încă o locație fizică
@@ -562,7 +600,7 @@ export class InspeccionesService {
           tipo_inspeccion,
           codigo_empleado,
           nombre_empleado,
-          archivo,
+          storage_key,
           nombre_archivo,
           fecha_subida,
           \`Nombre Supervisor\`,
@@ -795,11 +833,10 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
         await this.assertInspeccionCodigoEnAmbito(inspId, allowedCodigos);
       }
 
-      // Query pentru a obține documentul
       const query = `
         SELECT 
           nombre_archivo,
-          archivo
+          storage_key
         FROM MaterialesDocumentos
         WHERE doc_id = ${docId}
         LIMIT 1
@@ -808,7 +845,7 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
       const result = await this.prisma.$queryRawUnsafe<
         Array<{
           nombre_archivo: string | null;
-          archivo: Buffer | null;
+          storage_key: string | null;
         }>
       >(query);
 
@@ -819,12 +856,8 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
       }
 
       const documento = result[0];
-
-      if (!documento.archivo) {
-        throw new NotFoundException(
-          `El archivo del documento ${docId} está vacío`,
-        );
-      }
+      const archivoBuffer =
+        await this.inspeccionesStorage.resolveArchivo(documento);
 
       const nombreArchivo =
         documento.nombre_archivo || `material_document_${docId}.pdf`;
@@ -845,7 +878,7 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
       );
 
       return {
-        archivo: documento.archivo,
+        archivo: archivoBuffer,
         tipo_mime: tipoMime,
         nombre_archivo: nombreArchivo,
       };
@@ -884,14 +917,10 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
       this.logger.log(`📥 Download inspeccion request - id: ${id}`);
 
       const escapedId = this.escapeSql(id.trim());
-
       await this.assertInspeccionCodigoEnAmbito(id.trim(), allowedCodigos);
 
-      // Query matching n8n snapshot logic
       const query = `
-        SELECT 
-          nombre_archivo,
-          archivo
+        SELECT nombre_archivo, storage_key
         FROM InspeccionesDocumentos
         WHERE id = ${escapedId}
         LIMIT 1
@@ -900,7 +929,7 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
       const result = await this.prisma.$queryRawUnsafe<
         Array<{
           nombre_archivo: string | null;
-          archivo: Buffer | { type: 'Buffer'; data: number[] } | string | null;
+          storage_key: string | null;
         }>
       >(query);
 
@@ -909,162 +938,23 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
       }
 
       const row = result[0];
-
-      if (row.archivo == null) {
-        throw new BadRequestException(
-          'Columna "archivo" no está disponible para esta inspección',
-        );
-      }
-
-      // 🔍 LOGGING: Tipul și conținutul inițial al lui row.archivo
-      this.logger.log(
-        `🔍 [DEBUG] row.archivo type: ${typeof row.archivo}, isBuffer: ${Buffer.isBuffer(row.archivo)}`,
-      );
-      if (typeof row.archivo === 'object' && row.archivo !== null) {
-        this.logger.log(
-          `🔍 [DEBUG] row.archivo object keys: ${Object.keys(row.archivo).join(', ')}`,
-        );
-        if ('type' in row.archivo) {
-          this.logger.log(
-            `🔍 [DEBUG] row.archivo.type: ${(row.archivo as any).type}`,
-          );
-        }
-        if ('data' in row.archivo && Array.isArray((row.archivo as any).data)) {
-          const dataArray = (row.archivo as any).data;
-          this.logger.log(
-            `🔍 [DEBUG] row.archivo.data length: ${dataArray.length}, first 20 values: ${dataArray.slice(0, 20).join(', ')}`,
-          );
-        }
-      } else if (typeof row.archivo === 'string') {
-        const previewStr = row.archivo.substring(0, 50);
-        this.logger.log(
-          `🔍 [DEBUG] row.archivo string length: ${row.archivo.length}, preview (first 50 chars): ${previewStr}`,
-        );
-      } else if (Buffer.isBuffer(row.archivo)) {
-        this.logger.log(
-          `🔍 [DEBUG] row.archivo Buffer length: ${row.archivo.length}, first 20 bytes (hex): ${row.archivo.slice(0, 20).toString('hex')}, first 20 bytes (ascii): ${row.archivo.slice(0, 20).toString('ascii')}`,
-        );
-      }
-
-      // Convert archivo to Buffer (matching n8n snapshot logic)
-      // IMPORTANT: MySQL/Prisma poate returna datele ca Buffer care conține base64 string,
-      // sau ca string base64, sau ca binary data. Trebuie să detectăm și să decodăm corect.
-      let archivoBuffer: Buffer;
-      if (Buffer.isBuffer(row.archivo)) {
-        this.logger.log(`🔍 [DEBUG] Branch: Buffer.isBuffer = true`);
-        // Verificăm dacă Bufferul conține base64 (începe cu caractere base64 valide)
-        const bufferAsString = row.archivo.toString('utf8');
-        const firstChars = bufferAsString.substring(0, 20);
-        // Dacă primele caractere sunt base64 valide (A-Za-z0-9+/=) și nu începe cu %PDF-,
-        // înseamnă că Bufferul conține base64 string, nu binary data
-        const isBase64InBuffer =
-          /^[A-Za-z0-9+/=]+$/.test(firstChars.trim()) &&
-          !firstChars.trim().startsWith('%PDF-') &&
-          !firstChars.trim().startsWith('\x89PNG') && // PNG magic bytes
-          !firstChars.trim().startsWith('\xFF\xD8'); // JPEG magic bytes
-
-        if (isBase64InBuffer) {
-          this.logger.log(
-            `🔍 [DEBUG] Buffer contains base64 string, decoding...`,
-          );
-          archivoBuffer = Buffer.from(bufferAsString.trim(), 'base64');
-        } else {
-          // Bufferul conține deja binary data
-          this.logger.log(
-            `🔍 [DEBUG] Buffer contains binary data, using directly...`,
-          );
-          archivoBuffer = row.archivo;
-        }
-      } else if (
-        typeof row.archivo === 'object' &&
-        row.archivo?.type === 'Buffer' &&
-        Array.isArray(row.archivo.data)
-      ) {
-        this.logger.log(
-          `🔍 [DEBUG] Branch: object with type='Buffer' and data array`,
-        );
-        // n8n snapshot logic: reconstruim întâi stringul base64 din array-ul de coduri ASCII
-        // apoi reconstruim bufferul din base64
-        const base64String = String.fromCharCode(...row.archivo.data);
-        this.logger.log(
-          `🔍 [DEBUG] base64String length: ${base64String.length}, preview (first 50 chars): ${base64String.substring(0, 50)}`,
-        );
-        archivoBuffer = Buffer.from(base64String, 'base64');
-        this.logger.log(
-          `🔍 [DEBUG] After Buffer.from(base64String, 'base64'): length=${archivoBuffer.length}, first 20 bytes (hex): ${archivoBuffer.slice(0, 20).toString('hex')}, first 20 bytes (ascii): ${archivoBuffer.slice(0, 20).toString('ascii')}`,
-        );
-      } else if (typeof row.archivo === 'string') {
-        this.logger.log(`🔍 [DEBUG] Branch: string`);
-        // Verificăm dacă stringul este deja base64 sau dacă este binary data
-        // Dacă începe cu caractere base64 valide și nu începe cu %PDF-, înseamnă că este base64
-        const trimmed = row.archivo.trim();
-        const isBase64 =
-          /^[A-Za-z0-9+/=]+$/.test(trimmed) &&
-          !trimmed.startsWith('%PDF-') &&
-          !trimmed.startsWith('\x89PNG') &&
-          !trimmed.startsWith('\xFF\xD8');
-
-        if (isBase64) {
-          this.logger.log(
-            `🔍 [DEBUG] String appears to be base64, decoding...`,
-          );
-          archivoBuffer = Buffer.from(trimmed, 'base64');
-        } else {
-          // Dacă nu este base64, poate este deja binary data ca string
-          this.logger.log(
-            `🔍 [DEBUG] String appears to be binary data, converting directly...`,
-          );
-          archivoBuffer = Buffer.from(row.archivo, 'binary');
-        }
-
-        this.logger.log(
-          `🔍 [DEBUG] After conversion: length=${archivoBuffer.length}, first 20 bytes (hex): ${archivoBuffer.slice(0, 20).toString('hex')}, first 20 bytes (ascii): ${archivoBuffer.slice(0, 20).toString('ascii')}`,
-        );
-      } else {
-        this.logger.error(
-          `🔍 [DEBUG] Branch: UNKNOWN FORMAT - typeof=${typeof row.archivo}`,
-        );
-        throw new BadRequestException(
-          'Formato desconocido para el campo "archivo"',
-        );
-      }
-
-      // Nu mai validăm strict pentru %PDF- - acceptăm orice tip de fișier
-      // (PDF, imagini, documente, etc.)
-
-      // Detectăm tipul MIME din extensie sau din magic bytes
+      const archivoBuffer = await this.inspeccionesStorage.resolveArchivo(row);
       const nombreArchivo = row.nombre_archivo || `inspeccion_${id}`;
-      const extension = nombreArchivo.split('.').pop()?.toLowerCase() || '';
+      const extension = nombreArchivo.includes('.')
+        ? nombreArchivo.split('.').pop()?.toLowerCase() || ''
+        : '';
 
-      // Detectăm tipul MIME din magic bytes (primele bytes ale fișierului)
-      let mimeType = 'application/octet-stream'; // default
+      let mimeType = 'application/pdf';
       const firstBytes = archivoBuffer.slice(0, 10);
       const firstBytesHex = firstBytes.toString('hex');
       const firstBytesAscii = firstBytes.toString('ascii');
-      const firstBytesBinary = firstBytes.toString('binary');
 
-      // 🔍 LOGGING: Verificare finală
-      this.logger.log(
-        `🔍 [DEBUG] archivoBuffer final - length: ${archivoBuffer.length}, first 10 bytes (hex): ${firstBytesHex}, first 10 bytes (ascii): ${firstBytesAscii}, first 10 bytes (binary): ${firstBytesBinary}`,
-      );
-
-      // Verificăm magic bytes pentru diferite tipuri de fișiere
-      if (firstBytesAscii.startsWith('%PDF-')) {
-        mimeType = 'application/pdf';
-      } else if (firstBytesHex.startsWith('89504e47')) {
-        // PNG: \x89PNG
-        mimeType = 'image/png';
-      } else if (firstBytesHex.startsWith('ffd8ff')) {
-        // JPEG: \xFF\xD8\xFF
-        mimeType = 'image/jpeg';
-      } else if (firstBytesHex.startsWith('47494638')) {
-        // GIF: GIF8
-        mimeType = 'image/gif';
-      } else if (firstBytesHex.startsWith('52494646')) {
-        // WEBP: RIFF
-        mimeType = 'image/webp';
-      } else {
-        // Fallback la extensie dacă magic bytes nu se potrivesc
+      if (firstBytesAscii.startsWith('%PDF-')) mimeType = 'application/pdf';
+      else if (firstBytesHex.startsWith('89504e47')) mimeType = 'image/png';
+      else if (firstBytesHex.startsWith('ffd8ff')) mimeType = 'image/jpeg';
+      else if (firstBytesHex.startsWith('47494638')) mimeType = 'image/gif';
+      else if (firstBytesHex.startsWith('52494646')) mimeType = 'image/webp';
+      else {
         const mimeTypes: { [key: string]: string } = {
           pdf: 'application/pdf',
           png: 'image/png',
@@ -1072,35 +962,20 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
           jpeg: 'image/jpeg',
           gif: 'image/gif',
           webp: 'image/webp',
-          txt: 'text/plain',
-          doc: 'application/msword',
-          docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          xls: 'application/vnd.ms-excel',
-          xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         };
         mimeType = mimeTypes[extension] || 'application/octet-stream';
       }
 
-      // Numele fișierului final - păstrăm extensia originală sau adăugăm una bazată pe MIME type
       let nombreArchivoFinal = nombreArchivo;
       if (!nombreArchivo.includes('.')) {
-        // Dacă nu are extensie, adăugăm una bazată pe MIME type
         const extensionMap: { [key: string]: string } = {
           'application/pdf': 'pdf',
           'image/png': 'png',
           'image/jpeg': 'jpg',
           'image/gif': 'gif',
           'image/webp': 'webp',
-          'text/plain': 'txt',
-          'application/msword': 'doc',
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-            'docx',
-          'application/vnd.ms-excel': 'xls',
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
-            'xlsx',
         };
-        const ext = extensionMap[mimeType] || 'bin';
-        nombreArchivoFinal = `${nombreArchivo}.${ext}`;
+        nombreArchivoFinal = `${nombreArchivo}.${extensionMap[mimeType] || 'bin'}`;
       }
 
       this.logger.log(
@@ -1117,7 +992,8 @@ ${observacionesEscaped ? `📝 *Observaciones:* ${observacionesEscaped}` : ''}
       if (
         error instanceof BadRequestException ||
         error instanceof NotFoundException ||
-        error instanceof ForbiddenException
+        error instanceof ForbiddenException ||
+        error instanceof ServiceUnavailableException
       ) {
         throw error;
       }

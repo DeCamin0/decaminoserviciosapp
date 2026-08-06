@@ -27,6 +27,8 @@ import {
   Users,
   ShieldCheck,
   Camera,
+  ListTodo,
+  CheckSquare,
 } from 'lucide-react';
 import {
   getCurrentMonthKey,
@@ -38,6 +40,7 @@ import {
 } from '../utils/monthlyAlerts';
 import { config } from '../config/env.js';
 import activityLogger from '../utils/activityLogger';
+import './DashboardPage.css';
 
 const InicioPage = () => {
   const { user } = useAuth();
@@ -61,6 +64,7 @@ const InicioPage = () => {
   const [documentosSolicitadosCount, setDocumentosSolicitadosCount] = useState(0);
   const [documentosPRLPendientesCount, setDocumentosPRLPendientesCount] = useState(0);
   const [documentosOficialesNecesitanFirmaCount, setDocumentosOficialesNecesitanFirmaCount] = useState(0);
+  const [misTareasPendientesCount, setMisTareasPendientesCount] = useState(0);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [bannerStatusLoading, setBannerStatusLoading] = useState(true);
   const [rentaCampanaLoading, setRentaCampanaLoading] = useState(true);
@@ -88,6 +92,8 @@ const InicioPage = () => {
   const [ceEditMode, setCeEditMode] = useState(false);
   /** Resumen guardado: acordeón cerrado por defecto */
   const [contactoEmergenciaResumenOpen, setContactoEmergenciaResumenOpen] = useState(false);
+  /** Solo UI: herramientas developer colapsables */
+  const [adminToolsOpen, setAdminToolsOpen] = useState(false);
 
   // Skeleton UI pentru percepție rapidă de încărcare
   const renderSkeleton = () => (
@@ -1021,6 +1027,79 @@ const InicioPage = () => {
     };
   }, [user?.CODIGO, user?.isDemo]);
 
+  // Fetch tareas pendientes / en_curso for Mis tareas badge
+  useEffect(() => {
+    const fetchMisTareasPendientesCount = async () => {
+      if (!user?.CODIGO || user?.isDemo) {
+        setMisTareasPendientesCount(0);
+        return;
+      }
+
+      try {
+        const token = localStorage.getItem('auth_token');
+        const response = await fetch(routes.tareasMias, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` }),
+          },
+        });
+
+        if (response.status === 403 || response.status === 404) {
+          setMisTareasPendientesCount(0);
+          return;
+        }
+        if (!response.ok) {
+          console.warn(
+            `Warning: Error HTTP ${response.status} al obtener mis tareas`,
+          );
+          setMisTareasPendientesCount(0);
+          return;
+        }
+
+        const data = await response.json();
+        const list = Array.isArray(data) ? data : data?.data || [];
+        const abiertas = list.filter((t) => {
+          const e = String(t?.estado || '').toLowerCase();
+          return e === 'pendiente' || e === 'en_curso';
+        });
+        setMisTareasPendientesCount(abiertas.length);
+      } catch (error) {
+        console.warn('Warning: Error obteniendo mis tareas:', error);
+        setMisTareasPendientesCount(0);
+      }
+    };
+
+    fetchMisTareasPendientesCount();
+
+    let interval = null;
+    const startPolling = () => {
+      if (document.hidden) return;
+      interval = setInterval(() => {
+        if (!document.hidden) {
+          fetchMisTareasPendientesCount();
+        }
+      }, 60000);
+    };
+
+    startPolling();
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (interval) clearInterval(interval);
+      } else {
+        fetchMisTareasPendientesCount();
+        startPolling();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      if (interval) clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user?.CODIGO, user?.isDemo]);
+
   const quickAccessItems = useMemo(() => {
     // Dacă permisiunile nu sunt încă încărcate, folosim verificările hardcodate ca fallback
     const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
@@ -1060,6 +1139,7 @@ const InicioPage = () => {
     const canAccessCuadrantesEmpleado = hasBackendPermissions ? hasPermission('cuadrantes-empleado') : false;
     // Pentru mis-inspecciones, folosim DOAR permisiunile din backend (fără fallback)
     const canAccessMisInspecciones = hasBackendPermissions ? hasPermission('mis-inspecciones') : false;
+    const canAccessMisTareas = hasBackendPermissions ? hasPermission('mis-tareas') : false;
     // Pentru comunicados, folosim DOAR permisiunile din backend (fără fallback)
     const canAccessComunicados = hasBackendPermissions ? hasPermission('comunicados') : false;
 
@@ -1133,6 +1213,19 @@ const InicioPage = () => {
       });
     }
 
+    if (canAccessMisTareas) {
+      list.push({
+        id: 'mis-tareas',
+        label: 'Mis tareas',
+        hint: 'Confirmar y subir fotos',
+        icon: <CheckSquare className="h-6 w-6 text-white" />,
+        gradient: 'from-lime-500 via-green-500 to-emerald-600',
+        href: '/mis-tareas',
+        notificationCount:
+          misTareasPendientesCount > 0 ? misTareasPendientesCount : undefined,
+      });
+    }
+
     if (canAccessComunicados) {
       list.push({
         id: 'comunicados',
@@ -1154,6 +1247,7 @@ const InicioPage = () => {
     const canApprove = hasBackendPermissions ? hasPermission('aprobaciones') : false;
     // Pentru inspecciones, folosim DOAR permisiunile din backend (fără fallback)
     const canInspect = hasBackendPermissions ? hasPermission('inspecciones') : false;
+    const canManageTareas = hasBackendPermissions ? hasPermission('tareas') : false;
 
     if (canManageEmployees) {
       list.push({
@@ -1227,6 +1321,18 @@ const InicioPage = () => {
         icon: <ClipboardCheck className="h-6 w-6 text-white" />,
         gradient: 'from-amber-500 via-orange-500 to-yellow-500',
         href: '/inspecciones',
+        role: 'manager',
+      });
+    }
+
+    if (canManageTareas) {
+      list.push({
+        id: 'tareas',
+        label: 'Tareas',
+        hint: 'Gestionar tareas del equipo',
+        icon: <ListTodo className="h-6 w-6 text-white" />,
+        gradient: 'from-emerald-500 via-teal-500 to-cyan-600',
+        href: '/tareas',
         role: 'manager',
       });
     }
@@ -1393,6 +1499,7 @@ const InicioPage = () => {
     documentosSolicitadosCount,
     documentosPRLPendientesCount,
     documentosOficialesNecesitanFirmaCount,
+    misTareasPendientesCount,
   ]);
 
   // Încarcă datele complete despre angajat din backend (ca în DatosPage.jsx)
@@ -1958,24 +2065,22 @@ const InicioPage = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="dashboard-page">
       {/* Banner Recordatorio - Baja Médica */}
       {shouldShowBajaMedicaBanner && (
-        <div className="bg-gradient-to-r from-rose-500 to-rose-600 rounded-xl shadow-lg border border-rose-300 p-4 md:p-6">
-          <div className="flex items-start gap-4">
-            <div className="flex-shrink-0">
-              <div className="w-12 h-12 md:w-14 md:h-14 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-                <span className="text-2xl md:text-3xl">🩺</span>
-              </div>
+        <div className="rounded-xl border border-rose-300/80 bg-gradient-to-r from-rose-500 to-rose-600 p-4 shadow-sm md:p-5">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/20 text-2xl backdrop-blur-sm md:h-12 md:w-12">
+              🩺
             </div>
-            <div className="flex-1">
-              <h3 className="text-lg md:text-xl font-bold text-white mb-2">
+            <div className="min-w-0 flex-1">
+              <h3 className="mb-1 text-base font-bold text-white md:text-lg">
                 Recordatorio importante
               </h3>
-              <p className="text-sm md:text-base text-white/95 leading-relaxed mb-3">
+              <p className="mb-2 text-sm leading-relaxed text-white/95">
                 En caso de baja médica, es <strong>obligatorio</strong> comunicarlo a la empresa lo antes posible a través de la aplicación.
               </p>
-              <div className="flex items-center gap-2 text-xs md:text-sm text-white/90">
+              <div className="flex items-center gap-2 text-xs text-white/90 md:text-sm">
                 <span>📍</span>
                 <span>Puedes hacerlo desde la página <strong>Fichaje</strong> → botón <strong>&quot;Anunciar Baja Médica&quot;</strong></span>
               </div>
@@ -2191,18 +2296,18 @@ const InicioPage = () => {
       )}
 
       {loadingAlerts && (
-        <div className="flex items-center gap-3 bg-yellow-50 border border-yellow-200 rounded-xl p-4 shadow-sm text-yellow-700">
-          <div className="h-4 w-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin"></div>
+        <div className="dashboard-alert dashboard-alert--loading">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber-500 border-t-transparent" />
           <span className="text-sm font-medium">Comprobando alertas mensuales...</span>
         </div>
       )}
 
       {!loadingAlerts && monthlyAlerts && monthlyAlerts.total > 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 shadow-md flex items-start gap-3">
-          <div className="text-2xl">⚠️</div>
-          <div>
-            <h3 className="text-lg font-semibold text-yellow-800">Alertas mensuales detectadas</h3>
-            <p className="text-sm text-yellow-700">
+        <div className="dashboard-alert">
+          <div className="dashboard-alert__icon" aria-hidden>⚠️</div>
+          <div className="min-w-0">
+            <h3 className="dashboard-alert__title">Alertas mensuales detectadas</h3>
+            <p className="dashboard-alert__body">
               {(() => {
                 const parts = [];
                 if (monthlyAlerts.positivos > 0) {
@@ -2215,7 +2320,7 @@ const InicioPage = () => {
                 if (monthlyAlerts.negativos > 0) {
                   parts.push(
                     <span key="deficit">
-                      <span className="font-semibold text-yellow-600">{monthlyAlerts.negativos} día{monthlyAlerts.negativos > 1 ? 's' : ''}</span> con déficit (no has fichado o has trabajado menos horas de las previstas)
+                      <span className="font-semibold text-amber-700">{monthlyAlerts.negativos} día{monthlyAlerts.negativos > 1 ? 's' : ''}</span> con déficit (no has fichado o has trabajado menos horas de las previstas)
                     </span>
                   );
                 }
@@ -2241,117 +2346,268 @@ const InicioPage = () => {
         </div>
       )}
 
-      {/* Campaña Renta (ejercicio dinámico) – barra Developer si aviso desactivado */}
-      {!rentaCampanaLoading && isDeveloper && rentaCampanaStatus?.enabled === false && (
-        <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-gray-700">
-              <strong>Campaña Renta {rentaEjercicioDisplay}:</strong> el aviso está <span className="font-semibold text-amber-800">desactivado</span> para los empleados.
-              {rentaCampanaStatus?.campaignKey ? (
-                <span className="ml-1 text-xs font-normal text-gray-500">
-                  ({rentaCampanaStatus.campaignKey})
-                </span>
-              ) : null}
-            </p>
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-800">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                  checked={false}
-                  onChange={() => handleRentaBannerToggle(true)}
-                />
-                Activar aviso
-              </label>
-              <button
-                type="button"
-                onClick={() => setRentaSolicitudesOpen((o) => !o)}
-                className="text-sm font-semibold text-indigo-700 underline hover:text-indigo-900"
-              >
-                {rentaSolicitudesOpen ? 'Ocultar solicitudes' : 'Ver solicitudes guardadas'}
-              </button>
+      {/* Herramientas de administración – solo Developer; bannere angajați rămân afară */}
+      {isDeveloper && (
+        <div className="dashboard-admin">
+          <button
+            type="button"
+            className="dashboard-admin__toggle"
+            onClick={() => setAdminToolsOpen((o) => !o)}
+            aria-expanded={adminToolsOpen}
+          >
+            <div>
+              <p className="dashboard-admin__title">Herramientas de administración</p>
+              <p className="dashboard-admin__hint">Campaña Renta y Contacto de emergencia</p>
             </div>
-          </div>
-          <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-gray-200 pt-3">
-            <label className="text-sm text-gray-700">
-              Ejercicio (año renta){' '}
-              <input
-                type="number"
-                min={2000}
-                max={2100}
-                className="ml-1 w-24 rounded border border-gray-300 px-2 py-1"
-                value={rentaEjercicioInput}
-                onChange={(e) => setRentaEjercicioInput(e.target.value)}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={handleRentaEjercicioSave}
-              className="rounded-md bg-indigo-600 px-3 py-1 text-sm font-medium text-white hover:bg-indigo-700"
-            >
-              Guardar año
-            </button>
-          </div>
-          {rentaSolicitudesOpen && (
-            <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200 bg-white">
-              {rentaSolicitudesLoading ? (
-                <p className="p-4 text-sm text-gray-500">Cargando…</p>
-              ) : rentaSolicitudes.length === 0 ? (
-                <p className="p-4 text-sm text-gray-500">No hay solicitudes registradas.</p>
-              ) : (
-                <table className="min-w-full text-left text-sm">
-                  <thead className="bg-gray-50 text-xs font-semibold uppercase text-gray-600">
-                    <tr>
-                      <th className="px-3 py-2">Empleado</th>
-                      <th className="px-3 py-2">Código</th>
-                      <th className="px-3 py-2">Email</th>
-                      <th className="px-3 py-2">Fecha</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {rentaSolicitudes.map((row) => (
-                      <tr key={row.id} className="hover:bg-gray-50/80">
-                        <td className="px-3 py-2 font-medium text-gray-900">
-                          {row.nombre_actual || row.nombre_snapshot || '—'}
-                        </td>
-                        <td className="px-3 py-2 text-gray-700">{row.user_codigo}</td>
-                        <td className="px-3 py-2 text-gray-600">{row.email || '—'}</td>
-                        <td className="px-3 py-2 text-gray-600">
-                          {row.created_at
-                            ? new Date(row.created_at).toLocaleString('es-ES', {
-                                dateStyle: 'short',
-                                timeStyle: 'short',
-                              })
-                            : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+            <ChevronDown
+              className={`h-5 w-5 shrink-0 text-gray-500 transition-transform ${adminToolsOpen ? 'rotate-180' : ''}`}
+              aria-hidden
+            />
+          </button>
+          {adminToolsOpen && (
+            <div className="dashboard-admin__body">
+              <section className="dashboard-admin__zone">
+                <h4 className="dashboard-admin__zone-title">Campaña Renta</h4>
+                {rentaCampanaLoading ? (
+                  <p className="text-sm text-gray-500">Cargando…</p>
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-gray-700 dark:text-gray-200">
+                        <strong>Campaña Renta {rentaEjercicioDisplay}:</strong>{' '}
+                        {rentaCampanaStatus?.enabled === false ? (
+                          <>
+                            el aviso está <span className="font-semibold text-amber-800">desactivado</span> para los empleados.
+                          </>
+                        ) : (
+                          <>
+                            el aviso está <span className="font-semibold text-emerald-700">activo</span> en el dashboard.
+                          </>
+                        )}
+                        {rentaCampanaStatus?.campaignKey ? (
+                          <span className="ml-1 text-xs font-normal text-gray-500">
+                            ({rentaCampanaStatus.campaignKey})
+                          </span>
+                        ) : null}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                            checked={rentaCampanaStatus?.enabled === true}
+                            onChange={(e) => handleRentaBannerToggle(e.target.checked)}
+                          />
+                          {rentaCampanaStatus?.enabled === true ? 'Aviso activo en el dashboard' : 'Activar aviso'}
+                        </label>
+                        {typeof rentaCampanaStatus?.totalSolicitudes === 'number' && (
+                          <span className="text-sm text-gray-600 dark:text-gray-300">
+                            Solicitudes: <strong>{rentaCampanaStatus.totalSolicitudes}</strong>
+                          </span>
+                        )}
+                        {typeof rentaCampanaStatus?.totalDeclinaciones === 'number' && (
+                          <span className="text-sm text-gray-600 dark:text-gray-300">
+                            Declinaciones: <strong>{rentaCampanaStatus.totalDeclinaciones}</strong>
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setRentaSolicitudesOpen((o) => !o)}
+                          className="text-sm font-semibold text-primary-700 underline hover:text-primary-900 dark:text-primary-300"
+                        >
+                          {rentaSolicitudesOpen
+                            ? (rentaCampanaStatus?.enabled === false ? 'Ocultar solicitudes' : 'Ocultar lista')
+                            : (rentaCampanaStatus?.enabled === false ? 'Ver solicitudes guardadas' : 'Ver lista de solicitudes')}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-gray-200 pt-3 dark:border-gray-600">
+                      <label className="text-sm text-gray-700 dark:text-gray-200">
+                        {rentaCampanaStatus?.enabled === false ? 'Ejercicio (año renta)' : 'Ejercicio (año de la renta)'}{' '}
+                        <input
+                          type="number"
+                          min={2000}
+                          max={2100}
+                          className="ml-1 w-24 rounded border border-gray-300 px-2 py-1 dark:border-gray-600 dark:bg-gray-800"
+                          value={rentaEjercicioInput}
+                          onChange={(e) => setRentaEjercicioInput(e.target.value)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleRentaEjercicioSave}
+                        className="rounded-md bg-primary-600 px-3 py-1 text-sm font-medium text-white transition hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                      >
+                        Guardar año
+                      </button>
+                      {rentaCampanaStatus?.enabled === true && rentaCampanaStatus?.campaignKey ? (
+                        <span className="pb-1 text-xs text-gray-500">
+                          Clave: {rentaCampanaStatus.campaignKey}
+                        </span>
+                      ) : null}
+                    </div>
+                    {rentaSolicitudesOpen && (
+                      <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200 bg-white dark:border-gray-600 dark:bg-gray-900">
+                        {rentaSolicitudesLoading ? (
+                          <p className="p-4 text-sm text-gray-500">Cargando…</p>
+                        ) : rentaSolicitudes.length === 0 ? (
+                          <p className="p-4 text-sm text-gray-500">
+                            {rentaCampanaStatus?.enabled === false
+                              ? 'No hay solicitudes registradas.'
+                              : 'Aún no hay solicitudes.'}
+                          </p>
+                        ) : (
+                          <table className="min-w-full text-left text-sm">
+                            <thead className="bg-gray-50 text-xs font-semibold uppercase text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                              <tr>
+                                <th className="px-3 py-2">Empleado</th>
+                                <th className="px-3 py-2">Código</th>
+                                <th className="px-3 py-2">Email</th>
+                                <th className="px-3 py-2">Fecha</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                              {rentaSolicitudes.map((row) => (
+                                <tr key={row.id} className="hover:bg-gray-50/80 dark:hover:bg-gray-800/80">
+                                  <td className="px-3 py-2 font-medium text-gray-900 dark:text-gray-100">
+                                    {row.nombre_actual || row.nombre_snapshot || '—'}
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{row.user_codigo}</td>
+                                  <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{row.email || '—'}</td>
+                                  <td className="px-3 py-2 text-gray-600 dark:text-gray-400">
+                                    {row.created_at
+                                      ? new Date(row.created_at).toLocaleString('es-ES', {
+                                          dateStyle: 'short',
+                                          timeStyle: 'short',
+                                        })
+                                      : '—'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
+
+              <section className="dashboard-admin__zone">
+                <h4 className="dashboard-admin__zone-title">Contacto de emergencia</h4>
+                {contactoEmergenciaLoading ? (
+                  <p className="text-sm text-gray-500">Cargando…</p>
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-sm text-gray-800 dark:text-gray-200">
+                        <strong>Contacto de emergencia:</strong>{' '}
+                        {contactoEmergenciaStatus?.enabled === false ? (
+                          <>
+                            el aviso para empleados está{' '}
+                            <span className="font-semibold text-amber-800">desactivado</span>. Los datos solo se
+                            solicitan cuando actives la campaña.
+                          </>
+                        ) : (
+                          <>
+                            el aviso está <span className="font-semibold text-emerald-700">activo</span> en el dashboard.
+                          </>
+                        )}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                            checked={contactoEmergenciaStatus?.enabled === true}
+                            onChange={(e) => handleContactoBannerToggle(e.target.checked)}
+                          />
+                          {contactoEmergenciaStatus?.enabled === true
+                            ? 'Aviso activo en el dashboard'
+                            : 'Activar aviso'}
+                        </label>
+                        {typeof contactoEmergenciaStatus?.totalActivos === 'number' && (
+                          <span className="text-sm text-gray-700 dark:text-gray-300">
+                            {contactoEmergenciaStatus?.enabled === false ? (
+                              <>
+                                Empleados ACTIVO: <strong>{contactoEmergenciaStatus.totalActivos}</strong> — Con datos:{' '}
+                                <strong className="text-emerald-700">{contactoEmergenciaStatus.completados ?? 0}</strong>{' '}
+                                — Pendientes:{' '}
+                                <strong className="text-amber-800">{contactoEmergenciaStatus.pendientes ?? 0}</strong>
+                              </>
+                            ) : (
+                              <>
+                                ACTIVO: <strong>{contactoEmergenciaStatus.totalActivos}</strong> — Completado:{' '}
+                                <strong className="text-emerald-700">
+                                  {contactoEmergenciaStatus.completados ?? 0}
+                                </strong>{' '}
+                                — Falta:{' '}
+                                <strong className="text-amber-800">
+                                  {contactoEmergenciaStatus.pendientes ?? 0}
+                                </strong>
+                              </>
+                            )}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setContactoPendientesOpen((o) => !o)}
+                          className="text-sm font-semibold text-primary-700 underline hover:text-primary-900 dark:text-primary-300"
+                        >
+                          {contactoPendientesOpen
+                            ? (contactoEmergenciaStatus?.enabled === false ? 'Ocultar pendientes' : 'Ocultar lista')
+                            : (contactoEmergenciaStatus?.enabled === false
+                              ? 'Ver empleados sin datos'
+                              : 'Lista sin datos completos')}
+                        </button>
+                      </div>
+                    </div>
+                    {contactoPendientesOpen && (
+                      <div className="mt-3 max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white dark:border-gray-600 dark:bg-gray-900">
+                        {contactoPendientesLoading ? (
+                          <p className="p-3 text-sm text-gray-500">Cargando…</p>
+                        ) : contactoPendientes.length === 0 ? (
+                          <p className="p-3 text-sm text-gray-500">
+                            {contactoEmergenciaStatus?.enabled === false
+                              ? 'Todos los activos tienen datos completos.'
+                              : 'Ningún pendiente.'}
+                          </p>
+                        ) : (
+                          <ul className="divide-y divide-gray-100 text-sm dark:divide-gray-700">
+                            {contactoPendientes.map((p) => (
+                              <li key={p.codigo} className="flex justify-between gap-2 px-3 py-2">
+                                <span className="font-medium text-gray-900 dark:text-gray-100">{p.nombre || '—'}</span>
+                                <span className="shrink-0 text-gray-500">{p.codigo}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
             </div>
           )}
         </div>
       )}
 
-      {/* Campaña Renta (ejercicio dinámico) – gestoría */}
-      {/* Empleado: si ya respondió (sí o no), no mostrar el aviso. Developer: solo bloque de control. */}
+      {/* Campaña Renta – banner / acciones para empleados (fuera del accordion admin) */}
       {!rentaCampanaLoading &&
         rentaCampanaStatus?.enabled === true &&
-        (!rentaUsuarioRespondio || isDeveloper) && (
-        <div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-sky-50 shadow-lg overflow-hidden">
-          <div className="p-4 md:p-6">
-            {(!rentaUsuarioRespondio || !isDeveloper) && (
+        !rentaUsuarioRespondio && (
+        <div className="overflow-hidden rounded-xl border border-primary-200 bg-gradient-to-br from-primary-50 via-white to-white shadow-sm dark:border-primary-900/40 dark:from-primary-950/30 dark:via-gray-900 dark:to-gray-900">
+          <div className="p-4 md:p-5">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-2xl text-white shadow-md">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-600 text-xl text-white shadow-sm">
                 📢
               </div>
               <div className="min-w-0 flex-1 space-y-3">
                 <div>
-                  <h3 className="text-lg font-bold text-indigo-950 md:text-xl">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 md:text-xl">
                     Campaña Renta {rentaEjercicioDisplay} – Servicio disponible 💼
                   </h3>
-                  <p className="mt-2 text-sm leading-relaxed text-gray-700 md:text-base">
+                  <p className="mt-2 text-sm leading-relaxed text-gray-700 dark:text-gray-300 md:text-base">
                     Hola a todos,
                     <br />
                     <br />
@@ -2387,7 +2643,7 @@ const InicioPage = () => {
                       className={
                         rentaCampanaStatus?.solicited
                           ? 'inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-5 py-2.5 text-sm font-semibold text-emerald-800 shadow-sm opacity-95'
-                          : 'inline-flex items-center justify-center rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60'
+                          : 'inline-flex items-center justify-center rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60'
                       }
                     >
                       {rentaCampanaStatus?.solicited ? (
@@ -2407,14 +2663,14 @@ const InicioPage = () => {
                           type="button"
                           disabled={rentaDeclinarSubmitting || rentaCampanaSubmitting}
                           onClick={() => setRentaDeclinarOpen(true)}
-                          className="inline-flex items-center justify-center rounded-lg border-2 border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex items-center justify-center rounded-lg border-2 border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                         >
                           No, no quiero la renta con la gestoría
                         </button>
                       )}
                   </div>
                   {rentaCampanaStatus?.solicited && (
-                    <p className="max-w-xl text-xs leading-relaxed text-gray-600">
+                    <p className="max-w-xl text-xs leading-relaxed text-gray-600 dark:text-gray-400">
                       Esta confirmación es solo para la renta del ejercicio{' '}
                       <strong>{rentaEjercicioDisplay}</strong>: no puedes volver a pulsar para el mismo año.
                       Cuando la empresa active la campaña de un <strong>nuevo ejercicio</strong>, aquí podrás
@@ -2424,125 +2680,17 @@ const InicioPage = () => {
                 </div>
               </div>
             </div>
-            )}
-
-            {isDeveloper && (
-              <div
-                className={
-                  !rentaUsuarioRespondio
-                    ? 'mt-5 border-t border-indigo-100 pt-4'
-                    : ''
-                }
-              >
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-indigo-800">
-                  Developer – control del aviso
-                </p>
-                <div className="flex flex-wrap items-center gap-4">
-                  <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-800">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      checked={rentaCampanaStatus?.enabled === true}
-                      onChange={(e) => handleRentaBannerToggle(e.target.checked)}
-                    />
-                    Aviso activo en el dashboard
-                  </label>
-                  {typeof rentaCampanaStatus?.totalSolicitudes === 'number' && (
-                    <span className="text-sm text-gray-600">
-                      Solicitudes: <strong>{rentaCampanaStatus.totalSolicitudes}</strong>
-                    </span>
-                  )}
-                  {typeof rentaCampanaStatus?.totalDeclinaciones === 'number' && (
-                    <span className="text-sm text-gray-600">
-                      Declinaciones:{' '}
-                      <strong>{rentaCampanaStatus.totalDeclinaciones}</strong>
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setRentaSolicitudesOpen((o) => !o)}
-                    className="text-sm font-semibold text-indigo-700 underline hover:text-indigo-900"
-                  >
-                    {rentaSolicitudesOpen ? 'Ocultar lista' : 'Ver lista de solicitudes'}
-                  </button>
-                </div>
-                <div className="mt-3 flex flex-wrap items-end gap-2">
-                  <label className="text-sm text-gray-700">
-                    Ejercicio (año de la renta){' '}
-                    <input
-                      type="number"
-                      min={2000}
-                      max={2100}
-                      className="ml-1 w-24 rounded border border-gray-300 px-2 py-1"
-                      value={rentaEjercicioInput}
-                      onChange={(e) => setRentaEjercicioInput(e.target.value)}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleRentaEjercicioSave}
-                    className="rounded-md bg-indigo-600 px-3 py-1 text-sm font-medium text-white hover:bg-indigo-700"
-                  >
-                    Guardar año
-                  </button>
-                  {rentaCampanaStatus?.campaignKey ? (
-                    <span className="pb-1 text-xs text-gray-500">
-                      Clave: {rentaCampanaStatus.campaignKey}
-                    </span>
-                  ) : null}
-                </div>
-                {rentaSolicitudesOpen && (
-                  <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200 bg-white">
-                    {rentaSolicitudesLoading ? (
-                      <p className="p-4 text-sm text-gray-500">Cargando…</p>
-                    ) : rentaSolicitudes.length === 0 ? (
-                      <p className="p-4 text-sm text-gray-500">Aún no hay solicitudes.</p>
-                    ) : (
-                      <table className="min-w-full text-left text-sm">
-                        <thead className="bg-gray-50 text-xs font-semibold uppercase text-gray-600">
-                          <tr>
-                            <th className="px-3 py-2">Empleado</th>
-                            <th className="px-3 py-2">Código</th>
-                            <th className="px-3 py-2">Email</th>
-                            <th className="px-3 py-2">Fecha</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {rentaSolicitudes.map((row) => (
-                            <tr key={row.id} className="hover:bg-gray-50/80">
-                              <td className="px-3 py-2 font-medium text-gray-900">
-                                {row.nombre_actual || row.nombre_snapshot || '—'}
-                              </td>
-                              <td className="px-3 py-2 text-gray-700">{row.user_codigo}</td>
-                              <td className="px-3 py-2 text-gray-600">{row.email || '—'}</td>
-                              <td className="px-3 py-2 text-gray-600">
-                                {row.created_at
-                                  ? new Date(row.created_at).toLocaleString('es-ES', {
-                                      dateStyle: 'short',
-                                      timeStyle: 'short',
-                                    })
-                                  : '—'}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
       )}
 
-      {/* Renta: quien declinó puede volver a solicitar (el backend quita la declinación al confirmar sí) */}
+      {/* Renta: quien declinó puede volver a solicitar */}
       {!rentaCampanaLoading &&
         rentaCampanaStatus?.enabled === true &&
         rentaCampanaStatus?.declined === true &&
         !rentaCampanaStatus?.solicited &&
         !isDeveloper && (
-          <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 p-4 shadow-sm dark:border-indigo-900/40 dark:bg-indigo-950/20">
+          <div className="rounded-xl border border-primary-200 bg-primary-50/80 p-4 shadow-sm dark:border-primary-900/40 dark:bg-primary-950/20">
             <p className="text-sm text-gray-800 dark:text-gray-200">
               Si finalmente <strong>sí quieres</strong> la renta {rentaEjercicioDisplay} con la gestoría,
               confirma aquí (se anulará tu respuesta anterior de &quot;no quiero&quot;).
@@ -2551,80 +2699,23 @@ const InicioPage = () => {
               type="button"
               disabled={rentaCampanaSubmitting}
               onClick={() => setRentaCampanaConfirmOpen(true)}
-              className="mt-3 inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-3 inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {rentaCampanaSubmitting ? 'Registrando…' : `Sí, quiero la renta ${rentaEjercicioDisplay} con la gestoría`}
             </button>
           </div>
         )}
 
-      {/* Contacto emergencia – Developer: aviso desactivado */}
-      {!contactoEmergenciaLoading && isDeveloper && contactoEmergenciaStatus?.enabled === false && (
-        <div className="rounded-lg border border-dashed border-teal-300 bg-teal-50/40 p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-gray-800">
-              <strong>Contacto de emergencia:</strong> el aviso para empleados está{' '}
-              <span className="font-semibold text-amber-800">desactivado</span>. Los datos solo se
-              solicitan cuando actives la campaña.
-            </p>
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-800">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
-                  checked={false}
-                  onChange={() => handleContactoBannerToggle(true)}
-                />
-                Activar aviso
-              </label>
-              <button
-                type="button"
-                onClick={() => setContactoPendientesOpen((o) => !o)}
-                className="text-sm font-semibold text-teal-800 underline hover:text-teal-950"
-              >
-                {contactoPendientesOpen ? 'Ocultar pendientes' : 'Ver empleados sin datos'}
-              </button>
-            </div>
-          </div>
-          {typeof contactoEmergenciaStatus?.totalActivos === 'number' && isDeveloper && (
-            <p className="mt-2 text-xs text-gray-600">
-              Empleados ACTIVO: <strong>{contactoEmergenciaStatus.totalActivos}</strong> — Con datos:{' '}
-              <strong className="text-emerald-700">{contactoEmergenciaStatus.completados ?? 0}</strong>{' '}
-              — Pendientes:{' '}
-              <strong className="text-amber-800">{contactoEmergenciaStatus.pendientes ?? 0}</strong>
-            </p>
-          )}
-          {contactoPendientesOpen && (
-            <div className="mt-3 max-h-56 overflow-y-auto rounded-lg border border-teal-200 bg-white">
-              {contactoPendientesLoading ? (
-                <p className="p-3 text-sm text-gray-500">Cargando…</p>
-              ) : contactoPendientes.length === 0 ? (
-                <p className="p-3 text-sm text-gray-500">Todos los activos tienen datos completos.</p>
-              ) : (
-                <ul className="divide-y divide-gray-100 text-sm">
-                  {contactoPendientes.map((p) => (
-                    <li key={p.codigo} className="flex justify-between gap-2 px-3 py-2">
-                      <span className="font-medium text-gray-900">{p.nombre || '—'}</span>
-                      <span className="shrink-0 text-gray-500">{p.codigo}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Contacto emergencia – empleados (aviso activo) */}
       {!contactoEmergenciaLoading && contactoEmergenciaStatus?.enabled === true && (
         <div className="space-y-3">
           {contactoEmergenciaStatus?.complete && !ceEditMode ? (
-            <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
               <div className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                 <button
                   type="button"
                   onClick={() => setContactoEmergenciaResumenOpen((o) => !o)}
-                  className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left transition hover:bg-gray-50/90"
+                  className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left transition hover:bg-gray-50/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:hover:bg-gray-800/80"
                   aria-expanded={contactoEmergenciaResumenOpen}
                 >
                   <ChevronDown
@@ -2634,7 +2725,7 @@ const InicioPage = () => {
                     aria-hidden
                   />
                   <div className="min-w-0">
-                    <span className="text-sm font-semibold text-gray-800">
+                    <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
                       Contacto de emergencia
                     </span>
                     {!contactoEmergenciaResumenOpen && (
@@ -2647,19 +2738,19 @@ const InicioPage = () => {
                 <button
                   type="button"
                   onClick={() => setCeEditMode(true)}
-                  className="shrink-0 self-start rounded-lg border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-semibold text-teal-800 transition hover:bg-teal-100 sm:self-center"
+                  className="shrink-0 self-start rounded-lg border border-primary-200 bg-primary-50 px-4 py-2 text-sm font-semibold text-primary-800 transition hover:bg-primary-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 sm:self-center dark:border-primary-800 dark:bg-primary-950/40 dark:text-primary-200"
                 >
                   Editar
                 </button>
               </div>
               {contactoEmergenciaResumenOpen && (
-                <div className="border-t border-gray-100 px-4 pb-4 pt-2">
-                  <dl className="space-y-2 text-sm text-gray-800">
+                <div className="border-t border-gray-100 px-4 pb-4 pt-2 dark:border-gray-700">
+                  <dl className="space-y-2 text-sm text-gray-800 dark:text-gray-200">
                     <div>
                       <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
                         Nombre
                       </dt>
-                      <dd className="mt-0.5 font-medium text-gray-900">
+                      <dd className="mt-0.5 font-medium text-gray-900 dark:text-gray-100">
                         {ceNombre || '—'}
                       </dd>
                     </div>
@@ -2673,7 +2764,7 @@ const InicioPage = () => {
                       <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
                         Teléfono
                       </dt>
-                      <dd className="mt-0.5 font-mono text-gray-900">{ceTelefono || '—'}</dd>
+                      <dd className="mt-0.5 font-mono text-gray-900 dark:text-gray-100">{ceTelefono || '—'}</dd>
                     </div>
                   </dl>
                   {contactoEmergenciaStatus?.actualizadoAt && (
@@ -2690,69 +2781,69 @@ const InicioPage = () => {
             </div>
           ) : (
             <div
-              className={`rounded-xl border shadow-lg overflow-hidden ${
+              className={`overflow-hidden rounded-xl border shadow-sm ${
                 contactoEmergenciaStatus?.complete
-                  ? 'border-teal-200 bg-white'
-                  : 'border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50'
+                  ? 'border-primary-200 bg-white dark:border-primary-900/40 dark:bg-gray-900'
+                  : 'border-amber-200 bg-gradient-to-br from-amber-50 via-white to-white dark:border-amber-900/40 dark:from-amber-950/20 dark:via-gray-900 dark:to-gray-900'
               }`}
             >
-              <div className="p-4 md:p-6">
+              <div className="p-4 md:p-5">
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:gap-4">
                   <div
-                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-2xl text-white shadow-md ${
-                      contactoEmergenciaStatus?.complete ? 'bg-teal-600' : 'bg-amber-600'
+                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl text-white shadow-sm ${
+                      contactoEmergenciaStatus?.complete ? 'bg-primary-600' : 'bg-amber-600'
                     }`}
                   >
                     {contactoEmergenciaStatus?.complete ? '✎' : '📇'}
                   </div>
                   <div className="min-w-0 flex-1 space-y-3">
                     <div>
-                      <h3 className="text-lg font-bold text-gray-900 md:text-xl">
+                      <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 md:text-xl">
                         {contactoEmergenciaStatus?.complete
                           ? 'Editar contacto de emergencia'
                           : 'Persona de contacto en caso de emergencia'}
                       </h3>
                       {!contactoEmergenciaStatus?.complete && (
-                        <p className="mt-2 text-sm leading-relaxed text-gray-700 md:text-base">
+                        <p className="mt-2 text-sm leading-relaxed text-gray-700 dark:text-gray-300 md:text-base">
                           Por favor indica <strong>una persona de confianza</strong> a la que podamos
                           contactar si no te localizamos: accidente laboral, urgencia o incidencias con
                           el fichaje. Son solo tres datos y ayudan mucho a RRHH.
                         </p>
                       )}
                       {contactoEmergenciaStatus?.complete && ceEditMode && (
-                        <p className="mt-2 text-sm text-gray-600">
+                        <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
                           Modifica los datos y pulsa <strong>Guardar cambios</strong>, o cancela para
                           volver a la vista resumida.
                         </p>
                       )}
                     </div>
                     <div className="grid gap-3 sm:grid-cols-1 md:grid-cols-3">
-                      <label className="block text-sm font-medium text-gray-800">
+                      <label className="block text-sm font-medium text-gray-800 dark:text-gray-200">
                         Nombre y apellidos
                         <input
                           type="text"
-                          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-teal-500 focus:ring-teal-500"
+                          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                           value={ceNombre}
                           onChange={(e) => setCeNombre(e.target.value)}
                           placeholder="Ej. María García López"
                           autoComplete="name"
                         />
                       </label>
-                      <label className="block text-sm font-medium text-gray-800">
+                      <label className="block text-sm font-medium text-gray-800 dark:text-gray-200">
                         Parentesco
                         <input
                           type="text"
-                          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-teal-500 focus:ring-teal-500"
+                          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                           value={ceParentesco}
                           onChange={(e) => setCeParentesco(e.target.value)}
                           placeholder="Ej. cónyuge, madre, hijo/a"
                         />
                       </label>
-                      <label className="block text-sm font-medium text-gray-800">
+                      <label className="block text-sm font-medium text-gray-800 dark:text-gray-200">
                         Teléfono
                         <input
                           type="tel"
-                          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-teal-500 focus:ring-teal-500"
+                          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
                           value={ceTelefono}
                           onChange={(e) => setCeTelefono(e.target.value)}
                           placeholder="Móvil o fijo"
@@ -2765,7 +2856,7 @@ const InicioPage = () => {
                         type="button"
                         disabled={contactoEmergenciaSubmitting}
                         onClick={handleContactoEmergenciaGuardar}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <Phone className="h-4 w-4 shrink-0" aria-hidden />
                         {contactoEmergenciaSubmitting
@@ -2785,7 +2876,7 @@ const InicioPage = () => {
                             setCeEditMode(false);
                             setContactoEmergenciaResumenOpen(false);
                           }}
-                          className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                          className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
                         >
                           Cancelar
                         </button>
@@ -2808,271 +2899,191 @@ const InicioPage = () => {
               </div>
             </div>
           )}
-
-          {isDeveloper && (
-              <div className="mt-5 border-t border-teal-100 pt-4">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-teal-900">
-                  Developer – control del aviso
-                </p>
-                <div className="flex flex-wrap items-center gap-4">
-                  <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-800">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
-                      checked={contactoEmergenciaStatus?.enabled === true}
-                      onChange={(e) => handleContactoBannerToggle(e.target.checked)}
-                    />
-                    Aviso activo en el dashboard
-                  </label>
-                  {typeof contactoEmergenciaStatus?.totalActivos === 'number' && (
-                    <span className="text-sm text-gray-700">
-                      ACTIVO: <strong>{contactoEmergenciaStatus.totalActivos}</strong> — Completado:{' '}
-                      <strong className="text-emerald-700">
-                        {contactoEmergenciaStatus.completados ?? 0}
-                      </strong>{' '}
-                      — Falta:{' '}
-                      <strong className="text-amber-800">
-                        {contactoEmergenciaStatus.pendientes ?? 0}
-                      </strong>
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setContactoPendientesOpen((o) => !o)}
-                    className="text-sm font-semibold text-teal-800 underline hover:text-teal-950"
-                  >
-                    {contactoPendientesOpen ? 'Ocultar lista' : 'Lista sin datos completos'}
-                  </button>
-                </div>
-                {contactoPendientesOpen && (
-                  <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white">
-                    {contactoPendientesLoading ? (
-                      <p className="p-3 text-sm text-gray-500">Cargando…</p>
-                    ) : contactoPendientes.length === 0 ? (
-                      <p className="p-3 text-sm text-gray-500">Ningún pendiente.</p>
-                    ) : (
-                      <ul className="divide-y divide-gray-100 text-sm">
-                        {contactoPendientes.map((p) => (
-                          <li key={p.codigo} className="flex justify-between gap-2 px-3 py-2">
-                            <span className="font-medium text-gray-900">{p.nombre || '—'}</span>
-                            <span className="shrink-0 text-gray-500">{p.codigo}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
         </div>
       )}
 
-      {/* Mensaje de bienvenida - Subtile și elegant */}
-      <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white shadow-lg transition-all duration-300 hover:shadow-xl">
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-50/30 to-purple-50/30" />
 
-        <div className="relative p-6">
-          <div className="flex flex-col items-center gap-6 text-center md:flex-row md:items-start md:text-left">
-            <div className="relative group">
-              <div 
-                className="relative h-24 w-24 overflow-hidden rounded-full border-4 border-white bg-gradient-to-br from-blue-500 to-purple-600 shadow-2xl transition-all duration-300 group-hover:scale-105 md:h-28 md:w-28"
-                style={{
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  boxShadow: '0 12px 40px rgba(102, 126, 234, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1)',
-                }}
-              >
-                {loadingAvatar ? (
-                  <div className="flex h-full w-full items-center justify-center">
-                    <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-white" />
-                  </div>
-                ) : avatarUrl ? (
-                  <img 
-                    src={avatarUrl} 
-                    alt={userName}
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
-                  />
-                ) : (
-                  <span className="text-3xl font-bold uppercase text-white drop-shadow-lg">
-                    {userName?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
-                  </span>
-                )}
-              </div>
-              
-              <Link 
-                to="/datos" 
-                className="absolute -bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-white/90 px-3 py-1 text-[11px] font-semibold text-blue-600 shadow-md ring-1 ring-blue-200 transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:bg-white"
-              >
-                Ver perfil
-              </Link>
+      {/* Mensaje de bienvenida */}
+      <div className="dashboard-welcome">
+        <div className="dashboard-welcome__inner">
+          <div className="dashboard-welcome__avatar-wrap">
+            <div className="dashboard-welcome__avatar">
+              {loadingAvatar ? (
+                <div className="flex h-full w-full items-center justify-center">
+                  <div className="h-7 w-7 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                </div>
+              ) : avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt={userName}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <span className="text-2xl font-bold uppercase text-white">
+                  {userName?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
+                </span>
+              )}
+            </div>
+            <Link to="/datos" className="dashboard-welcome__profile-link">
+              Ver perfil
+            </Link>
           </div>
-          
-            <div className="flex-1 space-y-4">
-              <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
-                ¡Bienvenido, {userName}!
-              </h1>
-              {!rentaCampanaLoading &&
-                rentaCampanaStatus?.enabled === true &&
-                rentaCampanaStatus?.solicited === true && (
-                  <div className="mx-auto flex max-w-full flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center md:mx-0">
-                    <p
-                      className="flex w-fit max-w-full items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50/95 px-3 py-1.5 text-xs font-medium text-emerald-900 shadow-sm"
-                      role="status"
-                    >
-                      <CheckCircle className="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden />
-                      <span>
-                        Renta <strong>{rentaEjercicioDisplay}</strong>: solicitud registrada en la
-                        campaña
-                      </span>
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setRentaRetractOpen(true)}
-                      className="w-fit max-w-full rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-1.5 text-left text-[11px] font-medium leading-snug text-amber-950 shadow-sm transition hover:bg-amber-100 sm:text-xs"
-                    >
-                      Me equivoqué, no quiero la renta con la gestoría
-                    </button>
-                  </div>
-                )}
-              {!rentaCampanaLoading &&
-                rentaCampanaStatus?.enabled === true &&
-                rentaCampanaStatus?.declined === true &&
-                !rentaCampanaStatus?.solicited && (
+
+          <div className="dashboard-welcome__content space-y-3">
+            <h1 className="dashboard-welcome__title">
+              ¡Bienvenido, {userName}!
+            </h1>
+            {!rentaCampanaLoading &&
+              rentaCampanaStatus?.enabled === true &&
+              rentaCampanaStatus?.solicited === true && (
+                <div className="mx-auto flex max-w-full flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center md:mx-0">
                   <p
-                    className="mx-auto flex w-fit max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100/95 px-3 py-1.5 text-xs font-medium text-slate-800 shadow-sm md:mx-0"
+                    className="flex w-fit max-w-full items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50/95 px-3 py-1.5 text-xs font-medium text-emerald-900 shadow-sm"
                     role="status"
                   >
+                    <CheckCircle className="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden />
                     <span>
-                      Renta <strong>{rentaEjercicioDisplay}</strong>: indicaste que{' '}
-                      <strong>no deseas</strong> el servicio con la gestoría
+                      Renta <strong>{rentaEjercicioDisplay}</strong>: solicitud registrada en la
+                      campaña
                     </span>
                   </p>
-                )}
-              <p className="mx-auto max-w-3xl text-sm leading-relaxed text-gray-600 sm:text-base md:mx-0">
-                Este es tu panel en{' '}
-                <span className="rounded-md bg-blue-50 px-2 py-1 font-semibold text-blue-700">
-                  {config.COMPANY_NAME}
-                </span>
-                . Aquí tienes acceso directo a todo lo que necesitas:{' '}
-                <span className="inline-flex items-center gap-1 font-medium text-green-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                  empleados
-                </span>
-                ,{' '}
-                <span className="inline-flex items-center gap-1 font-medium text-purple-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
-                  cuadrantes
-                </span>
-                ,{' '}
-                <span className="inline-flex items-center gap-1 font-medium text-orange-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
-                  nóminas
-                </span>
-                ,{' '}
-                <span className="inline-flex items-center gap-1 font-medium text-pink-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-pink-500" />
-                  solicitudes
-                </span>{' '}
-                y mucho más.
-              </p>
-              
-              {/* Butoane pentru notificări (doar pentru developeri, supervizori și manageri) */}
-              {(isDeveloper || isManager) && (
-                <div className="mt-4 flex flex-wrap gap-3">
                   <button
-                    onClick={() => setShowNotificationModal(true)}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
+                    type="button"
+                    onClick={() => setRentaRetractOpen(true)}
+                    className="w-fit max-w-full rounded-lg border border-amber-200 bg-amber-50/90 px-3 py-1.5 text-left text-[11px] font-medium leading-snug text-amber-950 shadow-sm transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 sm:text-xs"
                   >
-                    <span>📨</span>
-                    Enviar Notificación
+                    Me equivoqué, no quiero la renta con la gestoría
                   </button>
-                  
-                  {isDeveloper && (
-                    <button
-                      onClick={async () => {
-                        try {
-                          const token = localStorage.getItem('auth_token');
-                          const baseUrl = config.BACKEND_BASE || config.API_URL || '';
-                          const response = await fetch(`${baseUrl}/api/notifications/test`, {
-                            method: 'POST',
-                            headers: {
-                              'Authorization': `Bearer ${token}`,
-                              'Content-Type': 'application/json',
-                            },
+                </div>
+              )}
+            {!rentaCampanaLoading &&
+              rentaCampanaStatus?.enabled === true &&
+              rentaCampanaStatus?.declined === true &&
+              !rentaCampanaStatus?.solicited && (
+                <p
+                  className="mx-auto flex w-fit max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-slate-100/95 px-3 py-1.5 text-xs font-medium text-slate-800 shadow-sm md:mx-0"
+                  role="status"
+                >
+                  <span>
+                    Renta <strong>{rentaEjercicioDisplay}</strong>: indicaste que{' '}
+                    <strong>no deseas</strong> el servicio con la gestoría
+                  </span>
+                </p>
+              )}
+            <p className="dashboard-welcome__lead mx-auto max-w-3xl md:mx-0">
+              Este es tu panel en{' '}
+              <span className="dashboard-welcome__company">
+                {config.COMPANY_NAME}
+              </span>
+              . Aquí tienes acceso directo a todo lo que necesitas:{' '}
+              <span className="inline-flex items-center gap-1 font-medium text-emerald-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                empleados
+              </span>
+              ,{' '}
+              <span className="inline-flex items-center gap-1 font-medium text-primary-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary-500" />
+                cuadrantes
+              </span>
+              ,{' '}
+              <span className="inline-flex items-center gap-1 font-medium text-amber-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                nóminas
+              </span>
+              ,{' '}
+              <span className="inline-flex items-center gap-1 font-medium text-sky-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+                solicitudes
+              </span>{' '}
+              y mucho más.
+            </p>
+
+            {(isDeveloper || isManager) && (
+              <div className="mt-1 flex flex-wrap justify-center gap-2.5 md:justify-start">
+                <button
+                  type="button"
+                  onClick={() => setShowNotificationModal(true)}
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                >
+                  <span>📨</span>
+                  Enviar Notificación
+                </button>
+
+                {isDeveloper && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const token = localStorage.getItem('auth_token');
+                        const baseUrl = config.BACKEND_BASE || config.API_URL || '';
+                        const response = await fetch(`${baseUrl}/api/notifications/test`, {
+                          method: 'POST',
+                          headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json',
+                          },
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                          setNotification({
+                            type: 'success',
+                            title: '¡Notificación enviada!',
+                            message: 'Verifica el icono de notificaciones para ver el mensaje.',
+                            duration: 4000
                           });
-                          const data = await response.json();
-                          if (data.success) {
-                            setNotification({
-                              type: 'success',
-                              title: '¡Notificación enviada!',
-                              message: 'Verifica el icono de notificaciones para ver el mensaje.',
-                              duration: 4000
-                            });
-                          } else {
-                            setNotification({
-                              type: 'error',
-                              title: 'Error',
-                              message: data.message || 'No se pudo enviar la notificación',
-                              duration: 5000
-                            });
-                          }
-                        } catch (error) {
-                          console.error('Error sending test notification:', error);
+                        } else {
                           setNotification({
                             type: 'error',
-                            title: 'Error al enviar',
-                            message: error.message || 'Ocurrió un error al enviar la notificación',
+                            title: 'Error',
+                            message: data.message || 'No se pudo enviar la notificación',
                             duration: 5000
                           });
                         }
-                      }}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
-                    >
-                      <span>🔔</span>
-                      Probar Notificación Push
-                    </button>
-                  )}
-                </div>
-              )}
-              
-              <div className="flex items-center justify-center md:justify-start">
-                <div className="h-px flex-1 max-w-xs bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
-                <div className="mx-3 h-2 w-2 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 opacity-60" />
-                <div className="h-px flex-1 max-w-xs bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
+                      } catch (error) {
+                        console.error('Error sending test notification:', error);
+                        setNotification({
+                          type: 'error',
+                          title: 'Error al enviar',
+                          message: error.message || 'Ocurrió un error al enviar la notificación',
+                          duration: 5000
+                        });
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+                  >
+                    <span>🔔</span>
+                    Probar Notificación Push
+                  </button>
+                )}
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Acceso rápido - Quick Access Orb – culori brand (primary) */}
-      <div className="card relative overflow-visible py-8">
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-primary-500/10 via-white to-purple-50/30"></div>
-        <div className="relative z-10 flex flex-col gap-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 text-2xl text-white shadow-lg">
-                ⚡
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">Acceso rápido</h2>
-                <p className="text-sm text-gray-600">
-                  Funcionalidades principales del sistema
-                </p>
-              </div>
-                </div>
-              </div>
-
-          <QuickAccessOrb
-            items={quickAccessItems}
-            ringSize={540}
-            innerSize={240}
-            onSelect={(id) => {
-              console.debug('[Dashboard] Acceso rápido selección:', id);
-            }}
-            className="mx-auto w-full max-w-[900px] py-10"
-          />
+      {/* Acceso rápido */}
+      <div className="dashboard-qa">
+        <div className="dashboard-qa__header">
+          <div className="dashboard-qa__icon" aria-hidden>⚡</div>
+          <div>
+            <h2 className="dashboard-qa__title">Acceso rápido</h2>
+            <p className="dashboard-qa__subtitle">
+              Funcionalidades principales del sistema
+            </p>
+          </div>
         </div>
+
+        <QuickAccessOrb
+          items={quickAccessItems}
+          ringSize={540}
+          innerSize={240}
+          onSelect={(id) => {
+            console.debug('[Dashboard] Acceso rápido selección:', id);
+          }}
+          className="qa-layout mx-auto max-w-[900px] py-4 lg:py-8"
+        />
       </div>
+
     </div>
   );
 };

@@ -12,6 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { EmpleadoGrupoScopeFilter } from './empleado-grupo-scope.service';
 import { DocumentosSolicitadosService } from './documentos-solicitados.service';
 import { PrlDocumentsService } from './prl-documents.service';
+import { CarpetasDocumentosStorageService } from './carpetas-documentos-storage.service';
 import * as ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 
@@ -23,6 +24,7 @@ export class EmpleadosService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly carpetasStorage: CarpetasDocumentosStorageService,
     @Inject(forwardRef(() => DocumentosSolicitadosService))
     private readonly documentosSolicitadosService?: DocumentosSolicitadosService,
     @Optional()
@@ -1282,25 +1284,28 @@ export class EmpleadosService {
     tipoDocumento: string = 'ficha_empleado',
   ): Promise<{ success: true }> {
     try {
-      // Convertim buffer-ul la base64 pentru a-l salva în baza de date
-      const base64Data = pdfBuffer.toString('base64');
-
-      // Folosim Prisma pentru a insera în CarpetasDocumentos
-      // ID-ul se generează automat (autoincrement), dar putem folosi și codigo ca id
       const fechaCreacion = new Date().toISOString().split('T')[0];
 
       this.logger.log(
         `💾 Salvăm PDF în CarpetasDocumentos: codigo=${codigo}, email=${correoElectronico || '(gol)'}, nombre=${nombreEmpleado || '(gol)'}`,
       );
 
-      // Tratăm email-ul: dacă este gol sau null, salvăm NULL în baza de date
       const emailValue =
         correoElectronico && correoElectronico.trim() !== ''
           ? correoElectronico.trim()
           : null;
 
-      this.logger.log(
-        `💾 Email value pentru CarpetasDocumentos: original="${correoElectronico}", processed="${emailValue}", will save as: ${emailValue === null ? 'NULL' : `'${emailValue}'`}`,
+      if (!this.carpetasStorage.isWriteEnabled()) {
+        throw new BadRequestException(
+          'R2 no está habilitado; no se pueden guardar documentos de carpetas',
+        );
+      }
+
+      const put = await this.carpetasStorage.putDocumento(
+        pdfBuffer,
+        codigo,
+        nombreArchivo,
+        'application/pdf',
       );
 
       const insertQuery = `
@@ -1311,7 +1316,9 @@ export class EmpleadosService {
           \`nombre_archivo\`,
           \`nombre_empleado\`,
           \`fecha_creacion\`,
-          \`archivo\`
+          \`storage_key\`,
+          \`storage_bucket\`,
+          \`tamano_bytes\`
         ) VALUES (
           ${this.escapeSql(codigo)},
           ${this.escapeSql(emailValue)},
@@ -1319,14 +1326,16 @@ export class EmpleadosService {
           ${this.escapeSql(nombreArchivo)},
           ${this.escapeSql(nombreEmpleado || '')},
           ${this.escapeSql(fechaCreacion)},
-          FROM_BASE64(${this.escapeSql(base64Data)})
+          ${this.escapeSql(put.storage_key)},
+          ${this.escapeSql(put.storage_bucket)},
+          ${put.tamano_bytes}
         )
       `;
 
       await this.prisma.$executeRawUnsafe(insertQuery);
 
       this.logger.log(
-        `✅ PDF salvat în CarpetasDocumentos pentru empleado ${codigo}, email: ${correoElectronico || '(nu s-a salvat email-ul)'}`,
+        `✅ PDF salvat în CarpetasDocumentos (R2) pentru empleado ${codigo}, email: ${correoElectronico || '(nu s-a salvat email-ul)'}`,
       );
 
       return { success: true };

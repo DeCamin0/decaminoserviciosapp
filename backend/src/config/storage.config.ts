@@ -7,7 +7,7 @@ function trim(v: string | undefined): string {
 
 /**
  * Cloudflare R2 (S3-compatible). Default disabled so the app boots without R2.
- * Business modules must not call StorageService until a later migration step.
+ * Business modules: Fotos Trabajo + Nóminas (write when R2_ENABLED).
  */
 export default registerAs('storage', (): StorageConfig => {
   const enabled = trim(process.env.R2_ENABLED).toLowerCase() === 'true';

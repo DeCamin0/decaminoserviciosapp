@@ -131,7 +131,8 @@ type PedidosNotasImagen = {
   id: number;
   nota_id: number;
   nombre_archivo: string;
-  ruta_archivo: string;
+  ruta_archivo?: string | null;
+  url_archivo?: string | null;
   tipo_mime?: string | null;
   tamano_bytes?: number | null;
   orden: number;
@@ -7284,11 +7285,20 @@ const TabNotas: React.FC<{
     setPreviewUrls(urls);
   };
 
-  // Obține URL-ul complet pentru o poză
-  const getImagenUrl = (rutaArchivo: string) => {
-    if (rutaArchivo.startsWith('http')) return rutaArchivo;
-    const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
-    return `${baseUrl}${rutaArchivo}`;
+  // URL API (R2/disk stream) + token for <img src> / window.open
+  const getImagenUrl = (imagen: PedidosNotasImagen) => {
+    const pathOrUrl =
+      imagen.url_archivo ||
+      `/api/pedidos-notas/imagenes/${imagen.id}/archivo`;
+    const baseUrl = pathOrUrl.startsWith('http')
+      ? ''
+      : config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
+    const full = `${baseUrl}${pathOrUrl}`;
+    const token =
+      localStorage.getItem('auth_token') || localStorage.getItem('token');
+    if (!token) return full;
+    const sep = full.includes('?') ? '&' : '?';
+    return `${full}${sep}token=${encodeURIComponent(token)}`;
   };
 
   return (
@@ -7338,7 +7348,7 @@ const TabNotas: React.FC<{
                     {nota.imagenes.map((imagen: PedidosNotasImagen) => (
                       <div key={imagen.id} className="relative group">
                         <img
-                          src={getImagenUrl(imagen.ruta_archivo)}
+                          src={getImagenUrl(imagen)}
                           alt={imagen.nombre_archivo}
                           className="w-full h-32 object-cover rounded-lg"
                         />
@@ -7522,11 +7532,20 @@ const BannerNotasInstrucciones: React.FC = () => {
     return null;
   }
 
-  // Obține URL-ul complet pentru o poză
-  const getImagenUrl = (rutaArchivo: string) => {
-    if (rutaArchivo.startsWith('http')) return rutaArchivo;
-    const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
-    return `${baseUrl}${rutaArchivo}`;
+  // URL API (R2/disk stream) + token for <img src> / window.open
+  const getImagenUrl = (imagen: PedidosNotasImagen) => {
+    const pathOrUrl =
+      imagen.url_archivo ||
+      `/api/pedidos-notas/imagenes/${imagen.id}/archivo`;
+    const baseUrl = pathOrUrl.startsWith('http')
+      ? ''
+      : config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
+    const full = `${baseUrl}${pathOrUrl}`;
+    const token =
+      localStorage.getItem('auth_token') || localStorage.getItem('token');
+    if (!token) return full;
+    const sep = full.includes('?') ? '&' : '?';
+    return `${full}${sep}token=${encodeURIComponent(token)}`;
   };
 
   return (
@@ -7556,12 +7575,12 @@ const BannerNotasInstrucciones: React.FC = () => {
                     {nota.imagenes.map((imagen: PedidosNotasImagen) => (
                       <div key={imagen.id} className="relative group">
                         <img
-                          src={getImagenUrl(imagen.ruta_archivo)}
+                          src={getImagenUrl(imagen)}
                           alt={imagen.nombre_archivo}
                           className="w-full h-32 object-cover rounded-lg border-2 border-purple-200 hover:border-purple-400 transition-colors cursor-pointer"
                           onClick={() => {
                             // Deschide imaginea în modal/fullscreen
-                            window.open(getImagenUrl(imagen.ruta_archivo), '_blank');
+                            window.open(getImagenUrl(imagen), '_blank');
                           }}
                         />
                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity rounded-lg flex items-center justify-center">

@@ -49,7 +49,8 @@ type PedidosNotasImagen = {
   id: number;
   nota_id: number;
   nombre_archivo: string;
-  ruta_archivo: string;
+  ruta_archivo?: string | null;
+  url_archivo?: string | null;
   tipo_mime?: string | null;
   tamano_bytes?: number | null;
   orden: number;
@@ -3235,11 +3236,20 @@ const BannerNotasInstrucciones: React.FC = () => {
     return null;
   }
 
-  // Obține URL-ul complet pentru o poză
-  const getImagenUrl = (rutaArchivo: string) => {
-    if (rutaArchivo.startsWith('http')) return rutaArchivo;
-    const baseUrl = config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
-    return `${baseUrl}${rutaArchivo}`;
+  // URL API (R2/disk stream) + token for <img src> / window.open
+  const getImagenUrl = (imagen: PedidosNotasImagen) => {
+    const pathOrUrl =
+      imagen.url_archivo ||
+      `/api/pedidos-notas/imagenes/${imagen.id}/archivo`;
+    const baseUrl = pathOrUrl.startsWith('http')
+      ? ''
+      : config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || '';
+    const full = `${baseUrl}${pathOrUrl}`;
+    const token =
+      localStorage.getItem('auth_token') || localStorage.getItem('token');
+    if (!token) return full;
+    const sep = full.includes('?') ? '&' : '?';
+    return `${full}${sep}token=${encodeURIComponent(token)}`;
   };
 
   return (
@@ -3298,11 +3308,11 @@ const BannerNotasInstrucciones: React.FC = () => {
                         {nota.imagenes.map((imagen: PedidosNotasImagen) => (
                           <div key={imagen.id} className="group relative">
                             <img
-                              src={getImagenUrl(imagen.ruta_archivo)}
+                              src={getImagenUrl(imagen)}
                               alt={imagen.nombre_archivo}
                               className="h-20 w-full cursor-pointer rounded border border-purple-200 object-cover transition-colors hover:border-purple-400 dark:border-zinc-600 dark:hover:border-zinc-500"
                               onClick={() => {
-                                window.open(getImagenUrl(imagen.ruta_archivo), '_blank');
+                                window.open(getImagenUrl(imagen), '_blank');
                               }}
                             />
                             <div className="absolute inset-0 flex items-center justify-center rounded bg-black bg-opacity-0 transition-opacity group-hover:bg-opacity-10">

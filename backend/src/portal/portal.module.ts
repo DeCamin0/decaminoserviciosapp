@@ -15,6 +15,9 @@ import { PortalJwtStrategy } from './portal-jwt.strategy';
 import { PortalJwtOrSelectGuard } from './portal-jwt-or-select.guard';
 import { EmailService } from '../services/email.service';
 import { PresupuestosGuardadosService } from '../services/presupuestos-guardados.service';
+import { DocumentosOficialesStorageService } from '../services/documentos-oficiales-storage.service';
+import { PresupuestosFirmasStorageService } from '../services/presupuestos-firmas-storage.service';
+import { PortalDocumentsStorageService } from './portal-documents-storage.service';
 
 @Module({
   imports: [
@@ -41,11 +44,15 @@ import { PresupuestosGuardadosService } from '../services/presupuestos-guardados
   providers: [
     PortalAuthService,
     PortalDocumentsService,
+    PortalDocumentsStorageService,
     PortalFacturasLoteService,
     PortalJwtStrategy,
     PortalJwtOrSelectGuard,
     EmailService,
     PresupuestosGuardadosService,
+    DocumentosOficialesStorageService,
+    PresupuestosFirmasStorageService,
   ],
+  exports: [PortalDocumentsStorageService],
 })
 export class PortalModule {}

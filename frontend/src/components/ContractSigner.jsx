@@ -1,10 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib';
 import SignatureCanvas from './SignatureCanvas';
+import SignaturePadComponent from '../shared/components/SignaturePad';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
 import { fetchWithAuth } from '../utils/tokenRefresh';
+import {
+  CONTRATO_TRABAJADOR_SIGNATURE_SLOT,
+  CONTRATO_MARGEN_IZQUIERDO_SLOT,
+  CONTRATO_FIRMA_DIGITAL_CAPTION,
+  getContratoSignatureSlot,
+  getContratoMargenIzquierdoSlot,
+  buildContratoFirmaDigitalCaptionLines,
+} from '../constants/contratoPdfSignatureLayout';
 
 // Configurare worker PDF.js - folosește configurația centralizată
 import '../config/pdfjs';
@@ -175,7 +184,9 @@ export default function ContractSigner({
   empleadoNombre = null, // Numele angajatului
   documentoDocId = null, // doc_id al documentului existent (pentru UPDATE)
   updateExisting = false, // Flag pentru a face UPDATE în loc de INSERT
-  tipoDocumento = null // tipo_documento original (pentru a-l păstra la UPDATE)
+  tipoDocumento = null, // tipo_documento original (pentru a-l păstra la UPDATE)
+  /** Pad-only: stamp automat pe ultima pagină (caseta trabajador/a). Fără plasare liberă. */
+  autoStampMode = false,
 }) {
   const { user: authUser } = useAuth();
   const [pdfDocument, setPdfDocument] = useState(null);
@@ -184,11 +195,17 @@ export default function ContractSigner({
   const [scale, setScale] = useState(1.0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [signatures, setSignatures] = useState({}); // { pageNum: signatureData }
+  const [signatures, setSignatures] = useState({}); // { pageNum: signatureData } — free place mode
+  /** dataUrl confirmat din pad (autoStampMode) */
+  const [autoPadSignature, setAutoPadSignature] = useState(null);
   const [isPlacingSignature, setIsPlacingSignature] = useState(false); // Pentru poziționarea semnăturii
   const [draggedSignature, setDraggedSignature] = useState(null); // Pentru drag & drop vizual
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 }); // Poziția mouse-ului pentru preview
   const [showMobileFooter, setShowMobileFooter] = useState(false); // Pentru toggle footer pe mobil
+  /** autoStampMode: casuță mică de semnare (tip Vecindario) */
+  const [showFirmaModal, setShowFirmaModal] = useState(false);
+  const [firmaDraft, setFirmaDraft] = useState('');
+  const [firmaBusy, setFirmaBusy] = useState(false);
  
   const canvasRef = useRef(null);
   const signatureRef = useRef(null);
@@ -248,6 +265,8 @@ export default function ContractSigner({
         
         setPdfDocument(pdf);
         setTotalPages(pdf.numPages);
+        // Preview normal starts on page 1; jump to last page when signing starts
+        setCurrentPage(1);
         setLoading(false);
       } catch (err) {
         console.error('Error loading PDF:', err);
@@ -259,7 +278,7 @@ export default function ContractSigner({
     if (pdfUrl) {
       loadPDF();
     }
-  }, [pdfUrl]);
+  }, [pdfUrl, autoStampMode]);
 
   // Randează pagina curentă
   useEffect(() => {
@@ -349,6 +368,34 @@ export default function ContractSigner({
         if (signatures[currentPage]) {
           drawSignature(context, signatures[currentPage]);
         }
+
+        // Auto-stamp preview: ultima pagină = caseta trabajador; restul = margen izquierdo
+        if (autoStampMode && autoPadSignature) {
+          if (currentPage === pdfDocument.numPages) {
+            const slot = CONTRATO_TRABAJADOR_SIGNATURE_SLOT;
+            drawSignature(context, {
+              dataUrl: autoPadSignature,
+              x: slot.xRatio * canvas.width,
+              y: (1 - slot.yBottomRatio - slot.heightRatio) * canvas.height,
+              width: slot.widthRatio * canvas.width,
+              height: slot.heightRatio * canvas.height,
+            });
+          } else {
+            const slot = CONTRATO_MARGEN_IZQUIERDO_SLOT;
+            // Aproximează rotația 90° pe canvas: desen vertical pe marginea stângă
+            const w = slot.heightRatio * canvas.width;
+            const h = slot.widthRatio * canvas.height;
+            const x = Math.max(2, slot.xRatio * canvas.width - w);
+            const y = (1 - slot.yBottomRatio) * canvas.height - h;
+            drawSignature(context, {
+              dataUrl: autoPadSignature,
+              x,
+              y,
+              width: w,
+              height: h,
+            });
+          }
+        }
         
         // Curăță referința după ce render-ul este complet
         renderTaskRef.current = null;
@@ -374,12 +421,15 @@ export default function ContractSigner({
         renderTaskRef.current = null;
       }
     };
-  }, [pdfDocument, currentPage, scale, signatures, drawSignature]);
+  }, [pdfDocument, currentPage, scale, signatures, drawSignature, autoStampMode, autoPadSignature]);
 
   // Handlers pentru semnătură
   const handleClear = useCallback(() => {
     signatureRef.current?.clear();
-  }, []);
+    if (autoStampMode) {
+      setAutoPadSignature(null);
+    }
+  }, [autoStampMode]);
 
   const handleAddSignature = useCallback(() => {
     if (!signatureRef.current || signatureRef.current.isEmpty()) {
@@ -387,8 +437,19 @@ export default function ContractSigner({
       return;
     }
 
-    // Activează modul de poziționare cu caseta draggable
     const signatureData = signatureRef.current.toDataURL();
+
+    // Auto-stamp: confirmă pad-ul — poziție fixă pe ultima pagină
+    if (autoStampMode) {
+      setAutoPadSignature(signatureData);
+      if (totalPages > 0) {
+        setCurrentPage(totalPages);
+      }
+      signatureRef.current.clear();
+      return;
+    }
+
+    // Activează modul de poziționare cu caseta draggable
     setDraggedSignature({
       dataUrl: signatureData,
       width: 200,
@@ -398,7 +459,7 @@ export default function ContractSigner({
     
     // Curăță signature pad după ce am luat semnătura
     signatureRef.current.clear();
-  }, []);
+  }, [autoStampMode, totalPages]);
 
   // Funcție pentru încărcarea unei imagini (firmă scanată/fotografiată)
   const handleLoadImageSignature = useCallback((event) => {
@@ -418,6 +479,12 @@ export default function ContractSigner({
       // Creează o imagine pentru a obține dimensiunile
       const img = new Image();
       img.onload = () => {
+        if (autoStampMode) {
+          setAutoPadSignature(imageUrl);
+          if (totalPages > 0) setCurrentPage(totalPages);
+          return;
+        }
+
         // Calculează dimensiunile proporționale (max 200x100, păstrând aspect ratio)
         let width = img.width;
         let height = img.height;
@@ -450,7 +517,7 @@ export default function ContractSigner({
     
     // Resetează input-ul pentru a permite încărcarea aceluiași fișier din nou
     event.target.value = '';
-  }, []);
+  }, [autoStampMode, totalPages]);
 
   // Poziționează semnătura pe PDF
   const handlePlaceSignature = useCallback((event) => {
@@ -558,11 +625,22 @@ export default function ContractSigner({
   };
 
   // Salvează PDF-ul cu toate semnăturile
-  const saveSignedPDF = async () => {
+  // signatureOverride: dataURL din modalul mic (autoStampMode)
+  const saveSignedPDF = async (signatureOverride = null) => {
     try {
-      if (Object.keys(signatures).length === 0) {
+      const padSignature =
+        signatureOverride && String(signatureOverride).startsWith('data:image/')
+          ? signatureOverride
+          : autoPadSignature;
+
+      if (autoStampMode) {
+        if (!padSignature) {
+          alert('Por favor, dibuja tu firma primero');
+          return false;
+        }
+      } else if (Object.keys(signatures).length === 0) {
         alert('Por favor, añade al menos una firma antes de guardar');
-        return;
+        return false;
       }
 
       // Încarcă PDF-ul original
@@ -573,50 +651,105 @@ export default function ContractSigner({
       const pdfDoc = await PDFDocument.load(pdfBytes);
       const pages = pdfDoc.getPages();
 
-      // Adaugă semnăturile pe fiecare pagină
-      for (let pageNum = 1; pageNum <= pages.length; pageNum++) {
-        if (signatures[pageNum]) {
-          const page = pages[pageNum - 1];
-          const signature = signatures[pageNum];
-          
-          // Convertește semnătura la PNG (indiferent de formatul original)
-          const imageBytes = await convertImageToPng(signature.dataUrl);
-          const image = await pdfDoc.embedPng(imageBytes);
-          
-          // Calculează poziția direct folosind coordonatele canvas-ului intern
-          const canvas = canvasRef.current;
-          if (canvas) {
-            // Folosește dimensiunile reale ale paginii PDF
-            const pw = page.getWidth();
-            const ph = page.getHeight();
-            
-            // Coordonatele din signatures sunt deja în sistemul canvas-ului intern
-            // Trebuie doar să le convertim la dimensiunile PDF
-            const xN = signature.x / canvas.width;
-            const yN = signature.y / canvas.height;
-            const wN = signature.width / canvas.width;
-            const hN = signature.height / canvas.height;
-            
-            // Convertește la puncte PDF
-            const x = xN * pw;
-            const y = (1 - yN - hN) * ph; // PDF are originea jos-stânga
-            const w = wN * pw;
-            const h = hN * ph;
-            
-            console.log('🔍 Salvarea semnăturii în PDF:', {
-              original: { x: signature.x, y: signature.y, width: signature.width, height: signature.height },
-              canvas: { width: canvas.width, height: canvas.height },
-              page: { width: pw, height: ph },
-              normalized: { x: xN, y: yN, w: wN, h: hN },
-              pdf: { x, y, w, h }
-            });
-            
+      if (autoStampMode) {
+        // Ultima pagină: caseta trabajador/a + legendă
+        // Paginile 1…N-1: semnătură pe marginea stângă (clauza SEPE)
+        const imageBytes = await convertImageToPng(padSignature);
+        const image = await pdfDoc.embedPng(imageBytes);
+        const lastIdx = pages.length - 1;
+
+        for (let i = 0; i < pages.length; i++) {
+          const page = pages[i];
+          const pw = page.getWidth();
+          const ph = page.getHeight();
+
+          if (i === lastIdx) {
+            const slot = getContratoSignatureSlot(pw, ph);
             page.drawImage(image, {
-              x: x,
-              y: y,
-              width: w,
-              height: h
+              x: slot.x,
+              y: slot.y,
+              width: slot.width,
+              height: slot.height,
             });
+
+            const font = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+            const caption = CONTRATO_FIRMA_DIGITAL_CAPTION;
+            const lines = buildContratoFirmaDigitalCaptionLines(new Date());
+            const fontSize = caption.fontSize ?? 6.5;
+            const lineGap = caption.lineGap ?? 1.2;
+            const gap = caption.gapBelowSignature ?? 2.5;
+            const colorSpec = caption.color || { r: 0.25, g: 0.25, b: 0.35 };
+            const textColor = rgb(colorSpec.r, colorSpec.g, colorSpec.b);
+            let textY = slot.y - gap - fontSize;
+            for (const line of lines) {
+              if (textY < 8) break;
+              page.drawText(line, {
+                x: slot.x,
+                y: textY,
+                size: fontSize,
+                font,
+                color: textColor,
+                maxWidth: slot.width,
+              });
+              textY -= fontSize + lineGap;
+            }
+          } else {
+            const margin = getContratoMargenIzquierdoSlot(pw, ph);
+            page.drawImage(image, {
+              x: margin.x,
+              y: margin.y,
+              width: margin.width,
+              height: margin.height,
+              rotate: degrees(margin.rotateDegrees ?? 90),
+            });
+          }
+        }
+      } else {
+        // Adaugă semnăturile pe fiecare pagină (plasare liberă)
+        for (let pageNum = 1; pageNum <= pages.length; pageNum++) {
+          if (signatures[pageNum]) {
+            const page = pages[pageNum - 1];
+            const signature = signatures[pageNum];
+            
+            // Convertește semnătura la PNG (indiferent de formatul original)
+            const imageBytes = await convertImageToPng(signature.dataUrl);
+            const image = await pdfDoc.embedPng(imageBytes);
+            
+            // Calculează poziția direct folosind coordonatele canvas-ului intern
+            const canvas = canvasRef.current;
+            if (canvas) {
+              // Folosește dimensiunile reale ale paginii PDF
+              const pw = page.getWidth();
+              const ph = page.getHeight();
+              
+              // Coordonatele din signatures sunt deja în sistemul canvas-ului intern
+              // Trebuie doar să le convertim la dimensiunile PDF
+              const xN = signature.x / canvas.width;
+              const yN = signature.y / canvas.height;
+              const wN = signature.width / canvas.width;
+              const hN = signature.height / canvas.height;
+              
+              // Convertește la puncte PDF
+              const x = xN * pw;
+              const y = (1 - yN - hN) * ph; // PDF are originea jos-stânga
+              const w = wN * pw;
+              const h = hN * ph;
+              
+              console.log('🔍 Salvarea semnăturii în PDF:', {
+                original: { x: signature.x, y: signature.y, width: signature.width, height: signature.height },
+                canvas: { width: canvas.width, height: canvas.height },
+                page: { width: pw, height: ph },
+                normalized: { x: xN, y: yN, w: wN, h: hN },
+                pdf: { x, y, w, h }
+              });
+              
+              page.drawImage(image, {
+                x: x,
+                y: y,
+                width: w,
+                height: h
+              });
+            }
           }
         }
       }
@@ -688,6 +821,7 @@ export default function ContractSigner({
         : (authUser?.email || null);
       
       // Pregătește body-ul conform așteptărilor backend-ului
+      const sourceDocIdNum = Number(docId);
       const requestBody = {
         signed_b64: base64String,
         id: userCodigo, // CODIGO del empleado (al angajatului, nu al utilizatorului care semnează)
@@ -697,7 +831,12 @@ export default function ContractSigner({
         nombre_empleado: nombreEmpleado,
         fecha_creacion: new Date().toISOString(),
         doc_id: isUpdate ? documentoDocId : undefined, // doc_id pentru UPDATE
-        update_existing: isUpdate // Flag pentru UPDATE
+        update_existing: isUpdate, // Flag pentru UPDATE
+        // La INSERT (_FIRMADO), backend ascunde originalul pentru angajat
+        source_doc_id:
+          !isUpdate && Number.isFinite(sourceDocIdNum) && sourceDocIdNum > 0
+            ? sourceDocIdNum
+            : undefined,
       };
       
       console.log('🔍 [ContractSigner] Request body:', {
@@ -716,12 +855,28 @@ export default function ContractSigner({
 
       if (saveResponse.ok) {
         await saveResponse.json();
-        alert(`✅ Documento firmado guardado exitosamente: ${originalFileName 
-          ? originalFileName.replace(/\.pdf$/i, '_FIRMADO.pdf')
-          : `CONTRATO_EMPLEADO_${docId}_FIRMADO.pdf`
-        }`);
+
+        // Descarcă PDF-ul semnat pe dispozitiv
+        try {
+          const downloadBlob = new Blob([modifiedPdfBytes], {
+            type: 'application/pdf',
+          });
+          const downloadUrl = URL.createObjectURL(downloadBlob);
+          const link = document.createElement('a');
+          link.href = downloadUrl;
+          link.download = fileName;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(downloadUrl);
+        } catch (dlErr) {
+          console.warn('⚠️ No se pudo descargar el PDF firmado:', dlErr);
+        }
+
+        alert(`✅ Documento firmado guardado y descargado: ${fileName}`);
         onSignComplete?.();
         onClose?.();
+        return true;
       } else {
         const errorText = await saveResponse.text();
         console.error('❌ Response failed:', {
@@ -736,6 +891,29 @@ export default function ContractSigner({
       console.error('Error saving signed PDF:', err);
       const filename = originalFileName || `CONTRATO_EMPLEADO_${docId}.pdf`;
       alert(`❌ Error al guardar el documento firmado ${filename}: ${err.message}`);
+      return false;
+    }
+  };
+
+  const openFirmaModal = () => {
+    setFirmaDraft('');
+    setShowFirmaModal(true);
+  };
+
+  const confirmFirmaYDescargar = async () => {
+    if (!firmaDraft || !String(firmaDraft).startsWith('data:image/')) {
+      alert('Por favor, dibuja tu firma primero');
+      return;
+    }
+    setFirmaBusy(true);
+    try {
+      const ok = await saveSignedPDF(firmaDraft);
+      if (ok) {
+        setShowFirmaModal(false);
+        setFirmaDraft('');
+      }
+    } finally {
+      setFirmaBusy(false);
     }
   };
 
@@ -750,6 +928,10 @@ export default function ContractSigner({
   const changeZoom = (newScale) => {
     setScale(Math.max(0.5, Math.min(3.0, newScale)));
   };
+
+  const hasReadySignature = autoStampMode
+    ? !!autoPadSignature
+    : Object.keys(signatures).length > 0;
 
   if (loading) {
     return (
@@ -785,24 +967,34 @@ export default function ContractSigner({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-all duration-300 ${
-                isPlacingSignature 
-                  ? 'bg-gradient-to-br from-blue-500 to-blue-600' 
-                  : 'bg-gradient-to-br from-red-500 to-red-600'
+                autoStampMode
+                  ? 'bg-gradient-to-br from-blue-500 to-blue-600'
+                  : isPlacingSignature 
+                    ? 'bg-gradient-to-br from-blue-500 to-blue-600' 
+                    : 'bg-gradient-to-br from-red-500 to-red-600'
               }`}>
                 <span className="text-white text-xl">
-                  {isPlacingSignature ? '🎯' : '✍️'}
+                  {autoStampMode ? '👁️' : isPlacingSignature ? '🎯' : '✍️'}
                 </span>
               </div>
               <div>
                 <h3 className="text-xl font-bold text-gray-900">
-                  {isPlacingSignature ? 'Posicionar Firma' : 'Firmar Documento'}: Página {currentPage} de {totalPages}
+                  {autoStampMode
+                    ? `Vista previa: Página ${currentPage} de ${totalPages}`
+                    : isPlacingSignature
+                      ? `Posicionar Firma: Página ${currentPage} de ${totalPages}`
+                      : `Firmar Documento: Página ${currentPage} de ${totalPages}`}
                 </h3>
                 <p className="text-blue-600 text-sm font-medium">Documento: {docId}</p>
-                {isPlacingSignature && (
+                {autoStampMode ? (
+                  <div className="text-blue-700 mt-1 text-sm">
+                    Revisa el contrato. Al firmar: casilla trabajador (última página) + margen izquierdo en el resto.
+                  </div>
+                ) : isPlacingSignature ? (
                   <div className="text-blue-700 mt-1 text-sm">
                     💡 Arrastra la firma para posicionarla en el documento
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -904,8 +1096,23 @@ export default function ContractSigner({
                 </div>
               </div>
               
-              {/* Rând 2: Butoane Limpiar și Guardar */}
+              {/* Rând 2: autoStamp → Firmar y descargar (modal) | free place → Limpiar / Guardar */}
               <div className="flex items-center gap-3 w-full">
+                {autoStampMode ? (
+                  <button
+                    type="button"
+                    onClick={openFirmaModal}
+                    disabled={firmaBusy}
+                    className="group relative flex-1 px-4 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-orange-500 to-orange-600 text-white disabled:opacity-60"
+                  >
+                    <div className="absolute inset-0 rounded-xl bg-orange-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
+                    <div className="relative flex items-center justify-center gap-2">
+                      <span className="text-lg">✍️</span>
+                      <span>Firmar y descargar</span>
+                    </div>
+                  </button>
+                ) : (
+                  <>
                 <button
                   onClick={handleClear}
                   className="group relative flex-1 px-4 py-2 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-gray-500 to-gray-600 text-white"
@@ -918,23 +1125,23 @@ export default function ContractSigner({
                 </button>
                 
                 <button
-                  onClick={saveSignedPDF}
-                  disabled={Object.keys(signatures).length === 0}
+                  onClick={() => saveSignedPDF()}
+                  disabled={!hasReadySignature}
                   className={`group relative flex-1 px-4 py-2 rounded-xl font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
-                    Object.keys(signatures).length === 0
+                    !hasReadySignature
                       ? 'bg-gray-400 text-gray-200 cursor-not-allowed shadow-none transform-none'
                       : 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200'
                   }`}
                   style={{
-                    opacity: Object.keys(signatures).length === 0 ? 0.6 : 1,
-                    pointerEvents: Object.keys(signatures).length === 0 ? 'none' : 'auto'
+                    opacity: !hasReadySignature ? 0.6 : 1,
+                    pointerEvents: !hasReadySignature ? 'none' : 'auto'
                   }}
                 >
-                  {Object.keys(signatures).length > 0 && (
+                  {hasReadySignature && (
                     <div className="absolute inset-0 rounded-xl bg-green-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
                   )}
                   <div className="relative flex items-center justify-center gap-2">
-                    {Object.keys(signatures).length === 0 ? (
+                    {!hasReadySignature ? (
                       <>
                         <span>❌</span>
                         <span className="text-sm">Sin firmas</span>
@@ -947,6 +1154,8 @@ export default function ContractSigner({
                     )}
                   </div>
                 </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -957,19 +1166,19 @@ export default function ContractSigner({
               <canvas
                 ref={canvasRef}
                 className={`border border-gray-200 rounded-lg shadow-sm ${
-                  isPlacingSignature ? 'cursor-crosshair' : 'cursor-default'
+                  !autoStampMode && isPlacingSignature ? 'cursor-crosshair' : 'cursor-default'
                 }`}
                 style={{ 
                   maxWidth: '100%',
                   height: 'auto',
                   display: 'block'
                 }}
-                onClick={handlePlaceSignature}
-                onMouseMove={handleCanvasMouseMove}
+                onClick={autoStampMode ? undefined : handlePlaceSignature}
+                onMouseMove={autoStampMode ? undefined : handleCanvasMouseMove}
               />
               
               {/* Grid overlay pentru precizie maximă */}
-              {isPlacingSignature && (
+              {!autoStampMode && isPlacingSignature && (
                 <div className="absolute inset-0 pointer-events-none">
                   <div className="w-full h-full" style={{
                     backgroundImage: `
@@ -982,7 +1191,7 @@ export default function ContractSigner({
               )}
               
               {/* Preview semnătură simplu */}
-              {isPlacingSignature && draggedSignature && (
+              {!autoStampMode && isPlacingSignature && draggedSignature && (
                 <div 
                   className="absolute pointer-events-none"
                   style={{
@@ -1012,7 +1221,8 @@ export default function ContractSigner({
           </div>
         </div>
 
-        {/* Signature Zone */}
+        {/* Signature Zone — doar plasare liberă (contracte: modal mic) */}
+        {!autoStampMode && (
         <section id="signature-zone" className="bg-white rounded-lg shadow-md p-4">
           <div className="text-center mb-4">
             <h4 className="text-lg font-bold text-gray-900">
@@ -1063,75 +1273,119 @@ export default function ContractSigner({
                   className="hidden"
                 />
               </label>
-              
-              {!signatures[currentPage] ? (
-                <button
-                  onClick={handleAddSignature}
-                  disabled={isPlacingSignature}
-                  className={`group relative w-full px-4 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                    isPlacingSignature 
-                      ? 'bg-gray-400 text-gray-200 cursor-not-allowed shadow-none transform-none' 
-                      : 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200'
-                  }`}
-                >
-                  {!isPlacingSignature && (
+
+              {autoStampMode ? (
+                <>
+                  <button
+                    onClick={handleAddSignature}
+                    className="group relative w-full px-4 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200"
+                  >
                     <div className="absolute inset-0 rounded-xl bg-green-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-                  )}
-                  <div className="relative flex items-center justify-center gap-2">
-                    <span className="text-lg">{isPlacingSignature ? '🎯' : '➕'}</span>
-                    <span>{isPlacingSignature ? 'Posicionando firma...' : `Añadir Firma a Página ${currentPage}`}</span>
+                    <div className="relative flex items-center justify-center gap-2">
+                      <span className="text-lg">{autoPadSignature ? '🔄' : '✅'}</span>
+                      <span>
+                        {autoPadSignature
+                          ? 'Actualizar firma (última página)'
+                          : 'Confirmar firma (última página)'}
+                      </span>
+                    </div>
+                  </button>
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-900">
+                    La firma se coloca sola en <strong>El/la trabajador/a</strong> de la última página.
+                    No puedes moverla manualmente.
                   </div>
-                </button>
+                </>
               ) : (
-                <button
-                  onClick={enableMoveMode}
-                  disabled={isPlacingSignature}
-                  className={`group relative w-full px-4 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                    isPlacingSignature 
-                      ? 'bg-gray-400 text-gray-200 cursor-not-allowed shadow-none transform-none' 
-                      : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200'
-                  }`}
-                >
-                  {!isPlacingSignature && (
-                    <div className="absolute inset-0 rounded-xl bg-blue-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
+                <>
+                  {!signatures[currentPage] ? (
+                    <button
+                      onClick={handleAddSignature}
+                      disabled={isPlacingSignature}
+                      className={`group relative w-full px-4 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
+                        isPlacingSignature 
+                          ? 'bg-gray-400 text-gray-200 cursor-not-allowed shadow-none transform-none' 
+                          : 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200'
+                      }`}
+                    >
+                      {!isPlacingSignature && (
+                        <div className="absolute inset-0 rounded-xl bg-green-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
+                      )}
+                      <div className="relative flex items-center justify-center gap-2">
+                        <span className="text-lg">{isPlacingSignature ? '🎯' : '➕'}</span>
+                        <span>{isPlacingSignature ? 'Posicionando firma...' : `Añadir Firma a Página ${currentPage}`}</span>
+                      </div>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={enableMoveMode}
+                      disabled={isPlacingSignature}
+                      className={`group relative w-full px-4 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
+                        isPlacingSignature 
+                          ? 'bg-gray-400 text-gray-200 cursor-not-allowed shadow-none transform-none' 
+                          : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200'
+                      }`}
+                    >
+                      {!isPlacingSignature && (
+                        <div className="absolute inset-0 rounded-xl bg-blue-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
+                      )}
+                      <div className="relative flex items-center justify-center gap-2">
+                        <span className="text-lg">{isPlacingSignature ? '🎯' : '✏️'}</span>
+                        <span>{isPlacingSignature ? 'Moviendo firma...' : 'Mover Firma'}</span>
+                      </div>
+                    </button>
                   )}
-                  <div className="relative flex items-center justify-center gap-2">
-                    <span className="text-lg">{isPlacingSignature ? '🎯' : '✏️'}</span>
-                    <span>{isPlacingSignature ? 'Moviendo firma...' : 'Mover Firma'}</span>
-                  </div>
-                </button>
+                  
+                  <button
+                    onClick={clearSignature}
+                    className="group relative w-full px-4 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-orange-200"
+                  >
+                    <div className="absolute inset-0 rounded-xl bg-orange-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
+                    <div className="relative flex items-center justify-center gap-2">
+                      <span className="text-lg">🗑️</span>
+                      <span>Borrar Firma de Página {currentPage}</span>
+                    </div>
+                  </button>
+                </>
               )}
-              
-              <button
-                onClick={clearSignature}
-                className="group relative w-full px-4 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-orange-200"
-              >
-                <div className="absolute inset-0 rounded-xl bg-orange-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-                <div className="relative flex items-center justify-center gap-2">
-                  <span className="text-lg">🗑️</span>
-                  <span>Borrar Firma de Página {currentPage}</span>
-                </div>
-              </button>
             </div>
 
             {/* Signature Status */}
             <div>
               <div className="p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border border-gray-200 shadow-sm h-full">
                 <h5 className="font-bold text-gray-900 mb-3 text-center">Estado de Firmas:</h5>
-                <div className="space-y-2 text-sm max-h-32 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => (
-                    <div key={pageNum} className="flex items-center justify-between p-2 bg-white rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all duration-200">
-                      <span className="font-medium">Página {pageNum}:</span>
-                      <span className={signatures[pageNum] ? 'text-green-600 font-bold' : 'text-gray-400'}>
-                        {signatures[pageNum] ? '✅ Firmada' : '❌ Sin firma'}
+                {autoStampMode ? (
+                  <div className="p-3 bg-white rounded-lg border border-gray-100 text-sm">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium">Última página (trabajador/a):</span>
+                      <span className={autoPadSignature ? 'text-green-600 font-bold' : 'text-gray-400'}>
+                        {autoPadSignature ? '✅ Lista' : '❌ Pendiente'}
                       </span>
                     </div>
-                  ))}
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => totalPages > 0 && setCurrentPage(totalPages)}
+                      className="text-xs text-blue-600 hover:underline"
+                    >
+                      Ir a última página →
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2 text-sm max-h-32 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => (
+                      <div key={pageNum} className="flex items-center justify-between p-2 bg-white rounded-lg border border-gray-100 shadow-sm hover:shadow-md transition-all duration-200">
+                        <span className="font-medium">Página {pageNum}:</span>
+                        <span className={signatures[pageNum] ? 'text-green-600 font-bold' : 'text-gray-400'}>
+                          {signatures[pageNum] ? '✅ Firmada' : '❌ Sin firma'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </section>
+        )}
       </main>
 
       {/* Buton toggle pentru footer pe mobil */}
@@ -1143,8 +1397,23 @@ export default function ContractSigner({
         {showMobileFooter ? '▼' : '☰'}
       </button>
 
-      {/* Footer - Sticky con botones modernos */}
+      {/* Footer - Sticky */}
       <footer className={`dlg__footer ${showMobileFooter ? 'mobile-visible' : ''}`}>
+        {autoStampMode ? (
+          <button
+            type="button"
+            onClick={openFirmaModal}
+            disabled={firmaBusy}
+            className="group relative flex-1 px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-orange-200 disabled:opacity-60"
+          >
+            <div className="absolute inset-0 rounded-xl bg-orange-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
+            <div className="relative flex items-center justify-center gap-2">
+              <span className="text-lg">✍️</span>
+              <span>Firmar y descargar</span>
+            </div>
+          </button>
+        ) : (
+          <>
         <button
           onClick={handleClear}
           className="group relative flex-1 px-4 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-gray-500 to-gray-600 text-white shadow-gray-200"
@@ -1157,19 +1426,19 @@ export default function ContractSigner({
         </button>
         
         <button
-          onClick={saveSignedPDF}
-          disabled={Object.keys(signatures).length === 0}
+          onClick={() => saveSignedPDF()}
+          disabled={!hasReadySignature}
           className={`group relative flex-1 px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-            Object.keys(signatures).length === 0
+            !hasReadySignature
               ? 'bg-gray-400 text-gray-200 cursor-not-allowed shadow-none transform-none'
               : 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200'
           }`}
         >
-          {Object.keys(signatures).length > 0 && (
+          {hasReadySignature && (
             <div className="absolute inset-0 rounded-xl bg-red-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
           )}
           <div className="relative flex items-center justify-center gap-2">
-            {Object.keys(signatures).length === 0 ? (
+            {!hasReadySignature ? (
               <>
                 <span className="text-lg">❌</span>
                 <span>Sin firmas para guardar</span>
@@ -1182,7 +1451,72 @@ export default function ContractSigner({
             )}
           </div>
         </button>
+          </>
+        )}
       </footer>
+
+      {/* Casuță mică de semnare (stil Vecindario / pachete) */}
+      {autoStampMode && showFirmaModal && (
+        <div
+          className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/50"
+          onClick={() => {
+            if (!firmaBusy) {
+              setShowFirmaModal(false);
+              setFirmaDraft('');
+            }
+          }}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div>
+                <h4 className="text-base font-bold text-slate-900">Firma del trabajador</h4>
+                <p className="text-xs text-slate-500">Ratón o dedo — última página + margen izquierdo</p>
+              </div>
+              <button
+                type="button"
+                disabled={firmaBusy}
+                onClick={() => {
+                  setShowFirmaModal(false);
+                  setFirmaDraft('');
+                }}
+                className="w-8 h-8 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold disabled:opacity-50"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-4">
+              <SignaturePadComponent
+                value={firmaDraft}
+                onChange={setFirmaDraft}
+                width={320}
+                height={160}
+              />
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  disabled={firmaBusy}
+                  onClick={() => setFirmaDraft('')}
+                  className="flex-1 px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Limpiar firma
+                </button>
+                <button
+                  type="button"
+                  disabled={firmaBusy || !firmaDraft}
+                  onClick={confirmFirmaYDescargar}
+                  className="flex-1 px-3 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-sm font-bold disabled:opacity-50 disabled:cursor-wait"
+                >
+                  {firmaBusy ? 'Firmando…' : 'Confirmar y descargar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

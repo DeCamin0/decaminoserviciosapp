@@ -951,6 +951,163 @@ export class PrlDocumentsController {
   }
 
   /**
+   * Admin: lista documentele PRL ale unui angajat (by codigo)
+   */
+  @Get('empleados/:empleadoId/documentos')
+  @UseGuards(JwtAuthGuard)
+  async listarDocumentosDeEmpleado(
+    @Param('empleadoId') empleadoId: string,
+    @CurrentUser() _user: any,
+  ) {
+    try {
+      const codigo = String(empleadoId || '').trim();
+      if (!codigo) {
+        throw new BadRequestException('empleadoId es requerido');
+      }
+
+      this.logger.log(
+        `📋 Listando documentos PRL (admin) para empleado: ${codigo}`,
+      );
+
+      const documentos =
+        await this.prlDocumentsService.listarDocumentosEmpleado(codigo);
+
+      return {
+        success: true,
+        documentos,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error listando documentos PRL para empleado ${empleadoId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Admin: descarcă originalul PRL al unui angajat
+   */
+  @Get('empleados/:empleadoId/documentos/:documentoId/descargar')
+  @UseGuards(JwtAuthGuard)
+  async descargarDocumentoEmpleadoAdmin(
+    @Param('empleadoId') empleadoId: string,
+    @Param('documentoId') documentoId: string,
+    @Res() res: Response,
+    @CurrentUser() _user: any,
+  ) {
+    try {
+      const documentoIdNum = parseInt(documentoId, 10);
+      if (isNaN(documentoIdNum)) {
+        throw new BadRequestException('documentoId debe ser un número');
+      }
+      const codigo = String(empleadoId || '').trim();
+      if (!codigo) {
+        throw new BadRequestException('empleadoId es requerido');
+      }
+
+      const documento =
+        await this.prlDocumentsService.descargarDocumentoEmpleado(
+          documentoIdNum,
+          codigo,
+        );
+
+      const nombreArchivo = documento.nombre_archivo || '';
+      const esDocx =
+        nombreArchivo.toLowerCase().endsWith('.docx') ||
+        nombreArchivo.toLowerCase().endsWith('.doc');
+      const esPdf = nombreArchivo.toLowerCase().endsWith('.pdf');
+      const contentType = esDocx
+        ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        : esPdf
+          ? 'application/pdf'
+          : 'application/octet-stream';
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${encodeURIComponent(nombreArchivo || `prl-${documentoIdNum}`)}"`,
+      );
+      res.send(documento.archivo);
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error descargando documento PRL admin ${documentoId}:`,
+        error,
+      );
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error descargando documento: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Admin: descarcă documentul firmat PRL al unui angajat
+   */
+  @Get('empleados/:empleadoId/documentos/:documentoId/descargar-firmado')
+  @UseGuards(JwtAuthGuard)
+  async descargarDocumentoFirmadoAdmin(
+    @Param('empleadoId') empleadoId: string,
+    @Param('documentoId') documentoId: string,
+    @Res() res: Response,
+    @CurrentUser() _user: any,
+  ) {
+    try {
+      const documentoIdNum = parseInt(documentoId, 10);
+      if (isNaN(documentoIdNum)) {
+        throw new BadRequestException('documentoId debe ser un número');
+      }
+      const codigo = String(empleadoId || '').trim();
+      if (!codigo) {
+        throw new BadRequestException('empleadoId es requerido');
+      }
+
+      const documento =
+        await this.prlDocumentsService.descargarDocumentoFirmado(
+          documentoIdNum,
+          codigo,
+        );
+
+      const nombreArchivo = documento.nombre_archivo || '';
+      const esDocx =
+        nombreArchivo.toLowerCase().endsWith('.docx') ||
+        nombreArchivo.toLowerCase().endsWith('.doc');
+      const esPdf = nombreArchivo.toLowerCase().endsWith('.pdf');
+      const contentType = esDocx
+        ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        : esPdf
+          ? 'application/pdf'
+          : 'application/octet-stream';
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${encodeURIComponent(nombreArchivo || `prl-firmado-${documentoIdNum}`)}"`,
+      );
+      res.send(documento.archivo);
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error descargando firmado PRL admin ${documentoId}:`,
+        error,
+      );
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Error descargando documento firmado: ${error.message}`,
+      );
+    }
+  }
+
+  /**
    * Endpoint pentru adăugarea semnăturii în DOCX (înlocuiește {{FIRMA}})
    */
   @Post('mis-documentos/:documentoId/agregar-firma-docx')
