@@ -204,42 +204,36 @@ export class FichajeScheduleResolverService {
 
   /**
    * Reminder window that respects overnight shifts (e.g. 19:30–07:30).
-   * Salida must NOT fire in the evening after Entrada — only from (horaOut − margin)
-   * in the morning until before the next Entrada (horaIn).
+   * Entrada and Salida NEVER open early — only from horaIn / horaOut onward.
+   * Overnight Salida: only from horaOut in the morning until before the next Entrada (horaIn).
+   * Overnight Entrada: only from horaIn in the evening (not during morning Salida window).
    */
   isReminderDueForInterval(
     nowMinutes: number,
     interval: ScheduleInterval,
     tipo: PunchTipo,
-    marginMinutes: number,
+    marginMinutes: number, // kept for callers; early-open is disabled (open at target only)
   ): boolean {
     const inM = this.hmToMinutes(interval.horaIn);
     const outM = this.hmToMinutes(interval.horaOut);
     const overnight = outM <= inM;
-    const margin = Math.max(0, marginMinutes);
     const target = tipo === 'Entrada' ? inM : outM;
 
     if (!overnight) {
-      return this.isReminderDue(nowMinutes, target, margin);
+      return this.isReminderDue(nowMinutes, target, 0);
     }
 
-    const openAt = target - margin;
+    const openAt = target;
 
     if (tipo === 'Entrada') {
       // Morning is still the previous night's Salida window
       if (nowMinutes <= outM) return false;
-      if (openAt >= 0) return nowMinutes >= openAt;
-      return (
-        nowMinutes >= openAt + 1440 || nowMinutes <= target + margin
-      );
+      return nowMinutes >= openAt;
     }
 
     // Overnight Salida (morning): never in the evening after horaIn
     if (nowMinutes >= inM) return false;
-    if (openAt >= 0) return nowMinutes >= openAt;
-    return (
-      nowMinutes <= target + margin || nowMinutes >= openAt + 1440
-    );
+    return nowMinutes >= openAt;
   }
 
   /**

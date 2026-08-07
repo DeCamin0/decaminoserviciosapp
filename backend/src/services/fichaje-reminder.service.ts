@@ -208,7 +208,8 @@ export class FichajeReminderService {
     bajaInfo: { situacion: string | null } | null;
     ausenciaInfo: { tipo: string | null } | null;
     fichajes: FichajeRow[];
-    lastSent: { entrada?: Date; salida?: Date };
+    /** Minutes since last aviso today (from MySQL TIMESTAMPDIFF) — avoids TZ skew vs Date.now() */
+    lastSent: { entradaElapsedMin?: number; salidaElapsedMin?: number };
     defaultWindow: number;
     retryMinutes: number;
     dryRun: boolean;
@@ -352,13 +353,14 @@ export class FichajeReminderService {
       return;
     }
 
-    const lastAt =
-      tipKey === 'entrada' ? ctx.lastSent.entrada : ctx.lastSent.salida;
+    const lastElapsed =
+      tipKey === 'entrada'
+        ? ctx.lastSent.entradaElapsedMin
+        : ctx.lastSent.salidaElapsedMin;
     let isRetry = false;
-    if (lastAt) {
-      const elapsedMin = (Date.now() - lastAt.getTime()) / 60000;
-      if (elapsedMin < ctx.retryMinutes) {
-        const wait = Math.ceil(ctx.retryMinutes - elapsedMin);
+    if (lastElapsed != null && Number.isFinite(lastElapsed)) {
+      if (lastElapsed < ctx.retryMinutes) {
+        const wait = Math.ceil(ctx.retryMinutes - lastElapsed);
         result.skippedDedup += 1;
         pushSkip(
           'ya_notificado',
@@ -414,8 +416,8 @@ export class FichajeReminderService {
     });
 
     await this.markSent(schedule.codigo, now.dateStr, tipKey);
-    if (tipKey === 'entrada') ctx.lastSent.entrada = new Date();
-    else ctx.lastSent.salida = new Date();
+    if (tipKey === 'entrada') ctx.lastSent.entradaElapsedMin = 0;
+    else ctx.lastSent.salidaElapsedMin = 0;
     result.sent += 1;
   }
 
@@ -672,8 +674,13 @@ export class FichajeReminderService {
   private async loadLastSentToday(
     codes: string[],
     dateStr: string,
-  ): Promise<Map<string, { entrada?: Date; salida?: Date }>> {
-    const map = new Map<string, { entrada?: Date; salida?: Date }>();
+  ): Promise<
+    Map<string, { entradaElapsedMin?: number; salidaElapsedMin?: number }>
+  > {
+    const map = new Map<
+      string,
+      { entradaElapsedMin?: number; salidaElapsedMin?: number }
+    >();
     const ids = codes
       .map((c) => ({ c, id: this.codigoToEmpleadoId(c) }))
       .filter((x): x is { c: string; id: number } => x.id != null);
@@ -684,13 +691,21 @@ export class FichajeReminderService {
     const idList = ids.map((x) => x.id).join(',');
 
     try {
+      // TIMESTAMPDIFF vs NOW() — same clock as markSent(NOW()). Avoids JS Date.now()
+      // vs MySQL DATETIME session-TZ skew (was ~+2h → effective retry ~2.5h).
       const rows = await this.prisma.$queryRawUnsafe<
-        Array<{ empleado_id: number; tip: string; trimis_at: Date }>
+        Array<{
+          empleado_id: number;
+          tip: string;
+          elapsed_min: number | null;
+        }>
       >(
-        `SELECT empleado_id, tip, trimis_at
+        `SELECT empleado_id, tip,
+                TIMESTAMPDIFF(MINUTE, trimis_at, NOW()) AS elapsed_min
          FROM NotificariFichaje
          WHERE data = ${this.escapeSql(dateStr)}
-           AND empleado_id IN (${idList})`,
+           AND empleado_id IN (${idList})
+           AND trimis_at IS NOT NULL`,
       );
 
       for (const row of rows ?? []) {
@@ -699,12 +714,10 @@ export class FichajeReminderService {
         const tip = String(row.tip || '').toLowerCase();
         if (tip !== 'entrada' && tip !== 'salida') continue;
         const entry = map.get(code) ?? {};
-        const at =
-          row.trimis_at instanceof Date
-            ? row.trimis_at
-            : new Date(row.trimis_at);
-        if (tip === 'entrada') entry.entrada = at;
-        else entry.salida = at;
+        const elapsed = Number(row.elapsed_min);
+        if (!Number.isFinite(elapsed)) continue;
+        if (tip === 'entrada') entry.entradaElapsedMin = elapsed;
+        else entry.salidaElapsedMin = elapsed;
         map.set(code, entry);
       }
     } catch (err: any) {

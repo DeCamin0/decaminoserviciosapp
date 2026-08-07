@@ -70,25 +70,68 @@ describe('FichajeScheduleResolverService', () => {
     });
   });
 
+  describe('isReminderDueForInterval same-day 07:00-12:00 / 09:00-17:00', () => {
+    const morning = { horaIn: '07:00', horaOut: '12:00' };
+    const office = { horaIn: '09:00', horaOut: '17:00' };
+
+    it('Entrada NEVER before horaIn (even with margin 15)', () => {
+      // Bug case: 08:45 must NOT request Entrada for 09:00
+      expect(
+        resolver.isReminderDueForInterval(8 * 60 + 45, office, 'Entrada', 15),
+      ).toBe(false);
+      expect(
+        resolver.isReminderDueForInterval(8 * 60 + 59, office, 'Entrada', 15),
+      ).toBe(false);
+      expect(
+        resolver.isReminderDueForInterval(9 * 60, office, 'Entrada', 15),
+      ).toBe(true);
+      expect(
+        resolver.isReminderDueForInterval(6 * 60 + 45, morning, 'Entrada', 15),
+      ).toBe(false);
+      expect(
+        resolver.isReminderDueForInterval(7 * 60, morning, 'Entrada', 15),
+      ).toBe(true);
+    });
+
+    it('Salida NEVER before horaOut (even with margin 15)', () => {
+      // Bug case: 11:45 must NOT request Salida for 12:00
+      expect(
+        resolver.isReminderDueForInterval(11 * 60 + 45, morning, 'Salida', 15),
+      ).toBe(false);
+      expect(
+        resolver.isReminderDueForInterval(11 * 60 + 59, morning, 'Salida', 15),
+      ).toBe(false);
+      expect(
+        resolver.isReminderDueForInterval(12 * 60, morning, 'Salida', 15),
+      ).toBe(true);
+      expect(
+        resolver.isReminderDueForInterval(12 * 60 + 15, morning, 'Salida', 15),
+      ).toBe(true);
+    });
+  });
+
   describe('isReminderDueForInterval overnight 19:30-07:30', () => {
     const night = { horaIn: '19:30', horaOut: '07:30' };
 
-    it('Entrada due from 19:15, not in the morning', () => {
+    it('Entrada only from horaIn 19:30 (not 19:15)', () => {
       expect(
         resolver.isReminderDueForInterval(7 * 60, night, 'Entrada', 15),
       ).toBe(false);
       expect(
-        resolver.isReminderDueForInterval(19 * 60 + 14, night, 'Entrada', 15),
+        resolver.isReminderDueForInterval(19 * 60 + 15, night, 'Entrada', 15),
       ).toBe(false);
       expect(
-        resolver.isReminderDueForInterval(19 * 60 + 15, night, 'Entrada', 15),
+        resolver.isReminderDueForInterval(19 * 60 + 29, night, 'Entrada', 15),
+      ).toBe(false);
+      expect(
+        resolver.isReminderDueForInterval(19 * 60 + 30, night, 'Entrada', 15),
       ).toBe(true);
       expect(
         resolver.isReminderDueForInterval(19 * 60 + 55, night, 'Entrada', 15),
       ).toBe(true);
     });
 
-    it('Salida NOT due in the evening after Entrada — only from 07:15 morning', () => {
+    it('Salida NOT due in the evening — only from horaOut 07:30 (not 07:15)', () => {
       // Bug case: 19:55 after Entrada must NOT request Salida yet
       expect(
         resolver.isReminderDueForInterval(19 * 60 + 55, night, 'Salida', 15),
@@ -100,10 +143,13 @@ describe('FichajeScheduleResolverService', () => {
         resolver.isReminderDueForInterval(0, night, 'Salida', 15),
       ).toBe(false);
       expect(
-        resolver.isReminderDueForInterval(7 * 60 + 14, night, 'Salida', 15),
+        resolver.isReminderDueForInterval(7 * 60 + 15, night, 'Salida', 15),
       ).toBe(false);
       expect(
-        resolver.isReminderDueForInterval(7 * 60 + 15, night, 'Salida', 15),
+        resolver.isReminderDueForInterval(7 * 60 + 29, night, 'Salida', 15),
+      ).toBe(false);
+      expect(
+        resolver.isReminderDueForInterval(7 * 60 + 30, night, 'Salida', 15),
       ).toBe(true);
       expect(
         resolver.isReminderDueForInterval(10 * 60, night, 'Salida', 15),
