@@ -852,6 +852,7 @@ export class FichajeReminderService {
 
   /**
    * Employees currently in an active ausencia (full-day dias, or horas window covering now).
+   * Also covers Aprobada solicitudes (Vacaciones etc.) even if Ausencias row is missing.
    */
   private async loadEnAusenciaNow(
     codes: string[],
@@ -923,6 +924,40 @@ export class FichajeReminderService {
     } catch (err: any) {
       this.logger.error(`loadEnAusenciaNow failed: ${err.message}`);
     }
+
+    // Fallback: approved solicitudes covering today (Vacaciones / AP / permiso)
+    // — if Ausencias insert was skipped historically, reminders must still stop.
+    try {
+      const solRows = await this.prisma.$queryRawUnsafe<
+        Array<{ codigo: string; tipo: string | null }>
+      >(
+        `SELECT TRIM(s.codigo) AS codigo, MAX(s.tipo) AS tipo
+         FROM solicitudes s
+         WHERE TRIM(s.codigo) IN (${this.codesInList(codes)})
+           AND s.estado = 'Aprobada'
+           AND s.tipo IN (
+             'Vacaciones',
+             'Asunto Propio',
+             'Asuntos Propios',
+             'Permiso Retribuido'
+           )
+           AND s.fecha_inicio IS NOT NULL
+           AND s.fecha_fin IS NOT NULL
+           AND ${this.escapeSql(now.dateStr)} BETWEEN DATE(s.fecha_inicio) AND DATE(s.fecha_fin)
+         GROUP BY TRIM(s.codigo)`,
+      );
+      for (const r of solRows ?? []) {
+        if (!r.codigo) continue;
+        if (!map.has(r.codigo)) {
+          map.set(r.codigo, { tipo: r.tipo || null });
+        }
+      }
+    } catch (err: any) {
+      this.logger.error(
+        `loadEnAusenciaNow (solicitudes fallback) failed: ${err.message}`,
+      );
+    }
+
     return map;
   }
 

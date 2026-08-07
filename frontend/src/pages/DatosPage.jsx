@@ -112,6 +112,7 @@ export default function DatosPage() {
   const [editForm, setEditForm] = useState(null);
   const [editError, setEditError] = useState('');
   const [motivo, setMotivo] = useState('');
+  const motivoRef = useRef(null);
 const [editLoading, setEditLoading] = useState(false);
   
   // Loading states centralizate
@@ -1044,6 +1045,16 @@ const [editLoading, setEditLoading] = useState(false);
     return () => clearTimeout(timeout);
   }, []);
 
+  // Blocăm scroll pe body când modalul de edit e deschis (mobil)
+  useEffect(() => {
+    if (!showEdit) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [showEdit]);
+
   // Sincronizare automată: când se completează câmpurile separate, se actualizează automat "NOMBRE / APELLIDOS"
   useEffect(() => {
     if (!editForm) return;
@@ -1620,36 +1631,40 @@ const [editLoading, setEditLoading] = useState(false);
         </div>
       )}
 
-      {/* Modal modernizado para editar */}
+      {/* Modal editar: fullscreen pe mobil, peste bottom-nav + FAB asistent */}
       {showEdit && editForm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[95vh] overflow-hidden shadow-2xl border border-gray-200 animate-in fade-in duration-300">
-            {/* Header moderno */}
-            <div className="bg-gradient-to-r from-red-50 to-red-100 px-6 py-4 border-b border-red-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <span className="text-white text-xl">✏️</span>
+        <div className="fixed inset-0 z-[11050] flex items-stretch justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="flex h-[100dvh] w-full max-w-4xl flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[min(95vh,900px)] sm:rounded-2xl sm:border sm:border-gray-200">
+            {/* Header */}
+            <div className="shrink-0 border-b border-red-200 bg-gradient-to-r from-red-50 to-red-100 px-4 py-3 sm:px-6 sm:py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-red-500 to-red-600 shadow-lg sm:h-12 sm:w-12">
+                    <span className="text-lg text-white sm:text-xl">✏️</span>
                   </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-900">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-lg font-bold text-gray-900 sm:text-xl">
                       Editar Datos Personales
                     </h2>
-                    <p className="text-sm text-red-600 font-medium">Actualización de información del empleado</p>
+                    <p className="truncate text-xs font-medium text-red-600 sm:text-sm">
+                      Actualización de información del empleado
+                    </p>
                   </div>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setShowEdit(false)}
-                  className="w-10 h-10 bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md hover:shadow-lg group"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white shadow-md transition-all hover:border-red-300 hover:bg-red-50"
+                  aria-label="Cerrar"
                 >
-                  <span className="text-gray-400 group-hover:text-red-500 text-xl">✕</span>
+                  <span className="text-xl text-gray-400">✕</span>
                 </button>
               </div>
             </div>
             
-            {/* Content modernizado */}
-            <div className="p-6 max-h-[60vh] overflow-y-auto">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Content — scroll; footer rămâne vizibil */}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
                 {SHEET_FIELDS.map(field => {
                   const fieldId = `edit-${field.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
                   return (
@@ -2012,48 +2027,60 @@ const [editLoading, setEditLoading] = useState(false);
               </div>
               
               {/* Câmp Motivo - Destacat */}
-              <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
-                <label htmlFor="edit-motivo" className="block text-sm font-bold text-yellow-800 mb-2">
+              <div className="mt-6 rounded-xl border border-yellow-200 bg-yellow-50 p-4">
+                <label htmlFor="edit-motivo" className="mb-2 block text-sm font-bold text-yellow-800">
                   ⚠️ Motivo de la Modificación (Obligatorio)
                 </label>
                 <textarea
                   id="edit-motivo"
                   name="motivo"
-                  className="w-full px-4 py-3 border-2 border-yellow-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 transition-all duration-200 hover:border-yellow-400 resize-none"
+                  ref={motivoRef}
+                  className="w-full resize-none rounded-xl border-2 border-yellow-300 bg-white px-4 py-3 text-base text-gray-800 transition-all duration-200 hover:border-yellow-400 focus:border-yellow-500 focus:outline-none focus:ring-2 focus:ring-yellow-500"
                   value={motivo}
-                  onChange={(e) => setMotivo(e.target.value)}
+                  onChange={(e) => {
+                    setMotivo(e.target.value);
+                    if (editError) setEditError('');
+                  }}
                   placeholder="Explica el motivo de la modificación de datos..."
-                  rows="3"
+                  rows={3}
+                  enterKeyHint="done"
                 />
               </div>
             </div>
             
-            {/* Footer con botones modernos */}
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
+            {/* Footer — mereu vizibil pe mobil (nu sub bottom-nav / FAB) */}
+            <div className="shrink-0 border-t border-gray-200 bg-gray-50 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-4">
               {editError && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl">
-                  <p className="text-red-600 text-sm font-medium text-center">⚠️ {editError}</p>
+                <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3">
+                  <p className="text-center text-sm font-medium text-red-600">⚠️ {editError}</p>
                 </div>
               )}
               
-              <div className="flex flex-col sm:flex-row justify-end gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
                 <button
+                  type="button"
                   onClick={() => setShowEdit(false)}
-                  className="group relative w-full sm:w-auto px-6 py-4 rounded-2xl font-semibold transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl bg-gradient-to-r from-gray-100 to-gray-200 hover:from-gray-200 hover:to-gray-300 text-gray-700 border border-gray-300 hover:border-gray-400"
+                  className="order-2 w-full rounded-2xl border border-gray-300 bg-gradient-to-r from-gray-100 to-gray-200 px-6 py-3.5 font-semibold text-gray-700 shadow-md transition active:scale-[0.98] sm:order-1 sm:w-auto sm:py-4"
                 >
-                  <div className="absolute inset-0 rounded-2xl bg-white/20 opacity-0 group-hover:opacity-100 transition-all duration-300"></div>
-                  <div className="relative flex items-center justify-center gap-3">
-                    <span className="text-xl group-hover:rotate-90 transition-transform duration-300">✕</span>
-                    <span className="text-sm sm:text-base">Cancelar</span>
-                  </div>
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <span aria-hidden>✕</span>
+                    <span>Cancelar</span>
+                  </span>
                 </button>
                 
                 <button
+                type="button"
                 onClick={async () => {
-                  if (!motivo.trim()) {
+                  // iOS/Android: citește din DOM — ultimele taste pot să nu fie încă în state
+                  const motivoValue = String(
+                    motivoRef.current?.value ?? motivo ?? '',
+                  ).trim();
+                  if (!motivoValue) {
                     setEditError('¡El motivo de la modificación es obligatorio!');
+                    motivoRef.current?.focus();
                     return;
                   }
+                  setMotivo(motivoValue);
                   
                   setEditLoading(true);
                   setEditError('');
@@ -2093,7 +2120,7 @@ const [editLoading, setEditLoading] = useState(false);
                        CAMPO_MODIFICADO: camposModificados.join(', '),
                        VALOR_ANTERIOR: Object.values(valoresAnteriores).join(', '),
                        VALOR_NUEVO: Object.values(valoresNuevos).join(', '),
-                       MOTIVO_CAMBIO: motivo,
+                       MOTIVO_CAMBIO: motivoValue,
                        FECHA_SOLICITUD: new Date().toISOString(),
                        FECHA_APROBACION: new Date().toISOString(),
                        ESTADO: 'pendiente'
@@ -2143,23 +2170,17 @@ const [editLoading, setEditLoading] = useState(false);
                   setEditLoading(false);
                 }}
                 disabled={editLoading}
-                  className="group relative w-full sm:w-auto px-6 py-4 rounded-2xl font-bold transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-xl hover:shadow-2xl bg-gradient-to-r from-red-500 via-red-600 to-red-700 text-white border border-red-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                  className="order-1 w-full rounded-2xl border border-red-400 bg-gradient-to-r from-red-500 via-red-600 to-red-700 px-6 py-3.5 font-bold text-white shadow-xl transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:order-2 sm:w-auto sm:py-4"
               >
-                {!editLoading && (
-                    <>
-                      <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-red-400 to-red-500 opacity-40 blur-lg animate-pulse group-hover:opacity-60 transition-all duration-300"></div>
-                      <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300"></div>
-                    </>
-                  )}
                   <div className="relative flex items-center justify-center gap-3">
                     {editLoading ? (
                       <>
-                        <div className="animate-spin rounded-full h-6 w-6 border-2 border-white border-t-transparent"></div>
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
                         <span className="text-sm sm:text-base">Enviando...</span>
                     </>
                   ) : (
                     <>
-                        <span className="text-xl group-hover:translate-x-1 transition-transform duration-300">🚀</span>
+                        <span className="text-xl" aria-hidden>🚀</span>
                         <span className="text-sm sm:text-base">Enviar para Aprobación</span>
                     </>
                   )}
