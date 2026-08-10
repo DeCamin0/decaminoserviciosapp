@@ -4,6 +4,35 @@ import { Button } from '../components/ui';
 import { Link, Navigate } from 'react-router';
 import { routes } from '../utils/routes';
 
+/** DURACION în DB e de obicei HH:MM:SS; acceptă și "8h 30m" / număr. */
+function parseDuracionHours(raw) {
+  if (raw == null || raw === '') return 0;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+
+  const value = String(raw).trim();
+  if (!value || value === '00:00:00') return 0;
+
+  // HH:MM:SS sau H:MM:SS
+  const hms = value.match(/^(\d{1,3}):(\d{2})(?::(\d{2}))?$/);
+  if (hms) {
+    const h = parseInt(hms[1], 10) || 0;
+    const m = parseInt(hms[2], 10) || 0;
+    const s = parseInt(hms[3] || '0', 10) || 0;
+    return h + m / 60 + s / 3600;
+  }
+
+  // "8h 30m" / "8h30m"
+  const hmLabel = value.match(/(\d+)\s*h(?:\s*(\d+)\s*m)?/i);
+  if (hmLabel) {
+    const h = parseInt(hmLabel[1], 10) || 0;
+    const m = parseInt(hmLabel[2] || '0', 10) || 0;
+    return h + m / 60;
+  }
+
+  const asNumber = parseFloat(value.replace(',', '.'));
+  return Number.isFinite(asNumber) ? asNumber : 0;
+}
+
 export default function EstadisticasFichajesPage() {
   const { user: authUser } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -102,20 +131,22 @@ export default function EstadisticasFichajesPage() {
       const salidas = fichajesFiltrados.filter(f => f.TIPO === 'Salida').length;
       const sinSalida = Math.max(0, entradas - salidas);
 
-      // Calculate hours
+      // Calculate hours (DURACION = HH:MM:SS)
       let totalHoras = 0;
-      fichajesFiltrados.forEach(f => {
-        if (f.DURACION) {
-          const match = f.DURACION.match(/(\d+)h\s*(\d+)?m?/);
-          if (match) {
-            const h = parseInt(match[1], 10) || 0;
-            const m = parseInt(match[2], 10) || 0;
-            totalHoras += h + m / 60;
-          }
-        }
+      fichajesFiltrados.forEach((f) => {
+        totalHoras += parseDuracionHours(f.DURACION);
       });
 
-      const promedioHoras = totalFichajes > 0 ? Math.round((totalHoras / totalFichajes) * 100) / 100 : 0;
+      // Media pe salidas cu durată (nu pe toate fichajele, ca să nu dilueze cu Entrada)
+      const salidasConDuracion = fichajesFiltrados.filter(
+        (f) => f.TIPO === 'Salida' && parseDuracionHours(f.DURACION) > 0,
+      ).length;
+      const promedioHoras =
+        salidasConDuracion > 0
+          ? Math.round((totalHoras / salidasConDuracion) * 100) / 100
+          : totalFichajes > 0
+            ? Math.round((totalHoras / totalFichajes) * 100) / 100
+            : 0;
 
       const statsData = {
         totalFichajes,
@@ -149,15 +180,7 @@ export default function EstadisticasFichajesPage() {
         fichajesPorDia[fecha].total++;
         if (f.TIPO === 'Entrada') fichajesPorDia[fecha].entradas++;
         if (f.TIPO === 'Salida') fichajesPorDia[fecha].salidas++;
-        
-        if (f.DURACION) {
-          const match = f.DURACION.match(/(\d+)h\s*(\d+)?m?/);
-          if (match) {
-            const h = parseInt(match[1], 10) || 0;
-            const m = parseInt(match[2], 10) || 0;
-            fichajesPorDia[fecha].horas += h + m / 60;
-          }
-        }
+        fichajesPorDia[fecha].horas += parseDuracionHours(f.DURACION);
 
         // Por empleado
         const email = f['CORREO ELECTRONICO'];
@@ -169,24 +192,21 @@ export default function EstadisticasFichajesPage() {
             entradas: 0,
             salidas: 0,
             horas: 0,
-            nombre: empleadosArray.find(emp => emp['CORREO ELECTRONICO'] === email)?.NOMBRE || email
+            nombre:
+              empleadosArray.find((emp) => emp['CORREO ELECTRONICO'] === email)?.[
+                'NOMBRE / APELLIDOS'
+              ] ||
+              empleadosArray.find((emp) => emp['CORREO ELECTRONICO'] === email)?.NOMBRE ||
+              email,
           };
         }
         fichajesPorEmpleado[email].total++;
         if (f.TIPO === 'Entrada') fichajesPorEmpleado[email].entradas++;
         if (f.TIPO === 'Salida') fichajesPorEmpleado[email].salidas++;
-        
-        if (f.DURACION) {
-          const match = f.DURACION.match(/(\d+)h\s*(\d+)?m?/);
-          if (match) {
-            const h = parseInt(match[1], 10) || 0;
-            const m = parseInt(match[2], 10) || 0;
-            fichajesPorEmpleado[email].horas += h + m / 60;
-          }
-        }
+        fichajesPorEmpleado[email].horas += parseDuracionHours(f.DURACION);
 
         // Por centro
-        const empleado = empleadosArray.find(emp => emp['CORREO ELECTRONICO'] === email);
+        const empleado = empleadosArray.find((emp) => emp['CORREO ELECTRONICO'] === email);
         const centro = empleado?.['CENTRO TRABAJO'] || 'Sin centro';
         if (!fichajesPorCentro[centro]) {
           fichajesPorCentro[centro] = {
@@ -194,21 +214,13 @@ export default function EstadisticasFichajesPage() {
             total: 0,
             entradas: 0,
             salidas: 0,
-            horas: 0
+            horas: 0,
           };
         }
         fichajesPorCentro[centro].total++;
         if (f.TIPO === 'Entrada') fichajesPorCentro[centro].entradas++;
         if (f.TIPO === 'Salida') fichajesPorCentro[centro].salidas++;
-        
-        if (f.DURACION) {
-          const match = f.DURACION.match(/(\d+)h\s*(\d+)?m?/);
-          if (match) {
-            const h = parseInt(match[1], 10) || 0;
-            const m = parseInt(match[2], 10) || 0;
-            fichajesPorCentro[centro].horas += h + m / 60;
-          }
-        }
+        fichajesPorCentro[centro].horas += parseDuracionHours(f.DURACION);
       });
 
       // Convert to arrays and sort
@@ -480,7 +492,7 @@ export default function EstadisticasFichajesPage() {
                 <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
                   <span className="text-white text-lg">🏢</span>
                 </div>
-                <h3 className="text-xl font-bold text-gray-800">Statistici per centru</h3>
+                <h3 className="text-xl font-bold text-gray-800">Estadísticas por centro</h3>
               </div>
               
               <div className="space-y-4">
@@ -501,7 +513,7 @@ export default function EstadisticasFichajesPage() {
                       </div>
                       <div className="text-center">
                         <div className="font-bold text-orange-600">{Math.round(centro.horas)}h</div>
-                        <div className="text-gray-500">Ore</div>
+                        <div className="text-gray-500">Horas</div>
                       </div>
                     </div>
                   </div>

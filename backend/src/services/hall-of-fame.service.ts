@@ -5401,9 +5401,10 @@ scoring AS (
       -- Regularizările confirmate sunt deja incluse în horas_pontate, deci nu penalizăm
     ) AS score_indeplinire,
     GREATEST(0, 100 - 
-      (GREATEST(0, cp.fichajes_incompleto - (cp.regularizaciones_confirmed * 0.5)) * 5) - 
+      (GREATEST(0, cp.fichajes_incompleto - (cp.regularizaciones_confirmed * 0.5)) * 8) - 
       (cp.regularizaciones_pendiente * 5) -
-      (COALESCE(cp.fichajes_sin_direccion, 0) * 3)
+      (COALESCE(cp.fichajes_sin_direccion, 0) * 3) -
+      LEAST(15, COALESCE(tover.tareas_overdue, 0) * 3)
       -- ELIMINAT: - (COALESCE(cp.regularizaciones_confirmed, 0) * 2)
       -- Regularizările confirmate sunt deja incluse în horas_pontate, deci nu penalizăm
     ) AS score_calitate,
@@ -5445,6 +5446,8 @@ scoring AS (
       'regularizaciones_confirmed', COALESCE(cp.regularizaciones_confirmed, 0),
       'regularizaciones_pendiente', COALESCE(cp.regularizaciones_pendiente, 0),
       'fichajes_sin_direccion', COALESCE(cp.fichajes_sin_direccion, 0),
+      'tareas_overdue', COALESCE(tover.tareas_overdue, 0),
+      'penalizacion_tareas', LEAST(15, COALESCE(tover.tareas_overdue, 0) * 3),
       'zile_punctuale', COALESCE(p.zile_punctuale, 0),
       'zile_cu_orar', COALESCE(p.zile_cu_orar, 0),
       'has_orar', eo.has_orar,
@@ -5479,6 +5482,17 @@ scoring AS (
   LEFT JOIN horario_mes hm ON BINARY hm.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
   LEFT JOIN horas_pontate hp ON BINARY hp.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
   LEFT JOIN calitate_pontaj cp ON BINARY cp.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
+  -- Inline (nu CTE): MySQL max 64 WITH elements — query-ul era deja la limită
+  LEFT JOIN (
+    SELECT
+      CAST(ts.codigo_asignado AS CHAR) COLLATE utf8mb4_bin AS empleadoId,
+      COUNT(*) AS tareas_overdue
+    FROM tareas_servicio ts
+    WHERE ts.estado IN ('pendiente', 'en_curso')
+      AND ts.fecha_limite IS NOT NULL
+      AND DATE(ts.fecha_limite) < DATE(@d_today)
+    GROUP BY ts.codigo_asignado
+  ) tover ON BINARY tover.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
   LEFT JOIN zile_neutre zn ON BINARY zn.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
   LEFT JOIN zile_neutre_hasta_hoy znh ON BINARY znh.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin
   LEFT JOIN punctualitate p ON BINARY p.empleadoId = CAST(de.CODIGO AS CHAR) COLLATE utf8mb4_bin

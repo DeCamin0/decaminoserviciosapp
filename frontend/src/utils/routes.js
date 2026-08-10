@@ -577,6 +577,7 @@ export const routes = {
   deleteSentEmail: (id) => `${BACKEND_BASE}/api/sent-emails/${id}`,
   getSentEmailById: (id) => `${BACKEND_BASE}/api/sent-emails/${id}`,
   sendEmail: `${BACKEND_BASE}/api/sent-emails/send`,
+  sendNotification: `${BACKEND_BASE}/api/notifications/send`,
   downloadAttachment: (attachmentId) => `${BACKEND_BASE}/api/sent-emails/attachments/${attachmentId}`,
   
   // Geocoding - Autocompletare adrese

@@ -220,20 +220,31 @@ const HallOfFamePage = () => {
         });
         fetchRanking();
       } else {
+        const errMsg = String(result.error || result.message || '');
+        const isTimeout =
+          /aborted|timeout|AbortError/i.test(errMsg) ||
+          errMsg === 'signal is aborted without reason';
         setNotification({
           type: 'error',
           title: 'Error al calcular',
-          message: result.message || 'No se pudieron calcular los scores',
-          duration: 5000
+          message: isTimeout
+            ? 'El cálculo tarda más de lo esperado. Espera unos minutos y vuelve a intentarlo (no cierres la pestaña).'
+            : errMsg || 'No se pudieron calcular los scores',
+          duration: 8000
         });
       }
     } catch (error) {
       console.error('Error calculating scores:', error);
+      const errMsg = String(error.message || error.name || '');
+      const isTimeout =
+        error.name === 'AbortError' || /aborted|timeout/i.test(errMsg);
       setNotification({
         type: 'error',
         title: 'Error al calcular',
-        message: error.message || 'Ocurrió un error al calcular los scores',
-        duration: 5000
+        message: isTimeout
+          ? 'El cálculo tarda más de lo esperado. Espera unos minutos y vuelve a intentarlo (no cierres la pestaña).'
+          : errMsg || 'Ocurrió un error al calcular los scores',
+        duration: 8000
       });
     } finally {
       setLoading(false);
@@ -1599,6 +1610,9 @@ const HallOfFamePage = () => {
                           <div><strong>Objetivo:</strong> {formatScore(breakdownData.target_ajustat)}h</div>
                           <div><strong>Días neutros:</strong> {breakdownData.dias_neutre || 0}</div>
                           <div><strong>Fichajes incompletos:</strong> {breakdownData.fichajes_incompleto || 0}</div>
+                          {breakdownData.tareas_overdue != null && (
+                            <div><strong>Tareas overdue:</strong> {breakdownData.tareas_overdue || 0}{Number(breakdownData.penalizacion_tareas) > 0 ? ` (−${breakdownData.penalizacion_tareas} cal.)` : ''}</div>
+                          )}
                           <div><strong>Acciones:</strong> {formatScore(breakdownData.acciones_totales)}</div>
                         </div>
                       </div>
@@ -1739,6 +1753,9 @@ const HallOfFamePage = () => {
                           <div><strong>Objetivo:</strong> {formatScore(breakdownData.target_ajustat)}h</div>
                           <div><strong>Días neutros:</strong> {breakdownData.dias_neutre || 0}</div>
                           <div><strong>Fichajes incompletos:</strong> {breakdownData.fichajes_incompleto || 0}</div>
+                          {breakdownData.tareas_overdue != null && (
+                            <div><strong>Tareas overdue:</strong> {breakdownData.tareas_overdue || 0}{Number(breakdownData.penalizacion_tareas) > 0 ? ` (−${breakdownData.penalizacion_tareas} cal.)` : ''}</div>
+                          )}
                           <div><strong>Acciones:</strong> {formatScore(breakdownData.acciones_totales)}</div>
                         </div>
                       </details>

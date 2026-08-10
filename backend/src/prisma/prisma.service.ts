@@ -20,15 +20,17 @@ export class PrismaService
               password: string;
               database: string;
             }>('database');
+            // connection_limit/pool_timeout: pe VPS cu 1 vCPU Prisma default e ~3 și se epuizează sub load
+            const poolQs = 'charset=utf8mb4&connection_limit=10&pool_timeout=20';
             if (db) {
-              return `mysql://${db.username}:${encodeURIComponent(db.password)}@${db.host}:${db.port}/${db.database}?charset=utf8mb4`;
+              return `mysql://${db.username}:${encodeURIComponent(db.password)}@${db.host}:${db.port}/${db.database}?${poolQs}`;
             }
             const host = process.env.DB_HOST || 'localhost';
             const port = process.env.DB_PORT || '3306';
             const user = process.env.DB_USERNAME || 'root';
             const password = process.env.DB_PASSWORD || '';
             const database = process.env.DB_NAME || 'decaminoservicios';
-            return `mysql://${user}:${encodeURIComponent(password)}@${host}:${port}/${database}?charset=utf8mb4`;
+            return `mysql://${user}:${encodeURIComponent(password)}@${host}:${port}/${database}?${poolQs}`;
           })(),
         },
       },

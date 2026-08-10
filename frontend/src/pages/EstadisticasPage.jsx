@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { Button } from '../components/ui';
-import { Link, Navigate } from 'react-router';
+import { Link, Navigate, useNavigate } from 'react-router';
 import Back3DButton from '../components/Back3DButton.jsx';
 import { routes } from '../utils/routes';
 import ChartsSection from '../components/analytics/ChartsSection';
+import StatCard from '../components/analytics/StatCard';
+import SectionCard from '../components/analytics/SectionCard';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
@@ -12,6 +14,7 @@ import { config } from '../config/env.js';
 
 export default function EstadisticasPage() {
   const { user: authUser } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState('mensual');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -39,6 +42,7 @@ export default function EstadisticasPage() {
   const [registrosHoras, setRegistrosHoras] = useState([]);
   const [showSinSalidaModal, setShowSinSalidaModal] = useState(false);
   const [showSalidaIntarziataModal, setShowSalidaIntarziataModal] = useState(false);
+  const chartsRef = useRef(null);
 
   const hasStatisticsPermission = useCallback(() => {
     // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
@@ -534,136 +538,184 @@ export default function EstadisticasPage() {
     { id: 12, label: 'Diciembre' }
   ];
 
+  const empleadosActivosCount = empleados.filter(
+    (emp) => emp.ESTADO?.toString().toUpperCase() === 'ACTIVO',
+  ).length;
+
+  const periodBadgeLabel = (() => {
+    if (selectedPeriod === 'mensual') {
+      const monthLabel = months.find((m) => m.id === selectedMonth)?.label || '';
+      return `Mes: ${monthLabel} ${selectedYear}`;
+    }
+    if (selectedPeriod === 'anual') return `Año: ${selectedYear}`;
+    if (selectedPeriod === 'personalizado') {
+      if (customDateFrom && customDateTo) return `${customDateFrom} → ${customDateTo}`;
+      return 'Período personalizado';
+    }
+    return 'Período';
+  })();
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-50 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-red-600 mx-auto mb-4"></div>
-          <div className="text-red-600 font-bold text-xl">Cargando estadísticas...</div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-3"></div>
+          <div className="text-red-600 font-semibold">Cargando estadísticas...</div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-50">
-      {/* Header modern */}
-      <div className="bg-white shadow-sm border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between py-6">
-            <div className="flex items-center space-x-4">
+    <div className="min-h-screen bg-slate-50">
+      <div className="bg-white border-b border-gray-200">
+        <div className="w-full max-w-[1700px] mx-auto px-6 sm:px-8 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
               <Back3DButton to="/inicio" title="Volver al Inicio" />
-              <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-red-600 rounded-xl flex items-center justify-center">
-                <span className="text-white text-xl">📊</span>
+              <div className="w-9 h-9 bg-red-600 rounded-lg flex items-center justify-center shrink-0">
+                <span className="text-white text-sm">📊</span>
               </div>
-              <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
-                  Estadísticas Avanzadas
-                </h1>
-                <p className="text-gray-500 text-sm">Análisis detallado y reportes</p>
-                {selectedPeriod === 'mensual' && (
-                  <div className="mt-1">
-                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                      📅 Mes actual: {months.find(m => m.id === selectedMonth)?.label} {selectedYear}
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-lg sm:text-xl font-bold text-red-700 truncate">
+                    Estadísticas Avanzadas
+                  </h1>
+                  {selectedPeriod === 'mensual' || selectedPeriod === 'anual' ? (
+                    <div className="inline-flex items-center gap-1.5 rounded-md bg-red-50 border border-red-100 px-1.5 py-1">
+                      {selectedPeriod === 'mensual' && (
+                        <select
+                          aria-label="Seleccionar mes"
+                          value={selectedMonth}
+                          onChange={(e) => {
+                            setSelectedPeriod('mensual');
+                            setSelectedMonth(parseInt(e.target.value, 10));
+                          }}
+                          className="text-xs font-medium text-red-800 bg-transparent border-0 focus:ring-0 focus:outline-none cursor-pointer pr-1 max-w-[9.5rem]"
+                        >
+                          {months.map((month) => (
+                            <option key={month.id} value={month.id}>
+                              {month.label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {selectedPeriod === 'anual' && (
+                        <span className="text-xs font-medium text-red-800 pl-1">Año</span>
+                      )}
+                      <select
+                        aria-label="Seleccionar año"
+                        value={selectedYear}
+                        onChange={(e) => {
+                          setSelectedYear(parseInt(e.target.value, 10));
+                        }}
+                        className="text-xs font-medium text-red-800 bg-transparent border-0 focus:ring-0 focus:outline-none cursor-pointer"
+                      >
+                        {years.map((year) => (
+                          <option key={year} value={year}>
+                            {year}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-red-50 text-red-700 border border-red-100">
+                      {periodBadgeLabel}
                     </span>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 onClick={() => setShowFilters(!showFilters)}
                 variant="outline"
-                className="flex items-center gap-2"
+                className="flex items-center gap-1.5 !py-1.5 !px-3 text-sm"
               >
                 <span>🔍</span>
                 Filtros
               </Button>
+              <button
+                type="button"
+                onClick={() => chartsRef.current?.exportAllChartsToPDF?.()}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                <span>📄</span>
+                Exportar PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const periodNames = {
+                    mensual: 'Mensual',
+                    anual: 'Anual',
+                    personalizado: 'Personalizado',
+                  };
+                  const pageData = {
+                    additionalInfo: [
+                      `[PERIODO] ${periodNames[selectedPeriod] || selectedPeriod}`,
+                      selectedPeriod === 'mensual' ? `[MES] ${selectedMonth}/${selectedYear}` : null,
+                      selectedPeriod === 'anual' ? `[AÑO] ${selectedYear}` : null,
+                      selectedCentro !== 'todos' ? `[CENTRO] ${selectedCentro}` : null,
+                      stats?.totalEmpleados > 0 ? `[EMPLEADOS] ${stats.totalEmpleados} total` : null,
+                      stats?.totalFichajes > 0 ? `[FICHAJES] ${stats.totalFichajes} total` : null,
+                    ].filter(Boolean),
+                  };
+                  const message = buildErrorReportMessage({
+                    authUser,
+                    pageName: 'Estadísticas',
+                    pageData,
+                  });
+                  openWhatsAppErrorReport(message);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 rounded-lg text-sm font-medium transition-colors"
+                title="Reportar Error"
+              >
+                <span>🐛</span>
+                <span className="hidden sm:inline">Reportar</span>
+              </button>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Botón Reportar Error */}
-        <div className="flex justify-end mb-8">
-          <button
-            onClick={() => {
-              // Date relevante pentru pagina de estadisticas
-              const periodNames = {
-                'mensual': 'Mensual',
-                'anual': 'Anual',
-                'personalizado': 'Personalizado'
-              };
-              
-              const pageData = {
-                additionalInfo: [
-                  `[PERIODO] ${periodNames[selectedPeriod] || selectedPeriod}`,
-                  selectedPeriod === 'mensual' ? `[MES] ${selectedMonth}/${selectedYear}` : null,
-                  selectedPeriod === 'anual' ? `[AÑO] ${selectedYear}` : null,
-                  selectedCentro !== 'todos' ? `[CENTRO] ${selectedCentro}` : null,
-                  stats?.totalEmpleados > 0 ? `[EMPLEADOS] ${stats.totalEmpleados} total` : null,
-                  stats?.totalFichajes > 0 ? `[FICHAJES] ${stats.totalFichajes} total` : null,
-                ].filter(Boolean),
-              };
-              
-              const message = buildErrorReportMessage({
-                authUser,
-                pageName: "Estadísticas",
-                pageData,
-              });
-              
-              openWhatsAppErrorReport(message);
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors duration-200 shadow-sm hover:shadow-md"
-          >
-            <span>🐛</span>
-            <span>Reportar Error</span>
-          </button>
-        </div>
-        {/* Filtre moderne */}
+      <div className="w-full max-w-[1700px] mx-auto px-6 sm:px-8 py-5 space-y-5">
         {showFilters && (
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 mb-8">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">Filtros avanzados</h3>
-            
-            {/* Selector de tip perioadă */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-3">Tipo de período</label>
-              <div className="flex gap-3">
-                  {periods.map(period => (
-                    <button
-                      key={period.id}
-                      onClick={() => setSelectedPeriod(period.id)}
-                    className={`flex flex-col items-center gap-2 px-6 py-4 rounded-xl font-medium transition-all duration-200 ${
-                        selectedPeriod === period.id
-                        ? 'bg-red-600 text-white shadow-lg transform scale-105'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                    <span className="text-2xl">{period.icon}</span>
-                    <div className="text-center">
-                      <div className="font-semibold">{period.label}</div>
-                      <div className="text-xs opacity-80">{period.description}</div>
-                    </div>
-                    </button>
-                  ))}
-                </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+            <h3 className="text-base font-bold text-gray-800 mb-3">Filtros avanzados</h3>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de período</label>
+              <div className="flex flex-wrap gap-2">
+                {periods.map((period) => (
+                  <button
+                    key={period.id}
+                    type="button"
+                    onClick={() => setSelectedPeriod(period.id)}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                      selectedPeriod === period.id
+                        ? 'bg-red-600 text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    <span>{period.icon}</span>
+                    <span>{period.label}</span>
+                  </button>
+                ))}
               </div>
-              
-            {/* Configurații specifice pentru fiecare tip */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Anual */}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {selectedPeriod === 'anual' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Selecciona el año</label>
-                  <div className="flex gap-2">
-                    {years.map(year => (
+                  <div className="flex flex-wrap gap-2">
+                    {years.map((year) => (
                       <button
                         key={year}
+                        type="button"
                         onClick={() => setSelectedYear(year)}
-                        className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
                           selectedYear === year
-                            ? 'bg-red-600 text-white shadow-lg'
+                            ? 'bg-red-600 text-white'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                         }`}
                       >
@@ -673,36 +725,35 @@ export default function EstadisticasPage() {
                   </div>
                 </div>
               )}
-
-              {/* Mensual */}
               {selectedPeriod === 'mensual' && (
                 <>
-              <div>
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Selecciona el año</label>
-                <div className="flex gap-2">
-                  {years.map(year => (
-                    <button
-                      key={year}
-                      onClick={() => setSelectedYear(year)}
-                      className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                        selectedYear === year
-                          ? 'bg-red-600 text-white shadow-lg'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {year}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                    <div className="flex flex-wrap gap-2">
+                      {years.map((year) => (
+                        <button
+                          key={year}
+                          type="button"
+                          onClick={() => setSelectedYear(year)}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                            selectedYear === year
+                              ? 'bg-red-600 text-white'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          {year}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Selecciona el mes</label>
                     <select
                       value={selectedMonth}
-                      onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      onChange={(e) => setSelectedMonth(parseInt(e.target.value, 10))}
+                      className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm"
                     >
-                      {months.map(month => (
+                      {months.map((month) => (
                         <option key={month.id} value={month.id}>
                           {month.label}
                         </option>
@@ -711,8 +762,6 @@ export default function EstadisticasPage() {
                   </div>
                 </>
               )}
-
-              {/* Personalizat */}
               {selectedPeriod === 'personalizado' && (
                 <>
                   <div>
@@ -721,7 +770,7 @@ export default function EstadisticasPage() {
                       type="date"
                       value={customDateFrom}
                       onChange={(e) => setCustomDateFrom(e.target.value)}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm"
                     />
                   </div>
                   <div>
@@ -730,21 +779,19 @@ export default function EstadisticasPage() {
                       type="date"
                       value={customDateTo}
                       onChange={(e) => setCustomDateTo(e.target.value)}
-                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm"
                     />
                   </div>
                 </>
               )}
-
-              {/* Centru - întotdeauna vizibil */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Centro</label>
                 <select
                   value={selectedCentro}
                   onChange={(e) => setSelectedCentro(e.target.value)}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm"
                 >
-                  {centros.map(centro => (
+                  {centros.map((centro) => (
                     <option key={centro} value={centro}>
                       {centro === 'todos' ? 'Todos los centros' : centro}
                     </option>
@@ -755,200 +802,161 @@ export default function EstadisticasPage() {
           </div>
         )}
 
-        {/* Grafice principale în locul cardurilor */}
-        <div className="mb-8">
-          <ChartsSection 
-            stats={stats}
-            centros={centros}
-            selectedCentro={selectedCentro}
-            selectedPeriod={selectedPeriod}
-            selectedYear={selectedYear}
-            selectedMonth={selectedMonth}
-            customDateFrom={customDateFrom}
-            customDateTo={customDateTo}
-            empleados={empleados}
-            fichajes={fichajes}
-            registrosHoras={registrosHoras}
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
+          <StatCard
+            label="Total empleados"
+            value={stats.totalEmpleados || empleados.length}
+            icon="👥"
+            accent="slate"
+            title="Ver estadísticas de empleados"
+            onClick={() => navigate('/estadisticas-empleados')}
+          />
+          <StatCard
+            label="Empleados activos"
+            value={empleadosActivosCount}
+            icon="✅"
+            accent="green"
+            title="Ver estadísticas de empleados"
+            onClick={() => navigate('/estadisticas-empleados')}
+          />
+          <StatCard
+            label="Entradas"
+            value={detailedStats.entradas ?? 0}
+            icon="⬇️"
+            accent="green"
+            title="Ver detalles de registros"
+            onClick={() => {
+              document.getElementById('detalles-registros')?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start',
+              });
+            }}
+          />
+          <StatCard
+            label="Salidas"
+            value={detailedStats.salidas ?? 0}
+            icon="⬆️"
+            accent="red"
+            title="Ver detalles de registros"
+            onClick={() => {
+              document.getElementById('detalles-registros')?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start',
+              });
+            }}
+          />
+          <StatCard
+            label="Sin salida"
+            value={detailedStats.sinSalida ?? 0}
+            icon="⚠️"
+            accent="amber"
+            title="Ver empleados sin salida"
+            onClick={() => setShowSinSalidaModal(true)}
+          />
+          <StatCard
+            label="Salidas con retraso"
+            value={detailedStats.salidaIntarziata ?? 0}
+            icon="⏰"
+            accent="orange"
+            title="Ver salidas con retraso"
+            onClick={() => setShowSalidaIntarziataModal(true)}
           />
         </div>
 
-        {/* Statistici detaliate */}
-        {detailedStats && detailedStats.entradas !== undefined && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Fichajes detaliat */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-green-600 rounded-lg flex items-center justify-center">
-                  <span className="text-white text-lg">⏰</span>
-                </div>
-                <h3 className="text-xl font-bold text-gray-800">Detalles de Registros</h3>
-              </div>
-              
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                      <span className="text-white text-sm">⬇️</span>
-                    </div>
-                    <span className="font-medium text-gray-700">Entradas</span>
-                  </div>
-                  <span className="text-2xl font-bold text-green-600">{detailedStats.entradas || 0}</span>
-                </div>
-                
-                <div className="flex items-center justify-between p-4 bg-red-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
-                      <span className="text-white text-sm">⬆️</span>
-                    </div>
-                    <span className="font-medium text-gray-700">Salidas</span>
-                  </div>
-                  <span className="text-2xl font-bold text-red-600">{detailedStats.salidas || 0}</span>
-                </div>
-                
-                <div className="flex items-center justify-between p-4 bg-yellow-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center">
-                      <span className="text-white text-sm">⚠️</span>
-                    </div>
-                    <span className="font-medium text-gray-700">Sin salida</span>
-                    {detailedStats.sinSalida > 0 && detailedStats.faraIesireDetaliat?.length > 0 && (
-                      <button
-                        onClick={() => setShowSinSalidaModal(true)}
-                        className="ml-2 text-yellow-600 hover:text-yellow-700 text-sm underline"
-                        title="Ver detalles"
-                      >
-                        Ver detalles
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl font-bold text-yellow-600">{detailedStats.sinSalida || 0}</span>
-                    {detailedStats.sinSalida > 0 && detailedStats.faraIesireDetaliat?.length > 0 && (
-                      <button
-                        onClick={() => setShowSinSalidaModal(true)}
-                        className="p-1 text-yellow-600 hover:bg-yellow-100 rounded-full transition-colors"
-                        title="Ver detalles"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                </div>
-                
-                <div className="flex items-center justify-between p-4 bg-orange-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-                      <span className="text-white text-sm">⏰</span>
-                    </div>
-                    <span className="font-medium text-gray-700">Salida con retraso</span>
-                    {detailedStats.salidaIntarziata > 0 && detailedStats.salidaIntarziataDetaliat?.length > 0 && (
-                      <button
-                        onClick={() => setShowSalidaIntarziataModal(true)}
-                        className="ml-2 text-orange-600 hover:text-orange-700 text-sm underline"
-                        title="Ver detalles"
-                      >
-                        Ver detalles
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl font-bold text-orange-600">{detailedStats.salidaIntarziata || 0}</span>
-                    {detailedStats.salidaIntarziata > 0 && detailedStats.salidaIntarziataDetaliat?.length > 0 && (
-                      <button
-                        onClick={() => setShowSalidaIntarziataModal(true)}
-                        className="p-1 text-orange-600 hover:bg-orange-100 rounded-full transition-colors"
-                        title="Ver detalles"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
+        <ChartsSection
+          ref={chartsRef}
+          stats={stats}
+          centros={centros}
+          selectedCentro={selectedCentro}
+          selectedPeriod={selectedPeriod}
+          selectedYear={selectedYear}
+          selectedMonth={selectedMonth}
+          customDateFrom={customDateFrom}
+          customDateTo={customDateTo}
+          empleados={empleados}
+          fichajes={fichajes}
+          registrosHoras={registrosHoras}
+        />
 
-            {/* Solicitări detaliat */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
-                  <span className="text-white text-lg">📝</span>
+        {detailedStats && detailedStats.entradas !== undefined && (
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-4 lg:gap-5">
+            <SectionCard id="detalles-registros" title="Detalles de Registros" bodyClassName="!pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-green-50/80 border border-green-100">
+                  <span className="text-sm text-gray-700">Entradas</span>
+                  <span className="text-lg font-bold text-green-700 tabular-nums">{detailedStats.entradas || 0}</span>
                 </div>
-                <h3 className="text-xl font-bold text-gray-800">Detalles de Solicitudes</h3>
-              </div>
-              
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                      <span className="text-white text-sm">📋</span>
-                    </div>
-                    <span className="font-medium text-gray-700">Asuntos Propios</span>
+                <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-red-50/80 border border-red-100">
+                  <span className="text-sm text-gray-700">Salidas</span>
+                  <span className="text-lg font-bold text-red-700 tabular-nums">{detailedStats.salidas || 0}</span>
+                </div>
+                <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-amber-50/80 border border-amber-100">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm text-gray-700">Sin salida</span>
+                    {detailedStats.sinSalida > 0 && detailedStats.faraIesireDetaliat?.length > 0 && (
+                      <button type="button" onClick={() => setShowSinSalidaModal(true)} className="text-amber-700 hover:text-amber-800 text-xs underline">
+                        Ver detalles
+                      </button>
+                    )}
                   </div>
-                  <span className="text-2xl font-bold text-blue-600">{detailedStats.asuntosPropios || 0}</span>
+                  <span className="text-lg font-bold text-amber-700 tabular-nums">{detailedStats.sinSalida || 0}</span>
                 </div>
-                
-                <div className="flex items-center justify-between p-4 bg-purple-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
-                      <span className="text-white text-sm">🏖️</span>
-                    </div>
-                    <span className="font-medium text-gray-700">Vacaciones</span>
+                <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-orange-50/80 border border-orange-100">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm text-gray-700">Salida con retraso</span>
+                    {detailedStats.salidaIntarziata > 0 && detailedStats.salidaIntarziataDetaliat?.length > 0 && (
+                      <button type="button" onClick={() => setShowSalidaIntarziataModal(true)} className="text-orange-700 hover:text-orange-800 text-xs underline">
+                        Ver detalles
+                      </button>
+                    )}
                   </div>
-                  <span className="text-2xl font-bold text-purple-600">{detailedStats.vacaciones || 0}</span>
+                  <span className="text-lg font-bold text-orange-700 tabular-nums">{detailedStats.salidaIntarziata || 0}</span>
                 </div>
               </div>
-            </div>
+            </SectionCard>
+            <SectionCard title="Detalles de Solicitudes" bodyClassName="!pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-blue-50/80 border border-blue-100">
+                  <span className="text-sm text-gray-700">Asuntos propios</span>
+                  <span className="text-lg font-bold text-blue-700 tabular-nums">{detailedStats.asuntosPropios || 0}</span>
+                </div>
+                <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-violet-50/80 border border-violet-100">
+                  <span className="text-sm text-gray-700">Vacaciones</span>
+                  <span className="text-lg font-bold text-violet-700 tabular-nums">{detailedStats.vacaciones || 0}</span>
+                </div>
+              </div>
+            </SectionCard>
           </div>
         )}
 
-
-        {/* Acțiuni rapide */}
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Link 
-            to="/estadisticas-cuadrantes"
-            className="bg-gradient-to-r from-indigo-500 to-indigo-600 text-white rounded-2xl p-6 hover:shadow-xl transition-all duration-300 transform hover:scale-105"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
-                <span className="text-2xl">📋</span>
-              </div>
-              <div>
-                <h3 className="text-xl font-bold">Estadísticas de Cuadrantes</h3>
-                <p className="text-indigo-100">Análisis detallado de programas de trabajo</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Link to="/estadisticas-cuadrantes" className="group bg-white border border-gray-200 rounded-xl p-4 hover:border-indigo-200 hover:shadow-md transition-all">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">📋</div>
+              <div className="min-w-0">
+                <h3 className="font-semibold text-gray-900">Estadísticas de Cuadrantes</h3>
+                <p className="text-sm text-gray-500 mt-0.5">Análisis de programas de trabajo</p>
+                <span className="inline-block mt-2 text-sm font-medium text-indigo-600 group-hover:underline">Ver estadísticas →</span>
               </div>
             </div>
           </Link>
-
-          <Link 
-            to="/estadisticas-empleados"
-            className="bg-gradient-to-r from-green-500 to-green-600 text-white rounded-2xl p-6 hover:shadow-xl transition-all duration-300 transform hover:scale-105"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
-                <span className="text-2xl">👥</span>
-              </div>
-              <div>
-                <h3 className="text-xl font-bold">Estadísticas de Empleados</h3>
-                <p className="text-green-100">Rendimiento y actividad</p>
+          <Link to="/estadisticas-empleados" className="group bg-white border border-gray-200 rounded-xl p-4 hover:border-green-200 hover:shadow-md transition-all">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-green-50 text-green-600 flex items-center justify-center shrink-0">👥</div>
+              <div className="min-w-0">
+                <h3 className="font-semibold text-gray-900">Estadísticas de Empleados</h3>
+                <p className="text-sm text-gray-500 mt-0.5">Rendimiento y actividad</p>
+                <span className="inline-block mt-2 text-sm font-medium text-green-600 group-hover:underline">Ver estadísticas →</span>
               </div>
             </div>
           </Link>
-
-          <Link 
-            to="/estadisticas-fichajes"
-            className="bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-2xl p-6 hover:shadow-xl transition-all duration-300 transform hover:scale-105"
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
-                <span className="text-2xl">⏰</span>
-              </div>
-              <div>
-                <h3 className="text-xl font-bold">Estadísticas de Registros</h3>
-                <p className="text-orange-100">Análisis detallado de horas trabajadas</p>
+          <Link to="/estadisticas-fichajes" className="group bg-white border border-gray-200 rounded-xl p-4 hover:border-orange-200 hover:shadow-md transition-all">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">⏰</div>
+              <div className="min-w-0">
+                <h3 className="font-semibold text-gray-900">Estadísticas de Registros</h3>
+                <p className="text-sm text-gray-500 mt-0.5">Análisis de horas trabajadas</p>
+                <span className="inline-block mt-2 text-sm font-medium text-orange-600 group-hover:underline">Ver estadísticas →</span>
               </div>
             </div>
           </Link>

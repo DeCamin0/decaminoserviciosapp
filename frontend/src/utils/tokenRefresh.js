@@ -23,19 +23,36 @@ const DEFAULT_SESSION_EXPIRED_MESSAGE =
 /** Evita que fetch quede colgado indefinidamente (p. ej. red caída tras expirar sesión). */
 export const API_FETCH_TIMEOUT_MS = 60_000;
 
+/** Hall of Fame calculate: SQL greu + upsert pe toți angajații — poate dura câteva minute. */
+export const HALL_OF_FAME_CALCULATE_TIMEOUT_MS = 10 * 60_000;
+
 /** Renueva el access token cuando quedan menos de 15 min (alineado con JWT ~2h). */
 export const TOKEN_REFRESH_LEAD_MS = 15 * 60 * 1000;
+
+function resolveFetchTimeoutMs(url, options = {}) {
+  if (typeof options.timeoutMs === 'number' && options.timeoutMs > 0) {
+    return options.timeoutMs;
+  }
+  const u = String(url || '');
+  if (
+    u.includes('/api/hall-of-fame/calculate') ||
+    u.includes('/api/hall-of-fame/trimestral/calculate')
+  ) {
+    return HALL_OF_FAME_CALCULATE_TIMEOUT_MS;
+  }
+  return API_FETCH_TIMEOUT_MS;
+}
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = API_FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  const outerSignal = options.signal;
+  const { timeoutMs: _timeoutMs, signal: outerSignal, ...fetchOptions } = options;
   if (outerSignal) {
     if (outerSignal.aborted) controller.abort();
     else outerSignal.addEventListener('abort', () => controller.abort(), { once: true });
   }
   try {
-    return await originalFetch(url, { ...options, signal: controller.signal });
+    return await originalFetch(url, { ...fetchOptions, signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
@@ -296,10 +313,15 @@ export async function fetchWithAuth(url, options = {}) {
   };
 
   // Face request-ul folosind originalFetch pentru a evita loop-uri
-  let response = await fetchWithTimeout(url, {
-    ...options,
-    headers,
-  });
+  const timeoutMs = resolveFetchTimeoutMs(url, options);
+  let response = await fetchWithTimeout(
+    url,
+    {
+      ...options,
+      headers,
+    },
+    timeoutMs,
+  );
 
   // Dacă primim 401 (Unauthorized), încercăm refresh o dată
   if (response.status === 401) {
@@ -309,10 +331,14 @@ export async function fetchWithAuth(url, options = {}) {
       
       // Reîncearcă request-ul cu noul token folosind originalFetch
       headers['Authorization'] = `Bearer ${newToken}`;
-      response = await fetchWithTimeout(url, {
-        ...options,
-        headers,
-      });
+      response = await fetchWithTimeout(
+        url,
+        {
+          ...options,
+          headers,
+        },
+        timeoutMs,
+      );
     } catch (refreshError) {
       console.error('[TokenRefresh] Refresh failed after 401');
       throw refreshError;
