@@ -1063,6 +1063,12 @@ const ChartsSection = forwardRef(({
         tooltip: {
           shared: true,
           intersect: false,
+          followCursor: true,
+          style: {
+            fontSize: '12px'
+          },
+          // Evita que el tooltip quede debajo del header / siguiente sección
+          cssClass: 'productivos-apex-tooltip',
           custom: ({ dataPointIndex }) => {
             const emp = list[dataPointIndex];
             if (!emp) return '';
@@ -2178,13 +2184,26 @@ const ChartsSection = forwardRef(({
                   </div>
                 )}
 
-                <div className="space-y-6">
+                <div className="space-y-6 productivos-charts-wrap">
+                  <style>{`
+                    .productivos-charts-wrap .apexcharts-tooltip,
+                    .productivos-charts-wrap .productivos-apex-tooltip {
+                      z-index: 60 !important;
+                      overflow: visible !important;
+                      pointer-events: none;
+                    }
+                    .productivos-charts-wrap .apexcharts-inner,
+                    .productivos-charts-wrap .apexcharts-canvas,
+                    .productivos-charts-wrap .apexcharts-svg {
+                      overflow: visible !important;
+                    }
+                  `}</style>
                   {productivosSectionsCharts.map((section) => (
                     <div
                       key={section.grupo}
-                      className="rounded-xl border border-gray-200 bg-white overflow-hidden"
+                      className="relative z-0 hover:z-30 focus-within:z-30 rounded-xl border border-gray-200 bg-white overflow-visible shadow-sm"
                     >
-                      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 border-b border-gray-100 bg-gray-50">
+                      <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 border-b border-gray-100 bg-gray-50 rounded-t-xl">
                         <div className="min-w-0">
                           <h3 className="text-sm font-bold text-gray-900 truncate">{section.grupo}</h3>
                           <p className="text-xs text-gray-500">
@@ -2217,7 +2236,10 @@ const ChartsSection = forwardRef(({
                           )}
                         </div>
                       </div>
-                      <div className="p-2 cursor-pointer" title="Clic en un empleado para ver sus registros">
+                      <div
+                        className="relative z-20 overflow-visible p-2"
+                        title="Clic en un empleado para ver sus registros"
+                      >
                         <Chart
                           options={section.chart.options}
                           series={section.chart.series}
