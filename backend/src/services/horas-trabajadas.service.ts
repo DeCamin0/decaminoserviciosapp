@@ -815,13 +815,15 @@ export class HorasTrabajadasService {
         zileAll = [];
       }
 
-      // Plan complet lunar (din toate zilele)
+      // Plan complet lunar: suma daily_plan (baja/vac/fiesta/ausencia → 0).
+      // NO prefera horas_cuadrante_mes: acel câmp e brut și nu aplică MutuaCasos.
       const planFromZileAll = zileAll.reduce(
         (a, z) => a + Number(z.plan ?? 0),
         0,
       );
-      const planCuadrante = toNum(emp.horas_cuadrante_mes, planFromZileAll);
-      const totalPlanFull = planCuadrante || planFromZileAll;
+      const planCuadrante = toNum(emp.horas_cuadrante_mes, 0);
+      const totalPlanFull =
+        zileAll.length > 0 ? planFromZileAll : planCuadrante;
 
       // Zile afișate (tăiem la ziua curentă DOAR dacă e luna curentă)
       const cutoff = lunaSelectata === currentYYYYMM ? today.d : 31;

@@ -350,12 +350,27 @@ const ChartsSection = forwardRef(({
         const horasContratoSemanal = toHours(
           item.horas_contrato ?? item['HORAS DE CONTRATO'] ?? item.horasContrato
         );
-        const planHastaHoy = toHours(item.plan_hasta_hoy ?? item.planHastaHoy);
+        const planHastaHoyRaw = item.plan_hasta_hoy ?? item.planHastaHoy;
+        const hasPlanHastaHoyField =
+          planHastaHoyRaw != null && planHastaHoyRaw !== '';
+        const planHastaHoy = toHours(planHastaHoyRaw);
+        let planLegitimatelyZero = false;
+
+        let detaliiZilnice = item.detalii_zilnice ?? item.detalles_diarios ?? null;
+        if (typeof detaliiZilnice === 'string') {
+          try {
+            detaliiZilnice = JSON.parse(detaliiZilnice || '[]');
+          } catch {
+            detaliiZilnice = null;
+          }
+        }
+        const hasDetaliiZilnice = Array.isArray(detaliiZilnice) && detaliiZilnice.length > 0;
 
         if (selectedPeriod === 'anual') {
-          // Año en curso: comparar contra plan hasta hoy si existe
-          if (isAnoEnCurso && planHastaHoy > 0) {
+          // Año en curso: plan_hasta_hoy (incluido 0 = baja/vac/fiesta hasta hoy)
+          if (isAnoEnCurso && hasPlanHastaHoyField) {
             horasPlan = planHastaHoy;
+            planLegitimatelyZero = planHastaHoy <= 0;
           } else {
             horasPlan = toHours(
               item.total_plan_anual ?? item.total_plan ?? item.horas_plan_anual ?? item.horas_mes
@@ -398,13 +413,16 @@ const ChartsSection = forwardRef(({
           const day = dayOfMonth;
 
           if (isMesEnCurso) {
-            if (planHastaHoy > 0) {
+            // plan_hasta_hoy=0 es válido (toda la baja/vacaciones): NO prorratear total_plan bruto
+            if (hasPlanHastaHoyField || hasDetaliiZilnice) {
               horasPlan = planHastaHoy;
+              planLegitimatelyZero = planHastaHoy <= 0;
             } else if (planMesCompleto > 0) {
               horasPlan = +((planMesCompleto * day) / daysInMonth).toFixed(2);
             }
           } else {
             horasPlan = planMesCompleto;
+            planLegitimatelyZero = hasDetaliiZilnice && planMesCompleto <= 0;
           }
 
           horasPermitidas = toHours(
@@ -428,13 +446,16 @@ const ChartsSection = forwardRef(({
           }
         }
 
-        // Previstas: plan (hasta hoy si mes/año en curso) → permitidas → media contrato
+        // Previstas: plan (hasta hoy) → si plan=0 por baja/vac no usar contrato/permitidas
         let horasPrevistas = 0;
         let fuentePrevistas = null;
         if (horasPlan > 0) {
           horasPrevistas = horasPlan;
           fuentePrevistas =
             isMesEnCurso || isAnoEnCurso ? 'plan hasta hoy' : 'plan';
+        } else if (planLegitimatelyZero) {
+          horasPrevistas = 0;
+          fuentePrevistas = 'plan (0)';
         } else if (horasPermitidas > 0) {
           horasPrevistas = horasPermitidas;
           fuentePrevistas =
@@ -452,15 +473,12 @@ const ChartsSection = forwardRef(({
         let fichadoHoy = 0;
         let jornadaHoyAbierta = false;
         if (isMesEnCurso && horasPrevistas > 0) {
+          let todayPlanKnown = false;
           try {
-            let zile = item.detalii_zilnice ?? item.detalles_diarios ?? null;
-            if (typeof zile === 'string') {
-              zile = JSON.parse(zile || '[]');
-            }
-            if (Array.isArray(zile)) {
+            if (hasDetaliiZilnice) {
               const todayNum = now.getDate();
               const todayStr = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-${String(todayNum).padStart(2, '0')}`;
-              const todayZ = zile.find((z) => {
+              const todayZ = detaliiZilnice.find((z) => {
                 const zi = Number(z.zi ?? z.dia ?? z.day);
                 if (Number.isFinite(zi) && zi === todayNum) return true;
                 const ds = String(z.data || z.fecha || z.date || '');
@@ -469,13 +487,14 @@ const ChartsSection = forwardRef(({
               if (todayZ) {
                 planHoy = Number(todayZ.plan ?? 0) || 0;
                 fichadoHoy = Number(todayZ.fichado ?? todayZ.trabajadas ?? 0) || 0;
+                todayPlanKnown = true;
               }
             }
           } catch {
             /* ignore */
           }
-          // Fallback: si no hay detalle diario, asumir 1 día medio del plan prorrateado
-          if (planHoy <= 0 && dayOfMonth > 0) {
+          // Solo inventar plan de hoy si no hay detalle diario del día
+          if (!todayPlanKnown && planHoy <= 0 && dayOfMonth > 0) {
             planHoy = +(horasPrevistas / dayOfMonth).toFixed(2);
           }
           jornadaHoyAbierta = planHoy > EPS && fichadoHoy < planHoy - EPS;
