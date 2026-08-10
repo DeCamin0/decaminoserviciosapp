@@ -38,6 +38,12 @@ const getMonthName = (monthNumber) => MONTH_NAMES[monthNumber - 1] || 'Mes';
 /** Duración de un único fichaje por encima de esto = anómala (olvido de salida, etc.) */
 const DURACION_ANOMALA_HORAS = 16;
 
+/**
+ * Umbral de alerta vs plan en Top Productivos (exceso / déficit).
+ * Diferencias menores (ej. +0.2h por minutos de fichaje) no cuentan como alerta.
+ */
+const ALERTA_DIFF_HORAS = 1;
+
 const convertToDecimal = (value) => {
   if (typeof value === 'number') return value;
   if (typeof value !== 'string') return 0;
@@ -506,13 +512,35 @@ const ChartsSection = forwardRef(({
 
         const diff =
           horasPrevistas > 0 ? +(horasDecimal - horasPrevistas).toFixed(2) : null;
-        const supera = horasPrevistas > 0 && horasDecimal - horasPrevistas > EPS;
-        const bajoPlan = horasPrevistas > 0 && horasPrevistas - horasDecimal > EPS;
-        const sinFichajes = horasPrevistas > 0 && horasDecimal <= EPS;
-        const dentroPlan =
-          horasPrevistas > 0 ? Math.min(horasDecimal, horasPrevistas) : horasDecimal;
-        const exceso = horasPrevistas > 0 ? Math.max(0, horasDecimal - horasPrevistas) : 0;
-        const deficit = horasPrevistas > 0 ? Math.max(0, horasPrevistas - horasDecimal) : 0;
+        // Alertas solo si la diferencia supera 1h (evita ruido de minutos)
+        const supera =
+          horasPrevistas > 0 &&
+          horasDecimal - horasPrevistas > ALERTA_DIFF_HORAS;
+        const bajoPlan =
+          horasPrevistas > 0 &&
+          horasPrevistas - horasDecimal > ALERTA_DIFF_HORAS;
+        const sinFichajes = bajoPlan && horasDecimal <= EPS;
+        // Barras: dentro de ±1h se muestra todo en verde (sin exceso/déficit visual)
+        let dentroPlan;
+        let exceso;
+        let deficit;
+        if (horasPrevistas <= 0) {
+          dentroPlan = horasDecimal;
+          exceso = 0;
+          deficit = 0;
+        } else if (supera) {
+          dentroPlan = horasPrevistas;
+          exceso = +(horasDecimal - horasPrevistas).toFixed(2);
+          deficit = 0;
+        } else if (bajoPlan) {
+          dentroPlan = horasDecimal;
+          exceso = 0;
+          deficit = +(horasPrevistas - horasDecimal).toFixed(2);
+        } else {
+          dentroPlan = horasDecimal;
+          exceso = 0;
+          deficit = 0;
+        }
 
         const codigo = String(
           item.empleadoId ?? item.CODIGO ?? item.codigo ?? item.Codigo ?? ''
@@ -2203,7 +2231,7 @@ const ChartsSection = forwardRef(({
                 </div>
 
                 <p className="mt-3 text-xs text-gray-500">
-                  Agrupado por GRUPO · En el mes/año en curso se compara con el plan hasta hoy · Verde = plan · Amarillo = déficit · Rojo = exceso · Clic para registros.
+                  Agrupado por GRUPO · En el mes/año en curso se compara con el plan hasta hoy · Verde = plan · Amarillo/rojo solo si la diferencia supera {ALERTA_DIFF_HORAS}h · Clic para registros.
                 </p>
               </div>
             )
