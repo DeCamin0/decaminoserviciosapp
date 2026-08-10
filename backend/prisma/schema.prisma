@@ -1435,10 +1435,12 @@ model VacacionesDisponibilidadConfig {
   @@map("vacaciones_disponibilidad_config")
 }
 
-/// Fila única id=1: máximo de Asuntos Propios el mismo día (global)
+/// Fila única id=1: cupo diario global + días AP anuales por empleado (toda la empresa)
 model AsuntosPropiosDisponibilidadConfig {
   id               Int      @id
   max_personas_dia Int      @default(3) @map("max_personas_dia")
+  /// Días de Asunto Propio por empleado y año (igual para toda la empresa)
+  dias_anuales     Int      @default(6) @map("dias_anuales")
   updated_at       DateTime @default(now()) @updatedAt @map("updated_at") @db.DateTime(0)
 
   @@map("asuntos_propios_disponibilidad_config")

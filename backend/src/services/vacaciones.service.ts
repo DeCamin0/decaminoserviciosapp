@@ -10,6 +10,27 @@ export class VacacionesService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
+   * Días de Asuntos Propios anuales (toda la empresa). Configurable en
+   * asuntos_propios_disponibilidad_config.dias_anuales.
+   */
+  private async getAsuntosPropiosDiasAnualesEmpresa(): Promise<number> {
+    try {
+      const row =
+        await this.prisma.asuntosPropiosDisponibilidadConfig.findUnique({
+          where: { id: 1 },
+        });
+      const raw = row ? Number(row.dias_anuales) : 6;
+      if (!Number.isFinite(raw)) return 6;
+      return Math.min(365, Math.max(0, Math.round(raw)));
+    } catch (e: any) {
+      this.logger.warn(
+        `getAsuntosPropiosDiasAnualesEmpresa fallback 6: ${e?.message}`,
+      );
+      return 6;
+    }
+  }
+
+  /**
    * Obtiene el convenio de un empleado según su GRUPO
    */
   private async getConvenioByGrupo(grupo: string | null): Promise<{
@@ -457,10 +478,13 @@ export class VacacionesService {
         };
       }
 
-      // Obtener convenio según GRUPO (solo si no hay valores personalizados)
-      const convenio = await this.getConvenioByGrupo(empleado.GRUPO);
+      // Obtener convenio según GRUPO (vacaciones) + config empresa (asuntos propios)
+      const [convenio, diasApEmpresa] = await Promise.all([
+        this.getConvenioByGrupo(empleado.GRUPO),
+        this.getAsuntosPropiosDiasAnualesEmpresa(),
+      ]);
 
-      // Usar valores personalizados si existen, sino usar convenio
+      // Usar valores personalizados si existen, sino convenio (vacaciones) / config empresa (AP)
       const diasVacacionesAnuales =
         vacacionesPersonalizadas !== null
           ? vacacionesPersonalizadas
@@ -469,19 +493,18 @@ export class VacacionesService {
       const diasAsuntosPropiosAnuales =
         asuntosPersonalizados !== null
           ? asuntosPersonalizados
-          : convenio?.dias_asuntos_propios_anuales || 0;
+          : diasApEmpresa;
 
-      if (
-        !convenio &&
-        vacacionesPersonalizadas === null &&
-        asuntosPersonalizados === null
-      ) {
-        // Si no hay convenio ni valores personalizados, retornar valores por defecto (0)
-        // (algunos grupos como Developer, Supervisor no tienen convenio asignado)
+      if (!convenio && vacacionesPersonalizadas === null) {
+        // Sin convenio: vacaciones 0; AP sigue la config global (o personalizado)
         const restantesAnoAnteriorDefault =
           empleado.VACACIONES_RESTANTES_ANO_ANTERIOR
             ? Number(empleado.VACACIONES_RESTANTES_ANO_ANTERIOR)
             : 0;
+        const diasConsumidosAp = await this.calcularDiasConsumidos(
+          codigo,
+          'Asunto Propio',
+        );
         return {
           vacaciones: {
             dias_anuales: 0,
@@ -492,9 +515,12 @@ export class VacacionesService {
             dias_restantes: Math.max(0, restantesAnoAnteriorDefault),
           },
           asuntos_propios: {
-            dias_anuales: 0,
-            dias_consumidos_aprobados: 0,
-            dias_restantes: 0,
+            dias_anuales: diasAsuntosPropiosAnuales,
+            dias_consumidos_aprobados: diasConsumidosAp,
+            dias_restantes: Math.max(
+              0,
+              diasAsuntosPropiosAnuales - diasConsumidosAp,
+            ),
           },
         };
       }

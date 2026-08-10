@@ -894,6 +894,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   const [totalAusenciaDuration, setTotalAusenciaDuration] = useState(null);
   const [totalFichajeDuration, setTotalFichajeDuration] = useState(null);
   const [totalAsuntoPropioDays, setTotalAsuntoPropioDays] = useState(null);
+  const [asuntosPropiosDiasAnuales, setAsuntosPropiosDiasAnuales] = useState(6);
   const [totalVacacionesDays, setTotalVacacionesDays] = useState(null);
   const [monthlyAlerts, setMonthlyAlerts] = useState(null);
   const [loadingAlerts, setLoadingAlerts] = useState(false);
@@ -1617,6 +1618,19 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         
         loggerDebug('Total Asunto Propio days:', totalAsuntoPropioDays);
         setTotalAsuntoPropioDays(totalAsuntoPropioDays);
+
+        try {
+          if (routes.getAsuntosPropiosMaxPorDia) {
+            const cfgRes = await callApi(routes.getAsuntosPropiosMaxPorDia, { method: 'GET' });
+            const cfg = cfgRes?.data ?? cfgRes;
+            const d = Number(cfg?.dias_anuales);
+            if (Number.isFinite(d) && d >= 0 && d <= 365) {
+              setAsuntosPropiosDiasAnuales(d);
+            }
+          }
+        } catch (_) {
+          /* keep default 6 */
+        }
         
         // Calculează totalul de zile pentru Vacaciones
         let totalVacacionesDays = 0;
@@ -3719,11 +3733,11 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                     )}
                     {activeTab === 'ausencias' && totalAsuntoPropioDays && totalAsuntoPropioDays > 0 && (
                       <span className={`ml-2 inline-flex items-center px-2 py-1 text-xs font-medium rounded-full border ${
-                        totalAsuntoPropioDays >= 6 
+                        totalAsuntoPropioDays >= asuntosPropiosDiasAnuales 
                           ? 'bg-red-100 text-red-800 border-red-200' 
                           : 'bg-purple-100 text-purple-800 border-purple-200'
                       }`}>
-                        📅 Asunto Propio: {totalAsuntoPropioDays}/6 días
+                        📅 Asunto Propio: {totalAsuntoPropioDays}/{asuntosPropiosDiasAnuales} días
                       </span>
                     )}
                     {activeTab === 'ausencias' && totalVacacionesDays && totalVacacionesDays > 0 && (
@@ -4836,7 +4850,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
   const [fichajeReminderSending, setFichajeReminderSending] = useState(false);
   const [fichajeReminderPreview, setFichajeReminderPreview] = useState(null);
 
-  // Funcție pentru ștergerea unui registro
+  // Funcție pentru ștergerea unui registro (idx = index în lista completă `registros`)
   const handleDeleteRegistro = useCallback(async (idx) => {
     if (idx < 0 || idx >= registros.length) {
       throw new Error('Invalid registro index');
@@ -4870,8 +4884,8 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
     const result = await response.json();
     
     if (result.success) {
-      // Elimină registro-ul din listă
-      const updatedRegistros = registros.filter((_, i) => i !== idx);
+      const deletedId = registro.id;
+      const updatedRegistros = registros.filter((r) => r.id !== deletedId);
       setRegistros(updatedRegistros);
       setFiltered(updatedRegistros);
       
@@ -6312,15 +6326,25 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
   };
 
   const handleDelete = async (idx) => {
-    // Verificăm dacă registro-ul există
-    if (idx < 0 || idx >= registros.length) {
-      logError('Invalid registro index:', idx);
+    // IMPORTANT: idx e din lista afișată (filtered ± selectedEmpleado), NU din registros
+    const displayedRegistros = selectedEmpleado
+      ? filtered.filter((item) => item.empleado === selectedEmpleado)
+      : filtered;
+    const registroData = displayedRegistros[idx];
+    if (!registroData?.id) {
+      logError('Invalid registro for delete at displayed index:', idx);
       return;
     }
-    
+
+    const realIdx = registros.findIndex((r) => r.id === registroData.id);
+    if (realIdx < 0) {
+      logError('Registro id not found in registros:', registroData.id);
+      return;
+    }
+
     setDeleteConfirmDialog({
       isOpen: true,
-      registroIndex: idx
+      registroIndex: realIdx,
     });
   };
   return (

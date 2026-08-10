@@ -327,42 +327,73 @@ export class SolicitudesService {
     await this.prisma.asuntoPropioBlockedPeriod.delete({ where: { id } });
   }
 
-  /** Máximo de personas con Asunto Propio el mismo día (global), configurable (id=1). */
+  /** Config global Asuntos Propios (id=1): cupo diario + días anuales por empleado. */
   async getAsuntosPropiosMaxPersonasDia(): Promise<{
     max_personas_dia: number;
+    dias_anuales: number;
   }> {
     try {
       const row =
         await this.prisma.asuntosPropiosDisponibilidadConfig.findUnique({
           where: { id: 1 },
         });
-      const raw = row ? Number(row.max_personas_dia) : 3;
-      const n = Math.min(50, Math.max(1, Math.round(raw)));
-      return { max_personas_dia: n };
+      const rawPersonas = row ? Number(row.max_personas_dia) : 3;
+      const rawDias = row ? Number(row.dias_anuales) : 6;
+      return {
+        max_personas_dia: Math.min(50, Math.max(1, Math.round(rawPersonas))),
+        dias_anuales: Math.min(365, Math.max(0, Math.round(rawDias))),
+      };
     } catch (e: any) {
       this.logger.warn(
-        `getAsuntosPropiosMaxPersonasDia fallback 3: ${e?.message}`,
+        `getAsuntosPropiosMaxPersonasDia fallback 3/6: ${e?.message}`,
       );
-      return { max_personas_dia: 3 };
+      return { max_personas_dia: 3, dias_anuales: 6 };
     }
   }
 
   async setAsuntosPropiosMaxPersonasDia(
-    maxPersonas: number,
-  ): Promise<{ max_personas_dia: number }> {
-    if (!Number.isFinite(maxPersonas)) {
-      throw new BadRequestException('max_personas_dia no es un número válido');
+    maxPersonas?: number,
+    diasAnuales?: number,
+  ): Promise<{ max_personas_dia: number; dias_anuales: number }> {
+    const current = await this.getAsuntosPropiosMaxPersonasDia();
+    let nextPersonas = current.max_personas_dia;
+    let nextDias = current.dias_anuales;
+
+    if (maxPersonas !== undefined && maxPersonas !== null) {
+      if (!Number.isFinite(maxPersonas)) {
+        throw new BadRequestException('max_personas_dia no es un número válido');
+      }
+      const n = Math.round(Number(maxPersonas));
+      if (n < 1 || n > 50) {
+        throw new BadRequestException('max_personas_dia debe estar entre 1 y 50');
+      }
+      nextPersonas = n;
     }
-    const n = Math.round(Number(maxPersonas));
-    if (n < 1 || n > 50) {
-      throw new BadRequestException('max_personas_dia debe estar entre 1 y 50');
+
+    if (diasAnuales !== undefined && diasAnuales !== null) {
+      if (!Number.isFinite(diasAnuales)) {
+        throw new BadRequestException('dias_anuales no es un número válido');
+      }
+      const d = Math.round(Number(diasAnuales));
+      if (d < 0 || d > 365) {
+        throw new BadRequestException('dias_anuales debe estar entre 0 y 365');
+      }
+      nextDias = d;
     }
+
     await this.prisma.asuntosPropiosDisponibilidadConfig.upsert({
       where: { id: 1 },
-      create: { id: 1, max_personas_dia: n },
-      update: { max_personas_dia: n },
+      create: {
+        id: 1,
+        max_personas_dia: nextPersonas,
+        dias_anuales: nextDias,
+      },
+      update: {
+        max_personas_dia: nextPersonas,
+        dias_anuales: nextDias,
+      },
     });
-    return { max_personas_dia: n };
+    return { max_personas_dia: nextPersonas, dias_anuales: nextDias };
   }
 
   private async checkAsuntoPropioBlockedPeriods(

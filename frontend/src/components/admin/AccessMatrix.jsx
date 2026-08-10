@@ -47,6 +47,7 @@ export default function AccessMatrix() {
     { id: 'fichar-admin', name: 'Fichar Admin', icon: '⏰', description: 'Registro de jornada completo (todos los fichajes y gestión)' },
     { id: 'solicitudes-empleados', name: 'Solicitudes Empleados', icon: '📝', description: 'Solicitudes limitadas (solo mis solicitudes)' },
     { id: 'solicitudes-admin', name: 'Solicitudes Admin', icon: '📝', description: 'Solicitudes completas (todas las solicitudes y estadísticas)' },
+    { id: 'asuntos-propios', name: 'Asuntos Propios', icon: '📅', description: 'Derecho a solicitar AP en «Nueva Solicitud» (no afecta crear solicitud para empleado)' },
     { id: 'documentos', name: 'Documentos', icon: '📄', description: 'Documentos y nóminas' },
     { id: 'documentos-empleados', name: 'Documentos Empleados', icon: '📂', description: 'Archivos por empleado' },
     { id: 'prl-documentos', name: 'Documentos PRL', icon: '🛡️', description: 'PRL: plantillas, envíos y firma por grupo' },

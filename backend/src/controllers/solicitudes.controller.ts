@@ -467,7 +467,7 @@ export class SolicitudesController {
     return this.solicitudesService.getAsuntoPropioBlockedPeriods();
   }
 
-  /** Límite diario global Asuntos Propios (1–50). Cualquier usuario autenticado (calendario). */
+  /** Config global Asuntos Propios: cupo diario + días anuales. Cualquier autenticado (GET). */
   @Get('asuntos-propios-max-por-dia')
   async getAsuntosPropiosMaxPorDia() {
     return this.solicitudesService.getAsuntosPropiosMaxPersonasDia();
@@ -476,23 +476,28 @@ export class SolicitudesController {
   @Put('asuntos-propios-max-por-dia')
   async putAsuntosPropiosMaxPorDia(
     @CurrentUser() user: any,
-    @Body() body: { max_personas_dia?: number },
+    @Body()
+    body: { max_personas_dia?: number; dias_anuales?: number },
   ) {
     const grupo = user?.GRUPO || user?.grupo || '';
     const allowed = ['Admin', 'Developer', 'Manager', 'Supervisor'];
     if (!allowed.includes(grupo)) {
       throw new BadRequestException(
-        'Solo managers pueden cambiar el límite diario de Asuntos Propios.',
+        'Solo managers pueden cambiar la config de Asuntos Propios.',
       );
     }
-    if (
-      body?.max_personas_dia === undefined ||
-      body?.max_personas_dia === null
-    ) {
-      throw new BadRequestException('max_personas_dia es obligatorio');
+    const hasPersonas =
+      body?.max_personas_dia !== undefined && body?.max_personas_dia !== null;
+    const hasDias =
+      body?.dias_anuales !== undefined && body?.dias_anuales !== null;
+    if (!hasPersonas && !hasDias) {
+      throw new BadRequestException(
+        'Indica max_personas_dia y/o dias_anuales',
+      );
     }
     return this.solicitudesService.setAsuntosPropiosMaxPersonasDia(
-      Number(body.max_personas_dia),
+      hasPersonas ? Number(body.max_personas_dia) : undefined,
+      hasDias ? Number(body.dias_anuales) : undefined,
     );
   }
 

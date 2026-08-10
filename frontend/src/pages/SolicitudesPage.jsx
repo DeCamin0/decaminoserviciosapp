@@ -38,6 +38,7 @@ const MONTHS = [
 
 /** Valor por defecto hasta cargar el límite desde la API (gestión). */
 const DEFAULT_ASUNTOS_PROPIOS_MAX_POR_DIA = 3;
+const DEFAULT_ASUNTOS_PROPIOS_DIAS_ANUALES = 6;
 
 function isTipoAsuntoPropio(tipo) {
   const t = String(tipo || '').trim().toLowerCase();
@@ -2005,7 +2006,13 @@ export default function SolicitudesPage() {
   const [asuntosPropiosMaxPorDia, setAsuntosPropiosMaxPorDia] = useState(
     DEFAULT_ASUNTOS_PROPIOS_MAX_POR_DIA,
   );
+  const [asuntosPropiosDiasAnuales, setAsuntosPropiosDiasAnuales] = useState(
+    DEFAULT_ASUNTOS_PROPIOS_DIAS_ANUALES,
+  );
   const [apMaxPersonasDraft, setApMaxPersonasDraft] = useState('3');
+  const [apDiasAnualesDraft, setApDiasAnualesDraft] = useState(
+    String(DEFAULT_ASUNTOS_PROPIOS_DIAS_ANUALES),
+  );
   const [savingApMaxPersonas, setSavingApMaxPersonas] = useState(false);
 
   // Conflicte MANUAL vs MUTUA (după upload Excel)
@@ -2014,11 +2021,17 @@ export default function SolicitudesPage() {
   const [bajaConflictChoices, setBajaConflictChoices] = useState({}); // key -> action
   
   // Modal pentru manager să creeze solicitări pentru angajați
+  // State SEPARAT de Nueva Solicitud — Access Matrix «asuntos-propios» nu se aplică aici
   const [showManagerSolicitudModal, setShowManagerSolicitudModal] = useState(false);
   const [managerSelectedEmpleado, setManagerSelectedEmpleado] = useState(null); // { codigo, nombre, email }
   const [managerEmpleadoSearch, setManagerEmpleadoSearch] = useState('');
   const [managerShowEmpleadoDropdown, setManagerShowEmpleadoDropdown] = useState(false);
   const [managerAutoApprove, setManagerAutoApprove] = useState(true); // Checkbox "Aprobar automáticamente"
+  const [managerTipo, setManagerTipo] = useState('Asuntos Propios');
+  const [managerFechaInicio, setManagerFechaInicio] = useState('');
+  const [managerFechaFin, setManagerFechaFin] = useState('');
+  const [managerFechaUltimoDiaTrabajo, setManagerFechaUltimoDiaTrabajo] = useState('');
+  const [managerMotivo, setManagerMotivo] = useState('');
   
   // Ausencias states
   const [allAusencias, setAllAusencias] = useState([]);
@@ -2159,6 +2172,11 @@ export default function SolicitudesPage() {
   // Folosim DOAR permisiunile din backend - fără fallback la isManager
   const hasSolicitudesEmpleadosPermission = hasBackendPermissions ? hasPermission('solicitudes-empleados') : false;
   const hasSolicitudesAdminPermission = hasBackendPermissions ? hasPermission('solicitudes-admin') : false;
+  /** Derecho a solicitar Asuntos Propios en «Nueva Solicitud» (Access Matrix).
+   *  NO aplica a «Crear Solicitud para Empleado» (admin) — ese flujo usa state manager*. */
+  const canRequestAsuntosPropios = hasBackendPermissions
+    ? hasPermission('asuntos-propios')
+    : false;
   
   // Acces complet dacă are solicitudes-admin (DOAR din backend)
   const canAccessAllTabs = hasSolicitudesAdminPermission;
@@ -3159,13 +3177,10 @@ export default function SolicitudesPage() {
 
 
 
-  // Reset calendar when tipo changes
+  // Reset calendar when tipo changes (solo formulario personal / Nueva Solicitud)
   useEffect(() => {
-    const currentUserGroup = authUser?.['GRUPO'] || authUser?.grupo || '';
-    const allowedGroups = ['Limpiador', 'Developer', 'Auxiliar De Servicios - L'];
-
-    // If user is not in allowed groups and has Asuntos Propios selected, reset to Vacaciones
-    if (tipo === 'Asuntos Propios' && !allowedGroups.includes(currentUserGroup)) {
+    // Sin permiso Access Matrix → no Asuntos Propios en petición propia
+    if (tipo === 'Asuntos Propios' && !loadingPermissions && !canRequestAsuntosPropios) {
       setTipo('Vacaciones');
       return;
     }
@@ -3175,24 +3190,21 @@ export default function SolicitudesPage() {
       setCalendarMonth(new Date().getMonth());
       setCalendarYear(new Date().getFullYear());
     }
-  }, [tipo, authUser]);
+  }, [tipo, canRequestAsuntosPropios, loadingPermissions]);
 
 
 
   // Load occupied dates when calendar month/year changes or when tipo is Vacaciones o Asunto Propio
   useEffect(() => {
-    const currentUserGroup = authUser?.['GRUPO'] || authUser?.grupo || '';
-    const allowedGroups = ['Limpiador', 'Developer', 'Auxiliar De Servicios - L'];
-
     if (tipo === 'Vacaciones') {
       loadOccupiedDates(calendarYear, calendarMonth);
-    } else if (isTipoAsuntoPropio(tipo) && allowedGroups.includes(currentUserGroup)) {
+    } else if (isTipoAsuntoPropio(tipo) && canRequestAsuntosPropios) {
       loadOccupiedDates(calendarYear, calendarMonth);
     } else {
       setOccupiedDates(prev => (prev.length === 0 ? prev : []));
       setDateAvailability(prev => (Object.keys(prev || {}).length === 0 ? prev : {}));
     }
-  }, [calendarYear, calendarMonth, tipo, authUser, loadOccupiedDates, asuntosPropiosMaxPorDia]);
+  }, [calendarYear, calendarMonth, tipo, canRequestAsuntosPropios, loadOccupiedDates, asuntosPropiosMaxPorDia]);
 
   // Recalculează disponibilitatea când se schimbă editingSolicitud (pentru a exclude solicitarea din calcul)
   useEffect(() => {
@@ -4038,6 +4050,10 @@ export default function SolicitudesPage() {
       if (Number.isFinite(n) && n >= 1 && n <= 50) {
         setAsuntosPropiosMaxPorDia(n);
       }
+      const d = Number(data?.dias_anuales);
+      if (Number.isFinite(d) && d >= 0 && d <= 365) {
+        setAsuntosPropiosDiasAnuales(d);
+      }
     } catch (e) {
       console.warn('getAsuntosPropiosMaxPorDia:', e);
     }
@@ -4087,6 +4103,7 @@ export default function SolicitudesPage() {
   useEffect(() => {
     if (showAsuntoPropioBlockedPeriodsModal) {
       setApMaxPersonasDraft(String(asuntosPropiosMaxPorDia));
+      setApDiasAnualesDraft(String(asuntosPropiosDiasAnuales));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAsuntoPropioBlockedPeriodsModal]);
@@ -5773,9 +5790,16 @@ export default function SolicitudesPage() {
 
     // Validare Asunto Propio
     if (tipo === 'Asuntos Propios') {
-      // Verifică dacă utilizatorul are drepturi reale în baza de date
-      if ((asuntosPropiosSaldo.dias_anuales || 0) <= 0) {
-        setErrorMsg('No tienes derechos de Asuntos Propios asignados. Contacta con tu administrador.');
+      if (!canRequestAsuntosPropios) {
+        setErrorMsg('No tienes permiso para solicitar Asuntos Propios. Contacta con tu administrador.');
+        return false;
+      }
+      const maxApDias =
+        Number(asuntosPropiosSaldo.dias_anuales) > 0
+          ? Number(asuntosPropiosSaldo.dias_anuales)
+          : Number(asuntosPropiosDiasAnuales) || DEFAULT_ASUNTOS_PROPIOS_DIAS_ANUALES;
+      if (maxApDias <= 0) {
+        setErrorMsg('No hay días de Asuntos Propios configurados. Contacta con tu administrador.');
         return false;
       }
       
@@ -5791,9 +5815,8 @@ export default function SolicitudesPage() {
           ? totalAsuntoPropioDays - originalDays 
           : totalAsuntoPropioDays;
         
-        // Verifică dacă s-a ajuns la limita de 6 zile pe an
-        if (adjustedTotal >= 6) {
-          setErrorMsg('Has alcanzado el límite de 6 días de Asunto Propio para este año. No puedes solicitar más días de este tipo.');
+        if (adjustedTotal >= maxApDias) {
+          setErrorMsg(`Has alcanzado el límite de ${maxApDias} días de Asunto Propio para este año. No puedes solicitar más días de este tipo.`);
           return false;
         }
         
@@ -5808,8 +5831,8 @@ export default function SolicitudesPage() {
           setErrorMsg('No es posible solicitar un día de asunto propio con menos de 5 días de antelación.');
           return false;
         }
-        if (diffZile > 6) {
-          setErrorMsg('No puedes solicitar más de 6 días de asuntos propios de una vez.');
+        if (diffZile > maxApDias) {
+          setErrorMsg(`No puedes solicitar más de ${maxApDias} días de asuntos propios de una vez.`);
           return false;
         }
         if (diffZile < 1) {
@@ -5817,9 +5840,8 @@ export default function SolicitudesPage() {
           return false;
         }
         
-        // Verifică dacă noua solicitare nu depășește limita de 6 zile pe an (folosind totalul ajustat)
-        if (adjustedTotal + diffZile > 6) {
-          setErrorMsg(`No puedes solicitar ${diffZile} días adicionales. Ya tienes ${adjustedTotal} días de Asunto Propio. El límite es de 6 días por año.`);
+        if (adjustedTotal + diffZile > maxApDias) {
+          setErrorMsg(`No puedes solicitar ${diffZile} días adicionales. Ya tienes ${adjustedTotal} días de Asunto Propio. El límite es de ${maxApDias} días por año.`);
           return false;
         }
       } else {
@@ -6543,34 +6565,54 @@ export default function SolicitudesPage() {
     }
   };
 
+  const resetManagerSolicitudForm = useCallback(() => {
+    setManagerSelectedEmpleado(null);
+    setManagerEmpleadoSearch('');
+    setManagerTipo('Asuntos Propios');
+    setManagerFechaInicio('');
+    setManagerFechaFin('');
+    setManagerFechaUltimoDiaTrabajo('');
+    setManagerMotivo('');
+    setManagerAutoApprove(true);
+  }, []);
+
   // Funcție pentru manager să creeze solicitări pentru angajați
+  // Independant de «Nueva Solicitud»: no usa canRequestAsuntosPropios ni state tipo/fecha* personal
   const handleAddManagerSolicitud = async () => {
     setErrorMsg('');
     setSuccessMsg('');
     setServerResp('');
 
-    // Verifică dacă este selectat un angajat
     if (!managerSelectedEmpleado) {
       setErrorMsg('Por favor, selecciona un empleado');
       return;
     }
 
-    // Validare cu isManagerMode=true pentru a ignora restricțiile
-    if (!validateDates(true)) {
+    if (managerTipo !== 'BAJA_VOLUNTARIA' && (!managerFechaInicio || !managerFechaFin)) {
+      setErrorMsg('Por favor, selecciona las fechas de inicio y fin');
       return;
     }
 
-    // Validare fecha_ultimo_dia_trabajo pentru BAJA_VOLUNTARIA
-    if (tipo === 'BAJA_VOLUNTARIA' && !fechaUltimoDiaTrabajo) {
+    if (managerTipo !== 'BAJA_VOLUNTARIA' && managerFechaInicio && managerFechaFin) {
+      const [y1, m1, d1] = managerFechaInicio.split('-').map(Number);
+      const [y2, m2, d2] = managerFechaFin.split('-').map(Number);
+      const start = new Date(y1, m1 - 1, d1);
+      const end = new Date(y2, m2 - 1, d2);
+      if (end - start < 0) {
+        setErrorMsg('La fecha de fin debe ser igual o posterior a la fecha de inicio.');
+        return;
+      }
+    }
+
+    if (managerTipo === 'BAJA_VOLUNTARIA' && !managerFechaUltimoDiaTrabajo) {
       setErrorMsg('El último día de trabajo es obligatorio para Baja Voluntaria.');
       return;
     }
 
     setOperationLoading('submit-manager', true);
     
-    const tipoPayload = tipo === 'Asuntos Propios' ? 'Asunto Propio' : tipo;
+    const tipoPayload = managerTipo === 'Asuntos Propios' ? 'Asunto Propio' : managerTipo;
     
-    // Folosește datele angajatului selectat
     const solicitudEmail = managerSelectedEmpleado.email;
     const solicitudCodigo = managerSelectedEmpleado.codigo;
     const solicitudNombre = managerSelectedEmpleado.name;
@@ -6583,27 +6625,19 @@ export default function SolicitudesPage() {
       nombre: solicitudNombre,
       tipo: tipoPayload,
       estado: managerAutoApprove ? 'Aprobada' : 'Pendiente',
-      motivo,
-      origen: 'MANAGER', // Marchează că este creată de manager
+      motivo: managerMotivo,
+      origen: 'MANAGER',
       creado_por: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre || '',
       creado_por_email: authUser?.email || '',
-      // Pentru BAJA_VOLUNTARIA, nu trimitem fecha_inicio și fecha_fin
       ...(tipoPayload !== 'BAJA_VOLUNTARIA' ? {
-        fecha_inicio: fechaInicio,
-        fecha_fin: fechaFin,
+        fecha_inicio: managerFechaInicio,
+        fecha_fin: managerFechaFin,
       } : {
-        fecha_inicio: fechaUltimoDiaTrabajo,
-        fecha_fin: fechaUltimoDiaTrabajo,
+        fecha_inicio: managerFechaUltimoDiaTrabajo,
+        fecha_fin: managerFechaUltimoDiaTrabajo,
       }),
-      ...(tipoPayload === 'BAJA_VOLUNTARIA' && fechaUltimoDiaTrabajo ? {
-        fecha_ultimo_dia_trabajo: fechaUltimoDiaTrabajo
-      } : {}),
-      ...(tipoPayload === 'Ausencias justificada' ? {
-        tipo_justificante: tipoJustificante,
-        hora_cita: horaCita || null,
-        centro_medico: centroMedico || null,
-        descripcion_otro: tipoJustificante === 'otro' ? descripcionOtro : null,
-        archivo_justificante_nombre: archivoJustificante ? archivoJustificante.name : null,
+      ...(tipoPayload === 'BAJA_VOLUNTARIA' && managerFechaUltimoDiaTrabajo ? {
+        fecha_ultimo_dia_trabajo: managerFechaUltimoDiaTrabajo
       } : {}),
     };
 
@@ -6629,53 +6663,10 @@ export default function SolicitudesPage() {
         await activityLogger.logSolicitudCreated(data, authUser);
         setSuccessMsg(`Solicitud creada correctamente para ${solicitudNombre}.`);
         setServerResp(`Status: ${responseData?.status || 'ok'} - Solicitud guardada exitosamente`);
-
-        if (tipoPayload === 'Ausencias justificada' && archivoJustificante) {
-          try {
-            const token = localStorage.getItem('auth_token');
-            const tipoDocumento = 'Justificante';
-            const formData = new FormData();
-            formData.append('archivo_0', archivoJustificante);
-            formData.append('empleado_id', solicitudCodigo);
-            formData.append('empleado_nombre', solicitudNombre || 'Sin nombre');
-            formData.append('empleado_email', solicitudEmail || '');
-            formData.append('tipo_documento', tipoDocumento);
-            formData.append('fecha_upload', new Date().toLocaleString('es-ES', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Madrid' }));
-            formData.append('archivo_0_nombre', archivoJustificante.name);
-            formData.append('archivo_0_tamaño', archivoJustificante.size.toString());
-            formData.append('archivo_0_tipo', archivoJustificante.type);
-            await fetch(routes.uploadDocumento, { method: 'POST', headers: { ...(token && { Authorization: `Bearer ${token}` }) }, body: formData });
-            // Si el manager crea ya Aprobada, crear la solicitud de documento para que el empleado reciba el email
-            if (managerAutoApprove) {
-              const fechaNorm = (fechaInicio || '').split('-').reverse().join('/') || new Date().toLocaleDateString('es-ES');
-              const notas = `Justificante de presencia a la cita (ausencia justificada aprobada) - ${fechaNorm}`;
-              await fetch(routes.createDocumentoSolicitado, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', ...(token && { Authorization: `Bearer ${token}` }) },
-                body: JSON.stringify({ empleado_id: solicitudCodigo, tipo_documento: 'Justificante de presencia a la cita', notas }),
-              }).catch(() => {});
-            }
-          } catch (e) { console.error('Error al subir justificante (manager):', e); }
-        }
         
-        // Reset form și închide modalul
-        setTipo('Asuntos Propios');
-        setFechaInicio('');
-        setFechaFin('');
-        setFechaUltimoDiaTrabajo('');
-        setBajaVoluntariaDocumento(null);
-        setMotivo('');
-        setTipoJustificante('');
-        setHoraCita('');
-        setCentroMedico('');
-        setDescripcionOtro('');
-        setArchivoJustificante(null);
-        setManagerSelectedEmpleado(null);
-        setManagerEmpleadoSearch('');
-        setManagerAutoApprove(true);
+        resetManagerSolicitudForm();
         setShowManagerSolicitudModal(false);
         
-        // Reîncarcă listele de solicitări
         setTimeout(() => {
           fetchSolicitudes();
           if (isManager) {
@@ -14119,18 +14110,18 @@ export default function SolicitudesPage() {
                     name="solicitud-tipo"
                     value={tipo}
                     onChange={(e) => {
-                      const currentUserGroup = authUser?.['GRUPO'] || authUser?.grupo || '';
-                      const allowedGroups = ['Limpiador', 'Developer', 'Auxiliar De Servicios - L'];
-                      
-                      // Prevent selection of Asuntos Propios for non-allowed groups
+                      // Prevent selection of Asuntos Propios without Access Matrix permission
                       if (e.target.value === 'Asuntos Propios') {
-                        if (!allowedGroups.includes(currentUserGroup)) {
-                          alert('Asuntos Propios solo está disponible para usuarios de Limpiador, Developer y Auxiliar De Servicios - L.');
+                        if (!canRequestAsuntosPropios) {
+                          alert('Asuntos Propios no está habilitado para tu grupo. Contacta con tu administrador.');
                           return;
                         }
-                        // Verifică dacă utilizatorul are drepturi reale în baza de date
-                        if ((asuntosPropiosSaldo.dias_anuales || 0) <= 0) {
-                          alert('No tienes derechos de Asuntos Propios asignados. Contacta con tu administrador.');
+                        const maxAp =
+                          Number(asuntosPropiosSaldo.dias_anuales) > 0
+                            ? Number(asuntosPropiosSaldo.dias_anuales)
+                            : Number(asuntosPropiosDiasAnuales) || 0;
+                        if (maxAp <= 0) {
+                          alert('No hay días de Asuntos Propios configurados. Contacta con tu administrador.');
                           return;
                         }
                       }
@@ -14177,12 +14168,13 @@ export default function SolicitudesPage() {
                     }}
                   >
                     {(() => {
-                      const currentUserGroup = authUser?.['GRUPO'] || authUser?.grupo || '';
-                      const allowedGroups = ['Limpiador', 'Developer', 'Auxiliar De Servicios - L'];
-                      const isGroupAllowed = allowedGroups.includes(currentUserGroup);
-                      // Verifică dacă utilizatorul are drepturi reale în baza de date
-                      const hasAsuntosPropiosRights = (asuntosPropiosSaldo.dias_anuales || 0) > 0;
-                      const isDisabled = !isGroupAllowed || !hasAsuntosPropiosRights || totalAsuntoPropioDays >= 6;
+                      const maxApDias =
+                        Number(asuntosPropiosSaldo.dias_anuales) > 0
+                          ? Number(asuntosPropiosSaldo.dias_anuales)
+                          : Number(asuntosPropiosDiasAnuales) || DEFAULT_ASUNTOS_PROPIOS_DIAS_ANUALES;
+                      const hasAsuntosPropiosRights = canRequestAsuntosPropios && maxApDias > 0;
+                      const isDisabled =
+                        !hasAsuntosPropiosRights || totalAsuntoPropioDays >= maxApDias;
                       
                       return (
                     <option 
@@ -14194,8 +14186,10 @@ export default function SolicitudesPage() {
                       }}
                     >
                       📅 Asuntos Propios {
-                        !hasAsuntosPropiosRights ? '(Sin derechos)' :
-                        totalAsuntoPropioDays >= 6 ? '(Límite alcanzado - 6/6 días)' : ''
+                        !canRequestAsuntosPropios ? '(Sin derechos)' :
+                        totalAsuntoPropioDays >= maxApDias
+                          ? `(Límite alcanzado - ${totalAsuntoPropioDays}/${maxApDias} días)`
+                          : ''
                       }
                     </option>
                       );
@@ -14890,7 +14884,7 @@ export default function SolicitudesPage() {
                           </p>
                         )}
                         <p className="text-xs text-purple-600">
-                          Días disponibles: {totalAsuntoPropioDays}/6 días (anual)
+                          Días disponibles: {totalAsuntoPropioDays}/{asuntosPropiosDiasAnuales} días (anual)
                         </p>
                       </div>
                     )}
@@ -14901,7 +14895,7 @@ export default function SolicitudesPage() {
                       <div className="flex justify-between items-center mb-2">
                         <h4 className="text-sm font-bold text-gray-800">Leyenda del Calendario:</h4>
                         <div className="text-xs font-medium text-purple-600 bg-purple-100 px-2 py-1 rounded">
-                          Días disponibles: {totalAsuntoPropioDays}/6 días (anual)
+                          Días disponibles: {totalAsuntoPropioDays}/{asuntosPropiosDiasAnuales} días (anual)
                         </div>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
@@ -14935,7 +14929,7 @@ export default function SolicitudesPage() {
                           📊 Reglas para Asuntos Propios:
                         </p>
                         <p className="text-xs text-purple-600 mt-1">
-                          • Máximo 6 días por persona por año
+                          • Máximo {asuntosPropiosDiasAnuales} días por persona por año
                         </p>
                         <p className="text-xs text-purple-600">
                           {canAccessAllTabs ? (
@@ -14948,7 +14942,7 @@ export default function SolicitudesPage() {
                           • Máximo 1 persona del mismo centro por día
                         </p>
                         <p className="text-xs text-purple-600">
-                          • Máximo 6 días consecutivos
+                          • Máximo {asuntosPropiosDiasAnuales} días consecutivos
                         </p>
                         <p className="text-xs text-purple-600">
                           • Mínimo 5 días de adelanto
@@ -15247,14 +15241,14 @@ export default function SolicitudesPage() {
                     {tipo === 'Asuntos Propios' && (
                       <div className="mt-2 ml-11">
                         <p className="text-sm text-green-700 font-medium">
-                          ℹ️ Máximo 5 días consecutivos, mínimo 5 días de antelación
+                          ℹ️ Máximo {asuntosPropiosDiasAnuales} días consecutivos, mínimo 5 días de antelación
                         </p>
                         <p className={`text-sm font-medium mt-1 ${
-                          totalAsuntoPropioDays >= 6 ? 'text-red-600' : 
-                          totalAsuntoPropioDays >= 4 ? 'text-yellow-600' : 
+                          totalAsuntoPropioDays >= asuntosPropiosDiasAnuales ? 'text-red-600' : 
+                          totalAsuntoPropioDays >= Math.max(1, asuntosPropiosDiasAnuales - 2) ? 'text-yellow-600' : 
                           'text-blue-600'
                         }`}>
-                          📊 Días usados: {totalAsuntoPropioDays}/6 {totalAsuntoPropioDays >= 6 ? '(LÍMITE ALCANZADO)' : ''}
+                          📊 Días usados: {totalAsuntoPropioDays}/{asuntosPropiosDiasAnuales} {totalAsuntoPropioDays >= asuntosPropiosDiasAnuales ? '(LÍMITE ALCANZADO)' : ''}
                         </p>
                       </div>
                     )}
@@ -17304,55 +17298,108 @@ export default function SolicitudesPage() {
             Las fechas dentro de estos periodos no se podrán solicitar como Asuntos Propios. Puedes bloquear meses enteros con los checkboxes o intervalos concretos abajo (solo afecta a Asuntos Propios, no a vacaciones).
           </p>
           {canAccessAllTabs && (
-            <div className="p-3 bg-purple-50 rounded-xl border border-purple-200">
-              <h4 className="text-sm font-semibold text-gray-800 mb-1">
-                Límite diario (toda la empresa)
-              </h4>
-              <p className="text-xs text-gray-600 mb-2">
-                Máximo de personas con Asunto Propio el mismo día. Los empleados ven «poca disponibilidad» en amarillo sin cifras en el calendario.
-              </p>
-              <div className="flex flex-wrap items-end gap-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Personas / día</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={50}
-                    step={1}
-                    value={apMaxPersonasDraft}
-                    onChange={(e) => setApMaxPersonasDraft(e.target.value)}
-                    className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  />
+            <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 space-y-3">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-800 mb-1">
+                  Límite diario (toda la empresa)
+                </h4>
+                <p className="text-xs text-gray-600 mb-2">
+                  Máximo de personas con Asunto Propio el mismo día. Los empleados ven «poca disponibilidad» en amarillo sin cifras en el calendario.
+                </p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Personas / día</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      step={1}
+                      value={apMaxPersonasDraft}
+                      onChange={(e) => setApMaxPersonasDraft(e.target.value)}
+                      className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={savingApMaxPersonas}
+                    onClick={async () => {
+                      const n = Number(apMaxPersonasDraft);
+                      if (!Number.isFinite(n) || n < 1 || n > 50) {
+                        setErrorMsg('Indica un valor entre 1 y 50.');
+                        return;
+                      }
+                      setSavingApMaxPersonas(true);
+                      setErrorMsg('');
+                      try {
+                        await callApi(routes.putAsuntosPropiosMaxPorDia, {
+                          method: 'PUT',
+                          body: JSON.stringify({ max_personas_dia: n }),
+                          headers: { 'Content-Type': 'application/json' },
+                        });
+                        await fetchAsuntosPropiosMaxPorDia();
+                        setApMaxPersonasDraft(String(n));
+                      } catch (e) {
+                        setErrorMsg(e?.message || 'Error al guardar el límite.');
+                      } finally {
+                        setSavingApMaxPersonas(false);
+                      }
+                    }}
+                    className="px-4 py-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-900 text-white text-sm disabled:opacity-50"
+                  >
+                    {savingApMaxPersonas ? 'Guardando…' : 'Guardar límite'}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  disabled={savingApMaxPersonas}
-                  onClick={async () => {
-                    const n = Number(apMaxPersonasDraft);
-                    if (!Number.isFinite(n) || n < 1 || n > 50) {
-                      setErrorMsg('Indica un valor entre 1 y 50.');
-                      return;
-                    }
-                    setSavingApMaxPersonas(true);
-                    setErrorMsg('');
-                    try {
-                      await callApi(routes.putAsuntosPropiosMaxPorDia, {
-                        method: 'PUT',
-                        body: JSON.stringify({ max_personas_dia: n }),
-                        headers: { 'Content-Type': 'application/json' },
-                      });
-                      await fetchAsuntosPropiosMaxPorDia();
-                      setApMaxPersonasDraft(String(n));
-                    } catch (e) {
-                      setErrorMsg(e?.message || 'Error al guardar el límite.');
-                    } finally {
-                      setSavingApMaxPersonas(false);
-                    }
-                  }}
-                  className="px-4 py-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-900 text-white text-sm disabled:opacity-50"
-                >
-                  {savingApMaxPersonas ? 'Guardando…' : 'Guardar límite'}
-                </button>
+              </div>
+              <div className="border-t border-purple-200 pt-3">
+                <h4 className="text-sm font-semibold text-gray-800 mb-1">
+                  Días por empleado / año (toda la empresa)
+                </h4>
+                <p className="text-xs text-gray-600 mb-2">
+                  Cupo anual de Asuntos Propios igual para todos. El derecho a solicitarlo se activa por grupo en Access Matrix.
+                </p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Días / año</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={365}
+                      step={1}
+                      value={apDiasAnualesDraft}
+                      onChange={(e) => setApDiasAnualesDraft(e.target.value)}
+                      className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={savingApMaxPersonas}
+                    onClick={async () => {
+                      const d = Number(apDiasAnualesDraft);
+                      if (!Number.isFinite(d) || d < 0 || d > 365) {
+                        setErrorMsg('Indica un valor entre 0 y 365.');
+                        return;
+                      }
+                      setSavingApMaxPersonas(true);
+                      setErrorMsg('');
+                      try {
+                        await callApi(routes.putAsuntosPropiosMaxPorDia, {
+                          method: 'PUT',
+                          body: JSON.stringify({ dias_anuales: d }),
+                          headers: { 'Content-Type': 'application/json' },
+                        });
+                        await fetchAsuntosPropiosMaxPorDia();
+                        setApDiasAnualesDraft(String(d));
+                      } catch (e) {
+                        setErrorMsg(e?.message || 'Error al guardar los días anuales.');
+                      } finally {
+                        setSavingApMaxPersonas(false);
+                      }
+                    }}
+                    className="px-4 py-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-900 text-white text-sm disabled:opacity-50"
+                  >
+                    {savingApMaxPersonas ? 'Guardando…' : 'Guardar días'}
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -17514,24 +17561,14 @@ export default function SolicitudesPage() {
         </div>
       </Modal>
 
-      {/* Modal pentru manager să creeze solicitări pentru angajați */}
+      {/* Modal manager: state manager* (NO compartir con Nueva Solicitud / asuntos-propios) */}
       <Modal
         isOpen={showManagerSolicitudModal}
         onClose={() => {
           setShowManagerSolicitudModal(false);
-          setManagerSelectedEmpleado(null);
-          setManagerEmpleadoSearch('');
-          setTipo('Asuntos Propios');
-          setFechaInicio('');
-          setFechaFin('');
-          setFechaUltimoDiaTrabajo('');
-          setMotivo('');
-          setTipoJustificante('');
-          setHoraCita('');
-          setCentroMedico('');
-          setDescripcionOtro('');
-          setArchivoJustificante(null);
-          setManagerAutoApprove(true);
+          resetManagerSolicitudForm();
+          setErrorMsg('');
+          setSuccessMsg('');
         }}
         title="Crear Solicitud para Empleado"
         size="lg"
@@ -17602,11 +17639,12 @@ export default function SolicitudesPage() {
               Tipo de Solicitud <span className="text-red-500">*</span>
             </label>
             <select
-              value={tipo}
+              value={managerTipo}
               onChange={(e) => {
-                setTipo(e.target.value);
-                setFechaInicio('');
-                setFechaFin('');
+                setManagerTipo(e.target.value);
+                setManagerFechaInicio('');
+                setManagerFechaFin('');
+                setManagerFechaUltimoDiaTrabajo('');
               }}
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             >
@@ -17619,7 +17657,7 @@ export default function SolicitudesPage() {
           </div>
 
           {/* Date - doar pentru tipuri care necesită date */}
-          {tipo !== 'BAJA_VOLUNTARIA' && (
+          {managerTipo !== 'BAJA_VOLUNTARIA' && (
             <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -17627,8 +17665,8 @@ export default function SolicitudesPage() {
                 </label>
                 <input
                   type="date"
-                  value={fechaInicio}
-                  onChange={(e) => setFechaInicio(e.target.value)}
+                  value={managerFechaInicio}
+                  onChange={(e) => setManagerFechaInicio(e.target.value)}
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                 />
               </div>
@@ -17638,9 +17676,9 @@ export default function SolicitudesPage() {
                 </label>
                 <input
                   type="date"
-                  value={fechaFin}
-                  onChange={(e) => setFechaFin(e.target.value)}
-                  min={fechaInicio}
+                  value={managerFechaFin}
+                  onChange={(e) => setManagerFechaFin(e.target.value)}
+                  min={managerFechaInicio}
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                 />
               </div>
@@ -17648,15 +17686,15 @@ export default function SolicitudesPage() {
           )}
 
           {/* Fecha último día de trabajo pentru BAJA_VOLUNTARIA */}
-          {tipo === 'BAJA_VOLUNTARIA' && (
+          {managerTipo === 'BAJA_VOLUNTARIA' && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Último Día de Trabajo <span className="text-red-500">*</span>
               </label>
               <input
                 type="date"
-                value={fechaUltimoDiaTrabajo}
-                onChange={(e) => setFechaUltimoDiaTrabajo(e.target.value)}
+                value={managerFechaUltimoDiaTrabajo}
+                onChange={(e) => setManagerFechaUltimoDiaTrabajo(e.target.value)}
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
@@ -17668,8 +17706,8 @@ export default function SolicitudesPage() {
               Motivo <span className="text-gray-500 text-xs">(opcional)</span>
             </label>
             <textarea
-              value={motivo}
-              onChange={(e) => setMotivo(e.target.value)}
+              value={managerMotivo}
+              onChange={(e) => setManagerMotivo(e.target.value)}
               rows={4}
               placeholder="Describe el motivo de la solicitud (opcional)..."
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
@@ -17708,19 +17746,7 @@ export default function SolicitudesPage() {
               type="button"
               onClick={() => {
                 setShowManagerSolicitudModal(false);
-                setManagerSelectedEmpleado(null);
-                setManagerEmpleadoSearch('');
-                setTipo('Asuntos Propios');
-                setFechaInicio('');
-                setFechaFin('');
-                setFechaUltimoDiaTrabajo('');
-                setMotivo('');
-                setTipoJustificante('');
-                setHoraCita('');
-                setCentroMedico('');
-                setDescripcionOtro('');
-                setArchivoJustificante(null);
-                setManagerAutoApprove(true);
+                resetManagerSolicitudForm();
                 setErrorMsg('');
                 setSuccessMsg('');
               }}

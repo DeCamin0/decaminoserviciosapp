@@ -217,6 +217,7 @@ export const usePermissions = () => {
         'fichar-admin', 'fichar-empleados',
         'pedidos-admin', 'pedidos-empleados',
         'solicitudes-admin', 'solicitudes-empleados',
+        'asuntos-propios',
         'prl-documentos',
       ];
       const isNewModule = newModules.includes(module);

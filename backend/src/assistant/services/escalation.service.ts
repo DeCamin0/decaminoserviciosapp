@@ -37,7 +37,8 @@ export class EscalationService {
           contexto,
           estado,
           prioridad,
-          created_at
+          created_at,
+          updated_at
         ) VALUES (
           ${this.escapeSql(ticketId)},
           ${this.escapeSql(data.usuario_id)},
@@ -48,6 +49,7 @@ export class EscalationService {
           ${data.contexto ? this.escapeSql(data.contexto) : 'NULL'},
           'pendiente',
           ${this.escapeSql(data.prioridad || 'normal')},
+          NOW(),
           NOW()
         )
       `;
