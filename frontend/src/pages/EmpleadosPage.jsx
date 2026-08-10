@@ -22,6 +22,7 @@ import CorregirNombresTab from '../components/employees/CorregirNombresTab';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import { config } from '../config/env.js';
 import { getPdfMake } from '../utils/getPdfMake';
+import { dateInputToDdMmYyyy } from '../utils/dateInputFormat';
 
 // Branding din config (multi-client)
 const rawColor = config.PRIMARY_COLOR || '#CC0000';
@@ -5511,8 +5512,7 @@ export default function EmpleadosPage() {
                         return date;
                       })() : ''}
                       onChange={(e) => {
-                        const [yyyy, mm, dd] = e.target.value.split('-');
-                        setAddForm(prev => ({ ...prev, [field]: `${dd}/${mm}/${yyyy}` }));
+                        setAddForm(prev => ({ ...prev, [field]: dateInputToDdMmYyyy(e.target.value) }));
                       }}
                     />
                   ) : field === 'FECHA DE ALTA' ? (
@@ -5535,8 +5535,7 @@ export default function EmpleadosPage() {
                         return date;
                       })() : ''}
                       onChange={(e) => {
-                        const [yyyy, mm, dd] = e.target.value.split('-');
-                        setAddForm(prev => ({ ...prev, [field]: `${dd}/${mm}/${yyyy}` }));
+                        setAddForm(prev => ({ ...prev, [field]: dateInputToDdMmYyyy(e.target.value) }));
                       }}
                     />
                   ) : field === 'FECHA BAJA' ? (
@@ -5559,8 +5558,7 @@ export default function EmpleadosPage() {
                         return date;
                       })() : ''}
                       onChange={(e) => {
-                        const [yyyy, mm, dd] = e.target.value.split('-');
-                        setAddForm(prev => ({ ...prev, [field]: `${dd}/${mm}/${yyyy}` }));
+                        setAddForm(prev => ({ ...prev, [field]: dateInputToDdMmYyyy(e.target.value) }));
                       }}
                     />
                   ) : field === 'Fecha Antigüedad' ? (
@@ -5583,8 +5581,7 @@ export default function EmpleadosPage() {
                         return date;
                       })() : ''}
                       onChange={(e) => {
-                        const [yyyy, mm, dd] = e.target.value.split('-');
-                        setAddForm(prev => ({ ...prev, [field]: `${dd}/${mm}/${yyyy}` }));
+                        setAddForm(prev => ({ ...prev, [field]: dateInputToDdMmYyyy(e.target.value) }));
                       }}
                     />
                   ) : field === 'Antigüedad' ? (
@@ -7108,8 +7105,7 @@ export default function EmpleadosPage() {
                       return date;
                     })() : ''}
                     onChange={(e) => {
-                      const [yyyy, mm, dd] = e.target.value.split('-');
-                      setEditForm(prev => ({ ...prev, [field]: `${dd}/${mm}/${yyyy}` }));
+                      setEditForm(prev => ({ ...prev, [field]: dateInputToDdMmYyyy(e.target.value) }));
                     }}
                   />
                 ) : field === 'FECHA DE ALTA' ? (
@@ -7133,8 +7129,7 @@ export default function EmpleadosPage() {
                       return date;
                     })() : ''}
                     onChange={(e) => {
-                      const [yyyy, mm, dd] = e.target.value.split('-');
-                      setEditForm(prev => ({ ...prev, [field]: `${dd}/${mm}/${yyyy}` }));
+                      setEditForm(prev => ({ ...prev, [field]: dateInputToDdMmYyyy(e.target.value) }));
                     }}
                   />
                 ) : field === 'FECHA BAJA' ? (
@@ -7158,8 +7153,7 @@ export default function EmpleadosPage() {
                       return date;
                     })() : ''}
                     onChange={(e) => {
-                      const [yyyy, mm, dd] = e.target.value.split('-');
-                      setEditForm(prev => ({ ...prev, [field]: `${dd}/${mm}/${yyyy}` }));
+                      setEditForm(prev => ({ ...prev, [field]: dateInputToDdMmYyyy(e.target.value) }));
                     }}
                   />
                 ) : field === 'Fecha Antigüedad' ? (
@@ -7183,8 +7177,7 @@ export default function EmpleadosPage() {
                       return date;
                     })() : ''}
                     onChange={(e) => {
-                      const [yyyy, mm, dd] = e.target.value.split('-');
-                      setEditForm(prev => ({ ...prev, [field]: `${dd}/${mm}/${yyyy}` }));
+                      setEditForm(prev => ({ ...prev, [field]: dateInputToDdMmYyyy(e.target.value) }));
                     }}
                   />
                 ) : field === 'CENTRO TRABAJO' ? (
@@ -7588,8 +7581,7 @@ export default function EmpleadosPage() {
                       return date;
                     })() : ''}
                     onChange={(e) => {
-                      const [yyyy, mm, dd] = e.target.value.split('-');
-                      setEditForm(prev => ({ ...prev, [field]: `${dd}/${mm}/${yyyy}` }));
+                      setEditForm(prev => ({ ...prev, [field]: dateInputToDdMmYyyy(e.target.value) }));
                     }}
                   />
                 ) : field === 'VACACIONES_RESTANTES_ANO_ANTERIOR' ? (

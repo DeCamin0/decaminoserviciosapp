@@ -13,6 +13,7 @@ import type { EmpleadoGrupoScopeFilter } from './empleado-grupo-scope.service';
 import { DocumentosSolicitadosService } from './documentos-solicitados.service';
 import { PrlDocumentsService } from './prl-documents.service';
 import { CarpetasDocumentosStorageService } from './carpetas-documentos-storage.service';
+import { sanitizeFechaEmpleado } from '../utils/fecha-empleado.util';
 import * as ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 
@@ -574,9 +575,12 @@ export class EmpleadosService {
         empleado['FECHA NACIMIENTO'] ?? empleado.FECHA_NACIMIENTO ?? null,
       FECHA_DE_ALTA:
         empleado['FECHA DE ALTA'] ?? empleado.FECHA_DE_ALTA ?? null,
-      FECHA_BAJA: empleado['FECHA BAJA'] ?? empleado.FECHA_BAJA ?? null,
-      FECHA_ANTIGUEDAD:
+      FECHA_BAJA: sanitizeFechaEmpleado(
+        empleado['FECHA BAJA'] ?? empleado.FECHA_BAJA ?? null,
+      ),
+      FECHA_ANTIGUEDAD: sanitizeFechaEmpleado(
         empleado['Fecha Antigüedad'] ?? empleado.FECHA_ANTIGUEDAD ?? null,
+      ),
       ANTIGUEDAD: empleado['Antigüedad'] ?? empleado.ANTIGUEDAD ?? null,
       contacto_emergencia_nombre: empleado.CONTACTO_EMERGENCIA_NOMBRE ?? null,
       contacto_emergencia_parentesco:
@@ -679,9 +683,12 @@ export class EmpleadosService {
         empleado['FECHA NACIMIENTO'] ?? empleado.FECHA_NACIMIENTO ?? null,
       FECHA_DE_ALTA:
         empleado['FECHA DE ALTA'] ?? empleado.FECHA_DE_ALTA ?? null,
-      FECHA_BAJA: empleado['FECHA BAJA'] ?? empleado.FECHA_BAJA ?? null,
-      FECHA_ANTIGUEDAD:
+      FECHA_BAJA: sanitizeFechaEmpleado(
+        empleado['FECHA BAJA'] ?? empleado.FECHA_BAJA ?? null,
+      ),
+      FECHA_ANTIGUEDAD: sanitizeFechaEmpleado(
         empleado['Fecha Antigüedad'] ?? empleado.FECHA_ANTIGUEDAD ?? null,
+      ),
       ANTIGUEDAD: empleado['Antigüedad'] ?? empleado.ANTIGUEDAD ?? null,
       empleadoId: empleado.CODIGO,
       empleadoNombre: this.getFormattedNombre(empleado),
@@ -840,8 +847,8 @@ export class EmpleadosService {
           ${this.escapeSql(empleadoData.EMPRESA || '')},
           ${this.escapeSql(empleadoData.GRUPO || '')},
           ${this.escapeSql(empleadoData.ESTADO || '')},
-          ${this.escapeSql(empleadoData['FECHA BAJA'] || null)},
-          ${this.escapeSql(empleadoData['Fecha Antigüedad'] || null)},
+          ${this.escapeSql(sanitizeFechaEmpleado(empleadoData['FECHA BAJA']))},
+          ${this.escapeSql(sanitizeFechaEmpleado(empleadoData['Fecha Antigüedad']))},
           ${this.escapeSql(empleadoData.Antigüedad || null)},
           ${this.escapeSql(empleadoData.DerechoPedidos || 'NO')},
           ${this.escapeSql(empleadoData.TrabajaFestivos || 'NO')},
@@ -1120,8 +1127,8 @@ export class EmpleadosService {
           \`EMPRESA\`               = ${this.escapeSql(empleadoData.EMPRESA ?? '')},
           \`GRUPO\`                 = ${this.escapeSql(empleadoData.GRUPO ?? '')},
           \`ESTADO\`                = ${this.escapeSql(empleadoData.ESTADO ?? '')},
-          \`FECHA BAJA\`            = ${this.escapeSql(empleadoData['FECHA BAJA'] ?? null)},
-          \`Fecha Antigüedad\`      = ${this.escapeSql(empleadoData['Fecha Antigüedad'] ?? null)},
+          \`FECHA BAJA\`            = ${this.escapeSql(sanitizeFechaEmpleado(empleadoData['FECHA BAJA']))},
+          \`Fecha Antigüedad\`      = ${this.escapeSql(sanitizeFechaEmpleado(empleadoData['Fecha Antigüedad']))},
           \`Antigüedad\`            = ${this.escapeSql(empleadoData.Antigüedad ?? null)},
           ${passwordUpdate}
           \`DerechoPedidos\`        = ${this.escapeSql(empleadoData.DerechoPedidos ?? '')},

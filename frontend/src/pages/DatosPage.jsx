@@ -11,6 +11,7 @@ import { API_ENDPOINTS } from '../utils/constants';
 import { getFormattedNombre, getEmployeeInitials } from '../utils/employeeNameHelper';
 import { config } from '../config/env';
 import AssistantPreferencesCard from '../components/AssistantPreferencesCard.jsx';
+import { dateInputToDdMmYyyy } from '../utils/dateInputFormat';
 
 // Función para calcular la antigüedad
 const calcularAntiguedad = (fechaAntiguedad, fechaBaja) => {
@@ -1827,8 +1828,7 @@ const [editLoading, setEditLoading] = useState(false);
                           return date;
                         })() : ''}
                         onChange={(e) => {
-                          const [yyyy, mm, dd] = e.target.value.split('-');
-                          setEditForm(prev => ({ ...prev, [field]: `${dd}/${mm}/${yyyy}` }));
+                          setEditForm(prev => ({ ...prev, [field]: dateInputToDdMmYyyy(e.target.value) }));
                         }}
                       />
                     ) : field === 'FECHA DE ALTA' ? (

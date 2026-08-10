@@ -7,6 +7,10 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from './notifications.service';
 import { NominasStorageService } from './nominas-storage.service';
+import {
+  hasFechaBajaEstablecida,
+  sanitizeFechaEmpleado,
+} from '../utils/fecha-empleado.util';
 import * as ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 import archiver from 'archiver';
@@ -415,37 +419,46 @@ export class GestoriaService {
         return false;
       }
 
-      const fechaAntiguedadActual = empleado[0]?.['Fecha Antigüedad'];
-      const fechaAltaActual = empleado[0]?.['FECHA DE ALTA'];
-      const fechaBajaActual = empleado[0]?.['FECHA BAJA'];
+      const fechaAntiguedadActual = sanitizeFechaEmpleado(
+        empleado[0]?.['Fecha Antigüedad'],
+      );
+      const fechaAltaActual = sanitizeFechaEmpleado(
+        empleado[0]?.['FECHA DE ALTA'],
+      );
+      const fechaBajaActual = sanitizeFechaEmpleado(
+        empleado[0]?.['FECHA BAJA'],
+      );
 
       const updateFields: string[] = [];
 
+      const fechaAntiguedadOk = sanitizeFechaEmpleado(fechaAntiguedad);
+      const fechaBajaOk = sanitizeFechaEmpleado(fechaBaja);
+
       // Actualizăm FECHA DE ALTA dacă nu este setată - folosim ÎNTOTDEAUNA fechaAntiguedadExtraida
-      if (!fechaAltaActual && fechaAntiguedad) {
+      if (!fechaAltaActual && fechaAntiguedadOk) {
         updateFields.push(
-          `\`FECHA DE ALTA\` = ${this.escapeSql(fechaAntiguedad)}`,
+          `\`FECHA DE ALTA\` = ${this.escapeSql(fechaAntiguedadOk)}`,
         );
         this.logger.log(
-          `📅 Va actualiza FECHA DE ALTA (din Fecha Antigüedad Extraida): ${fechaAntiguedad}`,
+          `📅 Va actualiza FECHA DE ALTA (din Fecha Antigüedad Extraida): ${fechaAntiguedadOk}`,
         );
       }
 
-      // Actualizăm Fecha Antigüedad dacă nu este setată - folosim fechaAntiguedadExtraida
-      if (!fechaAntiguedadActual && fechaAntiguedad) {
+      // Actualizăm Fecha Antigüedad si no está setată
+      if (!fechaAntiguedadActual && fechaAntiguedadOk) {
         updateFields.push(
-          `\`Fecha Antigüedad\` = ${this.escapeSql(fechaAntiguedad)}`,
+          `\`Fecha Antigüedad\` = ${this.escapeSql(fechaAntiguedadOk)}`,
         );
         this.logger.log(
-          `📅 Va actualiza Fecha Antigüedad (din Fecha Antigüedad Extraida): ${fechaAntiguedad}`,
+          `📅 Va actualiza Fecha Antigüedad (din Fecha Antigüedad Extraida): ${fechaAntiguedadOk}`,
         );
       }
 
-      // Actualizăm FECHA BAJA dacă nu este setată - folosim fechaBajaExtraida
-      if (!fechaBajaActual && fechaBaja) {
-        updateFields.push(`\`FECHA BAJA\` = ${this.escapeSql(fechaBaja)}`);
+      // Actualizăm FECHA BAJA si no está setată (solo fechas válidas)
+      if (!fechaBajaActual && fechaBajaOk) {
+        updateFields.push(`\`FECHA BAJA\` = ${this.escapeSql(fechaBajaOk)}`);
         this.logger.log(
-          `📅 Va actualiza FECHA BAJA (din Fecha Baja Extraida): ${fechaBaja}`,
+          `📅 Va actualiza FECHA BAJA (din Fecha Baja Extraida): ${fechaBajaOk}`,
         );
       }
 
@@ -2151,11 +2164,11 @@ export class GestoriaService {
           }
           fechaAltaDB = empleadoResult[0]?.['FECHA DE ALTA'] || null;
           fechaAntiguedadDB = empleadoResult[0]?.['Fecha Antigüedad'] || null;
-          fechaBajaDB = empleadoResult[0]?.['FECHA BAJA'] || null;
+          fechaBajaDB = sanitizeFechaEmpleado(empleadoResult[0]?.['FECHA BAJA']);
           segSocialDB = empleadoResult[0]?.['SEG. SOCIAL'] || null;
 
           // Dacă angajatul are FECHA BAJA setată, excludem nómina (doar pentru nóminas normale, nu finiquitos)
-          if (!esFiniquito && fechaBajaDB && fechaBajaDB.trim() !== '') {
+          if (!esFiniquito && hasFechaBajaEstablecida(fechaBajaDB)) {
             tieneFechaBajaEnDB = true;
             this.logger.warn(
               `⚠️ Angajatul ${nombreFinal} (CODIGO: ${codigoParaVerificar}) are deja FECHA BAJA setată (${fechaBajaDB}). Nómina va fi exclusă.`,
@@ -3132,11 +3145,11 @@ export class GestoriaService {
                 fechaAltaDB = empleadoResult[0]?.['FECHA DE ALTA'] || null;
                 fechaAntiguedadDB =
                   empleadoResult[0]?.['Fecha Antigüedad'] || null;
-                fechaBajaDB = empleadoResult[0]?.['FECHA BAJA'] || null;
+                fechaBajaDB = sanitizeFechaEmpleado(empleadoResult[0]?.['FECHA BAJA']);
                 segSocialDB = empleadoResult[0]?.['SEG. SOCIAL'] || null;
 
                 // Dacă angajatul are FECHA BAJA setată, excludem nómina (doar pentru nóminas normale, nu finiquitos)
-                if (!esFiniquito && fechaBajaDB && fechaBajaDB.trim() !== '') {
+                if (!esFiniquito && hasFechaBajaEstablecida(fechaBajaDB)) {
                   tieneFechaBajaEnDB = true;
                   this.logger.warn(
                     `⚠️ Angajatul ${nombreCompleto} (CODIGO: ${codigo}) are deja FECHA BAJA setată (${fechaBajaDB}). Nómina va fi exclusă.`,
@@ -3328,11 +3341,11 @@ export class GestoriaService {
               fechaAltaDB = empleadoResult[0]?.['FECHA DE ALTA'] || null;
               fechaAntiguedadDB =
                 empleadoResult[0]?.['Fecha Antigüedad'] || null;
-              fechaBajaDB = empleadoResult[0]?.['FECHA BAJA'] || null;
+              fechaBajaDB = sanitizeFechaEmpleado(empleadoResult[0]?.['FECHA BAJA']);
               segSocialDB = empleadoResult[0]?.['SEG. SOCIAL'] || null;
 
               // Dacă angajatul are FECHA BAJA setată, excludem nómina (doar pentru nóminas normale, nu finiquitos)
-              if (!esFiniquito && fechaBajaDB && fechaBajaDB.trim() !== '') {
+              if (!esFiniquito && hasFechaBajaEstablecida(fechaBajaDB)) {
                 tieneFechaBajaEnDB = true;
                 this.logger.warn(
                   `⚠️ Angajatul ${nombreCompleto} (CODIGO: ${codigo}) are deja FECHA BAJA setată (${fechaBajaDB}). Nómina va fi exclusă.`,

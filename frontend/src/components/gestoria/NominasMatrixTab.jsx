@@ -25,9 +25,16 @@ const getErrorText = (error, nombreDetectado, empleadoEncontrado) => {
   } else if (error === 'mes_o_ano_no_detectado') {
     return 'Mes o año no detectado';
   } else if (error.startsWith('fecha_baja_establecida:')) {
-    // Eroare specială pentru FECHA BAJA - extragem data
-    const fechaBaja = error.replace('fecha_baja_establecida:', '');
-    return `Empleado tiene FECHA BAJA establecida (${fechaBaja}). No se puede subir ${config.NOMINAS_LABEL_SINGULAR}.`;
+    // Eroare specială pentru FECHA BAJA - extragem data (omit basura tipo undefined/…)
+    const fechaBaja = error.replace('fecha_baja_establecida:', '').trim();
+    const fechaOk =
+      fechaBaja &&
+      !/undefined|null|invalid/i.test(fechaBaja) &&
+      (/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}/.test(fechaBaja) ||
+        /\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}/.test(fechaBaja));
+    return fechaOk
+      ? `Empleado tiene FECHA BAJA establecida (${fechaBaja}). No se puede subir ${config.NOMINAS_LABEL_SINGULAR}.`
+      : `Empleado tiene FECHA BAJA establecida. No se puede subir ${config.NOMINAS_LABEL_SINGULAR}.`;
   } else if (error.startsWith('error_procesamiento:')) {
     // Eroare de procesare - afișăm mesajul complet (truncat dacă e prea lung)
     const errorMsg = error.replace('error_procesamiento: ', '');
