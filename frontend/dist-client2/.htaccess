@@ -5,6 +5,9 @@ RewriteBase /
 RewriteCond %{HTTPS} !=on
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
 
+# .well-known: serve static files (AASA / assetlinks) — never SPA fallback
+RewriteRule ^\.well-known/ - [L]
+
 # Enforce HTTPS for subresources (mitigate mixed content) + security headers
 <IfModule mod_headers.c>
   Header always set Content-Security-Policy "upgrade-insecure-requests"
@@ -17,6 +20,15 @@ RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
     Header set Pragma "no-cache"
     Header set Expires "0"
   </FilesMatch>
+  # Apple AASA / password autofill association (no file extension)
+  <Files "apple-app-site-association">
+    Header set Content-Type "application/json"
+    Header set Cache-Control "no-cache, must-revalidate"
+  </Files>
+  <Files "assetlinks.json">
+    Header set Content-Type "application/json"
+    Header set Cache-Control "no-cache, must-revalidate"
+  </Files>
 </IfModule>
 
 # Long cache for static hashed assets

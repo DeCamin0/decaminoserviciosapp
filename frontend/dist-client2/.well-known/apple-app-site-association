@@ -1,0 +1,22 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "APPLE_TEAM_ID.com.decamino.app",
+        "paths": [
+          "/",
+          "/login",
+          "/login/*",
+          "/app",
+          "/app/*"
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "APPLE_TEAM_ID.com.decamino.app"
+    ]
+  }
+}
