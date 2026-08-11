@@ -24,3 +24,12 @@
 # Headers pentru assets - cache lung (hash-urile garantează unicitatea)
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# Digital Asset Links / AASA — parole autofill + App Links (nu SPA)
+/.well-known/apple-app-site-association
+  Content-Type: application/json
+  Cache-Control: no-cache, must-revalidate
+
+/.well-known/assetlinks.json
+  Content-Type: application/json
+  Cache-Control: no-cache, must-revalidate

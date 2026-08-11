@@ -192,7 +192,13 @@ export default function LoginPage() {
             <p className="login-card__desc">Accede a tu cuenta empresarial</p>
           </div>
 
-          <form className="login-form" onSubmit={handleSubmit}>
+          <form
+            className="login-form"
+            name="decamino-login"
+            autoComplete="on"
+            data-password-manager-title="DeCamino"
+            onSubmit={handleSubmit}
+          >
             {error && (
               <div role="alert" className="login-alert">
                 <svg fill="currentColor" viewBox="0 0 20 20" aria-hidden>
@@ -216,7 +222,7 @@ export default function LoginPage() {
                   value={formData.email}
                   onChange={(e) => handleInputChange('email', e.target.value)}
                   required
-                  autoComplete="email"
+                  autoComplete="username"
                   placeholder="tu@email.com"
                 />
                 <span className="login-field__icon" aria-hidden="true">
