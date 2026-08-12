@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Card, Button, Input } from '../components/ui';
+import ConfirmModal from '../components/ui/ConfirmModal';
 import {
   ProductListItem,
   StickyCartBar,
@@ -2286,6 +2287,9 @@ const TabGestionarPedidos: React.FC<{
   const [loadingServicios, setLoadingServicios] = useState(false);
   const [pedidoCargandoAlbaran, setPedidoCargandoAlbaran] = useState<string | null>(null);
   const [copiandoPedidoUid, setCopiandoPedidoUid] = useState<string | null>(null);
+  const [copiaConfirmPedido, setCopiaConfirmPedido] = useState<Pedido | null>(null);
+  const [deleteConfirmUid, setDeleteConfirmUid] = useState<string | null>(null);
+  const [albaranDeleteConfirm, setAlbaranDeleteConfirm] = useState(false);
   const [albaranFiles, setAlbaranFiles] = useState<File[]>([]);
   const [albaranPreview, setAlbaranPreview] = useState<string | null>(null);
   const [uploadingAlbaran, setUploadingAlbaran] = useState(false);
@@ -2773,10 +2777,6 @@ const TabGestionarPedidos: React.FC<{
 
   // Șterge un pedido
   const handleDeletePedido = async (pedidoUid: string) => {
-    if (!confirm(`¿Estás seguro de que quieres eliminar el pedido ${pedidoUid}? Esta acción no se puede deshacer y eliminará todos los datos asociados.`)) {
-      return;
-    }
-
     try {
       const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
       const headers: Record<string, string> = {
@@ -2827,14 +2827,6 @@ const TabGestionarPedidos: React.FC<{
 
   const handleCopiarPedido = async (source: Pedido) => {
     const uid = source.pedido_uid;
-    if (
-      !confirm(
-        `¿Crear un pedido nuevo copiando los productos y la comunidad de #${uid}? El nuevo pedido quedará en estado «pendiente» con la fecha de hoy.`,
-      )
-    ) {
-      return;
-    }
-
     setCopiandoPedidoUid(uid);
     try {
       const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
@@ -2846,25 +2838,91 @@ const TabGestionarPedidos: React.FC<{
       };
       if (token) headers.Authorization = `Bearer ${token}`;
 
-      let pedido: Pedido = source;
-      if (!pedido.items?.length) {
-        const res = await fetch(routes.getPedidoByUid(uid), { headers });
-        if (!res.ok) throw new Error(await res.text());
-        pedido = await res.json();
-      }
+      // Siempre recargar el pedido completo (la lista puede traer items sin producto_id)
+      const res = await fetch(routes.getPedidoByUid(uid), { headers });
+      if (!res.ok) throw new Error(await res.text());
+      const pedido: Pedido = await res.json();
 
-      const items = pedido.items || [];
+      let items = [...(pedido.items || [])];
       if (!items.length) {
         addToast('warning', 'Sin productos', 'El pedido no tiene productos para copiar.');
         return;
       }
 
+      // Catálogo actual: resolver IDs faltantes + precios/descripciones nuevos
+      type CatalogEntry = {
+        id: number;
+        numero: string;
+        descripcion: string;
+        precio: number;
+      };
+      const byId = new Map<number, CatalogEntry>();
+      const byNumero = new Map<string, CatalogEntry>();
+      try {
+        const catRes = await fetch(routes.getCatalogo, { headers });
+        if (catRes.ok) {
+          const catalogRaw = await catRes.json();
+          const catalog = Array.isArray(catalogRaw)
+            ? catalogRaw
+            : Array.isArray(catalogRaw?.data)
+              ? catalogRaw.data
+              : [];
+          for (const p of catalog) {
+            const id = Number(p.id ?? p.producto_id);
+            const numero = String(p.numero ?? p.numero_articulo ?? '').trim();
+            const precio = Number(
+              p.precio ?? p.Precio ?? p['Precio'] ?? p.precio_unitario ?? 0,
+            );
+            const descripcion = String(
+              p.descripcion ?? p.Descripcion ?? p['Descripción'] ?? '',
+            ).trim();
+            if (!Number.isFinite(id) || id <= 0) continue;
+            const entry: CatalogEntry = {
+              id,
+              numero,
+              descripcion: descripcion || numero || `Producto ${id}`,
+              precio: Number.isFinite(precio) ? precio : 0,
+            };
+            byId.set(id, entry);
+            if (numero) byNumero.set(numero.toLowerCase(), entry);
+          }
+        }
+      } catch (e) {
+        console.warn('[Pedidos] No se pudo cargar catálogo para copia:', e);
+      }
+
+      items = items.map((item) => {
+        let productoId = item.producto_id ? Number(item.producto_id) : 0;
+        let cat =
+          productoId > 0 ? byId.get(productoId) : undefined;
+        if (!cat) {
+          const num = String(item.numero_articulo || '')
+            .trim()
+            .toLowerCase();
+          cat = num ? byNumero.get(num) : undefined;
+          if (cat) productoId = cat.id;
+        }
+        return {
+          ...item,
+          producto_id: cat?.id || (productoId > 0 ? productoId : undefined),
+          numero_articulo: cat?.numero || item.numero_articulo,
+          descripcion: cat?.descripcion || item.descripcion,
+          // Precio vigente del catálogo (si no hay match, fallback al del pedido)
+          precio_unitario:
+            cat != null ? cat.precio : Number(item.precio_unitario) || 0,
+        };
+      });
+
       const sinProductoId = items.filter((i) => !i.producto_id);
       if (sinProductoId.length > 0) {
+        const arts = sinProductoId
+          .map((i) => i.numero_articulo || i.descripcion || '?')
+          .slice(0, 5)
+          .join(', ');
         addToast(
           'warning',
           'No se puede copiar',
-          'Algunos productos del pedido no tienen ID de catálogo. Edita el pedido original o añade los productos manualmente.',
+          `No se encontró en el catálogo: ${arts}${sinProductoId.length > 5 ? '…' : ''}. Añádelos al catálogo o edita el pedido.`,
         );
         return;
       }
@@ -3018,19 +3076,6 @@ const TabGestionarPedidos: React.FC<{
 
   const handleDeleteAlbaran = async () => {
     if (!pedidoViendoAlbaran || albaranViewSelectedId == null) return;
-    const selected = albaranesListaMeta?.find((a) => a.id === albaranViewSelectedId);
-    const label = selected?.nombre_archivo || 'este albarán';
-    if (
-      !confirm(
-        `¿Eliminar «${label}»?\n\nEsta acción no se puede deshacer.${
-          albaranesListaMeta && albaranesListaMeta.length <= 1
-            ? ' Si era el único albarán, el pedido volverá a «enviado».'
-            : ''
-        }`,
-      )
-    ) {
-      return;
-    }
 
     setAlbaranViewDeleting(true);
     try {
@@ -4545,7 +4590,7 @@ const TabGestionarPedidos: React.FC<{
                       </Button>
                     )}
                     <Button
-                      onClick={() => handleCopiarPedido(pedido)}
+                      onClick={() => setCopiaConfirmPedido(pedido)}
                       disabled={copiandoPedidoUid === pedido.pedido_uid}
                       className="bg-purple-600 hover:bg-purple-700 text-white"
                       size="sm"
@@ -4565,7 +4610,7 @@ const TabGestionarPedidos: React.FC<{
                       {pedidoSeleccionado === pedido.pedido_uid ? '👁️ Ocultar' : '👁️ Ver Detalles'}
                     </Button>
                     <Button
-                      onClick={() => handleDeletePedido(pedido.pedido_uid)}
+                      onClick={() => setDeleteConfirmUid(pedido.pedido_uid)}
                       className="bg-red-600 hover:bg-red-700 text-white"
                       size="sm"
                       title="Eliminar pedido permanentemente"
@@ -5397,7 +5442,7 @@ const TabGestionarPedidos: React.FC<{
                       📥 Descargar
                     </a>
                     <Button
-                      onClick={handleDeleteAlbaran}
+                      onClick={() => setAlbaranDeleteConfirm(true)}
                       disabled={albaranViewDeleting || albaranViewSelectedId == null}
                       className="bg-red-600 hover:bg-red-700 text-white"
                     >
@@ -5535,6 +5580,66 @@ const TabGestionarPedidos: React.FC<{
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={!!copiaConfirmPedido}
+        onClose={() => setCopiaConfirmPedido(null)}
+        onConfirm={() => {
+          if (!copiaConfirmPedido || copiandoPedidoUid) return;
+          void handleCopiarPedido(copiaConfirmPedido);
+        }}
+        title="Crear pedido por copia"
+        message={
+          copiaConfirmPedido
+            ? `¿Crear un pedido nuevo copiando productos y comunidad de #${copiaConfirmPedido.pedido_uid}? Se usarán los precios actuales del catálogo. El nuevo pedido quedará en estado «pendiente» con la fecha de hoy.`
+            : '¿Confirmas crear el pedido por copia?'
+        }
+        confirmText="Crear copia"
+        cancelText="Cancelar"
+        type="info"
+        overlayZIndex={10050}
+      />
+
+      <ConfirmModal
+        isOpen={!!deleteConfirmUid}
+        onClose={() => setDeleteConfirmUid(null)}
+        onConfirm={() => {
+          if (!deleteConfirmUid) return;
+          void handleDeletePedido(deleteConfirmUid);
+        }}
+        title="Eliminar pedido"
+        message={
+          deleteConfirmUid
+            ? `¿Estás seguro de que quieres eliminar el pedido #${deleteConfirmUid}? Esta acción no se puede deshacer y eliminará todos los datos asociados.`
+            : '¿Confirmas eliminar el pedido?'
+        }
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        type="danger"
+        overlayZIndex={10050}
+      />
+
+      <ConfirmModal
+        isOpen={albaranDeleteConfirm}
+        onClose={() => setAlbaranDeleteConfirm(false)}
+        onConfirm={() => {
+          void handleDeleteAlbaran();
+        }}
+        title="Eliminar albarán"
+        message={(() => {
+          const selected = albaranesListaMeta?.find((a) => a.id === albaranViewSelectedId);
+          const label = selected?.nombre_archivo || 'este albarán';
+          const unico =
+            albaranesListaMeta && albaranesListaMeta.length <= 1
+              ? ' Si era el único albarán, el pedido volverá a «enviado».'
+              : '';
+          return `¿Eliminar «${label}»? Esta acción no se puede deshacer.${unico}`;
+        })()}
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        type="danger"
+        overlayZIndex={10060}
+      />
     </div>
   );
 };

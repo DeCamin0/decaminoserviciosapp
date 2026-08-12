@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
-import sizeOf from 'image-size';
+import probe from 'probe-image-size';
 import PDFDocument from 'pdfkit';
 import { PresupuestosGuardadosService } from './presupuestos-guardados.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -583,7 +583,7 @@ function getLogoDimensions(
 ): { width: number; height: number } | null {
   try {
     const buf = fs.readFileSync(logoPath);
-    const dims = sizeOf(buf);
+    const dims = probe.sync(buf);
     if (dims?.width && dims?.height)
       return { width: dims.width, height: dims.height };
   } catch {
