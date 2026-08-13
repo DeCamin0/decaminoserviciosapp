@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" href="./logo-hera.svg" />
+  <link rel="icon" href="./LOGO_hera.png" />
   <title>Aceptación de Presupuesto - HERA FACILITY SERVICES SL</title>
   <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -371,7 +371,7 @@
   <div class="main">
   <div class="page-wrap">
     <div class="logo-wrap">
-      <img src="./logo-hera.svg" alt="HERA FACILITY SERVICES SL" onerror="this.style.display='none'" />
+      <img src="./LOGO_hera.png" alt="HERA FACILITY SERVICES SL" onerror="this.style.display='none'" />
     </div>
     <div class="card">
       <h1 class="card-title">Aceptación de Presupuesto</h1>
@@ -468,14 +468,14 @@
 
   <footer class="firmar-footer">
     <p class="footer-credits">Este sistema ha sido diseñado y desarrollado por DeCamino</p>
-    <a href="https://www.herafacility.com" target="_blank" rel="noopener noreferrer" class="footer-logo-link" title="Visita el sitio web de DeCamino">
+    <a href="https://herafs.com" target="_blank" rel="noopener noreferrer" class="footer-logo-link" title="Visita el sitio web de DeCamino">
       <div class="footer-logo-circle">
         <img src="/DeCamino-04.svg" alt="DeCamino Logo" />
       </div>
     </a>
     <div class="footer-copy">
       <span>© <span id="footer-year"></span></span>
-      <a href="https://www.herafacility.com" target="_blank" rel="noopener noreferrer" title="DeCamino">
+      <a href="https://herafs.com" target="_blank" rel="noopener noreferrer" title="DeCamino">
         <div class="mini-logo">
           <img src="/DeCamino-04.svg" alt="DeCamino" />
         </div>
@@ -490,7 +490,7 @@
       var params = new URLSearchParams(window.location.search);
       var quotationId = params.get('id') ? parseInt(params.get('id'), 10) : null;
       var numeroPresupuesto = null;
-      var API_BASE = ('http://localhost:3002' && 'http://localhost:3002'.trim()) || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      var API_BASE = ('https://api.herafs.com' && 'https://api.herafs.com'.trim()) || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? 'http://localhost:3000'
         : '');
 

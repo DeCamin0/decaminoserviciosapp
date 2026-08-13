@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" href="./logo-hera.svg" />
+  <link rel="icon" href="./LOGO_hera.png" />
   <title>Aceptación de Informe - HERA FACILITY SERVICES SL</title>
   <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
   <style>
@@ -39,7 +39,7 @@
 <body>
   <div class="main">
     <div class="page-wrap">
-      <div class="logo-wrap"><img src="./logo-hera.svg" alt="HERA FACILITY SERVICES SL" onerror="this.style.display='none'" /></div>
+      <div class="logo-wrap"><img src="./LOGO_hera.png" alt="HERA FACILITY SERVICES SL" onerror="this.style.display='none'" /></div>
       <div class="card">
         <h1 class="card-title">Aceptación de Informe</h1>
         <p class="card-subtitle">Firma electrónica del informe / presupuesto. Todos los campos son obligatorios.</p>
@@ -101,7 +101,7 @@
       var informeId = params.get('id') ? parseInt(params.get('id'), 10) : null;
       var API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
         ? 'http://localhost:3000'
-        : (window.location.origin || 'http://localhost:3002');
+        : (window.location.origin || 'https://api.herafs.com');
 
       if (!informeId) {
         document.getElementById('id-info').textContent = 'No se ha indicado informe (falta ?id= en la URL).';
