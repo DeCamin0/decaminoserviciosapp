@@ -370,10 +370,111 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('user');
     localStorage.removeItem('auth_token'); // Șterge și token-ul JWT
     localStorage.removeItem('refresh_token'); // Șterge și refresh token-ul
+    sessionStorage.removeItem('impersonation_backup');
     setAuthToken(null); // Update state
     clearAvatarCache();
     sessionStorage.removeItem('lastPath');
     navigate('/login', { replace: true });
+  };
+
+  const IMPERSONATION_BACKUP_KEY = 'impersonation_backup';
+
+  const startImpersonation = async (codigo) => {
+    try {
+      if (!codigo) {
+        return { success: false, error: 'CODIGO obligatorio' };
+      }
+      if (user?.impersonation || sessionStorage.getItem(IMPERSONATION_BACKUP_KEY)) {
+        return {
+          success: false,
+          error: 'Ya estás en una sesión de impersonación. Vuelve a tu cuenta primero.',
+        };
+      }
+
+      const res = await fetchWithAuth(routes.impersonate(codigo), {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) {
+        const msg =
+          data?.message ||
+          data?.error ||
+          `No se pudo entrar como el empleado (${res.status})`;
+        return { success: false, error: msg };
+      }
+
+      sessionStorage.setItem(
+        IMPERSONATION_BACKUP_KEY,
+        JSON.stringify({
+          auth_token: localStorage.getItem('auth_token'),
+          refresh_token: localStorage.getItem('refresh_token'),
+          user: localStorage.getItem('user'),
+        }),
+      );
+
+      localStorage.setItem('auth_token', data.accessToken);
+      if (data.refreshToken) {
+        localStorage.setItem('refresh_token', data.refreshToken);
+      }
+      const targetUser = {
+        ...data.user,
+        impersonation: true,
+        impersonatedBy: data.impersonatedBy,
+      };
+      localStorage.setItem('user', JSON.stringify(targetUser));
+      setAuthToken(data.accessToken);
+      setUser(targetUser);
+      clearAPICache();
+      clearAvatarCache();
+
+      window.location.assign('/dashboard');
+      return { success: true, user: targetUser };
+    } catch (e) {
+      console.error('startImpersonation error:', e);
+      return {
+        success: false,
+        error: e.message || 'Error al iniciar impersonación',
+      };
+    }
+  };
+
+  const stopImpersonation = () => {
+    try {
+      const raw = sessionStorage.getItem(IMPERSONATION_BACKUP_KEY);
+      if (!raw) {
+        return { success: false, error: 'No hay sesión de administrador guardada' };
+      }
+      const backup = JSON.parse(raw);
+      if (backup.auth_token) {
+        localStorage.setItem('auth_token', backup.auth_token);
+      }
+      if (backup.refresh_token) {
+        localStorage.setItem('refresh_token', backup.refresh_token);
+      } else {
+        localStorage.removeItem('refresh_token');
+      }
+      if (backup.user) {
+        localStorage.setItem('user', backup.user);
+        try {
+          setUser(JSON.parse(backup.user));
+        } catch {
+          setUser(null);
+        }
+      }
+      setAuthToken(backup.auth_token || null);
+      sessionStorage.removeItem(IMPERSONATION_BACKUP_KEY);
+      clearAPICache();
+      clearAvatarCache();
+      window.location.assign('/empleados');
+      return { success: true };
+    } catch (e) {
+      console.error('stopImpersonation error:', e);
+      return {
+        success: false,
+        error: e.message || 'Error al volver a tu cuenta',
+      };
+    }
   };
 
   // Función para login directo en modo DEMO
@@ -453,6 +554,9 @@ export const AuthProvider = ({ children }) => {
     login,
     loginDemo,
     logout,
+    startImpersonation,
+    stopImpersonation,
+    isImpersonating: !!(user?.impersonation || sessionStorage.getItem('impersonation_backup')),
     isAuthenticated: !!user,
     loading,
     authToken, // Export token for API calls

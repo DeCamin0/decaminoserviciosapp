@@ -8,19 +8,27 @@ import {
   UseGuards,
   Req,
   Headers,
+  Param,
+  Logger,
 } from '@nestjs/common';
 import { LoginDto } from '../dto/login.dto';
 import { AuthService } from '../services/auth.service';
 import { PasswordResetService } from '../services/password-reset.service';
+import { EmpleadoGrupoScopeService } from '../services/empleado-grupo-scope.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ForgotPasswordRateLimitError } from '../utils/password-reset.util';
 
 @Controller('api/auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authService: AuthService,
     private readonly passwordResetService: PasswordResetService,
+    private readonly empleadoGrupoScopeService: EmpleadoGrupoScopeService,
+    private readonly prisma: PrismaService,
   ) {}
 
   private clientIp(req: any): string {
@@ -142,6 +150,136 @@ export class AuthController {
           message: error?.message || 'No se pudo restablecer la contraseña',
         },
         status,
+      );
+    }
+  }
+
+  /**
+   * POST /api/auth/impersonate/:codigo
+   * Manager/Developer: enter the app as another employee (support review).
+   */
+  @Post('impersonate/:codigo')
+  @UseGuards(JwtAuthGuard)
+  async impersonate(
+    @CurrentUser() user: any,
+    @Param('codigo') codigo: string,
+  ) {
+    try {
+      if (!codigo) {
+        throw new HttpException(
+          { success: false, message: 'CODIGO es obligatorio' },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      if (user?.impersonation || user?.impersonatedBy) {
+        throw new HttpException(
+          {
+            success: false,
+            message: 'Ya estás en una sesión de impersonación. Vuelve a tu cuenta primero.',
+          },
+          HttpStatus.FORBIDDEN,
+        );
+      }
+
+      const role = String(user?.role || '').toUpperCase();
+      const grupo = String(user?.grupo || user?.GRUPO || '');
+      const isManager =
+        !!user?.isManager ||
+        role === 'MANAGER' ||
+        role === 'ADMIN' ||
+        role === 'DEVELOPER' ||
+        grupo === 'Manager' ||
+        grupo === 'Supervisor' ||
+        grupo === 'Developer' ||
+        grupo === 'Admin';
+      const isDeveloper =
+        role === 'DEVELOPER' ||
+        grupo === 'Developer';
+
+      const actorCodigo = user?.userId || user?.CODIGO;
+      if (!actorCodigo) {
+        throw new HttpException(
+          { success: false, message: 'Sesión inválida' },
+          HttpStatus.UNAUTHORIZED,
+        );
+      }
+
+      if (codigo === actorCodigo) {
+        throw new HttpException(
+          {
+            success: false,
+            message: 'No puedes entrar como tu propia cuenta',
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      if (!isManager && !isDeveloper) {
+        throw new HttpException(
+          {
+            success: false,
+            message: 'No tienes permiso para entrar como otro empleado',
+          },
+          HttpStatus.FORBIDDEN,
+        );
+      }
+
+      const target = await this.prisma.user.findUnique({
+        where: { CODIGO: codigo },
+        select: { CODIGO: true, GRUPO: true },
+      });
+      if (!target) {
+        throw new HttpException(
+          { success: false, message: 'Empleado no encontrado' },
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      const scRs = await this.empleadoGrupoScopeService.resolveScopeFilter({
+        userId: actorCodigo,
+        role: user?.role,
+        grupo: user?.grupo || user?.GRUPO,
+      });
+      this.empleadoGrupoScopeService.assertEmpleadoAccessible(
+        scRs,
+        codigo,
+        target.GRUPO,
+      );
+
+      const result = await this.authService.impersonate(actorCodigo, codigo);
+      if (!result.success) {
+        throw new HttpException(
+          {
+            success: false,
+            message: result.error || 'No se pudo iniciar impersonación',
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      this.logger.log(
+        `🔐 Impersonation started: ${actorCodigo} → ${codigo}`,
+      );
+
+      return {
+        success: true,
+        user: result.user,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        impersonatedBy: result.impersonatedBy,
+      };
+    } catch (error: any) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      this.logger.error('Impersonate error:', error);
+      throw new HttpException(
+        {
+          success: false,
+          message: error.message || 'Impersonation failed',
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }

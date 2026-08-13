@@ -119,6 +119,12 @@ export class MeService {
         role,
         GRUPO: grupo,
         isSuperAdminControlPlane,
+        ...(currentUser?.impersonation && currentUser?.impersonatedBy
+          ? {
+              impersonation: true,
+              impersonatedBy: currentUser.impersonatedBy,
+            }
+          : {}),
       },
       permissions,
       avatar,

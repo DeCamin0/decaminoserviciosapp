@@ -42,6 +42,7 @@ const MensajesEnviadosPage = lazy(() => import('../MensajesEnviadosPage'));
 const HallOfFamePage = lazy(() => import('../HallOfFamePage'));
 const PRLDocumentosPage = lazy(() => import('../PRLDocumentosPage'));
 const PresupuestosInformesPage = lazy(() => import('../PresupuestosInformesPage'));
+const PresupuestosV2Page = lazy(() => import('../PresupuestosV2Page'));
 const ServiciosPeriodicosPage = lazy(() => import('../ServiciosPeriodicosPage'));
 const FotosTrabajoPage = lazy(() => import('../FotosTrabajoPage'));
 const MisTareasPage = lazy(() => import('../MisTareasPage'));
@@ -368,6 +369,14 @@ export const LazyPresupuestosInformesPage = (props) => {
   );
 };
 
+export const LazyPresupuestosV2Page = (props) => {
+  return (
+    <Suspense fallback={<PageLoading title="Cargando Presupuestos V2..." />}>
+      <PresupuestosV2Page {...props} />
+    </Suspense>
+  );
+};
+
 export const LazyServiciosPeriodicosPage = (props) => {
   return (
     <Suspense fallback={<PageLoading title="Cargando Servicios periódicos..." />}>
@@ -436,6 +445,7 @@ export default {
   LazyHallOfFamePage,
   LazyPRLDocumentosPage,
   LazyPresupuestosInformesPage,
+  LazyPresupuestosV2Page,
   LazyServiciosPeriodicosPage,
   LazyFotosTrabajoPage,
   LazyMisTareasPage,

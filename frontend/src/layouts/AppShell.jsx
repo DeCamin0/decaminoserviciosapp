@@ -28,7 +28,7 @@ const isClient2Logo = () => (config.LOGO_PATH || '').toLowerCase().includes('her
  * dar {children} rămân montați — fără pierdere de state la resize / rotație / split screen.
  */
 const AppShell = ({ isMobile, children }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, stopImpersonation, isImpersonating } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const now = useMemo(() => new Date(), []);
@@ -46,6 +46,10 @@ const AppShell = ({ isMobile, children }) => {
 
   const userName = user?.['NOMBRE / APELLIDOS'] || user?.name || 'Utilizator';
   const userGrupo = user?.GRUPO || '';
+  const showingImpersonation =
+    isImpersonating ||
+    !!user?.impersonation ||
+    !!sessionStorage.getItem('impersonation_backup');
 
   return (
     <div
@@ -73,6 +77,22 @@ const AppShell = ({ isMobile, children }) => {
         <div className="absolute top-1/2 left-10 w-24 h-24 rounded-full opacity-25 blur-lg" style={{ backgroundColor: 'var(--primary-color)' }} />
         <div className="absolute top-10 right-10 w-20 h-20 rounded-full opacity-20 blur-lg" style={{ backgroundColor: 'var(--primary-color)' }} />
       </div>
+
+      {showingImpersonation && (
+        <div className="relative z-50 sticky top-0 flex flex-wrap items-center justify-center gap-3 px-4 py-2.5 bg-amber-500 text-white text-sm font-semibold shadow-md">
+          <span>
+            Estás viendo la app como {userName}
+            {user?.CODIGO ? ` (${user.CODIGO})` : ''}
+          </span>
+          <button
+            type="button"
+            onClick={() => stopImpersonation?.()}
+            className="px-3 py-1 rounded-lg bg-white text-amber-800 font-bold hover:bg-amber-50 transition-colors"
+          >
+            Volver a mi cuenta
+          </button>
+        </div>
+      )}
 
       {isHolidaySeason && (
         <style>{`

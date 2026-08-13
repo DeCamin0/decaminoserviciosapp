@@ -135,6 +135,7 @@ import { PortalModule } from './portal/portal.module';
 import { StorageModule } from './storage/storage.module';
 import { FotosTrabajoModule } from './fotos-trabajo/fotos-trabajo.module';
 import { TareasModule } from './tareas/tareas.module';
+import { PresupuestosV2Module } from './presupuestos-v2/presupuestos-v2.module';
 
 @Module({
   imports: [
@@ -142,6 +143,7 @@ import { TareasModule } from './tareas/tareas.module';
     StorageModule,
     FotosTrabajoModule,
     TareasModule,
+    PresupuestosV2Module,
     ScheduleModule.forRoot(), // Pentru cron jobs
     // Rate limiting: generos pentru app internă (Todas/Aprobación fac multe request-uri per empleado → 429)
     ThrottlerModule.forRoot([

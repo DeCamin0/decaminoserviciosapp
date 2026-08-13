@@ -393,7 +393,13 @@ const MobileMoreDrawer = ({ isOpen, onClose }) => {
       ? (hasPermission('presupuestos-informes') || canAccessClientes)
       : (isAdmin || isDeveloper || isManager || user?.GRUPO === 'Supervisor' || canAccessClientes);
     if (canAccessPresupuestos) {
-      list.push({ id: 'presupuestos-informes', label: 'Presupuestos e Informes', hint: 'Generar presupuestos e informes automáticamente', icon: FileText, href: '/presupuestos-informes', role: 'manager', gradient: 'from-indigo-500 via-purple-500 to-pink-500' });
+      list.push({ id: 'presupuestos-informes', label: 'Presupuestos actual (Legacy)', hint: 'Sistema actual de presupuestos e informes', icon: FileText, href: '/presupuestos-informes', role: 'manager', gradient: 'from-indigo-500 via-purple-500 to-pink-500' });
+    }
+    const canAccessPresupuestosV2 = hasBackendPermissions
+      ? hasPermission('presupuestos-v2')
+      : (isAdmin || isDeveloper || isManager || user?.GRUPO === 'Supervisor');
+    if (canAccessPresupuestosV2) {
+      list.push({ id: 'presupuestos-v2', label: 'Presupuestos V2', hint: 'Nuevo módulo de presupuestos', icon: FileText, href: '/presupuestos-v2', role: 'manager', gradient: 'from-slate-600 via-gray-700 to-zinc-800' });
     }
     const canAccessServiciosPeriodicos = hasBackendPermissions
       ? (hasPermission('servicios-periodicos') || canAccessClientes)

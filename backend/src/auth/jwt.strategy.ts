@@ -53,11 +53,24 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       );
     }
 
-    return {
+    const result: Record<string, unknown> = {
       email: payload.email,
       userId: payload.userId,
       role: payload.role,
       grupo: payload.grupo,
+      isManager:
+        payload.role === 'MANAGER' ||
+        payload.role === 'DEVELOPER' ||
+        payload.role === 'ADMIN' ||
+        payload.grupo === 'Manager' ||
+        payload.grupo === 'Supervisor' ||
+        payload.grupo === 'Developer' ||
+        payload.grupo === 'Admin',
     };
+    if (payload.impersonation && payload.impersonatedBy) {
+      result.impersonation = true;
+      result.impersonatedBy = payload.impersonatedBy;
+    }
+    return result;
   }
 }

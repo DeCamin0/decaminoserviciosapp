@@ -1446,11 +1446,26 @@ const InicioPage = () => {
     if (canAccessPresupuestos) {
       list.push({
         id: 'presupuestos-informes',
-        label: 'Presupuestos e Informes',
-        hint: 'Generar presupuestos e informes automáticamente',
+        label: 'Presupuestos actual (Legacy)',
+        hint: 'Sistema actual de presupuestos e informes',
         icon: <FileText className="h-6 w-6 text-white" />,
         gradient: 'from-indigo-500 via-purple-500 to-pink-500',
         href: '/presupuestos-informes',
+        role: 'manager',
+      });
+    }
+
+    const canAccessPresupuestosV2 = hasBackendPermissions
+      ? hasPermission('presupuestos-v2')
+      : (isAdmin || isDeveloper || isManager || user?.GRUPO === 'Supervisor');
+    if (canAccessPresupuestosV2) {
+      list.push({
+        id: 'presupuestos-v2',
+        label: 'Presupuestos V2',
+        hint: 'Nuevo módulo de presupuestos',
+        icon: <FileText className="h-6 w-6 text-white" />,
+        gradient: 'from-slate-600 via-gray-700 to-zinc-800',
+        href: '/presupuestos-v2',
         role: 'manager',
       });
     }

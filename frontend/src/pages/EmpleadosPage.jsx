@@ -230,7 +230,7 @@ const calcularAntiguedad = (fechaAntiguedad, fechaBaja) => {
 };
 
 export default function EmpleadosPage() {
-  const { user: authUser, authToken, logout } = useAuth();
+  const { user: authUser, authToken, logout, startImpersonation } = useAuth();
   const { hasPermission } = usePermissions();
   const canCreateTareas = hasPermission('tareas');
   const { callApi } = useApi();
@@ -3410,6 +3410,8 @@ export default function EmpleadosPage() {
 
   // Funcții pentru email
   const [confirmResetPassword, setConfirmResetPassword] = useState(null); // { user: {...}, show: true }
+  const [confirmImpersonate, setConfirmImpersonate] = useState(null); // { user, show }
+  const [impersonatingBusy, setImpersonatingBusy] = useState(false);
 
   const handleResetPassword = async (user) => {
     if (!user?.CODIGO) {
@@ -3424,6 +3426,46 @@ export default function EmpleadosPage() {
 
     // Afișează dialogul de confirmare
     setConfirmResetPassword({ user, show: true });
+  };
+
+  const handleImpersonate = (user) => {
+    if (!user?.CODIGO) {
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'No se encontró el código del empleado',
+        show: true,
+      });
+      return;
+    }
+    setConfirmImpersonate({ user, show: true });
+  };
+
+  const executeImpersonate = async () => {
+    if (!confirmImpersonate?.user?.CODIGO || !startImpersonation) return;
+    const target = confirmImpersonate.user;
+    setConfirmImpersonate(null);
+    setImpersonatingBusy(true);
+    try {
+      const result = await startImpersonation(target.CODIGO);
+      if (!result?.success) {
+        setNotification({
+          type: 'error',
+          title: 'Error',
+          message: result?.error || 'No se pudo entrar como el empleado',
+          show: true,
+        });
+      }
+    } catch (error) {
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: error.message || 'No se pudo entrar como el empleado',
+        show: true,
+      });
+    } finally {
+      setImpersonatingBusy(false);
+    }
   };
 
   const executeResetPassword = async () => {
@@ -7390,12 +7432,20 @@ export default function EmpleadosPage() {
                 ) : field === 'Contraseña' ? (
                   <div className="space-y-2">
                     <p className="text-sm text-gray-600">
-                      Por seguridad las contraseñas no se pueden ver. Usa «Resetear contraseña» para generar una temporal y enviarla por email, o pide al empleado que use «¿Has olvidado tu contraseña?» en el login.
+                      Entra en la app como este empleado para revisar su vista. Las contraseñas no se pueden ver; si necesitas una temporal, usa «Resetear contraseña».
                     </p>
                     <button
                       type="button"
+                      onClick={() => handleImpersonate(editForm)}
+                      disabled={impersonatingBusy}
+                      className="px-4 py-3 bg-gradient-to-r from-sky-500 to-blue-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 disabled:opacity-60 disabled:transform-none"
+                    >
+                      {impersonatingBusy ? 'Entrando…' : 'Entrar como este empleado'}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleResetPassword(editForm)}
-                      className="px-4 py-3 bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300"
+                      className="block text-sm text-amber-700 underline hover:text-amber-900"
                     >
                       Resetear contraseña
                     </button>
@@ -8689,6 +8739,22 @@ export default function EmpleadosPage() {
             executeResetPassword();
           }}
           onCancel={() => setConfirmResetPassword(null)}
+        />
+      )}
+
+      {confirmImpersonate && confirmImpersonate.show && (
+        <Notification
+          type="warning"
+          title="Entrar como empleado"
+          message={`Vas a ver la aplicación como ${confirmImpersonate.user['NOMBRE / APELLIDOS'] || confirmImpersonate.user.CODIGO}.\n\nPodrás volver a tu cuenta con el botón «Volver a mi cuenta» en la barra superior.`}
+          show={true}
+          isConfirmDialog={true}
+          confirmText="Sí, entrar"
+          cancelText="Cancelar"
+          onConfirm={() => {
+            executeImpersonate();
+          }}
+          onCancel={() => setConfirmImpersonate(null)}
         />
       )}
 

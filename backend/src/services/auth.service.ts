@@ -179,6 +179,94 @@ export class AuthService {
     }
   }
 
+  /**
+   * Issue tokens as target employee (support review). Does NOT require ACTIVO.
+   * Caller must enforce permissions / scope / no nested impersonation.
+   */
+  async impersonate(
+    actorUserId: string,
+    targetCodigo: string,
+  ): Promise<{
+    success: boolean;
+    user?: any;
+    accessToken?: string;
+    refreshToken?: string;
+    impersonatedBy?: string;
+    error?: string;
+  }> {
+    try {
+      const found = await this.prisma.user.findUnique({
+        where: { CODIGO: targetCodigo },
+      });
+      if (!found) {
+        return { success: false, error: 'Empleado no encontrado' };
+      }
+
+      const grupo = found.GRUPO || '';
+      const role = this.mapRole(grupo);
+      const authVersion = found.AUTH_VERSION ?? 0;
+
+      const userObj: any = {
+        email: found.CORREO_ELECTRONICO,
+        isManager:
+          grupo === 'Manager' ||
+          grupo === 'Supervisor' ||
+          grupo === 'Developer',
+        role,
+        GRUPO: grupo,
+        ...found,
+        CONTRASENA: undefined,
+        impersonation: true,
+        impersonatedBy: actorUserId,
+      };
+      delete userObj.CONTRASENA;
+
+      const payload = {
+        email: found.CORREO_ELECTRONICO,
+        userId: found.CODIGO,
+        role,
+        grupo,
+        authVersion,
+        type: 'access',
+        impersonation: true,
+        impersonatedBy: actorUserId,
+      };
+      const accessToken = this.jwtService.sign(payload, {
+        expiresIn: '30m',
+      });
+
+      const refreshPayload = {
+        email: found.CORREO_ELECTRONICO,
+        userId: found.CODIGO,
+        authVersion,
+        type: 'refresh',
+        impersonation: true,
+        impersonatedBy: actorUserId,
+      };
+      const refreshToken = this.jwtService.sign(refreshPayload, {
+        expiresIn: '2h',
+      });
+
+      console.log(
+        `[AuthService] Impersonation: actor=${actorUserId} → target=${found.CODIGO} (${found.CORREO_ELECTRONICO})`,
+      );
+
+      return {
+        success: true,
+        user: userObj,
+        accessToken,
+        refreshToken,
+        impersonatedBy: actorUserId,
+      };
+    } catch (error: any) {
+      console.error('[AuthService] Impersonate error:', error);
+      return {
+        success: false,
+        error: error.message || 'Error during impersonation',
+      };
+    }
+  }
+
   async refreshToken(refreshToken: string): Promise<{
     success: boolean;
     accessToken?: string;
@@ -206,8 +294,10 @@ export class AuthService {
         return { success: false, error: 'User not found' };
       }
 
+      const isImpersonation = !!decoded.impersonation && !!decoded.impersonatedBy;
       const estadoRaw = (found.ESTADO || '').toString().trim().toUpperCase();
-      if (estadoRaw && estadoRaw !== 'ACTIVO') {
+      // Impersonation may target INACTIVO for support review — allow refresh then.
+      if (!isImpersonation && estadoRaw && estadoRaw !== 'ACTIVO') {
         console.log('[AuthService] User inactive for refresh');
         return { success: false, error: 'Usuario inactivo' };
       }
@@ -227,7 +317,7 @@ export class AuthService {
       const grupo = found.GRUPO || '';
       const role = this.mapRole(grupo);
 
-      const payload = {
+      const payload: Record<string, unknown> = {
         email: found.CORREO_ELECTRONICO,
         userId: found.CODIGO,
         role,
@@ -235,6 +325,10 @@ export class AuthService {
         authVersion: currentVersion,
         type: 'access',
       };
+      if (isImpersonation) {
+        payload.impersonation = true;
+        payload.impersonatedBy = decoded.impersonatedBy;
+      }
       const newAccessToken = this.jwtService.sign(payload, {
         expiresIn: '30m',
       });
@@ -242,6 +336,7 @@ export class AuthService {
       console.log(
         '[AuthService] Token refreshed successfully for:',
         normalizedEmail,
+        isImpersonation ? '(impersonation)' : '',
       );
       return {
         success: true,

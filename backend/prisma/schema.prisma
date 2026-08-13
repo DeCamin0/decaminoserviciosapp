@@ -2305,3 +2305,287 @@ model TareaServicioFoto {
   @@unique([storage_key], map: "uq_tarea_foto_storage_key")
   @@map("tareas_servicio_fotos")
 }
+
+// ============================================
+// PRESUPUESTOS V2 — fundación (paralelo a Legacy)
+// Company → Brand → Serie | Servicios comerciales → Motor
+// ============================================
+
+model V2MotorCalculo {
+  codigo             String   @id @db.VarChar(64)
+  label_ui           String   @map("label_ui") @db.VarChar(200)
+  descripcion        String?  @db.Text
+  version_motor      String   @default("1") @map("version_motor") @db.VarChar(20)
+  activo             Boolean  @default(true)
+  orden              Int      @default(0)
+  created_at         DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at         DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+  servicios          V2ServicioComercial[]
+
+  @@map("v2_motores_calculo")
+}
+
+model V2ParametroCalculo {
+  id            Int      @id @default(autoincrement())
+  ambito        String   @db.VarChar(32)
+  motor_codigo  String   @default("") @map("motor_codigo") @db.VarChar(64)
+  clave         String   @db.VarChar(80)
+  valor_json    Json     @map("valor_json")
+  descripcion   String?  @db.VarChar(500)
+  activo        Boolean  @default(true)
+  created_at    DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at    DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  @@unique([ambito, motor_codigo, clave], map: "uq_v2_param_ambito_motor_clave")
+  @@index([motor_codigo], map: "idx_v2_param_motor")
+  @@map("v2_parametros_calculo")
+}
+
+model V2ConfigAudit {
+  id           Int      @id @default(autoincrement())
+  entity_type  String   @map("entity_type") @db.VarChar(40)
+  entity_id    String   @map("entity_id") @db.VarChar(64)
+  event_type   String   @map("event_type") @db.VarChar(80)
+  payload_json Json?    @map("payload_json")
+  actor        String?  @db.VarChar(50)
+  created_at   DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+
+  @@index([entity_type, entity_id], map: "idx_v2_config_audit_entity")
+  @@index([event_type, created_at], map: "idx_v2_config_audit_event")
+  @@map("v2_config_audit")
+}
+
+model V2Company {
+  id                  Int       @id @default(autoincrement())
+  codigo              String    @unique @db.VarChar(64)
+  legal_name          String    @map("legal_name") @db.VarChar(500)
+  cif                 String?   @db.VarChar(50)
+  direccion_fiscal    String?   @map("direccion_fiscal") @db.VarChar(500)
+  datos_fiscales_json Json?     @map("datos_fiscales_json")
+  logo_ref            String?   @map("logo_ref") @db.VarChar(255)
+  activo              Boolean   @default(true)
+  created_at          DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at          DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+  brands              V2Brand[]
+  presupuestos        V2Presupuesto[]
+
+  @@map("v2_companies")
+}
+
+model V2Brand {
+  id           Int                 @id @default(autoincrement())
+  company_id   Int                 @map("company_id")
+  codigo       String              @db.VarChar(64)
+  nombre       String              @db.VarChar(200)
+  logo_ref     String?             @map("logo_ref") @db.VarChar(255)
+  config_json  Json?               @map("config_json")
+  activo       Boolean             @default(true)
+  created_at   DateTime            @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at   DateTime            @updatedAt @map("updated_at") @db.Timestamp(0)
+  company      V2Company           @relation(fields: [company_id], references: [id], onDelete: Restrict)
+  series       V2SeriesNumeracion[]
+  servicios    V2ServicioComercial[]
+  presupuestos V2Presupuesto[]
+  bloques      V2ContenidoBloque[]
+
+  @@unique([company_id, codigo], map: "uq_v2_brand_company_codigo")
+  @@index([company_id], map: "idx_v2_brand_company")
+  @@map("v2_brands")
+}
+
+/// Reusable commercial content blocks (Legacy texts → Config → PDF). Not hardcoded in PDF builder.
+model V2ContenidoBloque {
+  id          Int      @id @default(autoincrement())
+  codigo      String   @db.VarChar(80)
+  nombre      String   @db.VarChar(200)
+  categoria   String?  @db.VarChar(80)
+  body_json   Json     @map("body_json")
+  activo      Boolean  @default(true)
+  orden       Int      @default(0)
+  brand_id    Int?     @map("brand_id")
+  created_at  DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at  DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+  brand       V2Brand? @relation(fields: [brand_id], references: [id], onDelete: SetNull)
+
+  @@unique([codigo], map: "uq_v2_contenido_bloque_codigo")
+  @@index([activo, categoria], map: "idx_v2_bloque_activo_cat")
+  @@index([brand_id], map: "idx_v2_bloque_brand")
+  @@map("v2_contenido_bloques")
+}
+
+model V2SeriesNumeracion {
+  id                Int      @id @default(autoincrement())
+  brand_id          Int      @map("brand_id")
+  codigo            String   @db.VarChar(64)
+  prefijo           String   @db.VarChar(32)
+  formato           String   @default("{PREF}{YYYY}-{SEQ}") @db.VarChar(80)
+  padding           Int      @default(4)
+  reset_anual       Boolean  @default(true) @map("reset_anual")
+  anio_actual       Int?     @map("anio_actual")
+  siguiente_numero  Int      @default(1) @map("siguiente_numero")
+  activo            Boolean  @default(true)
+  created_at        DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at        DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+  brand             V2Brand  @relation(fields: [brand_id], references: [id], onDelete: Restrict)
+
+  @@unique([brand_id, codigo], map: "uq_v2_series_brand_codigo")
+  @@index([brand_id, activo], map: "idx_v2_series_brand_activo")
+  @@map("v2_series_numeracion")
+}
+
+model V2ServicioComercial {
+  id              Int      @id @default(autoincrement())
+  codigo_interno  String   @map("codigo_interno") @db.VarChar(64)
+  nombre          String   @db.VarChar(300)
+  descripcion     String?  @db.Text
+  categoria       String?  @db.VarChar(120)
+  codigo_motor    String   @map("codigo_motor") @db.VarChar(64)
+  brand_id        Int?     @map("brand_id")
+  activo          Boolean  @default(true)
+  orden           Int      @default(0)
+  defaults_json   Json?    @map("defaults_json")
+  contenido_comercial_json Json? @map("contenido_comercial_json")
+  created_at      DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at      DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+  motor           V2MotorCalculo @relation(fields: [codigo_motor], references: [codigo], onDelete: Restrict)
+  brand           V2Brand?       @relation(fields: [brand_id], references: [id], onDelete: SetNull)
+  presupuestoServicios V2PresupuestoServicio[]
+
+  @@unique([codigo_interno], map: "uq_v2_servicio_codigo")
+  @@index([activo, orden], map: "idx_v2_servicio_activo_orden")
+  @@index([codigo_motor], map: "idx_v2_servicio_motor")
+  @@index([brand_id], map: "idx_v2_servicio_brand")
+  @@map("v2_servicios_comerciales")
+}
+
+model V2Presupuesto {
+  id                      Int       @id @default(autoincrement())
+  estado                  String    @default("BORRADOR") @db.VarChar(32)
+  numero                  String?   @unique @db.VarChar(64)
+  cliente_id              Int?      @map("cliente_id")
+  company_id              Int       @map("company_id")
+  brand_id                Int       @map("brand_id")
+  serie_id                Int?      @map("serie_id")
+  parent_id               Int?      @map("parent_id")
+  root_id                 Int?      @map("root_id")
+  cliente_working_json    Json?     @map("cliente_working_json")
+  cliente_overrides_json  Json?     @map("cliente_overrides_json")
+  /// Working copy of document-level digital services (Vecindario, …).
+  servicios_digitales_json Json?    @map("servicios_digitales_json")
+  snapshot_cliente_json   Json?     @map("snapshot_cliente_json")
+  snapshot_company_json   Json?     @map("snapshot_company_json")
+  snapshot_brand_json     Json?     @map("snapshot_brand_json")
+  snapshot_serie_json     Json?     @map("snapshot_serie_json")
+  snapshot_economico_json Json?     @map("snapshot_economico_json")
+  snapshot_servicios_digitales_json Json? @map("snapshot_servicios_digitales_json")
+  totales_emitidos_json   Json?     @map("totales_emitidos_json")
+  emitted_at              DateTime? @map("emitted_at") @db.Timestamp(0)
+  emitted_by              String?   @map("emitted_by") @db.VarChar(50)
+  created_by              String?   @map("created_by") @db.VarChar(50)
+  updated_by              String?   @map("updated_by") @db.VarChar(50)
+  created_at              DateTime  @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at              DateTime  @updatedAt @map("updated_at") @db.Timestamp(0)
+  company                 V2Company @relation(fields: [company_id], references: [id], onDelete: Restrict)
+  brand                   V2Brand   @relation(fields: [brand_id], references: [id], onDelete: Restrict)
+  parent                  V2Presupuesto?  @relation("PresupuestoVersionParent", fields: [parent_id], references: [id], onDelete: SetNull)
+  children                V2Presupuesto[] @relation("PresupuestoVersionParent")
+  root                    V2Presupuesto?  @relation("PresupuestoVersionRoot", fields: [root_id], references: [id], onDelete: SetNull)
+  rootChildren            V2Presupuesto[] @relation("PresupuestoVersionRoot")
+  servicios               V2PresupuestoServicio[]
+  audit                   V2PresupuestoAudit[]
+  documentos              V2PresupuestoDocumento[]
+
+  @@index([estado, updated_at], map: "idx_v2_presup_estado_updated")
+  @@index([cliente_id], map: "idx_v2_presup_cliente")
+  @@index([brand_id], map: "idx_v2_presup_brand")
+  @@index([serie_id], map: "idx_v2_presup_serie")
+  @@index([parent_id], map: "idx_v2_presup_parent")
+  @@index([root_id], map: "idx_v2_presup_root")
+  @@map("v2_presupuestos")
+}
+
+model V2PresupuestoDocumento {
+  id                  Int      @id @default(autoincrement())
+  presupuesto_id      Int      @map("presupuesto_id")
+  tipo                String   @db.VarChar(40)
+  version             Int      @default(1)
+  es_oficial          Boolean  @default(false) @map("es_oficial")
+  storage_key         String?  @map("storage_key") @db.VarChar(500)
+  storage_bucket      String?  @map("storage_bucket") @db.VarChar(120)
+  sha256              String   @db.VarChar(64)
+  size_bytes          Int      @map("size_bytes")
+  filename            String   @db.VarChar(255)
+  numero_presupuesto  String?  @map("numero_presupuesto") @db.VarChar(64)
+  template_version    String?  @map("template_version") @db.VarChar(40)
+  content_type        String   @default("application/pdf") @map("content_type") @db.VarChar(80)
+  created_by          String?  @map("created_by") @db.VarChar(50)
+  created_at          DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  presupuesto         V2Presupuesto @relation(fields: [presupuesto_id], references: [id], onDelete: Cascade)
+
+  @@unique([presupuesto_id, sha256], map: "uq_v2_doc_sha")
+  @@index([presupuesto_id], map: "idx_v2_doc_presup")
+  @@index([presupuesto_id, tipo, es_oficial], map: "idx_v2_doc_tipo")
+  @@map("v2_presupuesto_documentos")
+}
+
+model V2PresupuestoAudit {
+  id              Int      @id @default(autoincrement())
+  presupuesto_id  Int      @map("presupuesto_id")
+  event_type      String   @map("event_type") @db.VarChar(80)
+  payload_json    Json?    @map("payload_json")
+  actor           String?  @db.VarChar(50)
+  created_at      DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  presupuesto     V2Presupuesto @relation(fields: [presupuesto_id], references: [id], onDelete: Cascade)
+
+  @@index([presupuesto_id], map: "idx_v2_audit_presup")
+  @@index([event_type, created_at], map: "idx_v2_audit_event")
+  @@map("v2_presupuesto_audit")
+}
+
+model V2PresupuestoServicio {
+  id                     Int       @id @default(autoincrement())
+  presupuesto_id         Int       @map("presupuesto_id")
+  servicio_comercial_id  Int       @map("servicio_comercial_id")
+  orden                  Int       @default(0)
+  codigo_motor           String?   @map("codigo_motor") @db.VarChar(64)
+  version_motor          String?   @map("version_motor") @db.VarChar(20)
+  /// Working commercial copy for this presupuesto (cloned from catalog; editable locally).
+  contenido_comercial_json Json?   @map("contenido_comercial_json")
+  /// Legacy line-level fields kept for backward compat; prefer opciones[].
+  inputs_json            Json?     @map("inputs_json")
+  resultado_json         Json?     @map("resultado_json")
+  params_usados_json     Json?     @map("params_usados_json")
+  calculated_at          DateTime? @map("calculated_at") @db.Timestamp(0)
+  presupuesto            V2Presupuesto       @relation(fields: [presupuesto_id], references: [id], onDelete: Cascade)
+  servicio               V2ServicioComercial @relation(fields: [servicio_comercial_id], references: [id], onDelete: Restrict)
+  opciones               V2PresupuestoServicioOpcion[]
+
+  @@unique([presupuesto_id, servicio_comercial_id], map: "uq_v2_presup_servicio")
+  @@index([presupuesto_id], map: "idx_v2_presup_serv_presup")
+  @@map("v2_presupuesto_servicios")
+}
+
+model V2PresupuestoServicioOpcion {
+  id                       Int      @id @default(autoincrement())
+  presupuesto_servicio_id  Int      @map("presupuesto_servicio_id")
+  etiqueta                 String   @default("Opción 1") @db.VarChar(200)
+  orden                    Int      @default(0)
+  /// EXCLUSIVE = alternatives in the same servicio group; ACUMULABLE = may stack.
+  seleccion_tipo           String   @default("ACUMULABLE") @map("seleccion_tipo") @db.VarChar(20)
+  descripcion_local        String?  @map("descripcion_local") @db.Text
+  /// Structured jornada/horario for commercial presentation + calc sync.
+  jornada_json             Json?    @map("jornada_json")
+  codigo_motor             String?  @map("codigo_motor") @db.VarChar(64)
+  version_motor            String?  @map("version_motor") @db.VarChar(20)
+  inputs_json              Json?    @map("inputs_json")
+  resultado_json           Json?    @map("resultado_json")
+  params_usados_json       Json?    @map("params_usados_json")
+  calculated_at            DateTime? @map("calculated_at") @db.Timestamp(0)
+  activo                   Boolean  @default(true)
+  created_at               DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  updated_at               DateTime @updatedAt @map("updated_at") @db.Timestamp(0)
+  presupuestoServicio      V2PresupuestoServicio @relation(fields: [presupuesto_servicio_id], references: [id], onDelete: Cascade)
+
+  @@index([presupuesto_servicio_id, orden], map: "idx_v2_opcion_servicio")
+  @@map("v2_presupuesto_servicio_opciones")
+}

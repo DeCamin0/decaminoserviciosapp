@@ -8,6 +8,7 @@ import { AuthService } from '../services/auth.service';
 import { AuthController } from '../controllers/auth.controller';
 import { PasswordResetService } from '../services/password-reset.service';
 import { EmailService } from '../services/email.service';
+import { EmpleadoGrupoScopeService } from '../services/empleado-grupo-scope.service';
 
 @Module({
   imports: [
@@ -24,7 +25,13 @@ import { EmailService } from '../services/email.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, PasswordResetService, EmailService],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    PasswordResetService,
+    EmailService,
+    EmpleadoGrupoScopeService,
+  ],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

@@ -29,6 +29,8 @@ export const routes = {
   resetPasswordSelf: `${BACKEND_BASE}/api/auth/reset-password`,
   passwordMigrationStats: `${BACKEND_BASE}/api/auth/password-migration-stats`,
   refresh: `${BACKEND_BASE}/api/auth/refresh`,
+  impersonate: (codigo) =>
+    `${BACKEND_BASE}/api/auth/impersonate/${encodeURIComponent(codigo)}`,
   me: `${BACKEND_BASE}/api/me`,
   permissions: `${BACKEND_BASE}/api/permissions`,
 
@@ -388,12 +390,71 @@ export const routes = {
   updatePlantilla: (id) => `${BACKEND_BASE}/api/plantillas/${id}`,
   deletePlantilla: (id) => `${BACKEND_BASE}/api/plantillas/${id}`,
 
-  // Presupuestos guardados (guardar/cargar oferta completa)
+  // Presupuestos guardados (guardar/cargar oferta completa) — LEGACY
   getPresupuestosGuardados: `${BACKEND_BASE}/api/presupuestos-guardados`,
   getPresupuestoGuardado: (id) => `${BACKEND_BASE}/api/presupuestos-guardados/${id}`,
   createPresupuestoGuardado: `${BACKEND_BASE}/api/presupuestos-guardados`,
   updatePresupuestoGuardado: (id) => `${BACKEND_BASE}/api/presupuestos-guardados/${id}`,
   deletePresupuestoGuardado: (id) => `${BACKEND_BASE}/api/presupuestos-guardados/${id}`,
+
+  // ——— Presupuestos V2 (módulo nuevo; no Legacy) ———
+  v2Presupuestos: `${BACKEND_BASE}/api/v2/presupuestos`,
+  v2Presupuesto: (id) => `${BACKEND_BASE}/api/v2/presupuestos/${id}`,
+  v2PresupuestoCalcular: (id) =>
+    `${BACKEND_BASE}/api/v2/presupuestos/${id}/calcular`,
+  v2PresupuestoEmitir: (id) =>
+    `${BACKEND_BASE}/api/v2/presupuestos/${id}/emitir`,
+  v2PresupuestoPdfPreview: (id) =>
+    `${BACKEND_BASE}/api/v2/presupuestos/${id}/pdf-preview`,
+  v2PresupuestoPdf: (id) => `${BACKEND_BASE}/api/v2/presupuestos/${id}/pdf`,
+  v2PresupuestoClienteRefresh: (id) =>
+    `${BACKEND_BASE}/api/v2/presupuestos/${id}/cliente/refresh`,
+  v2PresupuestoClienteOverrides: (id) =>
+    `${BACKEND_BASE}/api/v2/presupuestos/${id}/cliente/overrides`,
+  v2PresupuestoLinea: (id, servicioId) =>
+    `${BACKEND_BASE}/api/v2/presupuestos/${id}/lineas/${servicioId}`,
+  v2PresupuestoNuevaVersion: (id) =>
+    `${BACKEND_BASE}/api/v2/presupuestos/${id}/nueva-version`,
+  v2PresupuestoLineaOpciones: (id, lineaId) =>
+    `${BACKEND_BASE}/api/v2/presupuestos/${id}/lineas/${lineaId}/opciones`,
+  v2PresupuestoOpcion: (id, opcionId) =>
+    `${BACKEND_BASE}/api/v2/presupuestos/${id}/opciones/${opcionId}`,
+  v2PresupuestoOpcionDuplicar: (id, opcionId) =>
+    `${BACKEND_BASE}/api/v2/presupuestos/${id}/opciones/${opcionId}/duplicar`,
+  v2PresupuestoOpcionesOrden: (id, lineaId) =>
+    `${BACKEND_BASE}/api/v2/presupuestos/${id}/lineas/${lineaId}/opciones/orden`,
+  v2PresupuestoDigitales: (id) =>
+    `${BACKEND_BASE}/api/v2/presupuestos/${id}/servicios-digitales`,
+  v2PresupuestoLineaContenido: (id, lineaId) =>
+    `${BACKEND_BASE}/api/v2/presupuestos/${id}/lineas/${lineaId}/contenido`,
+  v2PresupuestoLineaContenidoRestaurar: (id, lineaId) =>
+    `${BACKEND_BASE}/api/v2/presupuestos/${id}/lineas/${lineaId}/contenido/restaurar`,
+  v2ConfigMotores: `${BACKEND_BASE}/api/v2/config/motores`,
+  v2ConfigMotorSchema: (codigo) =>
+    `${BACKEND_BASE}/api/v2/config/motores/${encodeURIComponent(codigo)}/schema`,
+  v2ConfigBrands: `${BACKEND_BASE}/api/v2/config/brands`,
+  v2ConfigBrand: (id) => `${BACKEND_BASE}/api/v2/config/brands/${id}`,
+  v2ConfigBrandLogo: (id) =>
+    `${BACKEND_BASE}/api/v2/config/brands/${id}/logo`,
+  v2ConfigBrandLogoRef: (id) =>
+    `${BACKEND_BASE}/api/v2/config/brands/${id}/logo-ref`,
+  v2ConfigCompanies: `${BACKEND_BASE}/api/v2/config/companies`,
+  v2ConfigCompany: (id) => `${BACKEND_BASE}/api/v2/config/companies/${id}`,
+  v2ConfigSeries: `${BACKEND_BASE}/api/v2/config/series`,
+  v2ConfigSerie: (id) => `${BACKEND_BASE}/api/v2/config/series/${id}`,
+  v2ConfigSeriePresets: `${BACKEND_BASE}/api/v2/config/series/presets`,
+  v2ConfigSeriePreview: `${BACKEND_BASE}/api/v2/config/series/preview`,
+  v2ConfigParametros: `${BACKEND_BASE}/api/v2/config/parametros`,
+  v2ConfigParametro: (clave) =>
+    `${BACKEND_BASE}/api/v2/config/parametros/${encodeURIComponent(clave)}`,
+  v2ConfigParametrosAudit: `${BACKEND_BASE}/api/v2/config/parametros-audit`,
+  v2ConfigServiciosComerciales: `${BACKEND_BASE}/api/v2/config/servicios-comerciales`,
+  v2ConfigServicioComercial: (id) =>
+    `${BACKEND_BASE}/api/v2/config/servicios-comerciales/${id}`,
+  v2ConfigContenidoBloques: `${BACKEND_BASE}/api/v2/config/contenido-bloques`,
+  v2ConfigContenidoBloque: (id) =>
+    `${BACKEND_BASE}/api/v2/config/contenido-bloques/${id}`,
+
   getPresupuestoGenerarDocumento: (id, format = 'pdf', company = null) => {
     const params = new URLSearchParams();
     if (format) params.set('format', format);

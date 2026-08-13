@@ -76,6 +76,7 @@ import {
   LazyHallOfFamePage,
   LazyPRLDocumentosPage,
   LazyPresupuestosInformesPage,
+  LazyPresupuestosV2Page,
   LazyServiciosPeriodicosPage,
   LazyFotosTrabajoPage,
   LazyMisTareasPage,
@@ -542,13 +543,25 @@ function AppRoutes() {
         }
       />
 
-      {/* Ruta para presupuestos e informes */}
+      {/* Ruta para presupuestos e informes (LEGACY) */}
       <Route
         path="/presupuestos-informes"
         element={
           <ProtectedRoute>
             <ResponsiveLayout>
               <LazyPresupuestosInformesPage />
+            </ResponsiveLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Presupuestos V2 — módulo nuevo (paralelo) */}
+      <Route
+        path="/presupuestos-v2"
+        element={
+          <ProtectedRoute>
+            <ResponsiveLayout>
+              <LazyPresupuestosV2Page />
             </ResponsiveLayout>
           </ProtectedRoute>
         }

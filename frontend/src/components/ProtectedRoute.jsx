@@ -29,6 +29,7 @@ const ROUTE_TO_MODULE = {
   '/documentos-empleados': 'documentos-empleados',
   '/prl-documentos': 'prl-documentos',
   '/presupuestos-informes': 'presupuestos-informes',
+  '/presupuestos-v2': 'presupuestos-v2',
   '/servicios-periodicos': 'servicios-periodicos',
   '/fotos-trabajo': 'fotos-trabajo',
   '/mis-inspecciones': 'mis-inspecciones',
@@ -148,7 +149,7 @@ const ProtectedRoute = ({ children }) => {
           hasStrictModuleAccess('servicios-periodicos', getCurrentGroupPermissions) ||
           hasStrictModuleAccess('clientes', getCurrentGroupPermissions);
       }
-    } else if (module === 'datos' || module === 'empleados' || module === 'documentos' || module === 'cuadrantes-empleado' || module === 'cuadrantes' || module === 'mis-inspecciones' || module === 'inspecciones' || module === 'mis-tareas' || module === 'tareas' || module === 'aprobaciones' || module === 'clientes' || module === 'proveedores' || module === 'comunicados' || module === 'prl-documentos' || module === 'presupuestos-informes' || module === 'fotos-trabajo') {
+    } else if (module === 'datos' || module === 'empleados' || module === 'documentos' || module === 'cuadrantes-empleado' || module === 'cuadrantes' || module === 'mis-inspecciones' || module === 'inspecciones' || module === 'mis-tareas' || module === 'tareas' || module === 'aprobaciones' || module === 'clientes' || module === 'proveedores' || module === 'comunicados' || module === 'prl-documentos' || module === 'presupuestos-informes' || module === 'presupuestos-v2' || module === 'presupuestos-v2-config' || module === 'fotos-trabajo') {
       // Matriz: permiso explícito (PRL: ver hasStrictModuleAccess)
       if (!hasBackendPermissions) {
         hasAccess = false;
