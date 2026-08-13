@@ -32,6 +32,8 @@ if (typeof document !== 'undefined') {
 
 // Import doar paginile mici (non-lazy)
 import LoginPage from './pages/LoginPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import PortalAccesoPage from './pages/PortalAccesoPage';
 import PortalGestoresAccesoPage from './pages/PortalGestoresAccesoPage';
 import InicioPage from './pages/DashboardPage';
@@ -220,6 +222,8 @@ function AppRoutes() {
             isAuthenticated ? <Navigate to="/inicio" replace /> : <LoginPage />
           } 
         />
+        <Route path="/olvidar-contrasena" element={<ForgotPasswordPage />} />
+        <Route path="/restablecer-contrasena" element={<ResetPasswordPage />} />
 
         <Route path="/portal/gestores" element={<PortalGestoresAccesoPage />} />
         <Route path="/portal/:token" element={<PortalAccesoPage />} />

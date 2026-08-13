@@ -7389,83 +7389,16 @@ export default function EmpleadosPage() {
                   </select>
                 ) : field === 'Contraseña' ? (
                   <div className="space-y-2">
-                    <div className="flex gap-2">
-                      <input
-                        id={fieldId}
-                        name={field}
-                        type="text"
-                        readOnly
-                        className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200"
-                        value={editForm[field] || ''}
-                        placeholder={mostrarContraseña ? "No hay contraseña guardada" : "Haz clic en 'Mostrar contraseña' para verla"}
-                      />
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!mostrarContraseña && !editForm[field]) {
-                            // Obține parola de la backend
-                            setLoadingPassword(true);
-                            try {
-                              const codigo = editForm.CODIGO;
-                              if (!codigo) {
-                                setNotification({
-                                  type: 'error',
-                                  title: 'Error',
-                                  message: 'No se encontró el código del empleado',
-                                  show: true
-                                });
-                                return;
-                              }
-                              const result = await callApi(routes.getPassword(codigo));
-                              if (result.success && result.data) {
-                                setEditForm(prev => ({ ...prev, [field]: result.data.password || '' }));
-                                setMostrarContraseña(true);
-                              } else {
-                                setNotification({
-                                  type: 'error',
-                                  title: 'Error de Permisos',
-                                  message: result.error || 'Error al obtener la contraseña',
-                                  show: true
-                                });
-                              }
-                            } catch (error) {
-                              console.error('Error obteniendo contraseña:', error);
-                              setNotification({
-                                type: 'error',
-                                title: 'Error',
-                                message: error.message || 'Error al obtener la contraseña',
-                                show: true
-                              });
-                            } finally {
-                              setLoadingPassword(false);
-                            }
-                          } else {
-                            // Ascunde parola
-                            setMostrarContraseña(false);
-                            setEditForm(prev => ({ ...prev, [field]: '' }));
-                          }
-                        }}
-                        disabled={loadingPassword}
-                        className="px-4 py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none whitespace-nowrap"
-                      >
-                        {loadingPassword ? (
-                          <span className="flex items-center gap-2">
-                            <span className="animate-spin">⏳</span>
-                            <span>Cargando...</span>
-                          </span>
-                        ) : mostrarContraseña ? (
-                          'Ocultar contraseña'
-                        ) : (
-                          'Mostrar contraseña'
-                        )}
-                      </button>
-                    </div>
-                    {mostrarContraseña && editForm[field] && (
-                      <p className="text-xs text-gray-500 flex items-center gap-1">
-                        <span>🔒</span>
-                        <span>La contraseña es solo de lectura y no se puede editar aquí</span>
-                      </p>
-                    )}
+                    <p className="text-sm text-gray-600">
+                      Por seguridad las contraseñas no se pueden ver. Usa «Resetear contraseña» para generar una temporal y enviarla por email, o pide al empleado que use «¿Has olvidado tu contraseña?» en el login.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleResetPassword(editForm)}
+                      className="px-4 py-3 bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300"
+                    >
+                      Resetear contraseña
+                    </button>
                   </div>
                 ) : field === 'TIPO DE CONTRATO' ? (
                   <div className="relative">

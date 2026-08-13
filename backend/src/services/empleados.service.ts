@@ -14,6 +14,13 @@ import { DocumentosSolicitadosService } from './documentos-solicitados.service';
 import { PrlDocumentsService } from './prl-documents.service';
 import { CarpetasDocumentosStorageService } from './carpetas-documentos-storage.service';
 import { sanitizeFechaEmpleado } from '../utils/fecha-empleado.util';
+import {
+  generateTemporaryPassword,
+  hashPassword,
+  isBcryptHash,
+  validatePasswordComplexity,
+  verifyPassword,
+} from '../utils/password.util';
 import * as ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 
@@ -534,7 +541,6 @@ export class EmpleadosService {
         \`Antigüedad\`,
         \`DerechoPedidos\`,
         \`TrabajaFestivos\`,
-        \`Contraseña\`,
         certificado_handicap_confirmado,
         CONTACTO_EMERGENCIA_NOMBRE,
         CONTACTO_EMERGENCIA_PARENTESCO,
@@ -710,42 +716,22 @@ export class EmpleadosService {
     return `'${escaped}'`;
   }
 
-  /**
-   * Generează o parolă provizorie aleatorie și sigură
-   */
   private generateTemporaryPassword(): string {
-    // Generează o parolă de 12 caractere cu:
-    // - 2 majuscule
-    // - 2 minuscule
-    // - 2 cifre
-    // - 2 caractere speciale
-    const uppercase = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-    const lowercase = 'abcdefghijkmnpqrstuvwxyz';
-    const numbers = '23456789';
-    const special = '!@#$%&*';
+    return generateTemporaryPassword(12);
+  }
 
-    let password = '';
-    // Adaugă câte un caracter din fiecare categorie
-    password += uppercase[Math.floor(Math.random() * uppercase.length)];
-    password += uppercase[Math.floor(Math.random() * uppercase.length)];
-    password += lowercase[Math.floor(Math.random() * lowercase.length)];
-    password += lowercase[Math.floor(Math.random() * lowercase.length)];
-    password += numbers[Math.floor(Math.random() * numbers.length)];
-    password += numbers[Math.floor(Math.random() * numbers.length)];
-    password += special[Math.floor(Math.random() * special.length)];
-    password += special[Math.floor(Math.random() * special.length)];
-
-    // Completează până la 12 caractere cu caractere aleatorii
-    const allChars = uppercase + lowercase + numbers + special;
-    while (password.length < 12) {
-      password += allChars[Math.floor(Math.random() * allChars.length)];
-    }
-
-    // Amestecă caracterele pentru a fi mai aleatorie
-    return password
-      .split('')
-      .sort(() => Math.random() - 0.5)
-      .join('');
+  /** Persist bcrypt hash + bump AUTH_VERSION (invalidates JWTs). */
+  private async setPasswordHash(
+    codigo: string,
+    passwordHash: string,
+  ): Promise<void> {
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE DatosEmpleados
+       SET \`Contraseña\` = ?, AUTH_VERSION = AUTH_VERSION + 1
+       WHERE CODIGO = ?`,
+      passwordHash,
+      codigo,
+    );
   }
 
   /**
@@ -786,12 +772,15 @@ export class EmpleadosService {
     }
 
     try {
-      // Generează parolă provizorie dacă nu este furnizată sau este golă
+      // Parola în clar doar în memorie pentru email one-shot; în DB doar bcrypt.
       const hasPasswordProvided =
         empleadoData.Contraseña && empleadoData.Contraseña.trim() !== '';
       const temporaryPassword = hasPasswordProvided
-        ? empleadoData.Contraseña
+        ? String(empleadoData.Contraseña).trim()
         : this.generateTemporaryPassword();
+      const passwordHash = isBcryptHash(temporaryPassword)
+        ? temporaryPassword
+        : await hashPassword(temporaryPassword);
 
       // Construim query-ul INSERT
       const insertQuery = `
@@ -823,7 +812,8 @@ export class EmpleadosService {
           \`Antigüedad\`,
           \`DerechoPedidos\`,
           \`TrabajaFestivos\`,
-          \`Contraseña\`
+          \`Contraseña\`,
+          \`AUTH_VERSION\`
         ) VALUES (
           ${this.escapeSql(empleadoData.CODIGO)},
           ${this.escapeSql(empleadoData['NOMBRE / APELLIDOS'] || '')},
@@ -852,7 +842,8 @@ export class EmpleadosService {
           ${this.escapeSql(empleadoData.Antigüedad || null)},
           ${this.escapeSql(empleadoData.DerechoPedidos || 'NO')},
           ${this.escapeSql(empleadoData.TrabajaFestivos || 'NO')},
-          ${this.escapeSql(temporaryPassword)}
+          ${this.escapeSql(passwordHash)},
+          0
         )
       `;
 
@@ -917,7 +908,10 @@ export class EmpleadosService {
       return {
         success: true,
         codigo: empleadoData.CODIGO,
-        temporaryPassword: wasPasswordGenerated ? temporaryPassword : undefined, // Returnează parola provizorie doar dacă a fost generată
+        // Plain one-shot for welcome email only; never persisted. Skip if input was already a hash.
+        temporaryPassword: isBcryptHash(temporaryPassword)
+          ? undefined
+          : temporaryPassword,
       };
     } catch (error: any) {
       this.logger.error(
@@ -984,12 +978,18 @@ export class EmpleadosService {
     }
 
     try {
-      // Construim query-ul UPDATE
-      // Parola este inclusă în query doar dacă este furnizată în empleadoData
-      const passwordUpdate =
-        empleadoData.Contraseña !== undefined
-          ? `\`Contraseña\`            = ${this.escapeSql(empleadoData.Contraseña)},`
-          : '';
+      // Parola: dacă vine în payload, se hash-uiește cu bcrypt (niciodată plaintext).
+      let passwordUpdate = '';
+      if (
+        empleadoData.Contraseña !== undefined &&
+        String(empleadoData.Contraseña).trim() !== ''
+      ) {
+        const plainOrHash = String(empleadoData.Contraseña).trim();
+        const passwordHash = isBcryptHash(plainOrHash)
+          ? plainOrHash
+          : await hashPassword(plainOrHash);
+        passwordUpdate = `\`Contraseña\` = ${this.escapeSql(passwordHash)}, AUTH_VERSION = AUTH_VERSION + 1,`;
+      }
 
       // Construim câmpurile pentru nume separate (doar dacă sunt furnizate explicit)
       // IMPORTANT: Salvăm și stringuri goale pentru a permite ștergerea câmpurilor
@@ -2039,7 +2039,8 @@ export class EmpleadosService {
   }
 
   /**
-   * Schimbă parola unui angajat după verificarea vechii parole
+   * Schimbă parola unui angajat după verificarea vechii parole (bcrypt / legacy).
+   * DNI/NIE nu este acceptat ca parolă.
    */
   async changePassword(
     codigo: string,
@@ -2054,100 +2055,42 @@ export class EmpleadosService {
       throw new BadRequestException('La contraseña actual es obligatoria');
     }
 
-    if (!newPassword || !newPassword.trim()) {
-      throw new BadRequestException('La nueva contraseña es obligatoria');
-    }
-
-    // Validări pentru noua parolă - condiții minime de securitate
-    const password = newPassword.trim();
-
-    // Longitudine minimă: 9 caractere (12 recomandat)
-    if (password.length < 9) {
-      throw new BadRequestException(
-        'La nueva contraseña debe tener al menos 9 caracteres (se recomienda 12)',
-      );
-    }
-
-    if (password.length > 100) {
-      throw new BadRequestException(
-        'La nueva contraseña no puede tener más de 100 caracteres',
-      );
-    }
-
-    // Verifică complexitatea parolei
-    const hasUpperCase = /[A-Z]/.test(password);
-    const hasLowerCase = /[a-z]/.test(password);
-    const hasNumber = /[0-9]/.test(password);
-    const hasSpecialChar = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password);
-
-    const errors: string[] = [];
-    if (!hasUpperCase) {
-      errors.push('al menos 1 letra mayúscula (A-Z)');
-    }
-    if (!hasLowerCase) {
-      errors.push('al menos 1 letra minúscula (a-z)');
-    }
-    if (!hasNumber) {
-      errors.push('al menos 1 número (0-9)');
-    }
-    if (!hasSpecialChar) {
-      errors.push('al menos 1 carácter especial (! @ # $ % ^ & * ( ) _ + - =)');
-    }
-
-    if (errors.length > 0) {
-      throw new BadRequestException(
-        `La nueva contraseña debe contener: ${errors.join(', ')}`,
-      );
+    const complexity = validatePasswordComplexity(newPassword);
+    if (complexity.ok === false) {
+      throw new BadRequestException(complexity.error);
     }
 
     try {
-      // Obține angajatul din baza de date
       const empleado = await this.getEmpleadoByCodigo(codigo);
       if (!empleado) {
         throw new BadRequestException('Empleado no encontrado');
       }
 
-      // Verifică vechea parolă - compară cu DNI_NIE sau Contraseña
-      const dniPassword = String(
-        empleado['D.N.I. / NIE'] || empleado.DNI_NIE || '',
-      ).trim();
-      const contraseñaPassword = String(
-        empleado.Contraseña ||
-          empleado['Contraseña'] ||
-          empleado.CONTRASENA ||
-          '',
-      ).trim();
+      const pwdRows = await this.prisma.$queryRawUnsafe<
+        Array<{ Contraseña?: string }>
+      >(
+        `SELECT \`Contraseña\` FROM DatosEmpleados WHERE CODIGO = ? LIMIT 1`,
+        codigo,
+      );
+      const contraseñaPassword = String(pwdRows?.[0]?.Contraseña || '').trim();
       const inputOldPassword = oldPassword.trim();
 
-      this.logger.debug(
-        `🔍 [changePassword] Verificando contraseña - DNI: ${dniPassword ? '***' : 'empty'}, Contraseña: ${contraseñaPassword ? '***' : 'empty'}, Input length: ${inputOldPassword.length}`,
-      );
-
-      if (
-        dniPassword !== inputOldPassword &&
-        contraseñaPassword !== inputOldPassword
-      ) {
+      const check = await verifyPassword(inputOldPassword, contraseñaPassword);
+      if (!check.ok) {
         this.logger.warn(
           `⚠️ [changePassword] Contraseña actual incorrecta para codigo: ${codigo}`,
         );
         throw new BadRequestException('La contraseña actual es incorrecta');
       }
 
-      // Verifică dacă noua parolă este diferită de vechea parolă
-      if (newPassword.trim() === inputOldPassword) {
+      if (complexity.password === inputOldPassword) {
         throw new BadRequestException(
           'La nueva contraseña debe ser diferente a la contraseña actual',
         );
       }
 
-      // Actualizează parola în baza de date
-      const query = `
-        UPDATE DatosEmpleados
-        SET \`Contraseña\` = ${this.escapeSql(newPassword.trim())}
-        WHERE CODIGO = ${this.escapeSql(codigo)}
-      `;
-
-      await this.prisma.$executeRawUnsafe(query);
+      const newHash = await hashPassword(complexity.password);
+      await this.setPasswordHash(codigo, newHash);
 
       this.logger.log(
         `✅ Contraseña cambiada exitosamente para empleado: ${codigo}`,
@@ -2169,71 +2112,32 @@ export class EmpleadosService {
   }
 
   /**
-   * Obtiene la contraseña de un empleado (solo para managers/admins)
+   * @deprecated Passwords are never readable. Kept to fail closed if called.
    */
-  async getPassword(codigo: string): Promise<string | null> {
-    try {
-      if (!codigo || codigo.trim() === '') {
-        throw new BadRequestException('CODIGO is required');
-      }
-
-      const codigoClean = codigo.trim();
-
-      const query = `
-        SELECT \`Contraseña\`
-        FROM DatosEmpleados
-        WHERE CODIGO = ${this.escapeSql(codigoClean)}
-        LIMIT 1
-      `;
-
-      const rows = await this.prisma.$queryRawUnsafe<any[]>(query);
-
-      if (rows.length > 0 && rows[0].Contraseña) {
-        this.logger.log(`✅ Contraseña retrieved for codigo: ${codigoClean}`);
-        return String(rows[0].Contraseña);
-      } else {
-        this.logger.log(
-          `🔍 No se encontró contraseña para codigo: ${codigoClean}`,
-        );
-        return null;
-      }
-    } catch (error: any) {
-      this.logger.error('❌ Error retrieving password:', error);
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-      throw new BadRequestException(
-        `Error al obtener la contraseña: ${error.message}`,
-      );
-    }
+  async getPassword(_codigo: string): Promise<string | null> {
+    throw new BadRequestException(
+      'Las contraseñas no se pueden consultar. Usa restablecer contraseña.',
+    );
   }
 
   /**
-   * Resetează parola unui angajat și trimite email cu noua parolă
+   * Resetează parola: generează temp în memorie, salvează doar bcrypt, returnează
+   * temporaryPassword doar pentru email one-shot (nu pentru afișare din DB).
    */
   async resetPasswordAndSendEmail(
     codigo: string,
   ): Promise<{ success: true; temporaryPassword: string }> {
     try {
-      // Obține angajatul
       const empleado = await this.getEmpleadoByCodigo(codigo);
       if (!empleado) {
         throw new BadRequestException('Empleado no encontrado');
       }
 
-      // Generează o parolă nouă
       const newPassword = this.generateTemporaryPassword();
+      const passwordHash = await hashPassword(newPassword);
+      await this.setPasswordHash(codigo, passwordHash);
 
-      // Actualizează parola în baza de date
-      const query = `
-        UPDATE DatosEmpleados
-        SET \`Contraseña\` = ${this.escapeSql(newPassword)}
-        WHERE CODIGO = ${this.escapeSql(codigo)}
-      `;
-
-      await this.prisma.$executeRawUnsafe(query);
-
-      this.logger.log(`✅ Parolă resetată pentru angajat: ${codigo}`);
+      this.logger.log(`✅ Parolă resetată (bcrypt) pentru angajat: ${codigo}`);
 
       return {
         success: true,

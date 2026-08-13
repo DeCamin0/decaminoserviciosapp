@@ -1,15 +1,17 @@
 /**
  * Generează parole pentru toți angajații HERA care nu au parolă.
- * Doar UPDATE în DB + fișier cu CODIGO, Email, Contraseña.
+ * Salvează bcrypt în DB; fișierul local conține parola one-shot în clar.
  *
  * Rulare: node scripts/generate-passwords-hera.js
  */
 const fs = require('fs');
 const path = require('path');
 const mysql = require('mysql2/promise');
+const bcrypt = require('bcrypt');
 
 const backendDir = path.join(__dirname, '..');
 const rootDir = path.join(backendDir, '..');
+const BCRYPT_COST = 12;
 
 function loadEnv(envFile) {
   const envPath = path.join(backendDir, envFile);
@@ -32,10 +34,25 @@ function loadEnv(envFile) {
 }
 
 function randomPassword() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  let s = '';
-  for (let i = 0; i < 10; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return s;
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghjkmnpqrstuvwxyz';
+  const nums = '23456789';
+  const special = '!@#$%&*';
+  let s =
+    upper[Math.floor(Math.random() * upper.length)] +
+    upper[Math.floor(Math.random() * upper.length)] +
+    lower[Math.floor(Math.random() * lower.length)] +
+    lower[Math.floor(Math.random() * lower.length)] +
+    nums[Math.floor(Math.random() * nums.length)] +
+    nums[Math.floor(Math.random() * nums.length)] +
+    special[Math.floor(Math.random() * special.length)] +
+    special[Math.floor(Math.random() * special.length)];
+  const all = upper + lower + nums + special;
+  while (s.length < 12) s += all[Math.floor(Math.random() * all.length)];
+  return s
+    .split('')
+    .sort(() => Math.random() - 0.5)
+    .join('');
 }
 
 async function main() {
@@ -72,7 +89,11 @@ async function main() {
     const codigo = String(r.CODIGO);
     const email = r.email ? String(r.email).trim() : '';
     const pass = randomPassword();
-    await conn.query('UPDATE DatosEmpleados SET Contraseña = ? WHERE CODIGO = ?', [pass, codigo]);
+    const hash = await bcrypt.hash(pass, BCRYPT_COST);
+    await conn.query(
+      'UPDATE DatosEmpleados SET Contraseña = ?, AUTH_VERSION = AUTH_VERSION + 1 WHERE CODIGO = ?',
+      [hash, codigo],
+    );
     list.push({ codigo, email, pass });
   }
 
@@ -80,8 +101,8 @@ async function main() {
   const lines = ['CODIGO\tEmail\tContraseña', ...list.map((o) => [o.codigo, o.email, o.pass].join('\t'))];
   fs.writeFileSync(passPath, lines.join('\n'), 'utf8');
 
-  console.log('🔑 Parole generate:', list.length);
-  console.log('📄 Fișier:', passPath);
+  console.log('🔑 Parole generate (bcrypt în DB):', list.length);
+  console.log('📄 Fișier one-shot:', passPath);
   await conn.end();
 }
 

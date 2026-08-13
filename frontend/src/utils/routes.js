@@ -25,6 +25,9 @@ export const routes = {
 
   // Authentication & Users
   login: `${BACKEND_BASE}/api/auth/login`,
+  forgotPassword: `${BACKEND_BASE}/api/auth/forgot-password`,
+  resetPasswordSelf: `${BACKEND_BASE}/api/auth/reset-password`,
+  passwordMigrationStats: `${BACKEND_BASE}/api/auth/password-migration-stats`,
   refresh: `${BACKEND_BASE}/api/auth/refresh`,
   me: `${BACKEND_BASE}/api/me`,
   permissions: `${BACKEND_BASE}/api/permissions`,

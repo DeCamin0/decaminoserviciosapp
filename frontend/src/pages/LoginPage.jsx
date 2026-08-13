@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { useAuth } from '../contexts/AuthContextBase';
 import Footer from '../components/Footer';
 import DemoModal from '../components/DemoModal';
@@ -52,6 +52,7 @@ function buildLogoSrc() {
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const now = useMemo(() => new Date(), []);
   const isHolidaySeason = now.getMonth() === 11 || (now.getMonth() === 0 && now.getDate() <= 6);
 
@@ -63,6 +64,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showDemoModal, setShowDemoModal] = useState(false);
+  const resetOk = searchParams.get('reset') === 'ok';
 
   const companyLabel = config.COMPANY_NAME || config.COMPANY_NAME_LEGAL || config.APP_NAME || '';
   const brandTitle = useMemo(() => {
@@ -212,6 +214,15 @@ export default function LoginPage() {
               </div>
             )}
 
+            {resetOk && !error && (
+              <div role="status" className="login-alert" style={{ borderColor: 'rgba(34,197,94,0.5)' }}>
+                <div>
+                  Contraseña actualizada correctamente. Ya puedes iniciar sesión con tu nueva
+                  contraseña.
+                </div>
+              </div>
+            )}
+
             <div className="login-field">
               <label htmlFor="login-email">Correo Electrónico</label>
               <div className="login-field__control">
@@ -285,6 +296,10 @@ export default function LoginPage() {
                 </button>
               </div>
             </div>
+
+            <p className="login-terms" style={{ marginTop: '-0.25rem', marginBottom: '0.75rem' }}>
+              <Link to="/olvidar-contrasena">¿Has olvidado tu contraseña?</Link>
+            </p>
 
             <p className="login-terms">
               Al iniciar sesión, estás de acuerdo con los{' '}

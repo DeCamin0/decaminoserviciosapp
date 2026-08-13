@@ -86,19 +86,23 @@ export class EmpleadosController {
       .replace(/"/g, '&quot;');
   }
 
-  /** Bloc HTML usuario + contraseña (bienvenida masiva, alta individual, etc.). */
+  /** Bloc HTML acceso (usuario + contraseña one-shot opcional). Nunca lee DB. */
   private buildCredentialsAccessHtml(
     usuario: string,
     password: string | null,
+    opts?: { forgotPasswordUrl?: string },
   ): string {
     const usuarioSafe = this.escapeHtmlForEmail(usuario);
+    const forgotUrl =
+      opts?.forgotPasswordUrl ||
+      `${this.getCompany().frontendAppUrl ?? ''}/olvidar-contrasena`;
     const passwordBlock = password
-      ? `<p style="margin: 5px 0;"><strong>Contraseña:</strong> <code style="background-color: #fff; padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 14px; font-weight: bold; color: #0066CC;">${this.escapeHtmlForEmail(password)}</code></p>
+      ? `<p style="margin: 5px 0;"><strong>Contraseña temporal:</strong> <code style="background-color: #fff; padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 14px; font-weight: bold; color: #0066CC;">${this.escapeHtmlForEmail(password)}</code></p>
               <div style="background-color: #fff3cd; padding: 10px; border-left: 4px solid #ffc107; margin-top: 10px; border-radius: 4px;">
                 <p style="margin: 5px 0; color: #856404; font-weight: bold;">⚠️ IMPORTANTE:</p>
                 <p style="margin: 5px 0; color: #856404;">Te recomendamos <strong>cambiarla</strong> después del primer acceso desde la sección "Datos Personales".</p>
               </div>`
-      : `<p style="margin: 5px 0;">Si no tienes contraseña asignada, solicítala por WhatsApp a un responsable autorizado de la empresa.</p>`;
+      : `<p style="margin: 5px 0;">Por seguridad no enviamos contraseñas almacenadas. Si no recuerdas tu contraseña, usa <a href="${this.escapeHtmlForEmail(forgotUrl)}">¿Has olvidado tu contraseña?</a> en el acceso.</p>`;
 
     return `
             <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
@@ -2588,23 +2592,11 @@ export class EmpleadosController {
 
         let credentialsHtml = '';
         if (shouldIncludeCredentials && recipient.codigo) {
-          try {
-            const password = await this.empleadosService.getPassword(
-              recipient.codigo,
-            );
-            credentialsHtml = this.buildCredentialsAccessHtml(
-              recipient.email,
-              password,
-            );
-          } catch (pwdErr: any) {
-            this.logger.warn(
-              `⚠️ No se pudo obtener contraseña para ${recipient.codigo}: ${pwdErr.message}`,
-            );
-            credentialsHtml = this.buildCredentialsAccessHtml(
-              recipient.email,
-              null,
-            );
-          }
+          // Nunca leemos Contraseña de DB (puede ser bcrypt). Solo enlace de recuperación.
+          credentialsHtml = this.buildCredentialsAccessHtml(
+            recipient.email,
+            null,
+          );
         }
 
         const html = `<html><body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;"><p>Hola <strong>${recipient.nombre}</strong>,</p>${mesajCleaned ? `<div style="white-space: pre-wrap;">${mesajCleaned.replace(/\n/g, '<br>')}</div>` : ''}${credentialsHtml}<p><strong>Atentamente:</strong><br><strong>RRHH</strong><br><strong>${this.getCompany().legalNameShort ?? ''}</strong></p></body></html>`;
@@ -2966,53 +2958,10 @@ export class EmpleadosController {
 
   @Get('get-password/:codigo')
   @UseGuards(JwtAuthGuard)
-  async getPassword(@CurrentUser() user: any, @Param('codigo') codigo: string) {
-    try {
-      this.logger.log(
-        `🔍 Get password request - CODIGO: ${codigo || 'missing'}`,
-      );
-
-      if (!codigo) {
-        throw new BadRequestException('CODIGO es obligatorio');
-      }
-
-      // Verifică că utilizatorul este manager/admin/developer
-      const isManager = user?.isManager || false;
-      const isDeveloper =
-        user?.GRUPO === 'Developer' || user?.grupo === 'Developer';
-      const userCodigo = user?.userId || user?.CODIGO;
-
-      // Doar managerii, adminii și developerii pot vedea parola altor utilizatori
-      if (codigo !== userCodigo && !isManager && !isDeveloper) {
-        throw new BadRequestException(
-          'No tienes permiso para ver la contraseña de otro usuario',
-        );
-      }
-
-      if (codigo !== userCodigo) {
-        const empPwd = await this.empleadosService.getEmpleadoByCodigo(codigo);
-        const scPwd = await this.empleadoGrupoScopeService.resolveScopeFilter({
-          userId: user?.userId,
-          role: user?.role,
-          grupo: user?.grupo,
-        });
-        this.empleadoGrupoScopeService.assertEmpleadoAccessible(
-          scPwd,
-          codigo,
-          empPwd?.GRUPO ?? empPwd?.grupo,
-        );
-      }
-
-      const password = await this.empleadosService.getPassword(codigo);
-
-      return {
-        success: true,
-        password: password || '',
-      };
-    } catch (error: any) {
-      this.logger.error('❌ Error getting password:', error);
-      throw error;
-    }
+  async getPassword(@CurrentUser() _user: any, @Param('codigo') _codigo: string) {
+    throw new BadRequestException(
+      'Las contraseñas no se pueden consultar. Usa «Resetear contraseña» o el flujo «¿Has olvidado tu contraseña?».',
+    );
   }
 
   @Post('reset-password/:codigo')
@@ -3057,27 +3006,23 @@ export class EmpleadosController {
         );
       }
 
-      // Resetare parolă și generare nouă parolă
+      // Reset: hash în DB; plaintext doar în memorie pentru email
       const result =
         await this.empleadosService.resetPasswordAndSendEmail(codigo);
 
-      // Obține datele angajatului pentru email
       const empleado = await this.empleadosService.getEmpleadoByCodigo(codigo);
       if (!empleado) {
         throw new BadRequestException('Empleado no encontrado');
       }
 
-      // Trimite email cu noua parolă
       await this.sendResetPasswordEmail(empleado, result.temporaryPassword);
 
-      // Dacă parola resetată este pentru utilizatorul curent, trebuie să se reconecteze
       const requiresLogout = codigo === userCodigo;
 
       return {
         success: true,
         message: 'Contraseña reseteada y enviada por email exitosamente',
-        temporaryPassword: result.temporaryPassword,
-        requiresLogout, // Flag pentru frontend să facă logout automat
+        requiresLogout,
       };
     } catch (error: any) {
       this.logger.error('❌ Error resetting password:', error);

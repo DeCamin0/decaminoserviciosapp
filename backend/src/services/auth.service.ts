@@ -1,12 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  hashPassword,
+  isBcryptHash,
+  verifyPassword,
+} from '../utils/password.util';
 
 /**
- * Auth Service
- *
- * Implements real authentication logic using direct database queries
- * Generates JWT tokens for authenticated users
+ * Auth Service — employee login with bcrypt + legacy plaintext auto-upgrade.
+ * DNI/NIE is NEVER accepted as password.
  */
 @Injectable()
 export class AuthService {
@@ -15,13 +18,31 @@ export class AuthService {
     private readonly prisma: PrismaService,
   ) {}
 
-  /**
-   * Login user
-   *
-   * @param email User email
-   * @param password User password (D.N.I. / NIE)
-   * @returns User object if successful, error otherwise
-   */
+  private mapRole(grupo: string): string {
+    if (grupo === 'Manager' || grupo === 'Supervisor') return 'MANAGER';
+    if (grupo === 'Developer') return 'DEVELOPER';
+    if (grupo === 'Admin') return 'ADMIN';
+    return 'EMPLEADOS';
+  }
+
+  private async bumpAuthAndSetPassword(
+    codigo: string,
+    passwordHash: string,
+  ): Promise<number> {
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE DatosEmpleados
+       SET \`Contraseña\` = ?, AUTH_VERSION = AUTH_VERSION + 1
+       WHERE CODIGO = ?`,
+      passwordHash,
+      codigo,
+    );
+    const updated = await this.prisma.user.findUnique({
+      where: { CODIGO: codigo },
+      select: { AUTH_VERSION: true },
+    });
+    return updated?.AUTH_VERSION ?? 1;
+  }
+
   async login(
     email: string,
     password: string,
@@ -36,12 +57,8 @@ export class AuthService {
       console.log('[AuthService] Login attempt for:', email);
 
       const normalizedEmail = email.trim().toLowerCase();
-
-      // Prisma lookup by email (case-insensitive)
       const found = await this.prisma.user.findFirst({
-        where: {
-          CORREO_ELECTRONICO: normalizedEmail,
-        },
+        where: { CORREO_ELECTRONICO: normalizedEmail },
       });
 
       if (!found) {
@@ -49,27 +66,31 @@ export class AuthService {
         return { success: false, error: 'Correo o contraseña incorrecta' };
       }
 
-      // Verify password - try both D.N.I. / NIE and Contraseña fields
-      const dniPassword = String(found.DNI_NIE || '').trim();
-      const contraseñaPassword = String(found.CONTRASENA || '').trim();
+      const storedPassword = String(found.CONTRASENA || '').trim();
       const inputPassword = password.trim();
 
-      console.log('[AuthService] Password check:', {
-        dni: dniPassword ? '***' : 'empty',
-        contraseña: contraseñaPassword ? '***' : 'empty',
-        inputLength: inputPassword.length,
-      });
+      if (!storedPassword) {
+        console.log('[AuthService] Empty password for:', normalizedEmail);
+        return { success: false, error: 'Correo o contraseña incorrecta' };
+      }
 
-      // Check if password matches D.N.I. / NIE or Contraseña
-      if (
-        dniPassword !== inputPassword &&
-        contraseñaPassword !== inputPassword
-      ) {
+      const check = await verifyPassword(inputPassword, storedPassword);
+      if (!check.ok) {
         console.log('[AuthService] Password mismatch for:', normalizedEmail);
         return { success: false, error: 'Correo o contraseña incorrecta' };
       }
 
-      // Validate active status
+      let authVersion = found.AUTH_VERSION ?? 0;
+
+      if (check.needsUpgrade) {
+        const newHash = await hashPassword(inputPassword);
+        authVersion = await this.bumpAuthAndSetPassword(found.CODIGO, newHash);
+        console.log(
+          '[AuthService] Legacy plaintext upgraded to bcrypt for:',
+          found.CODIGO,
+        );
+      }
+
       const estadoRaw = (found.ESTADO || '').toString().trim().toUpperCase();
       if (estadoRaw && estadoRaw !== 'ACTIVO') {
         console.log(
@@ -81,18 +102,9 @@ export class AuthService {
         return { success: false, error: 'Usuario inactivo' };
       }
 
-      // Detect role from GRUPO
       const grupo = found.GRUPO || '';
-      let role = 'EMPLEADOS'; // default
-      if (grupo === 'Manager' || grupo === 'Supervisor') {
-        role = 'MANAGER';
-      } else if (grupo === 'Developer') {
-        role = 'DEVELOPER';
-      } else if (grupo === 'Admin') {
-        role = 'ADMIN';
-      }
+      const role = this.mapRole(grupo);
 
-      // Create user object (same format as frontend expects)
       const userObj = {
         email: found.CORREO_ELECTRONICO,
         isManager:
@@ -102,36 +114,30 @@ export class AuthService {
         role,
         GRUPO: grupo,
         ...found,
+        CONTRASENA: undefined,
       };
+      delete (userObj as any).CONTRASENA;
 
-      // Calculează un hash simplu al parolei pentru a invalida token-urile când se schimbă parola
-      // Folosim primul caracter, ultimul caracter și lungimea pentru a crea un hash unic
-      const passwordHash = this.getPasswordHash(
-        contraseñaPassword || dniPassword,
-      );
-
-      // Generate JWT access token (30 minutes)
       const payload = {
         email: found.CORREO_ELECTRONICO,
         userId: found.CODIGO,
         role,
         grupo,
-        passwordHash, // Hash pentru a invalida token-urile când se schimbă parola
-        type: 'access', // Mark as access token
+        authVersion,
+        type: 'access',
       };
       const accessToken = this.jwtService.sign(payload, {
-        expiresIn: '30m', // 30 minutes
+        expiresIn: '30m',
       });
 
-      // Generate JWT refresh token (7 days)
       const refreshPayload = {
         email: found.CORREO_ELECTRONICO,
         userId: found.CODIGO,
-        passwordHash, // Hash pentru a invalida token-urile când se schimbă parola
-        type: 'refresh', // Mark as refresh token
+        authVersion,
+        type: 'refresh',
       };
       const refreshToken = this.jwtService.sign(refreshPayload, {
-        expiresIn: '7d', // 7 days
+        expiresIn: '7d',
       });
 
       console.log(
@@ -143,8 +149,8 @@ export class AuthService {
       return {
         success: true,
         user: userObj,
-        accessToken, // JWT access token (30 minutes)
-        refreshToken, // JWT refresh token (7 days)
+        accessToken,
+        refreshToken,
       };
     } catch (error: any) {
       console.error('[AuthService] Login error:', error);
@@ -155,9 +161,6 @@ export class AuthService {
     }
   }
 
-  /**
-   * Prisma-based lookup by CODIGO (parallel to TypeORM, behind flag)
-   */
   async findUserByCodigoPrisma(codigo: string) {
     try {
       const usePrisma = process.env.USE_PRISMA_AUTH === 'true';
@@ -176,37 +179,26 @@ export class AuthService {
     }
   }
 
-  /**
-   * Refresh access token using refresh token
-   *
-   * @param refreshToken Refresh token string
-   * @returns New access token if successful, error otherwise
-   */
   async refreshToken(refreshToken: string): Promise<{
     success: boolean;
     accessToken?: string;
     error?: string;
   }> {
     try {
-      // Verify refresh token
       const decoded = this.jwtService.verify(refreshToken);
 
-      // Check if it's a refresh token
       if (decoded.type !== 'refresh') {
         console.log('[AuthService] Invalid token type for refresh');
         return { success: false, error: 'Invalid refresh token' };
       }
 
-      // Find user by email
       const normalizedEmail = decoded.email?.toLowerCase();
       if (!normalizedEmail) {
         return { success: false, error: 'Invalid token payload' };
       }
 
       const found = await this.prisma.user.findFirst({
-        where: {
-          CORREO_ELECTRONICO: normalizedEmail,
-        },
+        where: { CORREO_ELECTRONICO: normalizedEmail },
       });
 
       if (!found) {
@@ -214,46 +206,33 @@ export class AuthService {
         return { success: false, error: 'User not found' };
       }
 
-      // Validate active status
       const estadoRaw = (found.ESTADO || '').toString().trim().toUpperCase();
       if (estadoRaw && estadoRaw !== 'ACTIVO') {
         console.log('[AuthService] User inactive for refresh');
         return { success: false, error: 'Usuario inactivo' };
       }
 
-      // Verify password hash hasn't changed (password change invalidates tokens)
-      const dniPassword = String(found.DNI_NIE || '').trim();
-      const contraseñaPassword = String(found.CONTRASENA || '').trim();
-      const currentPasswordHash = this.getPasswordHash(
-        contraseñaPassword || dniPassword,
-      );
-
-      if (decoded.passwordHash !== currentPasswordHash) {
-        console.log('[AuthService] Password changed, refresh token invalid');
+      const currentVersion = found.AUTH_VERSION ?? 0;
+      if (
+        typeof decoded.authVersion !== 'number' ||
+        decoded.authVersion !== currentVersion
+      ) {
+        console.log('[AuthService] authVersion mismatch, refresh invalid');
         return {
           success: false,
           error: 'Token invalidated by password change',
         };
       }
 
-      // Detect role from GRUPO
       const grupo = found.GRUPO || '';
-      let role = 'EMPLEADOS'; // default
-      if (grupo === 'Manager' || grupo === 'Supervisor') {
-        role = 'MANAGER';
-      } else if (grupo === 'Developer') {
-        role = 'DEVELOPER';
-      } else if (grupo === 'Admin') {
-        role = 'ADMIN';
-      }
+      const role = this.mapRole(grupo);
 
-      // Generate new access token
       const payload = {
         email: found.CORREO_ELECTRONICO,
         userId: found.CODIGO,
         role,
         grupo,
-        passwordHash: currentPasswordHash,
+        authVersion: currentVersion,
         type: 'access',
       };
       const newAccessToken = this.jwtService.sign(payload, {
@@ -284,15 +263,29 @@ export class AuthService {
   }
 
   /**
-   * Calculează un hash simplu al parolei pentru a invalida token-urile când se schimbă parola
-   * Folosim primul caracter, ultimul caracter și lungimea
+   * Counts users still on legacy plaintext vs bcrypt (no password values logged).
    */
-  private getPasswordHash(password: string): string {
-    if (!password || password.length === 0) return '';
-    const firstChar = password[0] || '';
-    const lastChar = password[password.length - 1] || '';
-    const length = password.length;
-    // Creează un hash simplu dar unic
-    return `${firstChar}${lastChar}${length}`.substring(0, 10);
+  async getPasswordMigrationStats(): Promise<{
+    totalWithPassword: number;
+    bcrypt: number;
+    plaintextLegacy: number;
+  }> {
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ CONTRASENA: string | null }>
+    >(
+      `SELECT \`Contraseña\` AS CONTRASENA FROM DatosEmpleados
+       WHERE \`Contraseña\` IS NOT NULL AND TRIM(\`Contraseña\`) <> ''`,
+    );
+    let bcryptCount = 0;
+    let plaintext = 0;
+    for (const row of rows) {
+      if (isBcryptHash(row.CONTRASENA)) bcryptCount += 1;
+      else plaintext += 1;
+    }
+    return {
+      totalWithPassword: rows.length,
+      bcrypt: bcryptCount,
+      plaintextLegacy: plaintext,
+    };
   }
 }
