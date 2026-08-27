@@ -148,9 +148,21 @@ describe('V2 opciones — totales EXCLUSIVE vs ACUMULABLE', () => {
     const servicios = [
       {
         opciones: [
-          { id: 1, seleccion_tipo: 'EXCLUSIVE', resultado: { totales: t(100) } },
-          { id: 2, seleccion_tipo: 'EXCLUSIVE', resultado: { totales: t(130) } },
-          { id: 3, seleccion_tipo: 'ACUMULABLE', resultado: { totales: t(10) } },
+          {
+            id: 1,
+            seleccion_tipo: 'EXCLUSIVE',
+            resultado: { totales: t(100) },
+          },
+          {
+            id: 2,
+            seleccion_tipo: 'EXCLUSIVE',
+            resultado: { totales: t(130) },
+          },
+          {
+            id: 3,
+            seleccion_tipo: 'ACUMULABLE',
+            resultado: { totales: t(10) },
+          },
         ],
       },
     ];

@@ -81,16 +81,14 @@ export class PresupuestosV2ConfigAdminService {
       rows.map((r) => [`${r.ambito}|${r.motor_codigo}|${r.clave}`, r]),
     );
 
-    return PARAM_CATALOG.filter((c) => c.adminEditable || c.clave === 'iva_factor').map(
-      (cat) => {
-        const row = byKey.get(
-          `${cat.ambito}|${cat.motor_codigo}|${cat.clave}`,
-        );
+    return PARAM_CATALOG.filter(
+      (c) => c.adminEditable || c.clave === 'iva_factor',
+    )
+      .map((cat) => {
+        const row = byKey.get(`${cat.ambito}|${cat.motor_codigo}|${cat.clave}`);
         const storedRaw = row?.valor_json;
         const stored =
-          typeof storedRaw === 'number'
-            ? storedRaw
-            : Number(storedRaw);
+          typeof storedRaw === 'number' ? storedRaw : Number(storedRaw);
         const value = Number.isFinite(stored) ? stored : 0;
         return {
           id: row?.id ?? null,
@@ -107,15 +105,11 @@ export class PresupuestosV2ConfigAdminService {
           valor_display: paramToDisplay(cat, value),
           updated_at: row?.updated_at ?? null,
         };
-      },
-    ).filter((p) => p.admin_editable);
+      })
+      .filter((p) => p.admin_editable);
   }
 
-  async updateParametro(
-    user: AuthUser,
-    clave: string,
-    valorDisplay: number,
-  ) {
+  async updateParametro(user: AuthUser, clave: string, valorDisplay: number) {
     const cat = catalogByClave(clave);
     if (!cat || !cat.adminEditable) {
       throw new BadRequestException('Parámetro no editable');
@@ -190,8 +184,7 @@ export class PresupuestosV2ConfigAdminService {
         clave: cat.clave,
         old: oldVal,
         new: stored,
-        display_old:
-          oldVal != null ? paramToDisplay(cat, oldVal) : null,
+        display_old: oldVal != null ? paramToDisplay(cat, oldVal) : null,
         display_new: paramToDisplay(cat, stored),
       },
       actor,
@@ -329,7 +322,11 @@ export class PresupuestosV2ConfigAdminService {
       id,
       'brand_updated',
       {
-        old: { nombre: existing.nombre, logo_ref: existing.logo_ref, config: prevConfig },
+        old: {
+          nombre: existing.nombre,
+          logo_ref: existing.logo_ref,
+          config: prevConfig,
+        },
         new: dto,
       },
       actor,
@@ -353,7 +350,9 @@ export class PresupuestosV2ConfigAdminService {
     if (!brand) throw new NotFoundException('Marca no encontrada');
     const ext = (file.originalname.split('.').pop() || 'png').toLowerCase();
     if (!['png', 'jpg', 'jpeg', 'webp'].includes(ext)) {
-      throw new BadRequestException('Formato de logo no soportado (png/jpg/webp)');
+      throw new BadRequestException(
+        'Formato de logo no soportado (png/jpg/webp)',
+      );
     }
     const key = buildObjectKey({
       app: 'decamino',
@@ -548,7 +547,9 @@ export class PresupuestosV2ConfigAdminService {
     const formato = resolveSerieFormato(
       String(opts.formato_preset || opts.formato || '{PREF}-{YYYY}-{SEQ}'),
     );
-    const prefijo = String(opts.prefijo || 'MAD').trim().toUpperCase();
+    const prefijo = String(opts.prefijo || 'MAD')
+      .trim()
+      .toUpperCase();
     const padding = Math.min(8, Math.max(1, Number(opts.padding) || 4));
     const secuencia = Math.max(1, Number(opts.secuencia) || 1);
     return {

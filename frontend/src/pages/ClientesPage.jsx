@@ -1,14 +1,19 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+﻿import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import activityLogger from '../utils/activityLogger';
-import { Card, Button, Modal, Input } from '../components/ui';
+import { Button, Modal, PageHeader, SegmentedControl, AlertBanner } from '../components/ui';
 import Notification from '../components/ui/Notification';
-import Back3DButton from '../components/Back3DButton';
+import {
+  ClientesFiltersPanel,
+  ClientesListSection,
+  ClientesStatsStrip,
+  isComunidadCliente,
+} from '../components/clientes';
+import { MessageCircleWarning, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import ClienteForm from '../components/clientes/ClienteForm';
 import { routes } from '../utils/routes';
 import { useLoadingState } from '../hooks/useLoadingState';
-import { TableLoading } from '../components/ui/LoadingStates';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 
 export default function ClientesPage() {
@@ -37,7 +42,7 @@ export default function ClientesPage() {
   const [searchTermProveedores, setSearchTermProveedores] = useState('');
   const [selectedActivoProveedores, setSelectedActivoProveedores] = useState('todos');
   
-  // Estado común
+  // Estado comÃºn
   const [showAddModal, setShowAddModal] = useState(false);
   const [formMode, setFormMode] = useState('add'); // 'add' | 'edit'
   const [editItem, setEditItem] = useState(null);
@@ -48,21 +53,13 @@ export default function ClientesPage() {
       // Furnizori: folosim backend-ul nou
       return routes.crudProveedor;
     }
-    // Clienți: folosim backend-ul nou
+    // ClienÈ›i: folosim backend-ul nou
     return routes.crudCliente;
   };
   const [tableView, setTableView] = useState('detailed'); // 'detailed' | 'compact'
   const [notif, setNotif] = useState({ open: false, type: 'success', title: '', message: '' });
 
-  // Helper para detectar comunidades de propietarios
-  const isComunidad = (cliente) => {
-    const nombre = cliente['NOMBRE O RAZON SOCIAL'] || '';
-    return nombre.includes('C.P.') || 
-           nombre.includes('C.P ') || 
-           nombre.includes('CP ') || 
-           nombre.includes('CP.') || 
-           nombre.includes('COMUNIDAD DE PROPIETARIOS');
-  };
+  const isComunidad = isComunidadCliente;
 
   // Datos demo de clientes
   const setDemoClientes = () => {
@@ -72,50 +69,50 @@ export default function ClientesPage() {
         'DIRECCION': 'Calle Los Pinos, 15, 28001 Madrid',
         'TELEFONO': '+34 91 123 4567',
         'EMAIL': 'admin@lospinos.com',
-        'CONTACTO': 'María González',
-        'ACTIVO': 'Sí',
+        'CONTACTO': 'MarÃ­a GonzÃ¡lez',
+        'ACTIVO': 'SÃ­',
         'TIPO': 'Comunidad',
-        'SERVICIOS': 'Limpieza, Jardinería',
-        'VALOR CONTRATO': '2.500,00€',
+        'SERVICIOS': 'Limpieza, JardinerÃ­a',
+        'VALOR CONTRATO': '2.500,00â‚¬',
         'LATITUD': '40.4168',
         'LONGITUD': '-3.7038'
       },
       {
         'NOMBRE O RAZON SOCIAL': 'Hospital Universitario San Carlos',
-        'DIRECCION': 'Calle Profesor Martín Lagos, s/n, 28040 Madrid',
+        'DIRECCION': 'Calle Profesor MartÃ­n Lagos, s/n, 28040 Madrid',
         'TELEFONO': '+34 91 330 3000',
         'EMAIL': 'servicios@hospital.com',
-        'CONTACTO': 'Dr. Carlos Rodríguez',
-        'ACTIVO': 'Sí',
+        'CONTACTO': 'Dr. Carlos RodrÃ­guez',
+        'ACTIVO': 'SÃ­',
         'TIPO': 'Centro Sanitario',
-        'SERVICIOS': 'Limpieza quirófanos, Limpieza general',
-        'VALOR CONTRATO': '15.000,00€',
+        'SERVICIOS': 'Limpieza quirÃ³fanos, Limpieza general',
+        'VALOR CONTRATO': '15.000,00â‚¬',
         'LATITUD': '40.4395',
         'LONGITUD': '-3.7226'
       },
       {
         'NOMBRE O RAZON SOCIAL': 'Centro Comercial Plaza Norte',
-        'DIRECCION': 'Avenida de la Gran Vía, 85, 28003 Madrid',
+        'DIRECCION': 'Avenida de la Gran VÃ­a, 85, 28003 Madrid',
         'TELEFONO': '+34 91 555 7777',
         'EMAIL': 'servicios@plazanorte.com',
-        'CONTACTO': 'Ana Martínez',
-        'ACTIVO': 'Sí',
+        'CONTACTO': 'Ana MartÃ­nez',
+        'ACTIVO': 'SÃ­',
         'TIPO': 'Centro Comercial',
         'SERVICIOS': 'Limpieza, Seguridad, Mantenimiento',
-        'VALOR CONTRATO': '8.500,00€',
+        'VALOR CONTRATO': '8.500,00â‚¬',
         'LATITUD': '40.4656',
         'LONGITUD': '-3.6969'
       },
       {
-        'NOMBRE O RAZON SOCIAL': 'Colegio Privado San Agustín',
-        'DIRECCION': 'Calle San Agustín, 25, 28014 Madrid',
+        'NOMBRE O RAZON SOCIAL': 'Colegio Privado San AgustÃ­n',
+        'DIRECCION': 'Calle San AgustÃ­n, 25, 28014 Madrid',
         'TELEFONO': '+34 91 444 8888',
         'EMAIL': 'administracion@sanagustin.edu',
-        'CONTACTO': 'Padre Miguel Ángel',
-        'ACTIVO': 'Sí',
-        'TIPO': 'Educación',
-        'SERVICIOS': 'Limpieza, Conserjería',
-        'VALOR CONTRATO': '3.200,00€',
+        'CONTACTO': 'Padre Miguel Ãngel',
+        'ACTIVO': 'SÃ­',
+        'TIPO': 'EducaciÃ³n',
+        'SERVICIOS': 'Limpieza, ConserjerÃ­a',
+        'VALOR CONTRATO': '3.200,00â‚¬',
         'LATITUD': '40.4168',
         'LONGITUD': '-3.7038'
       },
@@ -124,11 +121,11 @@ export default function ClientesPage() {
         'DIRECCION': 'Paseo de la Castellana, 200, 28046 Madrid',
         'TELEFONO': '+34 91 777 9999',
         'EMAIL': 'facilities@techcorp.com',
-        'CONTACTO': 'Isabel Fernández',
-        'ACTIVO': 'Sí',
+        'CONTACTO': 'Isabel FernÃ¡ndez',
+        'ACTIVO': 'SÃ­',
         'TIPO': 'Oficinas',
-        'SERVICIOS': 'Limpieza, Recepción',
-        'VALOR CONTRATO': '5.800,00€',
+        'SERVICIOS': 'Limpieza, RecepciÃ³n',
+        'VALOR CONTRATO': '5.800,00â‚¬',
         'LATITUD': '40.4637',
         'LONGITUD': '-3.6889'
       }
@@ -141,21 +138,21 @@ export default function ClientesPage() {
         'TELEFONO': '+34 91 666 1111',
         'EMAIL': 'info@limpiezaspro.com',
         'CONTACTO': 'Roberto Silva',
-        'ACTIVO': 'Sí',
+        'ACTIVO': 'SÃ­',
         'TIPO': 'Proveedor',
         'SERVICIOS': 'Productos limpieza, Equipos',
-        'VALOR CONTRATO': '1.200,00€'
+        'VALOR CONTRATO': '1.200,00â‚¬'
       },
       {
         'NOMBRE O RAZON SOCIAL': 'Seguridad Total Madrid',
-        'DIRECCION': 'Avenida de América, 100, 28028 Madrid',
+        'DIRECCION': 'Avenida de AmÃ©rica, 100, 28028 Madrid',
         'TELEFONO': '+34 91 333 4444',
         'EMAIL': 'contacto@seguridadtotal.com',
-        'CONTACTO': 'Carmen López',
-        'ACTIVO': 'Sí',
+        'CONTACTO': 'Carmen LÃ³pez',
+        'ACTIVO': 'SÃ­',
         'TIPO': 'Proveedor',
         'SERVICIOS': 'Vigilancia, Alarmas',
-        'VALOR CONTRATO': '4.500,00€'
+        'VALOR CONTRATO': '4.500,00â‚¬'
       }
     ];
 
@@ -163,21 +160,11 @@ export default function ClientesPage() {
     setProveedores(demoProveedores);
   };
 
-  // Funcție pentru a normaliza coordonatele și a crea link Google Maps
-  const getGoogleMapsLink = (lat, lng) => {
-    if (!lat || !lng) return null;
-    
-    // Normalizează coordonatele (înlocuiește virgula cu punct)
-    const normalizedLat = lat.toString().replace(',', '.');
-    const normalizedLng = lng.toString().replace(',', '.');
-    
-    return `https://www.google.com/maps?q=${normalizedLat},${normalizedLng}`;
-  };
-
+  // FuncÈ›ie pentru a normaliza coordonatele È™i a crea link Google Maps
   const fetchClientes = useCallback(async () => {
     // Saltar fetch real en modo DEMO
     if (authUser?.isDemo) {
-      console.log('🎭 DEMO mode: Skipping fetchClientes in ClientesPage');
+      console.log('ðŸŽ­ DEMO mode: Skipping fetchClientes in ClientesPage');
       return;
     }
 
@@ -210,15 +197,15 @@ export default function ClientesPage() {
       // Filtrar solo clientes (no proveedores)
       const soloClientes = clientesData.filter(item => item.tipo !== 'proveedor');
       
-      // Debug: verifică coordonatele GPS
-      console.log('🔍 Total clientes:', soloClientes.length);
+      // Debug: verificÄƒ coordonatele GPS
+      console.log('ðŸ” Total clientes:', soloClientes.length);
       const clientesConCoords = soloClientes.filter(c => c.LATITUD && c.LONGITUD);
-      console.log('📍 Clientes con coordenadas GPS:', clientesConCoords.length);
-      console.log('🗺️ Clientes sin coordenadas:', soloClientes.length - clientesConCoords.length);
+      console.log('ðŸ“ Clientes con coordenadas GPS:', clientesConCoords.length);
+      console.log('ðŸ—ºï¸ Clientes sin coordenadas:', soloClientes.length - clientesConCoords.length);
       
-      // Debug: arată primii 3 clienți cu coordonate
+      // Debug: aratÄƒ primii 3 clienÈ›i cu coordonate
       if (clientesConCoords.length > 0) {
-        console.log('📍 Primeros 3 clientes con coordenadas:', clientesConCoords.slice(0, 3).map(c => ({
+        console.log('ðŸ“ Primeros 3 clientes con coordenadas:', clientesConCoords.slice(0, 3).map(c => ({
           nombre: c['NOMBRE O RAZON SOCIAL'],
           lat: c.LATITUD,
           lng: c.LONGITUD
@@ -227,7 +214,7 @@ export default function ClientesPage() {
       
       setClientes(soloClientes);
       
-      // Log acceso a página
+      // Log acceso a pÃ¡gina
       await activityLogger.logPageAccess('clientes', authUser);
       
     } catch (e) {
@@ -241,7 +228,7 @@ export default function ClientesPage() {
   const fetchProveedores = useCallback(async () => {
     // Saltar fetch real en modo DEMO
     if (authUser?.isDemo) {
-      console.log('🎭 DEMO mode: Skipping fetchProveedores in ClientesPage');
+      console.log('ðŸŽ­ DEMO mode: Skipping fetchProveedores in ClientesPage');
       return;
     }
 
@@ -281,7 +268,7 @@ export default function ClientesPage() {
   // Fetch datos
   useEffect(() => {
     if (authUser?.isDemo) {
-      console.log('🎭 DEMO mode: Using demo clientes data instead of fetching from backend');
+      console.log('ðŸŽ­ DEMO mode: Using demo clientes data instead of fetching from backend');
       setDemoClientes();
       setOperationLoading('clientes', false);
       setOperationLoading('proveedores', false);
@@ -292,7 +279,7 @@ export default function ClientesPage() {
     fetchProveedores();
   }, [authUser?.isDemo, fetchClientes, fetchProveedores, setOperationLoading]);
 
-  // Filtro clientes (memoizat pentru performanță)
+  // Filtro clientes (memoizat pentru performanÈ›Äƒ)
   const filteredClientes = useMemo(() => {
     return clientes.filter(cliente => {
       const matchesSearch = cliente['NOMBRE O RAZON SOCIAL']?.toLowerCase().includes(searchTermClientes.toLowerCase()) ||
@@ -300,7 +287,7 @@ export default function ClientesPage() {
                            cliente.EMAIL?.toLowerCase().includes(searchTermClientes.toLowerCase()) ||
                            cliente.POBLACION?.toLowerCase().includes(searchTermClientes.toLowerCase());
       
-      // Pentru moment, toți clienții sunt considerați activi
+      // Pentru moment, toÈ›i clienÈ›ii sunt consideraÈ›i activi
       const matchesActivo = selectedActivoClientes === 'todos' || 
                            (selectedActivoClientes === 'activo' && true) ||
                            (selectedActivoClientes === 'inactivo' && false);
@@ -309,14 +296,14 @@ export default function ClientesPage() {
     });
   }, [clientes, searchTermClientes, selectedActivoClientes]);
 
-  // Filtro proveedores (memoizat pentru performanță)
+  // Filtro proveedores (memoizat pentru performanÈ›Äƒ)
   const filteredProveedores = useMemo(() => {
     return proveedores.filter(proveedor => {
       const matchesSearch = proveedor['NOMBRE O RAZÓN SOCIAL']?.toLowerCase().includes(searchTermProveedores.toLowerCase()) ||
                            proveedor.NIF?.toLowerCase().includes(searchTermProveedores.toLowerCase()) ||
                            proveedor.EMAIL?.toLowerCase().includes(searchTermProveedores.toLowerCase());
       
-      // Pentru moment, toți furnizorii sunt considerați activi
+      // Pentru moment, toÈ›i furnizorii sunt consideraÈ›i activi
       const matchesActivo = selectedActivoProveedores === 'todos' || 
                            (selectedActivoProveedores === 'activo' && true) ||
                            (selectedActivoProveedores === 'inactivo' && false);
@@ -327,7 +314,7 @@ export default function ClientesPage() {
 
   const handleAddItem = async (itemData) => {
     try {
-      // Mapear a claves esperadas por backend (enviar TODO, incluso vacío)
+      // Mapear a claves esperadas por backend (enviar TODO, incluso vacÃ­o)
       const d = itemData || {};
       const backendPayload = {
         action: 'add',
@@ -367,7 +354,7 @@ export default function ClientesPage() {
       }
 
       const endpoint = getCrudEndpoint(d.tipo);
-      console.log('📝 Adding item to:', endpoint);
+      console.log('ðŸ“ Adding item to:', endpoint);
       
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -380,7 +367,7 @@ export default function ClientesPage() {
       try { json = JSON.parse(rawText); } catch { json = null; }
 
       if (response.ok) {
-        // Log crear ítem
+        // Log crear Ã­tem
         await activityLogger.logClienteCreated(backendPayload, authUser);
         
         setShowAddModal(false);
@@ -392,8 +379,8 @@ export default function ClientesPage() {
         setNotif({
           open: true,
           type: 'success',
-          title: 'Operación exitosa',
-          message: (json && (json.mensaje || json.message)) || `${activeTab === 'clientes' ? 'Cliente' : 'Proveedor'} añadido con éxito!`
+          title: 'OperaciÃ³n exitosa',
+          message: (json && (json.mensaje || json.message)) || `${activeTab === 'clientes' ? 'Cliente' : 'Proveedor'} aÃ±adido con Ã©xito!`
         });
       } else {
         setNotif({
@@ -452,7 +439,7 @@ export default function ClientesPage() {
       }
 
       const endpoint = getCrudEndpoint(d.tipo);
-      console.log('📝 Editing item at:', endpoint);
+      console.log('ðŸ“ Editing item at:', endpoint);
       
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -468,7 +455,7 @@ export default function ClientesPage() {
         } else {
           fetchProveedores();
         }
-        setNotif({ open: true, type: 'success', title: 'Operación exitosa', message: `${activeTab === 'clientes' ? 'Cliente' : 'Proveedor'} actualizado con éxito!` });
+        setNotif({ open: true, type: 'success', title: 'OperaciÃ³n exitosa', message: `${activeTab === 'clientes' ? 'Cliente' : 'Proveedor'} actualizado con Ã©xito!` });
       } else {
         setNotif({ open: true, type: 'error', title: 'Error', message: `Error al actualizar ${activeTab === 'clientes' ? 'el cliente' : 'el proveedor'}!` });
       }
@@ -496,7 +483,7 @@ export default function ClientesPage() {
       }
 
       const endpoint = getCrudEndpoint(tipo);
-      console.log('🗑️ Deleting item at:', endpoint);
+      console.log('ðŸ—‘ï¸ Deleting item at:', endpoint);
       
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -525,14 +512,14 @@ export default function ClientesPage() {
     nombre: row['NOMBRE O RAZON SOCIAL'] || row['NOMBRE O RAZÓN SOCIAL'] || '',
     nif: row.NIF || '',
     telefono: row.TELEFONO || '',
-    movil: row.MOVIL || row.MÓVIL || '',
+    movil: row.MOVIL || row['MÓVIL'] || '',
     fax: row.FAX || '',
     email: row.EMAIL || '',
-    direccion: row.DIRECCION || row.DIRECCIÓN || '',
+    direccion: row.DIRECCION || row['DIRECCIÓN'] || '',
     cp: row['CODIGO POSTAL'] || '',
-    ciudad: row.POBLACION || row.POBLACIÓN || '',
+    ciudad: row.POBLACION || row['POBLACIÓN'] || '',
     provincia: row.PROVINCIA || '',
-    pais: row.PAIS || row.PAÍS || 'España',
+    pais: row.PAIS || row['PAÍS'] || 'España',
     url: row.URL || '',
     descuento_por_defecto: row['DESCUENTO POR DEFECTO'] || '',
     limite_gasto: row.CuantoPuedeGastar || '',
@@ -557,7 +544,7 @@ export default function ClientesPage() {
       return;
     }
     
-    // Navegar a la página de detalles según el tipo
+    // Navegar a la pÃ¡gina de detalles segÃºn el tipo
     if (activeTab === 'clientes') {
     navigate(`/clientes/${item.NIF}`);
     } else {
@@ -565,1006 +552,214 @@ export default function ClientesPage() {
     }
   };
 
-  // Loading state pentru pagina întreagă
+  const openAddModal = () => {
+    setFormMode('add');
+    setEditItem(null);
+    setShowAddModal(true);
+  };
+
+  const openEditModal = (row) => {
+    setFormMode('edit');
+    setEditItem(mapRowToForm(row, activeTab === 'clientes' ? 'cliente' : 'proveedor'));
+    setShowAddModal(true);
+  };
+
+  const confirmDelete = (row, tipo) => {
+    const nombre = row['NOMBRE O RAZON SOCIAL'] || row['NOMBRE O RAZÓN SOCIAL'] || row.NIF;
+    if (window.confirm(`¿Eliminar ${tipo === 'cliente' ? 'cliente' : 'proveedor'} ${nombre}?`)) {
+      handleDeleteItem(row, tipo);
+    }
+  };
+
+  const tabItems = [
+    { id: 'clientes', label: `Clientes (${clientes.length})`, shortLabel: `Cli. (${clientes.length})` },
+    { id: 'proveedores', label: `Proveedores (${proveedores.length})`, shortLabel: `Prov. (${proveedores.length})` },
+  ];
+
+  // Loading state pentru pagina Ã®ntreagÄƒ
   if (isOperationLoading('clientes') && isOperationLoading('proveedores')) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-red-600 mx-auto mb-4"></div>
-          <div className="text-red-600 font-bold text-xl">Cargando clientes y proveedores...</div>
+      <div className="clientes-page app-page">
+        <div className="clientes-state clientes-state--page">
+          <div className="clientes-state__spinner" aria-hidden />
+          <p className="clientes-state__title">Cargando clientes y proveedoresâ€¦</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-50">
+    <div className="clientes-page app-page">
       {notif.open && (
-        <Notification 
+        <Notification
           type={notif.type}
           title={notif.title}
           message={notif.message}
           duration={5000}
-          onClose={() => setNotif(prev => ({ ...prev, open: false }))}
+          onClose={() => setNotif((prev) => ({ ...prev, open: false }))}
           show
         />
       )}
-      {/* Header moderno */}
-      <div className="bg-white shadow-sm border-b border-gray-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between py-6">
-            <div className="flex items-center space-x-4">
-              <Back3DButton to="/inicio" title="Volver al Inicio" />
-              <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-red-600 rounded-xl flex items-center justify-center">
-                <span className="text-white text-xl">👥</span>
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-red-600 to-red-800 bg-clip-text text-transparent">
-                  Gestión de Clientes y Proveedores
-                </h1>
-                <p className="text-gray-500 text-sm">Administra clientes y proveedores de la empresa</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <button 
-                onClick={() => {
-                  // Date relevante pentru pagina de clientes/proveedores
-                  const pageData = {
-                    additionalInfo: [
-                      `[TAB ACTIVO] ${activeTab === 'clientes' ? 'Clientes' : 'Proveedores'}`,
-                      activeTab === 'clientes' && clientes?.length > 0 
-                        ? `[CLIENTES] ${clientes.length} clientes disponibles` 
-                        : null,
-                      activeTab === 'proveedores' && proveedores?.length > 0 
-                        ? `[PROVEEDORES] ${proveedores.length} proveedores disponibles` 
-                        : null,
-                    ].filter(Boolean),
-                  };
-                  
-                  const message = buildErrorReportMessage({
-                    authUser,
-                    pageName: activeTab === 'clientes' ? "Clientes" : "Proveedores",
-                    pageData,
-                  });
-                  
-                  openWhatsAppErrorReport(message);
-                }}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg"
-              >
-                <span>Reportar error</span>
-              </button>
-              <Button
-                onClick={() => { setFormMode('add'); setEditItem(null); setShowAddModal(true); }}
-                className="bg-red-600 hover:bg-red-700 text-white"
-              >
-                + Añadir {activeTab === 'clientes' ? 'Cliente' : 'Proveedor'}
-              </Button>
-            </div>
-          </div>
+
+      <PageHeader
+        title="Clientes y proveedores"
+        subtitle="Administración de clientes y proveedores"
+        backTo="/inicio"
+        backTitle="Volver al inicio"
+        actions={(
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                const pageData = {
+                  additionalInfo: [
+                    `[TAB ACTIVO] ${activeTab === 'clientes' ? 'Clientes' : 'Proveedores'}`,
+                    activeTab === 'clientes' && clientes?.length > 0
+                      ? `[CLIENTES] ${clientes.length} clientes disponibles`
+                      : null,
+                    activeTab === 'proveedores' && proveedores?.length > 0
+                      ? `[PROVEEDORES] ${proveedores.length} proveedores disponibles`
+                      : null,
+                  ].filter(Boolean),
+                };
+                const message = buildErrorReportMessage({
+                  authUser,
+                  pageName: activeTab === 'clientes' ? 'Clientes' : 'Proveedores',
+                  pageData,
+                });
+                openWhatsAppErrorReport(message);
+              }}
+            >
+              <MessageCircleWarning className="w-4 h-4" aria-hidden />
+              <span>Reportar error</span>
+            </Button>
+            <Button type="button" variant="primary" size="sm" onClick={openAddModal}>
+              <Plus className="w-4 h-4" aria-hidden />
+              <span>
+                Añadir
+                {' '}
+                {activeTab === 'clientes' ? 'cliente' : 'proveedor'}
+              </span>
+            </Button>
+          </>
+        )}
+      />
+
+      <SegmentedControl
+        items={tabItems}
+        value={activeTab}
+        onChange={setActiveTab}
+        className="clientes-page__tabs"
+      />
+
+      <div className="clientes-page__toolbar">
+        <div className="clientes-density">
+          <span className="clientes-density__label">Densidad</span>
+          <SegmentedControl
+            items={[
+              { id: 'comfortable', label: 'Comfort', shortLabel: 'Comf.' },
+              { id: 'compact', label: 'Compact', shortLabel: 'Comp.' },
+            ]}
+            value={density}
+            onChange={setDensity}
+          />
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Tabs + Density */}
-        <div className="flex gap-4 mb-6">
-          <button
-            onClick={() => setActiveTab('clientes')}
-            className={`px-6 py-3 rounded-lg font-bold transition-colors ${
-              activeTab === 'clientes'
-                ? 'bg-red-600 text-white'
-                : 'bg-white text-red-600 border border-red-600 hover:bg-red-50'
-            }`}
-          >
-            👥 Clientes ({clientes.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('proveedores')}
-            className={`px-6 py-3 rounded-lg font-bold transition-colors ${
-              activeTab === 'proveedores'
-                ? 'bg-red-600 text-white'
-                : 'bg-white text-red-600 border border-red-600 hover:bg-red-50'
-            }`}
-          >
-            🏢 Proveedores ({proveedores.length})
-          </button>
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-xs text-gray-500 hidden sm:inline">Densidad</span>
-            <button
-              onClick={() => setDensity('comfortable')}
-              className={`px-3 py-1 text-xs rounded-lg transition-colors ${
-                density === 'comfortable' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 border hover:bg-gray-50'
-              }`}
-              title="Vista cómoda"
-            >
-              Comfort
-            </button>
-            <button
-              onClick={() => setDensity('compact')}
-              className={`px-3 py-1 text-xs rounded-lg transition-colors ${
-                density === 'compact' ? 'bg-gray-900 text-white' : 'bg-white text-gray-700 border hover:bg-gray-50'
-              }`}
-              title="Vista compacta"
-            >
-              Compact
-            </button>
-          </div>
-        </div>
-
-        {/* Conținut pentru Clienți */}
+      <div className="clientes-page__content">
         {activeTab === 'clientes' && (
-          <div>
-            {errorClientes && (
-              <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 mb-6">
-                <div className="flex items-center gap-3">
-                  <span className="text-red-600 text-2xl">❌</span>
-                  <div>
-                    <p className="text-red-800 font-medium">{errorClientes}</p>
-                  </div>
-                </div>
-              </div>
-            )}
+          <>
+            {errorClientes ? (
+              <AlertBanner variant="danger" title="Error al cargar clientes">
+                {errorClientes}
+              </AlertBanner>
+            ) : null}
 
-            {/* Filtros clientes */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-0 mb-8 overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-red-50 to-rose-50 border-b border-gray-100">
-                <div className="flex items-center gap-2">
-                  <span className="text-red-600">🎯</span>
-                  <span className="text-sm font-semibold text-gray-800">Filtros</span>
-                  <span className="text-xs text-gray-500">Clientes</span>
-                </div>
-                <button
-                  onClick={() => setShowFiltersClientes(v => !v)}
-                  className="text-xs px-2 py-1 rounded-lg border border-red-200 text-red-600 bg-white hover:bg-red-50 transition"
-                >
-                  {showFiltersClientes ? 'Ocultar' : 'Mostrar'}
-                </button>
-              </div>
-              {showFiltersClientes && (
-                <div className="p-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="w-full">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">🔎 Buscar clientes</label>
-                      <Input
-                        type="text"
-                        placeholder="Nombre, NIF, email..."
-                        value={searchTermClientes}
-                        onChange={(e) => setSearchTermClientes(e.target.value)}
-                        className="w-full"
-                      />
-                    </div>
-                    <div className="w-full">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">⚙️ Estado</label>
-                      <select
-                        value={selectedActivoClientes}
-                        onChange={(e) => setSelectedActivoClientes(e.target.value)}
-                        className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                      >
-                        <option value="todos">Todos</option>
-                        <option value="activo">Activos</option>
-                        <option value="inactivo">Inactivos</option>
-                      </select>
-                    </div>
-                    <div className="w-full flex items-end">
-                      <Button
-                        onClick={fetchClientes}
-                        variant="outline"
-                        className="w-full"
-                        loading={isOperationLoading('clientes')}
-                        disabled={isOperationLoading('clientes')}
-                      >
-                        {isOperationLoading('clientes') ? 'Cargando...' : '🔄 Actualizar'}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+            <ClientesFiltersPanel
+              variant="clientes"
+              searchTerm={searchTermClientes}
+              onSearchChange={setSearchTermClientes}
+              selectedActivo={selectedActivoClientes}
+              onActivoChange={setSelectedActivoClientes}
+              onRefresh={fetchClientes}
+              loading={isOperationLoading('clientes')}
+              resultCount={filteredClientes.length}
+              collapsed={!showFiltersClientes}
+              onToggleCollapsed={() => setShowFiltersClientes((v) => !v)}
+            />
 
-            {/* Statistici clienți */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-              <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-blue-100 text-sm">Total Clientes</p>
-                    <p className="text-2xl font-bold">{clientes.length}</p>
-                  </div>
-                  <div className="text-3xl">👥</div>
-                </div>
-              </Card>
-              <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-green-100 text-sm">Activos</p>
-                    <p className="text-2xl font-bold">{clientes.length}</p>
-                  </div>
-                  <div className="text-3xl">✅</div>
-                </div>
-              </Card>
-              <Card className="bg-gradient-to-r from-purple-500 to-purple-600 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-purple-100 text-sm">Comunidades</p>
-                    <p className="text-2xl font-bold">{clientes.filter(isComunidad).length}</p>
-                  </div>
-                  <div className="text-3xl">🏘️</div>
-                </div>
-              </Card>
-              <Card className="bg-gradient-to-r from-orange-500 to-orange-600 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-orange-100 text-sm">Otros clientes</p>
-                    <p className="text-2xl font-bold">{clientes.filter(c => !isComunidad(c)).length}</p>
-                  </div>
-                  <div className="text-3xl">🏢</div>
-                </div>
-              </Card>
-            </div>
+            <ClientesStatsStrip
+              variant="clientes"
+              total={clientes.length}
+              activos={clientes.length}
+              comunidades={clientes.filter(isComunidad).length}
+              otros={clientes.filter((c) => !isComunidad(c)).length}
+            />
 
-            {/* Lista clienți */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-              <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-                <h3 className="text-lg font-semibold text-gray-800">
-                  Clientes ({filteredClientes.length})
-                </h3>
-                <div className="flex items-center space-x-4">
-                  <div className="text-sm text-gray-500">
-                    📊 Muestra toda la información disponible del endpoint
-                  </div>
-                  <div className="text-xs text-gray-400">
-                    💡 Haz clic en cualquier cliente para ver detalles
-                  </div>
-                  <div className="text-xs text-gray-400">
-                    {filteredClientes.length} clientes
-                    {filteredClientes.length > 10 && tableView === 'detailed' && ' (desplázate para más)'}
-                    {filteredClientes.length > 12 && tableView === 'compact' && ' (desplázate para más)'}
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => setTableView('detailed')}
-                      className={`px-3 py-1 text-xs rounded-lg transition-colors ${
-                        tableView === 'detailed'
-                          ? 'bg-red-600 text-white'
-                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
-                    >
-                      📋 Detallado
-                    </button>
-                    <button
-                      onClick={() => setTableView('compact')}
-                      className={`px-3 py-1 text-xs rounded-lg transition-colors ${
-                        tableView === 'compact'
-                          ? 'bg-red-600 text-white'
-                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                      }`}
-                    >
-                      📊 Compacto
-                    </button>
-                    {/* Tab mapa eliminada */}
-                  </div>
-                </div>
-              </div>
-              
-              {isOperationLoading('clientes') ? (
-                <TableLoading 
-                  columns={7} 
-                  rows={5}
-                  className="p-4"
-                />
-              ) : filteredClientes.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="text-gray-400 text-6xl mb-4">👥</div>
-                  <p className="text-gray-600 font-medium">No hay clientes que coincidan con los criterios.</p>
-                </div>
-              ) : (
-                <>
-                  {tableView === 'detailed' ? (
-                    <div className={`overflow-x-auto overflow-y-auto custom-scrollbar ${
-                      filteredClientes.length > 10 ? 'max-h-96' : 'max-h-full'
-                    }`}>
-                  <table className="w-full">
-                        <thead className="bg-gray-50 sticky top-0 z-10">
-                      <tr>
-                        <th className={`px-6 ${density === 'compact' ? 'py-2' : 'py-3'} text-left text-xs font-medium text-gray-500 uppercase tracking-wider`}>
-                              Nombre / NIF
-                        </th>
-                        <th className={`px-6 ${density === 'compact' ? 'py-2' : 'py-3'} text-left text-xs font-medium text-gray-500 uppercase tracking-wider`}>
-                          Contacto
-                        </th>
-                        <th className={`px-6 ${density === 'compact' ? 'py-2' : 'py-3'} text-left text-xs font-medium text-gray-500 uppercase tracking-wider`}>
-                              Dirección
-                            </th>
-                            <th className={`px-6 ${density === 'compact' ? 'py-2' : 'py-3'} text-left text-xs font-medium text-gray-500 uppercase tracking-wider`}>
-                              Información
-                        </th>
-                        <th className={`px-6 ${density === 'compact' ? 'py-2' : 'py-3'} text-left text-xs font-medium text-gray-500 uppercase tracking-wider`}>
-                              Contrato
-                        </th>
-                        <th className={`px-6 ${density === 'compact' ? 'py-2' : 'py-3'} text-left text-xs font-medium text-gray-500 uppercase tracking-wider`}>
-                              💰 Límite Gasto
-                        </th>
-                        <th className={`px-6 ${density === 'compact' ? 'py-2' : 'py-3'} text-left text-xs font-medium text-gray-500 uppercase tracking-wider`}>
-Acciones
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {filteredClientes.map((cliente, index) => (
-                            <tr 
-                              key={index} 
-                              className={`hover:bg-gray-50 group cursor-pointer transition-colors ${density === 'compact' ? 'text-[13px]' : ''}`}
-                              onClick={() => handleViewDetails(cliente)}
-                              title="Haz clic para ver detalles"
-                            >
-                              <td className={`px-6 ${density === 'compact' ? 'py-2' : 'py-4'} whitespace-nowrap`}>
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <div className={`text-sm font-medium text-gray-900 group-hover:text-red-600 transition-colors ${density === 'compact' ? 'truncate max-w-[280px]' : ''}`}>
-                                    {cliente['NOMBRE O RAZON SOCIAL']}
-                                  </div>
-                                    {isComunidad(cliente) && (
-                                      <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
-                                        🏘️ Comunidad
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="text-sm text-gray-500">NIF: {cliente.NIF}</div>
-                                  <div className="text-xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    📍 {cliente.LATITUD && cliente.LONGITUD ? `${cliente.LATITUD}, ${cliente.LONGITUD}` : 'Sin coordenadas'}
-                                  </div>
-                                </div>
-                              </td>
-                          <td className={`px-6 ${density === 'compact' ? 'py-2' : 'py-4'} whitespace-nowrap`}>
-                            <div>
-                                  <div className="text-sm text-gray-900">
-                                    📧 {cliente.EMAIL || 'N/D'}
-                                  </div>
-                                  <div className="text-sm text-gray-500">
-                                    📞 {cliente.TELEFONO || 'N/D'}
-                                  </div>
-                                  <div className="text-sm text-gray-500">
-                                    📱 {cliente.MOVIL || 'N/D'}
-                                  </div>
-                            </div>
-                          </td>
-                          <td className={`px-6 ${density === 'compact' ? 'py-2' : 'py-4'} whitespace-nowrap`}>
-                                <div>
-                                  <div className="text-sm text-gray-900">{cliente.DIRECCION || 'N/D'}</div>
-                                  <div className="text-sm text-gray-500">
-                                    {cliente['CODIGO POSTAL']} {cliente.POBLACION}
-                                  </div>
-                                  <div className="text-sm text-gray-500">
-                                    {cliente.PROVINCIA}, {cliente.PAIS}
-                                  </div>
-                                </div>
-                          </td>
-                          <td className={`px-6 ${density === 'compact' ? 'py-2' : 'py-4'} whitespace-nowrap`}>
-                            <div>
-                                  <div className="text-sm text-gray-900">
-                                    🌐 {cliente.URL || 'N/D'}
-                                  </div>
-                                  <div className="text-sm text-gray-500">
-                                    💰 Discount: {cliente['DESCUENTO POR DEFECTO'] || '0.00'}%
-                                  </div>
-                                  <div className="text-sm text-gray-500">
-                                    {cliente.LATITUD && cliente.LONGITUD ? (
-                                      <a 
-                                        href={getGoogleMapsLink(cliente.LATITUD, cliente.LONGITUD)} 
-                                        target="_blank" 
-                                        rel="noopener noreferrer" 
-                                        className="text-blue-600 hover:underline"
-                                        title={`${cliente.LATITUD}, ${cliente.LONGITUD}`}
-                                      >
-                                        {cliente.LATITUD}, {cliente.LONGITUD}
-                                      </a>
-                                    ) : (
-                                      <span>📍 N/D</span>
-                                    )}
-                                  </div>
-                            </div>
-                          </td>
-                              <td className={`px-6 ${density === 'compact' ? 'py-2' : 'py-4'} whitespace-nowrap`}>
-                                <div>
-                                  <div className="text-sm text-gray-900">
-                                    📅 Última: {cliente['Fecha Ultima Renovacion'] ? 
-                                      new Date(cliente['Fecha Ultima Renovacion']).toLocaleDateString('es-ES') : 
-                                      'N/D'
-                                    }
-                                  </div>
-                                  <div className="text-sm text-gray-500">
-                                    📅 Próxima: {cliente['Fecha Proxima Renovacion'] ? 
-                                      new Date(cliente['Fecha Proxima Renovacion']).toLocaleDateString('es-ES') : 
-                              'N/D'
-                            }
-                                  </div>
-                                  <div className="text-sm text-gray-500">
-                                    💳 {cliente['CUENTAS BANCARIAS'] ? 'Cuenta bancaria' : 'N/D'}
-                                  </div>
-                                  {cliente['NOTAS PRIVADAS'] && (
-                                    <div className="text-xs text-orange-600 cursor-help" title={cliente['NOTAS PRIVADAS']}>
-                                      📝 Notas privadas
-                                    </div>
-                                  )}
-                                </div>
-                          </td>
-                          <td className={`px-6 ${density === 'compact' ? 'py-2' : 'py-4'} whitespace-nowrap`}>
-                            <div>
-                              <div className="text-sm text-gray-900">
-                                💰 {cliente.CuantoPuedeGastar ? 
-                                  `${parseFloat(cliente.CuantoPuedeGastar).toLocaleString('es-ES', { 
-                                    style: 'currency', 
-                                    currency: 'EUR' 
-                                  })}` : 
-                                  'N/D'
-                                }
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                Límite de gasto
-                              </div>
-                            </div>
-                          </td>
-                          <td className={`px-6 ${density === 'compact' ? 'py-2' : 'py-4'} whitespace-nowrap text-sm font-medium`}>
-                            <div className="flex space-x-2">
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleViewDetails(cliente);
-                                }}
-                                variant="outline"
-                                size={density === 'compact' ? 'xs' : 'sm'}
-                                className="bg-blue-50 hover:bg-blue-100"
-                              >
-                                👁️ Detalles
-                              </Button>
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setFormMode('edit');
-                                  setEditItem(mapRowToForm(cliente, 'cliente'));
-                                  setShowAddModal(true);
-                                }}
-                                variant="outline"
-                                size={density === 'compact' ? 'xs' : 'sm'}
-                                className="text-amber-600 hover:text-amber-700"
-                              >
-                                ✏️ Editar
-                              </Button>
-                              <Button
-            onClick={(e) => {
-                                  e.stopPropagation();
-              if (confirm(`¿Eliminar cliente ${cliente['NOMBRE O RAZON SOCIAL']}?`)) {
-                handleDeleteItem(cliente, 'cliente');
-              }
-                                }}
-                                variant="outline"
-                                size={density === 'compact' ? 'xs' : 'sm'}
-                                className="text-red-600 hover:text-red-700"
-                                title="Eliminar cliente"
-                              >
-                                🗑️ Eliminar
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                                     ) : (
-                     <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6 overflow-y-auto custom-scrollbar ${
-                       filteredClientes.length > 12 ? 'max-h-96' : 'max-h-full'
-                     }`}>
-                      {filteredClientes.map((cliente, index) => (
-                        <div 
-                          key={index} 
-                          className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer hover:border-red-300"
-                          onClick={() => handleViewDetails(cliente)}
-                          title="Haz clic para ver detalles"
-                        >
-                          <div className="flex justify-between items-start mb-3">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <h4 className="font-semibold text-gray-900 text-sm hover:text-red-600 transition-colors">
-                                  {cliente['NOMBRE O RAZON SOCIAL']}
-                                </h4>
-                                {isComunidad(cliente) && (
-                                  <span className="inline-flex px-1 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
-                                    🏘️
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-xs text-gray-500">NIF: {cliente.NIF}</p>
-                            </div>
-                            <div className="flex space-x-1">
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleViewDetails(cliente);
-                                }}
-                                variant="outline"
-                                size="sm"
-                                className="text-xs bg-blue-50 hover:bg-blue-100"
-                              >
-                                👁️
-                              </Button>
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleViewDetails(cliente);
-                                }}
-                                variant="outline"
-                                size="sm"
-                                className="text-xs text-amber-600 hover:text-amber-700"
-                              >
-                                ✏️
-                              </Button>
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (confirm(`¿Eliminar cliente ${cliente['NOMBRE O RAZON SOCIAL']}?`)) {
-                                    console.warn('Delete cliente solicitado:', cliente.NIF);
-                                  }
-                                }}
-                                variant="outline"
-                                size="sm"
-                                className="text-xs text-red-600 hover:text-red-700"
-                                title="Eliminar cliente"
-                              >
-                                🗑️
-                              </Button>
-                            </div>
-                          </div>
-                          
-                          <div className="space-y-2 text-xs">
-                            <div className="flex items-center">
-                              <span className="text-gray-400 mr-2">📧</span>
-                              <span className="text-gray-700">{cliente.EMAIL || 'N/D'}</span>
-                            </div>
-                            <div className="flex items-center">
-                              <span className="text-gray-400 mr-2">📞</span>
-                              <span className="text-gray-700">{cliente.TELEFONO || cliente.MOVIL || 'N/D'}</span>
-                            </div>
-                            <div className="flex items-center">
-                              <span className="text-gray-400 mr-2">📍</span>
-                              <span className="text-gray-700">
-                                {cliente.LATITUD && cliente.LONGITUD ? (
-                                  <a 
-                                    href={getGoogleMapsLink(cliente.LATITUD, cliente.LONGITUD)} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer" 
-                                    className="text-blue-600 hover:underline"
-                                    title={`${cliente.LATITUD}, ${cliente.LONGITUD}`}
-                                  >
-                                    {cliente.LATITUD}, {cliente.LONGITUD}
-                                  </a>
-                                ) : (
-                                  cliente.POBLACION || 'N/D'
-                                )}
-                              </span>
-                            </div>
-                            <div className="flex items-center">
-                              <span className="text-gray-400 mr-2">💰</span>
-                              <span className="text-gray-700">Discount: {cliente['DESCUENTO POR DEFECTO'] || '0.00'}%</span>
-                            </div>
-                            <div className="flex items-center">
-                              <span className="text-gray-400 mr-2">💳</span>
-                              <span className="text-gray-700">
-                                Límite: {cliente.CuantoPuedeGastar ? 
-                                  `${parseFloat(cliente.CuantoPuedeGastar).toLocaleString('es-ES', { 
-                                    style: 'currency', 
-                                    currency: 'EUR' 
-                                  })}` : 
-                                  'N/D'
-                                }
-                              </span>
-                            </div>
-                            {cliente['NOTAS PRIVADAS'] && (
-                              <div className="flex items-center">
-                                <span className="text-orange-400 mr-2">📝</span>
-                                <span className="text-orange-600 cursor-help" title={cliente['NOTAS PRIVADAS']}>
-                                  Notas privadas
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
+            <ClientesListSection
+              variant="clientes"
+              rows={filteredClientes}
+              loading={isOperationLoading('clientes')}
+              tableView={tableView}
+              onTableViewChange={setTableView}
+              density={density}
+              onViewDetails={handleViewDetails}
+              onEdit={(row) => openEditModal(row)}
+              onDelete={(row) => confirmDelete(row, 'cliente')}
+            />
+          </>
         )}
 
-        {/* Contenido para Proveedores */}
         {activeTab === 'proveedores' && (
-          <div>
-            {errorProveedores && (
-              <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 mb-6">
-                <div className="flex items-center gap-3">
-                  <span className="text-red-600 text-2xl">❌</span>
-                  <div>
-                    <p className="text-red-800 font-medium">{errorProveedores}</p>
-                  </div>
-                </div>
-              </div>
-            )}
+          <>
+            {errorProveedores ? (
+              <AlertBanner variant="danger" title="Error al cargar proveedores">
+                {errorProveedores}
+              </AlertBanner>
+            ) : null}
 
-            {/* Filtros proveedores */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-0 mb-8 overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-purple-50 to-fuchsia-50 border-b border-gray-100">
-                <div className="flex items-center gap-2">
-                  <span className="text-purple-600">🎯</span>
-                  <span className="text-sm font-semibold text-gray-800">Filtros</span>
-                  <span className="text-xs text-gray-500">Proveedores</span>
-                </div>
-                <button
-                  onClick={() => setShowFiltersProveedores(v => !v)}
-                  className="text-xs px-2 py-1 rounded-lg border border-purple-200 text-purple-600 bg-white hover:bg-purple-50 transition"
-                >
-                  {showFiltersProveedores ? 'Ocultar' : 'Mostrar'}
-                </button>
-              </div>
-              {showFiltersProveedores && (
-                <div className="p-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="w-full">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">🔎 Buscar proveedores</label>
-                      <Input
-                        type="text"
-                        placeholder="Nombre, NIF, email..."
-                        value={searchTermProveedores}
-                        onChange={(e) => setSearchTermProveedores(e.target.value)}
-                        className="w-full"
-                      />
-                    </div>
-                    <div className="w-full">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">⚙️ Estado</label>
-                      <select
-                        value={selectedActivoProveedores}
-                        onChange={(e) => setSelectedActivoProveedores(e.target.value)}
-                        className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-                      >
-                        <option value="todos">Todos</option>
-                        <option value="activo">Activos</option>
-                        <option value="inactivo">Inactivos</option>
-                      </select>
-                    </div>
-                    <div className="w-full flex items-end">
-                      <Button
-                        onClick={fetchProveedores}
-                        variant="outline"
-                        className="w-full"
-                        loading={isOperationLoading('proveedores')}
-                        disabled={isOperationLoading('proveedores')}
-                      >
-                        {isOperationLoading('proveedores') ? 'Cargando...' : '🔄 Actualizar'}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+            <ClientesFiltersPanel
+              variant="proveedores"
+              searchTerm={searchTermProveedores}
+              onSearchChange={setSearchTermProveedores}
+              selectedActivo={selectedActivoProveedores}
+              onActivoChange={setSelectedActivoProveedores}
+              onRefresh={fetchProveedores}
+              loading={isOperationLoading('proveedores')}
+              resultCount={filteredProveedores.length}
+              collapsed={!showFiltersProveedores}
+              onToggleCollapsed={() => setShowFiltersProveedores((v) => !v)}
+            />
 
-            {/* Estadísticas proveedores */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-              <Card className="bg-gradient-to-r from-purple-500 to-purple-600 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-purple-100 text-sm">Total Proveedores</p>
-                    <p className="text-2xl font-bold">{proveedores.length}</p>
-                  </div>
-                  <div className="text-3xl">🏢</div>
-                </div>
-              </Card>
-              <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-green-100 text-sm">Activos</p>
-                    <p className="text-2xl font-bold">{proveedores.length}</p>
-                  </div>
-                  <div className="text-3xl">✅</div>
-                </div>
-              </Card>
-            </div>
+            <ClientesStatsStrip
+              variant="proveedores"
+              total={proveedores.length}
+              activos={proveedores.length}
+            />
 
-            {/* Lista proveedores */}
-            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-              <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-                <h3 className="text-lg font-semibold text-gray-800">
-                  Proveedores ({filteredProveedores.length})
-                </h3>
-                <div className="flex items-center space-x-4">
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => setTableView('detailed')}
-                      className={`px-3 py-1 text-xs rounded-lg transition-colors ${
-                        tableView === 'detailed'
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                    >
-                      📋 Detallado
-                    </button>
-                    <button
-                      onClick={() => setTableView('compact')}
-                      className={`px-3 py-1 text-xs rounded-lg transition-colors ${
-                        tableView === 'compact'
-                          ? 'bg-purple-600 text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                    >
-                      🃏 Compacto
-                    </button>
-                    {/* Tab mapa eliminada */}
-                </div>
-                <div className="text-xs text-gray-400">
-                  💡 Haz clic en cualquier proveedor para ver detalles
-                </div>
-                </div>
-              </div>
-              
-            {isOperationLoading('proveedores') ? (
-                <TableLoading 
-                  columns={6} 
-                  rows={5}
-                  className="p-4"
-                />
-              ) : filteredProveedores.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="text-gray-400 text-6xl mb-4">🏢</div>
-                  <p className="text-gray-600 font-medium">No hay proveedores que coincidan con los criterios.</p>
-                </div>
-              ) : (
-                <>
-                  {tableView === 'detailed' ? (
-                    <div className="overflow-x-auto max-h-96 overflow-y-auto custom-scrollbar">
-                  <table className="w-full">
-                        <thead className="bg-gray-50 sticky top-0 z-10">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Proveedor
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Contacto
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Dirección
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Web y Descuento
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Coordenadas
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Acciones
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {filteredProveedores.map((proveedor, index) => (
-                            <tr 
-                              key={index} 
-                              className="hover:bg-gray-50 group cursor-pointer transition-colors"
-                              onClick={() => handleViewDetails(proveedor)}
-                              title="Haz clic para ver detalles"
-                            >
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div>
-                                  <div className="flex items-center gap-2">
-                                        <div className="text-sm font-medium text-gray-900 group-hover:text-purple-600 transition-colors">
-                                          {proveedor['NOMBRE O RAZÓN SOCIAL']}
-                            </div>
-                            <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
-                                          🏢 Proveedor
-                            </span>
-                                      </div>
-                                      <div className="text-sm text-gray-500">NIF: {proveedor.NIF}</div>
-                                      <div className="text-xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        📍 {proveedor.LATITUD && proveedor.LONGITUD ? `${proveedor.LATITUD}, ${proveedor.LONGITUD}` : 'Sin coordenadas'}
-                                      </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div>
-                                  <div className="text-sm text-gray-900">{proveedor.EMAIL || 'N/D'}</div>
-                                  <div className="text-sm text-gray-500">{proveedor.TELEFONO || 'N/D'}</div>
-                                  {proveedor.MÓVIL && (
-                                    <div className="text-xs text-gray-400">Mobil: {proveedor.MÓVIL}</div>
-                                  )}
-                                </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div>
-                                  <div className="text-sm text-gray-900">{proveedor.DIRECCIÓN || 'N/D'}</div>
-                                  <div className="text-sm text-gray-500">
-                                    {proveedor.CODIGO_POSTAL} {proveedor.POBLACIÓN}
-                                  </div>
-                                  <div className="text-xs text-gray-400">
-                                    {proveedor.PROVINCIA}, {proveedor.PAÍS}
-                                  </div>
-                            </div>
-                          </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div>
-                                  <div className="text-sm text-gray-900">
-                                    {proveedor.URL ? (
-                                      <a href={`https://${proveedor.URL.split(';')[0]}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                                        {proveedor.URL.split(';')[0]}
-                                      </a>
-                                    ) : 'N/A'}
-                                  </div>
-                                  <div className="text-sm text-gray-500">
-                                    Discount: {proveedor['DESCUENTO POR DEFECTO']}%
-                                  </div>
-                                  {proveedor.NOTAS_PRIVADAS && (
-                                    <div className="text-xs text-orange-600">📝 {proveedor.NOTAS_PRIVADAS}</div>
-                                  )}
-                                </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                                <div>
-                                  {proveedor.LATITUD && proveedor.LONGITUD ? (
-                                    <div>
-                                      <div className="text-sm text-gray-900">
-                                        📍 {proveedor.LATITUD}, {proveedor.LONGITUD}
-                                      </div>
-                                      <a 
-                                        href={`https://www.google.com/maps?q=${proveedor.LATITUD},${proveedor.LONGITUD}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-xs text-blue-600 hover:underline"
-                                      >
-                                        Ver en mapa
-                                      </a>
-                                    </div>
-                                  ) : (
-                                    <div className="text-sm text-gray-400">Sin coordenadas</div>
-                                  )}
-                                </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <div className="flex space-x-2">
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleViewDetails(proveedor);
-                                }}
-                                variant="outline"
-                                size="sm"
-                                className="bg-purple-50 hover:bg-purple-100"
-                              >
-                                👁️ Detalles
-                              </Button>
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setFormMode('edit');
-                                  setEditItem(mapRowToForm(proveedor, 'proveedor'));
-                                  setShowAddModal(true);
-                                }}
-                                variant="outline"
-                                size="sm"
-                                className="text-amber-600 hover:text-amber-700"
-                              >
-                                ✏️ Editar
-                              </Button>
-                                   <Button
-                                   onClick={(e) => {
-                                       e.stopPropagation();
-                                     if (confirm(`¿Eliminar proveedor ${proveedor['NOMBRE O RAZÓN SOCIAL']}?`)) {
-                                       handleDeleteItem(proveedor, 'proveedor');
-                                     }
-                                     }}
-                                     variant="outline"
-                                     size="sm"
-                                     className="text-red-600 hover:text-red-700"
-                                     title="Eliminar proveedor"
-                                   >
-                                     🗑️ Eliminar
-                                   </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                  ) : (
-                    <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6 overflow-y-auto custom-scrollbar ${
-                      filteredProveedores.length > 12 ? 'max-h-96' : 'max-h-full'
-                    }`}>
-                      {filteredProveedores.map((proveedor, index) => (
-                        <div 
-                          key={index} 
-                          className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer hover:border-purple-300"
-                          onClick={() => handleViewDetails(proveedor)}
-                          title="Haz clic para ver detalles"
-                        >
-                          <div className="flex justify-between items-start mb-3">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <h4 className="font-semibold text-gray-900 text-sm hover:text-purple-600 transition-colors">
-                                  {proveedor['NOMBRE O RAZÓN SOCIAL']}
-                                </h4>
-                                <span className="inline-flex px-1 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">
-                                  🏢
-                                </span>
-                              </div>
-                              <p className="text-xs text-gray-500">NIF: {proveedor.NIF}</p>
-                            </div>
-                            <div className="flex space-x-1">
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleViewDetails(proveedor);
-                                }}
-                                variant="outline"
-                                size="sm"
-                                className="text-xs bg-purple-50 hover:bg-purple-100"
-                              >
-                                👁️
-                              </Button>
-                            </div>
-                          </div>
-                          
-                          <div className="space-y-2 text-xs">
-                            <div className="flex items-center">
-                              <span className="text-gray-400 mr-2">📧</span>
-                              <span className="text-gray-700">{proveedor.EMAIL || 'N/D'}</span>
-                            </div>
-                            <div className="flex items-center">
-                              <span className="text-gray-400 mr-2">📞</span>
-                              <span className="text-gray-700">{proveedor.TELEFONO || proveedor.MÓVIL || 'N/D'}</span>
-                            </div>
-                            <div className="flex items-center">
-                              <span className="text-gray-400 mr-2">📍</span>
-                              <span className="text-gray-700">
-                                {proveedor.LATITUD && proveedor.LONGITUD ? (
-                                  <a 
-                                    href={`https://www.google.com/maps?q=${proveedor.LATITUD},${proveedor.LONGITUD}`}
-                                    target="_blank" 
-                                    rel="noopener noreferrer" 
-                                    className="text-blue-600 hover:underline"
-                                    title={`${proveedor.LATITUD}, ${proveedor.LONGITUD}`}
-                                  >
-                                    {proveedor.LATITUD}, {proveedor.LONGITUD}
-                                  </a>
-                                ) : (
-                                  proveedor.POBLACIÓN || 'N/D'
-                                )}
-                              </span>
-                            </div>
-                            <div className="flex items-center">
-                              <span className="text-gray-400 mr-2">💰</span>
-                              <span className="text-gray-700">Discount: {proveedor['DESCUENTO POR DEFECTO'] || '0.00'}%</span>
-                            </div>
-                            {proveedor.NOTAS_PRIVADAS && (
-                              <div className="flex items-center">
-                                <span className="text-orange-400 mr-2">📝</span>
-                                <span className="text-orange-600 cursor-help" title={proveedor.NOTAS_PRIVADAS}>
-                                  Notas privadas
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
+            <ClientesListSection
+              variant="proveedores"
+              rows={filteredProveedores}
+              loading={isOperationLoading('proveedores')}
+              tableView={tableView}
+              onTableViewChange={setTableView}
+              density={density}
+              onViewDetails={handleViewDetails}
+              onEdit={(row) => openEditModal(row)}
+              onDelete={(row) => confirmDelete(row, 'proveedor')}
+            />
+          </>
         )}
       </div>
 
-      {/* Modal añadir ítem */}
       <Modal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
-        title={`${formMode === 'add' ? 'Añadir' : 'Editar'} ${activeTab === 'clientes' ? 'Cliente' : 'Proveedor'}`}
+        title={`${formMode === 'add' ? 'Añadir' : 'Editar'} ${activeTab === 'clientes' ? 'cliente' : 'proveedor'}`}
+        className="app-modal--form clientes-form-modal"
+        size="lg"
       >
         <ClienteForm
           cliente={formMode === 'edit' ? editItem : null}
@@ -1573,7 +768,6 @@ Acciones
           tipo={activeTab === 'clientes' ? 'cliente' : 'proveedor'}
         />
       </Modal>
-
     </div>
   );
-} 
+}

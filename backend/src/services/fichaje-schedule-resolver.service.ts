@@ -169,7 +169,9 @@ export class FichajeScheduleResolverService {
    * Target clock for reminder window: Entrada → horaIn, Salida → horaOut.
    */
   targetMinutesForTipo(interval: ScheduleInterval, tipo: PunchTipo): number {
-    return this.hmToMinutes(tipo === 'Entrada' ? interval.horaIn : interval.horaOut);
+    return this.hmToMinutes(
+      tipo === 'Entrada' ? interval.horaIn : interval.horaOut,
+    );
   }
 
   isWithinWindow(
@@ -199,7 +201,9 @@ export class FichajeScheduleResolverService {
     }
     // openAt wraps before midnight (e.g. target 00:10, margin 15 → 23:55)
     const wrappedOpen = openAt + 1440;
-    return nowMinutes >= wrappedOpen || nowMinutes <= targetMinutes + marginMinutes;
+    return (
+      nowMinutes >= wrappedOpen || nowMinutes <= targetMinutes + marginMinutes
+    );
   }
 
   /**
@@ -212,7 +216,7 @@ export class FichajeScheduleResolverService {
     nowMinutes: number,
     interval: ScheduleInterval,
     tipo: PunchTipo,
-    marginMinutes: number, // kept for callers; early-open is disabled (open at target only)
+    _marginMinutes: number, // kept for callers; early-open is disabled (open at target only)
   ): boolean {
     const inM = this.hmToMinutes(interval.horaIn);
     const outM = this.hmToMinutes(interval.horaOut);
@@ -329,8 +333,7 @@ export class FichajeScheduleResolverService {
       if (emp.centro && emp.grupo) {
         const key = `${emp.centro.trim()}||${emp.grupo.trim()}`.toLowerCase();
         const h = horarios.find(
-          (x) =>
-            `${x.centro_nombre}||${x.grupo_nombre}`.toLowerCase() === key,
+          (x) => `${x.centro_nombre}||${x.grupo_nombre}`.toLowerCase() === key,
         );
         if (h) {
           const inKey = `${weekdayPrefix}_in1` as keyof typeof h;
@@ -355,9 +358,7 @@ export class FichajeScheduleResolverService {
               ? Number(h.entry_margin_minutes)
               : 15;
           const exitMargin =
-            h.exit_margin_minutes != null
-              ? Number(h.exit_margin_minutes)
-              : 15;
+            h.exit_margin_minutes != null ? Number(h.exit_margin_minutes) : 15;
 
           if (intervals.length > 0) {
             return {
@@ -371,9 +372,7 @@ export class FichajeScheduleResolverService {
               entryMarginMinutes: Number.isFinite(entryMargin)
                 ? entryMargin
                 : 15,
-              exitMarginMinutes: Number.isFinite(exitMargin)
-                ? exitMargin
-                : 15,
+              exitMarginMinutes: Number.isFinite(exitMargin) ? exitMargin : 15,
             };
           }
 
@@ -383,9 +382,7 @@ export class FichajeScheduleResolverService {
             slotRaw: null,
             intervals: [],
             isOff: true,
-            entryMarginMinutes: Number.isFinite(entryMargin)
-              ? entryMargin
-              : 15,
+            entryMarginMinutes: Number.isFinite(entryMargin) ? entryMargin : 15,
             exitMarginMinutes: Number.isFinite(exitMargin) ? exitMargin : 15,
           };
         }
@@ -432,7 +429,9 @@ export class FichajeScheduleResolverService {
     codes: string[],
     lunaYyyyMm: string,
     ziCol: string,
-  ): Promise<Array<{ codigo: string; slot: string | null; centro: string | null }>> {
+  ): Promise<
+    Array<{ codigo: string; slot: string | null; centro: string | null }>
+  > {
     if (!/^\d{4}-\d{2}$/.test(lunaYyyyMm) || !/^ZI_\d{1,2}$/.test(ziCol)) {
       return [];
     }
@@ -457,9 +456,10 @@ export class FichajeScheduleResolverService {
     `;
 
     try {
-      const rows = await this.prisma.$queryRawUnsafe<
-        Array<{ codigo: string; slot: string | null; centro: string | null }>
-      >(sql);
+      const rows =
+        await this.prisma.$queryRawUnsafe<
+          Array<{ codigo: string; slot: string | null; centro: string | null }>
+        >(sql);
       return rows ?? [];
     } catch (err: any) {
       this.logger.error(`loadCuadrantesToday failed: ${err.message}`);
@@ -471,7 +471,9 @@ export class FichajeScheduleResolverService {
     codes: string[],
     lunaYyyyMm: string,
     ziCol: string,
-  ): Promise<Array<{ codigo: string; slot: string | null; cliente: string | null }>> {
+  ): Promise<
+    Array<{ codigo: string; slot: string | null; cliente: string | null }>
+  > {
     if (!/^\d{4}-\d{2}$/.test(lunaYyyyMm) || !/^ZI_\d{1,2}$/.test(ziCol)) {
       return [];
     }
@@ -495,9 +497,10 @@ export class FichajeScheduleResolverService {
     `;
 
     try {
-      const rows = await this.prisma.$queryRawUnsafe<
-        Array<{ codigo: string; slot: string | null; cliente: string | null }>
-      >(sql);
+      const rows =
+        await this.prisma.$queryRawUnsafe<
+          Array<{ codigo: string; slot: string | null; cliente: string | null }>
+        >(sql);
       return rows ?? [];
     } catch (err: any) {
       this.logger.error(`loadMulticentroToday failed: ${err.message}`);

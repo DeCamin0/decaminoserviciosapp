@@ -1057,7 +1057,7 @@
 /* Móvil: FAB por encima de barra inferior típica */
 @media (max-width: 768px) {
   .ast-fab {
-    bottom: calc(4rem + 12px + env(safe-area-inset-bottom, 0px));
-    right: 16px;
+    bottom: calc(var(--app-nav-h, 4rem) + 14px + env(safe-area-inset-bottom, 0px));
+    right: max(16px, env(safe-area-inset-right, 0px));
   }
 }

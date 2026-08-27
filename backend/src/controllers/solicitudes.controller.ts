@@ -491,9 +491,7 @@ export class SolicitudesController {
     const hasDias =
       body?.dias_anuales !== undefined && body?.dias_anuales !== null;
     if (!hasPersonas && !hasDias) {
-      throw new BadRequestException(
-        'Indica max_personas_dia y/o dias_anuales',
-      );
+      throw new BadRequestException('Indica max_personas_dia y/o dias_anuales');
     }
     return this.solicitudesService.setAsuntosPropiosMaxPersonasDia(
       hasPersonas ? Number(body.max_personas_dia) : undefined,

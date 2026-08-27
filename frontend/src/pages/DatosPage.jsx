@@ -1,10 +1,10 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes.js';
 import { fetchAvatarOnce, getCachedAvatar, setCachedAvatar, clearAvatarCacheFor, DEFAULT_AVATAR } from '../utils/avatarCache';
-import { Notification, Modal, Input, Button } from '../components/ui';
-import Edit3DButton from '../components/Edit3DButton.jsx';
-import Back3DButton from '../components/Back3DButton.jsx';
+import { Notification, Modal, Input, PageHeader, AlertBanner } from '../components/ui';
+import { Camera, Image as ImageIcon, Trash2, Lock, Pencil } from 'lucide-react';
 import { useLoadingState } from '../hooks/useLoadingState';
 import { useApi } from '../hooks/useApi';
 import { API_ENDPOINTS } from '../utils/constants';
@@ -114,6 +114,7 @@ export default function DatosPage() {
   const [editError, setEditError] = useState('');
   const [motivo, setMotivo] = useState('');
   const motivoRef = useRef(null);
+  const editBodyRef = useRef(null);
 const [editLoading, setEditLoading] = useState(false);
   
   // Loading states centralizate
@@ -174,70 +175,39 @@ const [editLoading, setEditLoading] = useState(false);
     return value.toString().trim();
   };
 
-  const renderPermissionBadge = (value, { positiveLabel = 'Sí', negativeLabel = 'No', positiveIcon = '✅', negativeIcon = '🚫' } = {}) => {
-    // Log pentru debugging
-    console.log('🔍 [renderPermissionBadge] Input value:', value, 'type:', typeof value);
-    
+  const renderPermissionBadge = (value, { positiveLabel = 'Sí', negativeLabel = 'No' } = {}) => {
     const interpreted = normalizeYesNoValue(value);
-    console.log('🔍 [renderPermissionBadge] After normalizeYesNoValue:', interpreted, 'type:', typeof interpreted);
 
-    // Handle null, undefined, or empty string (including whitespace-only strings)
     if (interpreted === null || interpreted === undefined || interpreted === '' || (typeof interpreted === 'string' && interpreted.trim() === '')) {
-      console.log('🔍 [renderPermissionBadge] Returning "-" for empty/null value');
-      return (
-        <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border border-gray-200 bg-gray-50 text-gray-500">
-          -
-        </span>
-      );
+      return <span className="datos-perm-badge datos-perm-badge--neutral">—</span>;
     }
 
     if (interpreted === 'SI') {
-      return (
-        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-semibold border border-green-200 bg-green-50 text-green-700">
-          <span>{positiveIcon}</span>
-          {positiveLabel}
-        </span>
-      );
+      return <span className="datos-perm-badge datos-perm-badge--ok">{positiveLabel}</span>;
     }
 
     if (interpreted === 'NO') {
-      return (
-        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-semibold border border-red-200 bg-red-50 text-red-600">
-          <span>{negativeIcon}</span>
-          {negativeLabel}
-        </span>
-      );
+      return <span className="datos-perm-badge datos-perm-badge--no">{negativeLabel}</span>;
     }
 
-    return (
-      <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold border border-blue-200 bg-blue-50 text-blue-700">
-        {value}
-      </span>
-    );
+    return <span className="datos-perm-badge datos-perm-badge--neutral">{value}</span>;
   };
 
-  // Skeleton UI pentru percepție rapidă la încărcare
   const renderSkeleton = () => (
-    <div className="space-y-6 animate-pulse">
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-6">
+    <div className="datos-page datos-skeleton">
+      <div className="app-card app-card--pad">
         <div className="flex items-center gap-4">
-          <div className="h-16 w-16 rounded-full bg-gray-200" />
+          <div className="h-16 w-16 rounded-full bg-gray-200 dark:bg-gray-700" />
           <div className="space-y-2 flex-1">
-            <div className="h-4 w-48 bg-gray-200 rounded" />
-            <div className="h-4 w-64 bg-gray-200 rounded" />
+            <div className="h-4 w-48 bg-gray-200 dark:bg-gray-700 rounded" />
+            <div className="h-4 w-64 bg-gray-200 dark:bg-gray-700 rounded" />
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-6">
-          {[...Array(9)].map((_, i) => (
-            <div key={i} className="h-10 rounded bg-gray-100" />
-          ))}
-        </div>
       </div>
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
-        <div className="h-4 w-32 bg-gray-200 rounded mb-3" />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="h-24 rounded-lg bg-gray-100" />
+      <div className="app-card app-card--pad">
+        <div className="datos-grid">
+          {[...Array(9)].map((_, i) => (
+            <div key={i} className="h-14 rounded bg-gray-100 dark:bg-gray-800" />
           ))}
         </div>
       </div>
@@ -1046,15 +1016,35 @@ const [editLoading, setEditLoading] = useState(false);
     return () => clearTimeout(timeout);
   }, []);
 
-  // Blocăm scroll pe body când modalul de edit e deschis (mobil)
+  // Blocăm scroll pe body când modalul de edit e deschis; body-ul modalului pornește de sus
   useEffect(() => {
     if (!showEdit) return undefined;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+    const scrollToTop = () => {
+      editBodyRef.current?.scrollTo(0, 0);
+    };
+    scrollToTop();
+    requestAnimationFrame(scrollToTop);
     return () => {
       document.body.style.overflow = prev;
     };
   }, [showEdit]);
+
+  // Modal parolă: blocare scroll pagină + reset scroll body la deschidere
+  useEffect(() => {
+    if (!showChangePasswordModal) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const scrollToTop = () => {
+      document.querySelector('.datos-password-modal .app-modal__body')?.scrollTo(0, 0);
+    };
+    scrollToTop();
+    requestAnimationFrame(scrollToTop);
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [showChangePasswordModal]);
 
   // Sincronizare automată: când se completează câmpurile separate, se actualizează automat "NOMBRE / APELLIDOS"
   useEffect(() => {
@@ -1139,8 +1129,11 @@ const [editLoading, setEditLoading] = useState(false);
   // Dacă încă nu avem user dar un fetch e în curs, mai arătăm skeleton; nu afișăm eroarea până nu știm sigur că nu vine user-ul
   if (error && !user && !isOperationLoading('user')) {
     return (
-      <div className="flex-1 flex justify-center items-center bg-gray-50 min-h-screen">
-        <p className="text-red-600 font-bold text-xl">{error}</p>
+      <div className="app-page datos-page">
+        <PageHeader title="Datos Personales" subtitle="Información del empleado" backTo="/inicio" />
+        <AlertBanner variant="danger" title="No se pudieron cargar los datos">
+          {error}
+        </AlertBanner>
       </div>
     );
   }
@@ -1151,324 +1144,139 @@ const [editLoading, setEditLoading] = useState(false);
 
   return (
     <>
-    <div className="space-y-6">
-      {/* Header moderno */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Back3DButton to="/inicio" title="Regresar al Dashboard" />
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
-              Datos Personales
-            </h1>
-            <p className="text-gray-600 dark:text-white text-sm sm:text-base">
-              Información completa del empleado
-            </p>
-          </div>
-        </div>
-        
-        {user && (
-          <div className="flex gap-2 sm:gap-3 items-center">
-            <Edit3DButton
-              onClick={() => { setEditForm(user); setShowEdit(true); setMotivo(''); }}
-              size="md"
-              className="hidden sm:inline-flex"
-            >
-              Editar datos
-            </Edit3DButton>
-            <Edit3DButton
-              onClick={() => { setEditForm(user); setShowEdit(true); setMotivo(''); }}
-              size="sm"
-              className="sm:hidden"
-            >
-              Editar
-            </Edit3DButton>
-            <button
-              onClick={() => {
-                setShowChangePasswordModal(true);
-                setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
-                setPasswordError('');
-              }}
-              className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-lg text-sm sm:text-base font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300"
-            >
-              Cambiar Contraseña
-            </button>
-          </div>
-        )}
-      </div>
+    <div className="app-page datos-page">
+      <PageHeader
+        title="Datos Personales"
+        subtitle="Información del empleado"
+        backTo="/inicio"
+        backTitle="Regresar al Dashboard"
+        actions={
+          user ? (
+            <div className="datos-toolbar">
+              <button
+                type="button"
+                onClick={() => { setEditForm(user); setShowEdit(true); setMotivo(''); }}
+                className="datos-btn datos-btn--primary"
+              >
+                <Pencil className="w-4 h-4" aria-hidden />
+                <span className="hidden sm:inline">Editar datos</span>
+                <span className="sm:hidden">Editar</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowChangePasswordModal(true);
+                  setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
+                  setPasswordError('');
+                }}
+                className="datos-btn"
+              >
+                <Lock className="w-4 h-4" aria-hidden />
+                <span className="hidden sm:inline">Contraseña</span>
+              </button>
+            </div>
+          ) : null
+        }
+      />
 
       <AssistantPreferencesCard />
 
       {user ? (
         <div>
-          {/* Tarjeta de perfil principal */}
-          <div className="card">
-            {/* Desktop layout */}
-            <div className="hidden md:flex items-start gap-6">
-              <div className="flex-shrink-0">
-                <div className="relative group mb-3">
-                    <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center shadow-lg overflow-hidden">
-                      {(imagePreview || user?.AVATAR || user?.avatar) ? (
-                        <img 
-                          src={imagePreview || user?.AVATAR || user?.avatar} 
-                          alt="Foto de perfil" 
-                          className="w-full h-full object-cover"
-                        />
-                      ) : user?.isDemo ? (
-                        <img 
-                          src={`${(config.BASE_PATH || '/').replace(/\/+$/, '')}/${config.LOGO_PATH || 'logo.svg'}`.replace(/\/+/g, '/')} 
-                          alt="Avatar DEMO" 
-                          className="w-full h-full object-contain p-2"
-                        />
-                      ) : (
-                        <span className="text-white text-2xl font-bold">
-                          {getEmployeeInitials(user)}
-                        </span>
-                      )}
-                  </div>
-                  {/* Overlay pentru upload */}
-                  <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
-                       onClick={() => setShowImageModal(true)}>
-                    <span className="text-white text-xs font-medium text-center px-2">
-                      📷<br/>Cambiar
-                    </span>
-                  </div>
+          <div className="app-card app-card--pad datos-section">
+            <div className="datos-profile">
+              <div className="datos-profile__aside">
+                <div className="datos-avatar group">
+                  {(imagePreview || user?.AVATAR || user?.avatar) ? (
+                    <img
+                      src={imagePreview || user?.AVATAR || user?.avatar}
+                      alt="Foto de perfil"
+                      className="datos-avatar__img"
+                    />
+                  ) : user?.isDemo ? (
+                    <img
+                      src={`${(config.BASE_PATH || '/').replace(/\/+$/, '')}/${config.LOGO_PATH || 'logo.svg'}`.replace(/\/+/g, '/')}
+                      alt="Avatar DEMO"
+                      className="datos-avatar__img object-contain p-2"
+                    />
+                  ) : (
+                    <span className="datos-avatar__initials">{getEmployeeInitials(user)}</span>
+                  )}
+                  <button
+                    type="button"
+                    className="datos-avatar__overlay"
+                    onClick={() => setShowImageModal(true)}
+                    aria-label="Cambiar foto de perfil"
+                  >
+                    <Camera className="w-4 h-4" />
+                  </button>
                 </div>
-                
-                {/* Buton mic pentru eliminarea avatarului */}
                 {(() => {
                   const hasAvatar = (imagePreview || user?.AVATAR || user?.avatar);
                   const noProfileImage = !user?.isDemo;
                   return hasAvatar && noProfileImage;
                 })() && (
                   <button
+                    type="button"
                     onClick={deleteAvatar}
                     disabled={deletingAvatar}
-                    className="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-xs font-medium py-2 px-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                    className="datos-btn datos-btn--danger datos-btn--block text-xs"
                   >
-                    {deletingAvatar ? (
-                      <span className="flex items-center justify-center gap-1">
-                        <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"></div>
-                        Eliminando...
-                      </span>
-                    ) : (
-                      <span className="flex items-center justify-center gap-1">
-                        🗑️
-                        Eliminar Foto Perfil
-                      </span>
-                    )}
+                    <Trash2 className="w-3.5 h-3.5" aria-hidden />
+                    {deletingAvatar ? 'Eliminando...' : 'Eliminar foto'}
                   </button>
                 )}
               </div>
-              <div className="flex-1">
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                  {getFormattedNombre(user) || 'Sin nombre'}
-                </h2>
-                <p className="text-gray-600 mb-3">
-                  {user['CORREO ELECTRONICO'] || 'Sin email'}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {user['GRUPO'] && (
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800 border border-red-200">
-                      👤 {user['GRUPO']}
-                    </span>
-                  )}
-                  {user['ESTADO'] && (
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800 border border-green-200">
-                      ✅ {user['ESTADO']}
-                    </span>
-                  )}
-                  {user['CENTRO TRABAJO'] && (
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 border border-blue-200">
-                      🏢 {user['CENTRO TRABAJO']}
-                    </span>
-                  )}
+              <div className="datos-profile__main">
+                <h2 className="datos-profile__name">{getFormattedNombre(user) || 'Sin nombre'}</h2>
+                <p className="datos-profile__email">{user['CORREO ELECTRONICO'] || 'Sin email'}</p>
+                <div className="datos-badge-row">
+                  {user['GRUPO'] && <span className="datos-badge datos-badge--group">{user['GRUPO']}</span>}
+                  {user['ESTADO'] && <span className="datos-badge datos-badge--ok">{user['ESTADO']}</span>}
+                  {user['CENTRO TRABAJO'] && <span className="datos-badge datos-badge--info">{user['CENTRO TRABAJO']}</span>}
                 </div>
-              </div>
-            </div>
-
-            {/* Mobile layout - vertical și compact */}
-            <div className="md:hidden">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="flex-shrink-0">
-                  <div className="relative group mb-2">
-                    <div className="w-16 h-16 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center shadow-lg overflow-hidden">
-                      {(imagePreview || user?.AVATAR || user?.avatar) ? (
-                        <img 
-                          src={imagePreview || user?.AVATAR || user?.avatar} 
-                          alt="Foto de perfil" 
-                          className="w-full h-full object-cover"
-                        />
-                      ) : user?.isDemo ? (
-                        <img 
-                          src={`${(config.BASE_PATH || '/').replace(/\/+$/, '')}/${config.LOGO_PATH || 'logo.svg'}`.replace(/\/+/g, '/')} 
-                          alt="Avatar DEMO" 
-                          className="w-full h-full object-contain p-2"
-                        />
-                      ) : (
-                        <span className="text-white text-lg font-bold">
-                          {getEmployeeInitials(user)}
-                        </span>
-                      )}
-                    </div>
-                    {/* Overlay pentru upload pe mobile - always visible */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowImageModal(true);
-                      }}
-                      className="absolute inset-0 bg-black bg-opacity-40 rounded-full flex items-center justify-center transition-opacity duration-200 cursor-pointer touch-manipulation"
-                      type="button"
-                      aria-label="Cambiar foto de perfil"
-                    >
-                      <span className="text-white text-xs font-medium text-center px-1">
-                        📷
-                      </span>
-                    </button>
-                  </div>
-                  
-                  {/* Buton mic pentru eliminarea avatarului pe mobile */}
-                  {(() => {
-                    const hasAvatar = (imagePreview || user?.AVATAR || user?.avatar);
-                    const noProfileImage = !user?.isDemo;
-                    return hasAvatar && noProfileImage;
-                  })() && (
-                    <button
-                      onClick={deleteAvatar}
-                      disabled={deletingAvatar}
-                      className="w-full bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white text-xs font-medium py-1.5 px-2 rounded-md shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                    >
-                      {deletingAvatar ? (
-                        <span className="flex items-center justify-center gap-1">
-                          <div className="w-2.5 h-2.5 border border-white border-t-transparent rounded-full animate-spin"></div>
-                          Eliminando...
-                        </span>
-                      ) : (
-                        <span className="flex items-center justify-center gap-1">
-                          🗑️
-                          Eliminar
-                        </span>
-                      )}
-                    </button>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h2 className="text-lg font-bold text-gray-900 truncate">
-                    {getFormattedNombre(user) || 'Sin nombre'}
-                  </h2>
-                  <p className="text-sm text-gray-600 truncate">
-                    {user['CORREO ELECTRONICO'] || 'Sin email'}
-                  </p>
-                </div>
-              </div>
-              
-              {/* Badges pe rânduri separate pe mobile */}
-              <div className="space-y-2">
-                {user['GRUPO'] && (
-                  <div className="flex items-center justify-center">
-                    <span className="inline-flex items-center px-3 py-2 rounded-full text-sm font-medium bg-red-100 text-red-800 border border-red-200 w-full justify-center">
-                      👤 {user['GRUPO']}
-                    </span>
-                  </div>
-                )}
-                {user['ESTADO'] && (
-                  <div className="flex items-center justify-center">
-                    <span className="inline-flex items-center px-3 py-2 rounded-full text-sm font-medium bg-green-100 text-green-800 border border-green-200 w-full justify-center">
-                      ✅ {user['ESTADO']}
-                    </span>
-                  </div>
-                )}
-                {user['CENTRO TRABAJO'] && (
-                  <div className="flex items-center justify-center">
-                    <span className="inline-flex items-center px-3 py-2 rounded-full text-sm font-medium bg-blue-100 text-blue-800 border border-blue-200 w-full justify-center">
-                      🏢 {user['CENTRO TRABAJO']}
-                    </span>
-                  </div>
-                )}
               </div>
             </div>
           </div>
 
           {/* Secțiunea pentru gestionarea pozei de profil */}
           {profileImage && (
-            <div className="card">
-              <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <span>📷</span>
-                Foto de Perfil
-              </h3>
-              
-              <div className="space-y-4">
-                {/* Preview poza */}
+            <div className="app-card app-card--pad datos-section">
+              <h3 className="datos-section__title">Foto de Perfil</h3>
+              <div className="space-y-3">
                 <div className="flex justify-center">
                   <div className="relative">
-                    <img 
-                      src={imagePreview} 
-                      alt="Vista previa" 
-                      className="w-32 h-32 rounded-full object-cover shadow-lg border-4 border-white"
-                      key={profileImage?.name || 'default'} // Force re-render when image changes
+                    <img
+                      src={imagePreview}
+                      alt="Vista previa"
+                      className="w-28 h-28 rounded-full object-cover border-2 border-gray-200"
+                      key={profileImage?.name || 'default'}
                     />
                     <button
+                      type="button"
                       onClick={handleImageRemove}
-                      className="absolute -top-2 -right-2 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-lg"
+                      className="absolute -top-1 -right-1 w-8 h-8 datos-btn datos-btn--danger rounded-full p-0 min-h-0"
+                      aria-label="Quitar vista previa"
                     >
                       ×
                     </button>
                   </div>
                 </div>
-
-                {/* Informații despre fișier */}
-                <div className="text-center text-sm text-gray-600">
-                  <p><strong>Archivo:</strong> {profileImage.name}</p>
-                  <p><strong>Tamaño:</strong> {(profileImage.size / 1024 / 1024).toFixed(2)} MB</p>
-                </div>
-
-                {/* Mesaj de validare */}
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <span className="text-yellow-600 text-lg">⚠️</span>
-                    <div className="text-sm text-yellow-800">
-                      <p className="font-medium mb-1">Recomendaciones para la foto:</p>
-                      <ul className="list-disc list-inside space-y-1 text-xs">
-                        <li>Usa una foto de perfil profesional</li>
-                        <li>Mira directamente a la cámara</li>
-                        <li>Fondo neutro o desenfocado</li>
-                        <li>Buena iluminación</li>
-                        <li>Formato vertical (retrato)</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Erori */}
-                {imageError && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                    <p className="text-red-800 text-sm">{imageError}</p>
-                  </div>
-                )}
-
-                {/* Butoane de acțiune */}
-                <div className="flex gap-3 justify-center">
-                  <button
-                    onClick={handleImageRemove}
-                    className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={saveProfileImage}
-                    disabled={imageLoading}
-                    className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg transition-colors text-sm flex items-center gap-2"
-                  >
-                    {imageLoading ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        {user?.AVATAR || user?.avatar ? 'Actualizando...' : 'Guardando...'}
-                      </>
-                    ) : (
-                      <>
-                        <span>{user?.AVATAR || user?.avatar ? '✏️' : '💾'}</span>
-                        {user?.AVATAR || user?.avatar ? 'Editar Foto' : 'Guardar Foto'}
-                      </>
-                    )}
+                <p className="text-center text-sm text-gray-600 dark:text-gray-400">
+                  {profileImage.name} · {(profileImage.size / 1024 / 1024).toFixed(2)} MB
+                </p>
+                <AlertBanner variant="info" title="Recomendaciones">
+                  <ul className="list-disc list-inside text-xs space-y-0.5">
+                    <li>Foto profesional, mirando a la cámara</li>
+                    <li>Fondo neutro y buena iluminación</li>
+                    <li>Formato vertical (retrato)</li>
+                  </ul>
+                </AlertBanner>
+                {imageError && <AlertBanner variant="danger">{imageError}</AlertBanner>}
+                <div className="flex flex-col sm:flex-row gap-2 justify-end">
+                  <button type="button" onClick={handleImageRemove} className="datos-btn">Cancelar</button>
+                  <button type="button" onClick={saveProfileImage} disabled={imageLoading} className="datos-btn datos-btn--primary">
+                    {imageLoading ? (user?.AVATAR || user?.avatar ? 'Actualizando...' : 'Guardando...') : (user?.AVATAR || user?.avatar ? 'Editar Foto' : 'Guardar Foto')}
                   </button>
                 </div>
               </div>
@@ -1476,39 +1284,36 @@ const [editLoading, setEditLoading] = useState(false);
           )}
 
           {/* Información personal */}
-            <div className="card">
-            <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <span>📋</span>
-              Información Personal
-              </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="app-card app-card--pad datos-section">
+            <h3 className="datos-section__title">Información Personal</h3>
+            <div className="datos-grid">
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">🆔 Código</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user.CODIGO || '-'}</p>
+                <label className="datos-field__label">Código</label>
+                <p className="datos-field__value">{user.CODIGO || '-'}</p>
                   </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">👤 Nombre Completo</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{getFormattedNombre(user) || '-'}</p>
+                <label className="datos-field__label">Nombre Completo</label>
+                <p className="datos-field__value">{getFormattedNombre(user) || '-'}</p>
                   </div>
               {/* Campos separados si existen */}
               {(user?.NOMBRE || user?.APELLIDO1 || user?.APELLIDO2) && (
                 <>
                   <div className="space-y-1">
-                    <label className="block text-sm font-medium text-gray-700">📝 Nombre</label>
-                    <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user.NOMBRE || '-'}</p>
+                    <label className="datos-field__label">Nombre</label>
+                    <p className="datos-field__value">{user.NOMBRE || '-'}</p>
                   </div>
                   <div className="space-y-1">
-                    <label className="block text-sm font-medium text-gray-700">📝 Primer Apellido</label>
-                    <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user.APELLIDO1 || '-'}</p>
+                    <label className="datos-field__label">Primer Apellido</label>
+                    <p className="datos-field__value">{user.APELLIDO1 || '-'}</p>
                   </div>
                   <div className="space-y-1">
-                    <label className="block text-sm font-medium text-gray-700">📝 Segundo Apellido</label>
-                    <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user.APELLIDO2 || '-'}</p>
+                    <label className="datos-field__label">Segundo Apellido</label>
+                    <p className="datos-field__value">{user.APELLIDO2 || '-'}</p>
                   </div>
                   {user.NOMBRE_SPLIT_CONFIANZA !== undefined && (
                     <div className="space-y-1">
-                      <label className="block text-sm font-medium text-gray-700">ℹ️ Confianza del Split</label>
-                      <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
+                      <label className="datos-field__label">Confianza del Split</label>
+                      <p className="datos-field__value">
                         {user.NOMBRE_SPLIT_CONFIANZA === 2 ? '✅ Confiado' : user.NOMBRE_SPLIT_CONFIANZA === 1 ? '⚠️ Incierto' : '❌ Fallido'}
                       </p>
                     </div>
@@ -1516,181 +1321,141 @@ const [editLoading, setEditLoading] = useState(false);
                 </>
               )}
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">🌍 Nacionalidad</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user.NACIONALIDAD || '-'}</p>
+                <label className="datos-field__label">Nacionalidad</label>
+                <p className="datos-field__value">{user.NACIONALIDAD || '-'}</p>
                 </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">🏠 Dirección</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user.DIRECCION || '-'}</p>
+                <label className="datos-field__label">Dirección</label>
+                <p className="datos-field__value">{user.DIRECCION || '-'}</p>
                 </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">📄 DNI/NIE</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user['D.N.I. / NIE'] || '-'}</p>
+                <label className="datos-field__label">DNI/NIE</label>
+                <p className="datos-field__value">{user['D.N.I. / NIE'] || '-'}</p>
                 </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">🏥 Seguridad Social</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user['SEG. SOCIAL'] || '-'}</p>
+                <label className="datos-field__label">Seguridad Social</label>
+                <p className="datos-field__value">{user['SEG. SOCIAL'] || '-'}</p>
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">💳 Nº Cuenta</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user['Nº Cuenta'] || '-'}</p>
+                <label className="datos-field__label">Nº Cuenta</label>
+                <p className="datos-field__value">{user['Nº Cuenta'] || '-'}</p>
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">📞 Telefono</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user.TELEFONO || '-'}</p>
+                <label className="datos-field__label">Teléfono</label>
+                <p className="datos-field__value">{user.TELEFONO || '-'}</p>
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">📧 Email</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user['CORREO ELECTRONICO'] || '-'}</p>
+                <label className="datos-field__label">Email</label>
+                <p className="datos-field__value">{user['CORREO ELECTRONICO'] || '-'}</p>
               </div>
               </div>
             </div>
 
           {/* Información laboral */}
-            <div className="card">
-            <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <span>💼</span>
-                Información Laboral
-              </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="app-card app-card--pad datos-section">
+            <h3 className="datos-section__title">Información Laboral</h3>
+            <div className="datos-grid">
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">📅 Fecha de Nacimiento</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user['FECHA NACIMIENTO'] || '-'}</p>
+                <label className="datos-field__label">Fecha de Nacimiento</label>
+                <p className="datos-field__value">{user['FECHA NACIMIENTO'] || '-'}</p>
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">📅 Fecha de Alta</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user['FECHA DE ALTA'] || '-'}</p>
+                <label className="datos-field__label">Fecha de Alta</label>
+                <p className="datos-field__value">{user['FECHA DE ALTA'] || '-'}</p>
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">🏢 Centro de Trabajo</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user['CENTRO TRABAJO'] || '-'}</p>
+                <label className="datos-field__label">Centro de Trabajo</label>
+                <p className="datos-field__value">{user['CENTRO TRABAJO'] || '-'}</p>
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">📋 Tipo de Contrato</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user['TIPO DE CONTRATO'] || '-'}</p>
+                <label className="datos-field__label">Tipo de Contrato</label>
+                <p className="datos-field__value">{user['TIPO DE CONTRATO'] || '-'}</p>
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">💰 Sueldo Bruto Mensual</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user['SUELDO BRUTO MENSUAL'] || '-'}</p>
+                <label className="datos-field__label">Sueldo Bruto Mensual</label>
+                <p className="datos-field__value">{user['SUELDO BRUTO MENSUAL'] || '-'}</p>
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">⏰ Horas de Contrato</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user['HORAS DE CONTRATO'] || '-'}</p>
+                <label className="datos-field__label">Horas de Contrato</label>
+                <p className="datos-field__value">{user['HORAS DE CONTRATO'] || '-'}</p>
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">🏢 Empresa</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user.EMPRESA || '-'}</p>
+                <label className="datos-field__label">Empresa</label>
+                <p className="datos-field__value">{user.EMPRESA || '-'}</p>
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">👥 Grupo</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user.GRUPO || '-'}</p>
+                <label className="datos-field__label">Grupo</label>
+                <p className="datos-field__value">{user.GRUPO || '-'}</p>
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">📊 Estado</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user.ESTADO || '-'}</p>
+                <label className="datos-field__label">Estado</label>
+                <p className="datos-field__value">{user.ESTADO || '-'}</p>
               </div>
               {user['FECHA BAJA'] && (
                 <div className="space-y-1">
-                  <label className="block text-sm font-medium text-gray-700">🚪 Fecha Baja</label>
-                  <p className="text-gray-900 bg-red-50 px-3 py-2 rounded-lg border border-red-200">{user['FECHA BAJA']}</p>
+                  <label className="datos-field__label">Fecha Baja</label>
+                  <p className="datos-field__value datos-field__value--warn">{user['FECHA BAJA']}</p>
                 </div>
               )}
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">📆 Fecha Antiguedad</label>
-                <p className="text-gray-900 bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">{user['Fecha Antigüedad'] || '-'}</p>
+                <label className="datos-field__label">Fecha Antigüedad</label>
+                <p className="datos-field__value">{user['Fecha Antigüedad'] || '-'}</p>
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">🎯 Antiguedad</label>
-                <p className="text-gray-900 bg-green-50 px-3 py-2 rounded-lg border border-green-200 font-semibold">
+                <label className="datos-field__label">Antigüedad</label>
+                <p className="datos-field__value datos-field__value--ok">
                   {calcularAntiguedad(user['Fecha Antigüedad'], user['FECHA BAJA']) || '-'}
                 </p>
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">🛒 Derecho a Pedidos</label>
-                <div className="bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
-                  {renderPermissionBadge(user.DerechoPedidos, { positiveLabel: 'Sí', negativeLabel: 'No', positiveIcon: '✅', negativeIcon: '🚫' })}
+                <label className="datos-field__label">Derecho a Pedidos</label>
+                <div className="datos-field__value">
+                  {renderPermissionBadge(user.DerechoPedidos, { positiveLabel: 'Sí', negativeLabel: 'No' })}
                 </div>
               </div>
               <div className="space-y-1">
-                <label className="block text-sm font-medium text-gray-700">🎉 Trabaja Festivos</label>
-                <div className="bg-gray-50 px-3 py-2 rounded-lg border border-gray-200">
-                  {renderPermissionBadge(user.TrabajaFestivos, { positiveLabel: 'Sí', negativeLabel: 'No', positiveIcon: '🎉', negativeIcon: '🚫' })}
+                <label className="datos-field__label">Trabaja Festivos</label>
+                <div className="datos-field__value">
+                  {renderPermissionBadge(user.TrabajaFestivos, { positiveLabel: 'Sí', negativeLabel: 'No' })}
                 </div>
               </div>
             </div>
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex justify-center items-center bg-gray-50 min-h-[400px]">
-          <div className="text-center">
-            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-red-600 text-2xl">❌</span>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No se pudo cargar el usuario</h3>
-            <p className="text-gray-600">Verifica tu conexión e intenta nuevamente</p>
-          </div>
-        </div>
+        <AlertBanner variant="danger" title="No se pudo cargar el usuario">
+          Verifica tu conexión e intenta nuevamente.
+        </AlertBanner>
       )}
 
       {/* Modal editar: fullscreen pe mobil, peste bottom-nav + FAB asistent */}
-      {showEdit && editForm && (
-        <div className="fixed inset-0 z-[11050] flex items-stretch justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="flex h-[100dvh] w-full max-w-4xl flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[min(95vh,900px)] sm:rounded-2xl sm:border sm:border-gray-200">
-            {/* Header */}
-            <div className="shrink-0 border-b border-red-200 bg-gradient-to-r from-red-50 to-red-100 px-4 py-3 sm:px-6 sm:py-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-red-500 to-red-600 shadow-lg sm:h-12 sm:w-12">
-                    <span className="text-lg text-white sm:text-xl">✏️</span>
-                  </div>
-                  <div className="min-w-0">
-                    <h2 className="truncate text-lg font-bold text-gray-900 sm:text-xl">
-                      Editar Datos Personales
-                    </h2>
-                    <p className="truncate text-xs font-medium text-red-600 sm:text-sm">
-                      Actualización de información del empleado
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowEdit(false)}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white shadow-md transition-all hover:border-red-300 hover:bg-red-50"
-                  aria-label="Cerrar"
-                >
-                  <span className="text-xl text-gray-400">✕</span>
-                </button>
+      {typeof document !== 'undefined' && showEdit && editForm && createPortal(
+        <div className="datos-edit-shell">
+          <div className="datos-edit-panel">
+            <div className="datos-edit-panel__header">
+              <div className="min-w-0">
+                <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100 truncate">Editar Datos Personales</h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">Los cambios requieren aprobación</p>
               </div>
+              <button type="button" onClick={() => setShowEdit(false)} className="app-modal__close" aria-label="Cerrar">×</button>
             </div>
-            
-            {/* Content — scroll; footer rămâne vizibil */}
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
+            <div className="datos-edit-panel__body" ref={editBodyRef}>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {SHEET_FIELDS.map(field => {
                   const fieldId = `edit-${field.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
                   return (
                   <div key={field} className="space-y-2">
-                    <label htmlFor={fieldId} className="block text-sm font-bold text-gray-700 mb-2">
-                      {field === 'CODIGO' && '🆔'} 
-                      {field === 'NOMBRE / APELLIDOS' && '👤'} 
-                      {field === 'CORREO ELECTRONICO' && '📧'} 
-                      {field === 'NACIONALIDAD' && '🌍'} 
-                      {field === 'DIRECCION' && '🏠'} 
-                      {field === 'D.N.I. / NIE' && '📄'} 
-                      {field === 'SEG. SOCIAL' && '🏥'} 
-                      {field === 'Nº Cuenta' && '💳'} 
-                      {field}
-                    </label>
+                    <label htmlFor={fieldId} className="datos-field__label">{field}</label>
                     
                     {field === 'CODIGO' ? (
-                      <div id={fieldId} className="bg-gray-100 px-4 py-3 rounded-xl border border-gray-200 text-gray-700 font-medium" role="textbox" aria-label={field}>
+                      <div id={fieldId} className="datos-input datos-input--readonly" role="textbox" aria-label={field}>
                         {editForm[field] || '-'}
                       </div>
                     ) : field === 'NACIONALIDAD' ? (
                       <select
                         id={fieldId}
                         name={field}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
+                        className="datos-input"
                         value={editForm[field] || ''}
                         onChange={(e) => setEditForm(prev => ({ ...prev, [field]: e.target.value }))}
                       >
@@ -1707,7 +1472,7 @@ const [editLoading, setEditLoading] = useState(false);
                           id={fieldId}
                           name={field}
                           type="text"
-                          className={`w-full px-4 py-3 border-2 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-200 ${
+                          className={`datos-input ${
                             editForm[field] ? (
                               validarSeguridadSocial(editForm[field]) === true 
                                 ? 'border-green-500 focus:ring-green-500 focus:border-green-500' 
@@ -1743,7 +1508,7 @@ const [editLoading, setEditLoading] = useState(false);
                           id={fieldId}
                           name={field}
                           type="text"
-                          className={`w-full px-4 py-3 border-2 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-200 ${
+                          className={`datos-input ${
                             editForm[field] ? (
                               validarIBAN(editForm[field]) === true 
                                 ? 'border-green-500 focus:ring-green-500 focus:border-green-500' 
@@ -1779,7 +1544,7 @@ const [editLoading, setEditLoading] = useState(false);
                           id={fieldId}
                           name={field}
                           type="text"
-                          className={`w-full px-4 py-3 border-2 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-200 ${
+                          className={`datos-input ${
                             editForm[field] ? (
                               validarDNINIE(editForm[field]) === true 
                                 ? 'border-green-500 focus:ring-green-500 focus:border-green-500' 
@@ -1814,7 +1579,7 @@ const [editLoading, setEditLoading] = useState(false);
                         id={fieldId}
                         name={field}
                         type="date"
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
+                        className="datos-input"
                         value={editForm[field] ? (() => {
                           const date = editForm[field];
                           // Detectează formatul și convertește la YYYY-MM-DD pentru input type="date"
@@ -1836,7 +1601,7 @@ const [editLoading, setEditLoading] = useState(false);
                         id={fieldId}
                         name={field}
                         type="date"
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
+                        className="datos-input datos-input--readonly"
                         value={editForm[field] ? (() => {
                           const date = editForm[field];
                           // Detectează formatul și convertește la YYYY-MM-DD pentru input type="date"
@@ -1857,7 +1622,7 @@ const [editLoading, setEditLoading] = useState(false);
                         id={fieldId}
                         name={field}
                         type="date"
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
+                        className="datos-input datos-input--readonly"
                         value={editForm[field] ? (() => {
                           const date = editForm[field];
                           // Detectează formatul și convertește la YYYY-MM-DD pentru input type="date"
@@ -1877,7 +1642,7 @@ const [editLoading, setEditLoading] = useState(false);
                       <select
                         id={fieldId}
                         name={field}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
+                        className="datos-input datos-input--readonly"
                         value={editForm[field] || ''}
                         readOnly={true}
                         disabled={true}
@@ -1894,7 +1659,7 @@ const [editLoading, setEditLoading] = useState(false);
                         id={fieldId}
                         name={field}
                         type="text"
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
+                        className="datos-input datos-input--readonly"
                         value={editForm[field] || (import.meta.env.VITE_COMPANY_NAME || import.meta.env.VITE_APP_NAME || '')}
                         readOnly={true}
                         placeholder={`${field.toLowerCase()} (solo lectura)`}
@@ -1904,7 +1669,7 @@ const [editLoading, setEditLoading] = useState(false);
                         id={fieldId}
                         name={field}
                         type="text"
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
+                        className="datos-input datos-input--readonly"
                         value={editForm[field] || ''}
                         readOnly={true}
                         placeholder="estado (solo lectura)"
@@ -1914,7 +1679,7 @@ const [editLoading, setEditLoading] = useState(false);
                         id={fieldId}
                         name={field}
                         type="text"
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
+                        className="datos-input datos-input--readonly"
                         value={editForm[field] || ''}
                         readOnly={true}
                         placeholder={`${field.toLowerCase()} (solo lectura)`}
@@ -1924,7 +1689,7 @@ const [editLoading, setEditLoading] = useState(false);
                         id={fieldId}
                         name={field}
                         type="text"
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
+                        className="datos-input datos-input--readonly"
                         value={editForm[field] || ''}
                         readOnly={true}
                         placeholder={`${field.toLowerCase()} (solo lectura)`}
@@ -1933,7 +1698,7 @@ const [editLoading, setEditLoading] = useState(false);
                       <select
                         id={fieldId}
                         name={field}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
+                        className="datos-input datos-input--readonly"
                         value={editForm[field] || ''}
                         onChange={() => {}}
                         disabled
@@ -1946,7 +1711,7 @@ const [editLoading, setEditLoading] = useState(false);
                       <select
                         id={fieldId}
                         name={field}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 cursor-not-allowed"
+                        className="datos-input datos-input--readonly"
                         value={editForm[field] || ''}
                         onChange={() => {}}
                         disabled
@@ -1961,39 +1726,39 @@ const [editLoading, setEditLoading] = useState(false);
                           id={fieldId}
                           name={field}
                           type="text"
-                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
+                          className="datos-input"
                           value={editForm[field] || ''}
                           onChange={(e) => setEditForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, e.target.value) }))}
                           placeholder="Ingresa nombre completo..."
                         />
                         {/* Campos separados si existen */}
                         {(editForm?.NOMBRE || editForm?.APELLIDO1 || editForm?.APELLIDO2) && (
-                          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg space-y-2">
+                          <div className="mt-3 p-3 border border-gray-200 rounded-lg space-y-2 bg-gray-50 dark:bg-gray-800">
                             <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">📝 Nombre</label>
+                              <label className="datos-field__label">Nombre</label>
                               <input
                                 type="text"
-                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 text-sm"
+                                className="datos-input text-sm"
                                 value={editForm.NOMBRE || ''}
                                 onChange={(e) => setEditForm(prev => ({ ...prev, NOMBRE: toUpperCaseIfNeeded('NOMBRE', e.target.value) }))}
                                 placeholder="Nombre"
                               />
                             </div>
                             <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">📝 Primer Apellido</label>
+                              <label className="datos-field__label">Primer Apellido</label>
                               <input
                                 type="text"
-                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 text-sm"
+                                className="datos-input text-sm"
                                 value={editForm.APELLIDO1 || ''}
                                 onChange={(e) => setEditForm(prev => ({ ...prev, APELLIDO1: toUpperCaseIfNeeded('APELLIDO1', e.target.value) }))}
                                 placeholder="Primer Apellido"
                               />
                             </div>
                             <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">📝 Segundo Apellido</label>
+                              <label className="datos-field__label">Segundo Apellido</label>
                               <input
                                 type="text"
-                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 text-sm"
+                                className="datos-input text-sm"
                                 value={editForm.APELLIDO2 || ''}
                                 onChange={(e) => setEditForm(prev => ({ ...prev, APELLIDO2: toUpperCaseIfNeeded('APELLIDO2', e.target.value) }))}
                                 placeholder="Segundo Apellido"
@@ -2001,9 +1766,9 @@ const [editLoading, setEditLoading] = useState(false);
                             </div>
                             {editForm.NOMBRE_SPLIT_CONFIANZA !== undefined && (
                               <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">ℹ️ Confianza del Split</label>
-                                <p className="text-xs text-gray-700 bg-white px-2 py-1 rounded border border-gray-200">
-                                  {editForm.NOMBRE_SPLIT_CONFIANZA === 2 ? '✅ Confiado' : editForm.NOMBRE_SPLIT_CONFIANZA === 1 ? '⚠️ Incierto' : '❌ Fallido'}
+                                <label className="datos-field__label">Confianza del Split</label>
+                                <p className="datos-field__value text-xs">
+                                  {editForm.NOMBRE_SPLIT_CONFIANZA === 2 ? 'Confiado' : editForm.NOMBRE_SPLIT_CONFIANZA === 1 ? 'Incierto' : 'Fallido'}
                                 </p>
                               </div>
                             )}
@@ -2015,7 +1780,7 @@ const [editLoading, setEditLoading] = useState(false);
                         id={fieldId}
                         name={field}
                         type="text"
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
+                        className="datos-input"
                         value={editForm[field] || ''}
                         onChange={(e) => setEditForm(prev => ({ ...prev, [field]: toUpperCaseIfNeeded(field, e.target.value) }))}
                         placeholder={`Ingresa ${field.toLowerCase()}...`}
@@ -2026,48 +1791,36 @@ const [editLoading, setEditLoading] = useState(false);
                 })}
               </div>
               
-              {/* Câmp Motivo - Destacat */}
-              <div className="mt-6 rounded-xl border border-yellow-200 bg-yellow-50 p-4">
-                <label htmlFor="edit-motivo" className="mb-2 block text-sm font-bold text-yellow-800">
-                  ⚠️ Motivo de la Modificación (Obligatorio)
-                </label>
-                <textarea
-                  id="edit-motivo"
-                  name="motivo"
-                  ref={motivoRef}
-                  className="w-full resize-none rounded-xl border-2 border-yellow-300 bg-white px-4 py-3 text-base text-gray-800 transition-all duration-200 hover:border-yellow-400 focus:border-yellow-500 focus:outline-none focus:ring-2 focus:ring-yellow-500"
-                  value={motivo}
-                  onChange={(e) => {
-                    setMotivo(e.target.value);
-                    if (editError) setEditError('');
-                  }}
-                  placeholder="Explica el motivo de la modificación de datos..."
-                  rows={3}
-                  enterKeyHint="done"
-                />
+              <div className="mt-4">
+                <AlertBanner variant="warning" title="Motivo de la Modificación (Obligatorio)">
+                  <textarea
+                    id="edit-motivo"
+                    name="motivo"
+                    ref={motivoRef}
+                    className="datos-input mt-2 min-h-[5.5rem] resize-none"
+                    value={motivo}
+                    onChange={(e) => {
+                      setMotivo(e.target.value);
+                      if (editError) setEditError('');
+                    }}
+                    placeholder="Explica el motivo de la modificación de datos..."
+                    rows={3}
+                    enterKeyHint="done"
+                  />
+                </AlertBanner>
               </div>
             </div>
-            
-            {/* Footer — mereu vizibil pe mobil (nu sub bottom-nav / FAB) */}
-            <div className="shrink-0 border-t border-gray-200 bg-gray-50 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-4">
-              {editError && (
-                <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3">
-                  <p className="text-center text-sm font-medium text-red-600">⚠️ {editError}</p>
-                </div>
-              )}
-              
-              <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+
+            <div className="datos-edit-panel__footer">
+              {editError && <AlertBanner variant="danger" className="mb-3">{editError}</AlertBanner>}
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
                 <button
                   type="button"
                   onClick={() => setShowEdit(false)}
-                  className="order-2 w-full rounded-2xl border border-gray-300 bg-gradient-to-r from-gray-100 to-gray-200 px-6 py-3.5 font-semibold text-gray-700 shadow-md transition active:scale-[0.98] sm:order-1 sm:w-auto sm:py-4"
+                  className="datos-btn order-2 sm:order-1"
                 >
-                  <span className="inline-flex items-center justify-center gap-2">
-                    <span aria-hidden>✕</span>
-                    <span>Cancelar</span>
-                  </span>
+                  Cancelar
                 </button>
-                
                 <button
                 type="button"
                 onClick={async () => {
@@ -2170,97 +1923,64 @@ const [editLoading, setEditLoading] = useState(false);
                   setEditLoading(false);
                 }}
                 disabled={editLoading}
-                  className="order-1 w-full rounded-2xl border border-red-400 bg-gradient-to-r from-red-500 via-red-600 to-red-700 px-6 py-3.5 font-bold text-white shadow-xl transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:order-2 sm:w-auto sm:py-4"
+                  className="datos-btn datos-btn--primary order-1 sm:order-2"
               >
-                  <div className="relative flex items-center justify-center gap-3">
-                    {editLoading ? (
-                      <>
-                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                        <span className="text-sm sm:text-base">Enviando...</span>
-                    </>
+                  {editLoading ? (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      Enviando...
+                    </span>
                   ) : (
-                    <>
-                        <span className="text-xl" aria-hidden>🚀</span>
-                        <span className="text-sm sm:text-base">Enviar para Aprobación</span>
-                    </>
+                    'Enviar para Aprobación'
                   )}
-                </div>
               </button>
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       
-      {/* Modal pentru alegerea sursei pozei */}
-      {showImageModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl border border-gray-200 animate-in fade-in duration-300">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-red-50 to-red-100 px-6 py-4 border-b border-red-200 rounded-t-2xl">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <span className="text-white text-lg">📷</span>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900">Cambiar Foto de Perfil</h3>
-                    <p className="text-sm text-red-600 font-medium">Selecciona una opción</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowImageModal(false)}
-                  className="w-8 h-8 bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-lg flex items-center justify-center transition-all duration-200 shadow-md hover:shadow-lg group"
-                >
-                  <span className="text-gray-400 group-hover:text-red-500 text-lg">✕</span>
-                </button>
-              </div>
+      {typeof document !== 'undefined' && createPortal(
+      <Modal
+        isOpen={showImageModal}
+        onClose={() => setShowImageModal(false)}
+        title="Cambiar Foto de Perfil"
+        showCloseButton={false}
+        size="sm"
+      >
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => {
+              fileInputRef.current?.click();
+              setShowImageModal(false);
+            }}
+            className="datos-image-option"
+          >
+            <ImageIcon className="w-5 h-5 text-gray-600" aria-hidden />
+            <div>
+              <div className="datos-image-option__title">Elegir de Galería</div>
+              <div className="datos-image-option__sub">Seleccionar foto existente</div>
             </div>
-            
-            {/* Content */}
-            <div className="p-6">
-              <div className="space-y-4">
-                {/* Opțiunea pentru galerie */}
-                <button
-                  onClick={() => {
-                    console.log('🖱️ Button clicked - opening file dialog');
-                    console.log('🔍 fileInputRef.current:', fileInputRef.current);
-                    fileInputRef.current?.click();
-                    setShowImageModal(false);
-                  }}
-                  className="w-full group relative px-6 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200"
-                >
-                  <div className="absolute inset-0 rounded-xl bg-blue-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-                  <div className="relative flex items-center justify-center gap-3">
-                    <span className="text-2xl">📁</span>
-                    <div className="text-left">
-                      <div className="text-lg font-bold">Elegir de Galería</div>
-                      <div className="text-sm opacity-90">Seleccionar foto existente</div>
-                    </div>
-                  </div>
-                </button>
-
-                {/* Opțiunea pentru cameră */}
-                <button
-                  onClick={() => {
-                    cameraInputRef.current?.click();
-                    setShowImageModal(false);
-                  }}
-                  className="w-full group relative px-6 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200"
-                >
-                  <div className="absolute inset-0 rounded-xl bg-green-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-                  <div className="relative flex items-center justify-center gap-3">
-                    <span className="text-2xl">📸</span>
-                    <div className="text-left">
-                      <div className="text-lg font-bold">Hacer Foto</div>
-                      <div className="text-sm opacity-90">Tomar nueva foto con cámara</div>
-                    </div>
-                  </div>
-                </button>
-              </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              cameraInputRef.current?.click();
+              setShowImageModal(false);
+            }}
+            className="datos-image-option"
+          >
+            <Camera className="w-5 h-5 text-gray-600" aria-hidden />
+            <div>
+              <div className="datos-image-option__title">Hacer Foto</div>
+              <div className="datos-image-option__sub">Tomar nueva foto con cámara</div>
             </div>
-          </div>
+          </button>
         </div>
+      </Modal>,
+      document.body
       )}
 
       {/* Input-uri ascunse */}
@@ -2280,89 +2000,49 @@ const [editLoading, setEditLoading] = useState(false);
         className="hidden"
       />
 
-      {/* Modal modern pentru confirmarea ștergerii */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 transform transition-all duration-300 scale-100">
-            {/* Header cu gradient și iconiță */}
-            <div className="bg-gradient-to-r from-red-500 to-red-600 text-white p-6 rounded-t-2xl relative overflow-hidden">
-              <div className="absolute inset-0 bg-red-400 opacity-30 blur-md animate-pulse"></div>
-              <div className="relative flex items-center gap-4">
-                <div className="w-12 h-12 bg-white bg-opacity-20 rounded-full flex items-center justify-center backdrop-blur-sm">
-                  <span className="text-2xl">🗑️</span>
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold">Eliminar Foto</h3>
-                  <p className="text-red-100 text-sm">Esta acción no se puede deshacer</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Conținut */}
-            <div className="p-6">
-              <div className="flex items-start gap-4 mb-6">
-                <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center flex-shrink-0">
-                  <span className="text-3xl">⚠️</span>
-                </div>
-                <div>
-                  <h4 className="text-lg font-semibold text-gray-900 mb-2">
-                    ¿Estás seguro?
-                  </h4>
-                  <p className="text-gray-600 leading-relaxed">
-                    Vas a eliminar permanentemente tu foto de perfil. Esta acción no se puede deshacer y tendrás que subir una nueva foto si deseas tener una.
-                  </p>
-                </div>
-              </div>
-
-              {/* Preview avatar-ului curent */}
-              {(user?.AVATAR || user?.avatar) && (
-                <div className="mb-6 p-4 bg-gray-50 rounded-xl">
-                  <p className="text-sm text-gray-600 mb-3 font-medium">Foto actual:</p>
-                  <div className="flex justify-center">
-                    <img 
-                      src={user?.AVATAR || user?.avatar} 
-                      alt="Avatar actual" 
-                      className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-lg"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Butoane */}
-              <div className="flex gap-3">
-                <button
-                  onClick={closeDeleteConfirm}
-                  className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-all duration-200 transform hover:scale-105"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={deleteProfileImage}
-                  disabled={imageLoading}
-                  className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-xl font-medium transition-all duration-200 transform hover:scale-105 disabled:transform-none flex items-center justify-center gap-2"
-                >
-                  {imageLoading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Eliminando...
-                    </>
-                  ) : (
-                    <>
-                      <span>🗑️</span>
-                      Sí, Eliminar
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
+      {typeof document !== 'undefined' && createPortal(
+      <Modal
+        isOpen={showDeleteConfirm}
+        onClose={closeDeleteConfirm}
+        title="Eliminar Foto"
+        showCloseButton={false}
+        size="sm"
+        footer={(
+          <div className="app-modal__actions">
+            <button type="button" onClick={closeDeleteConfirm} className="app-modal__btn">
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={deleteProfileImage}
+              disabled={imageLoading}
+              className="app-modal__btn datos-btn datos-btn--danger"
+            >
+              {imageLoading ? 'Eliminando...' : 'Sí, Eliminar'}
+            </button>
           </div>
-        </div>
+        )}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+          Vas a eliminar permanentemente tu foto de perfil. Esta acción no se puede deshacer.
+        </p>
+        {(user?.AVATAR || user?.avatar) && (
+          <div className="flex justify-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+            <img
+              src={user?.AVATAR || user?.avatar}
+              alt="Avatar actual"
+              className="w-20 h-20 rounded-full object-cover border-2 border-gray-200"
+            />
+          </div>
+        )}
+      </Modal>,
+      document.body
       )}
 
-      {/* Modal pentru schimbarea parolei */}
-      {showChangePasswordModal && (
-        <Modal
+      {typeof document !== 'undefined' && createPortal(
+      <Modal
           isOpen={showChangePasswordModal}
+          className="app-modal--form datos-password-modal"
           onClose={() => {
             setShowChangePasswordModal(false);
             setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
@@ -2370,18 +2050,37 @@ const [editLoading, setEditLoading] = useState(false);
             setShowPasswords({ oldPassword: false, newPassword: false, confirmPassword: false });
           }}
           title="Cambiar Contraseña"
+          showCloseButton={false}
+          footer={(
+            <div className="app-modal__actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowChangePasswordModal(false);
+                  setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
+                  setPasswordError('');
+                }}
+                disabled={changingPassword}
+                className="app-modal__btn"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleChangePassword}
+                disabled={changingPassword}
+                className="app-modal__btn app-modal__btn--primary"
+              >
+                {changingPassword ? 'Cambiando...' : 'Cambiar Contraseña'}
+              </button>
+            </div>
+          )}
         >
           <div className="space-y-4">
-            {passwordError && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-                {passwordError}
-              </div>
-            )}
+            {passwordError && <AlertBanner variant="danger">{passwordError}</AlertBanner>}
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Contraseña Actual
-              </label>
+              <label className="datos-field__label">Contraseña Actual</label>
               <div className="relative">
                 <Input
                   type={showPasswords.oldPassword ? 'text' : 'password'}
@@ -2391,7 +2090,7 @@ const [editLoading, setEditLoading] = useState(false);
                     setPasswordError('');
                   }}
                   placeholder="Ingresa tu contraseña actual"
-                  className="w-full pr-10"
+                  className="datos-input w-full pr-10"
                 />
                 <button
                   type="button"
@@ -2413,9 +2112,7 @@ const [editLoading, setEditLoading] = useState(false);
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Nueva Contraseña
-              </label>
+              <label className="datos-field__label">Nueva Contraseña</label>
               <div className="relative">
                 <Input
                   type={showPasswords.newPassword ? 'text' : 'password'}
@@ -2425,7 +2122,7 @@ const [editLoading, setEditLoading] = useState(false);
                     setPasswordError('');
                   }}
                   placeholder="Mínimo 9 caracteres (12 recomendado)"
-                  className="w-full pr-10"
+                  className="datos-input w-full pr-10"
                 />
                 <button
                   type="button"
@@ -2444,11 +2141,8 @@ const [editLoading, setEditLoading] = useState(false);
                   )}
                 </button>
               </div>
-              <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-xs font-semibold text-blue-900 mb-2">
-                  Condiciones de seguridad requeridas:
-                </p>
-                <ul className="text-xs text-blue-800 space-y-1.5">
+              <AlertBanner variant="info" title="Condiciones de seguridad requeridas" compact>
+                <ul className="text-xs space-y-1.5">
                   <li className="flex items-center gap-2">
                     <span className={`flex-shrink-0 ${passwordForm.newPassword.length >= 9 ? 'text-green-600' : 'text-gray-400'}`}>
                       {passwordForm.newPassword.length >= 9 ? '✅' : '○'}
@@ -2490,13 +2184,11 @@ const [editLoading, setEditLoading] = useState(false);
                     </span>
                   </li>
                 </ul>
-              </div>
+              </AlertBanner>
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Confirmar Nueva Contraseña
-              </label>
+              <label className="datos-field__label">Confirmar Nueva Contraseña</label>
               <div className="relative">
                 <Input
                   type={showPasswords.confirmPassword ? 'text' : 'password'}
@@ -2506,7 +2198,7 @@ const [editLoading, setEditLoading] = useState(false);
                     setPasswordError('');
                   }}
                   placeholder="Confirma tu nueva contraseña"
-                  className="w-full pr-10"
+                  className="datos-input w-full pr-10"
                 />
                 <button
                   type="button"
@@ -2526,30 +2218,9 @@ const [editLoading, setEditLoading] = useState(false);
                 </button>
               </div>
             </div>
-            
-            <div className="flex gap-3 pt-4">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setShowChangePasswordModal(false);
-                  setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
-                  setPasswordError('');
-                }}
-                disabled={changingPassword}
-                className="flex-1"
-              >
-                Cancelar
-              </Button>
-              <Button
-                onClick={handleChangePassword}
-                disabled={changingPassword}
-                className="flex-1 bg-gradient-to-r from-purple-500 to-indigo-600"
-              >
-                {changingPassword ? 'Cambiando...' : 'Cambiar Contraseña'}
-              </Button>
-            </div>
           </div>
-        </Modal>
+        </Modal>,
+        document.body
       )}
 
       {/* Componenta de Notificări */}

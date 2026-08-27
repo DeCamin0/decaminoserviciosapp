@@ -5,8 +5,7 @@ import { useLocation } from '../contexts/LocationContextBase';
 import { useApi } from '../hooks/useApi';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { usePermissions } from '../hooks/usePermissions';
-import { Card, Button, Modal, LoadingSpinner, Input, Notification } from '../components/ui';
-import Back3DButton from '../components/Back3DButton.jsx';
+import { Card, Button, Modal, LoadingSpinner, Input, Notification, PageHeader, AlertBanner, SegmentedControl, ConfirmModal } from '../components/ui';
 import { API_ENDPOINTS } from '../utils/constants';
 import { routes } from '../utils/routes';
 import {
@@ -613,7 +612,7 @@ function MobileRegistroItem({ item, authUser, isManager, callApi, setNotificatio
     <div className="relative">
       <div
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-2 p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+        className="flex items-center gap-2 px-2 py-2 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
       >
         {/* Indicator mic (verde/roșu) */}
         <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
@@ -889,6 +888,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
 
   // State pentru tab-uri și ausencias
   const [activeTab, setActiveTab] = useState('registros');
+  const [scheduleDetailsOpen, setScheduleDetailsOpen] = useState(false);
   const [ausencias, setAusencias] = useState([]);
   const [loadingAusencias, setLoadingAusencias] = useState(false);
   const [totalAusenciaDuration, setTotalAusenciaDuration] = useState(null);
@@ -1628,7 +1628,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
               setAsuntosPropiosDiasAnuales(d);
             }
           }
-        } catch (_) {
+        } catch {
           /* keep default 6 */
         }
         
@@ -3080,246 +3080,159 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   }, [logs, cuadranteAsignado, horarioAsignado, isEntradaAllowed, isSalidaAllowed, isShiftComplete, getTimeRestrictionMessage]);
 
   // Dacă utilizatorul nu este autentificat, afișează un mesaj
+  const scheduleCenter =
+    cuadranteAsignado?.CENTRO ||
+    horarioAsignado?.centroNombre ||
+    horarioMulticentroAsignado?.CLIENTE ||
+    null;
+  const hasScheduleSource = !!(cuadranteAsignado || horarioAsignado || horarioMulticentroAsignado);
+
   return (
-    <div className="space-y-6">
+    <div className="fichaje-mi">
       {loadingAlerts && (
-        <div className="flex items-center gap-3 bg-yellow-50 border border-yellow-200 rounded-xl p-4 shadow-sm text-yellow-700">
-          <div className="h-4 w-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin"></div>
-          <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-medium`}>Comprobando alertas mensuales...</span>
-        </div>
+        <AlertBanner loading title="Comprobando alertas mensuales..." />
       )}
 
       {!loadingAlerts && monthlyAlerts && monthlyAlerts.total > 0 && (
-        <div className={`bg-yellow-50 border border-yellow-200 rounded-xl ${isMobile ? 'p-3' : 'p-4'} shadow-md flex items-start gap-3`}>
-          <div className={isMobile ? 'text-xl' : 'text-2xl'}>⚠️</div>
-          <div>
-            <h3 className={`${isMobile ? 'text-sm' : 'text-lg'} font-semibold text-yellow-800`}>Alertas mensuales detectadas</h3>
-            <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-yellow-700`}>
-              {(() => {
-                const parts = [];
-                if (monthlyAlerts.positivos > 0) {
-                  parts.push(
-                    <span key="exceso">
-                      <span className="font-semibold text-red-600">{monthlyAlerts.positivos} día{monthlyAlerts.positivos > 1 ? 's' : ''}</span> con exceso (has trabajado más horas de las previstas)
-                    </span>
-                  );
-                }
-                if (monthlyAlerts.negativos > 0) {
-                  parts.push(
-                    <span key="deficit">
-                      <span className="font-semibold text-yellow-600">{monthlyAlerts.negativos} día{monthlyAlerts.negativos > 1 ? 's' : ''}</span> con déficit (no has fichado o has trabajado menos horas de las previstas)
-                    </span>
-                  );
-                }
-                if (parts.length === 0) {
-                  return (
-                    <>
-                      Tienes {monthlyAlerts.total} días con alertas este mes. Revisa el tab <span className="font-semibold">Horas Trabajadas → Alertas</span> para ver los detalles.
-                    </>
-                  );
-                }
-                return (
+        <AlertBanner variant="warning" title="Alertas mensuales detectadas">
+          {(() => {
+            const parts = [];
+            if (monthlyAlerts.positivos > 0) {
+              parts.push(
+                <span key="exceso">
+                  <span className="font-semibold text-red-600">{monthlyAlerts.positivos} día{monthlyAlerts.positivos > 1 ? 's' : ''}</span> con exceso (has trabajado más horas de las previstas)
+                </span>
+              );
+            }
+            if (monthlyAlerts.negativos > 0) {
+              parts.push(
+                <span key="deficit">
+                  <span className="font-semibold text-amber-700">{monthlyAlerts.negativos} día{monthlyAlerts.negativos > 1 ? 's' : ''}</span> con déficit (no has fichado o has trabajado menos horas de las previstas)
+                </span>
+              );
+            }
+            if (parts.length === 0) {
+              return (
+                <>
+                  Tienes {monthlyAlerts.total} días con alertas este mes. Revisa el tab <span className="font-semibold">Horas Trabajadas → Alertas</span> para ver los detalles.
+                </>
+              );
+            }
+            return (
+              <>
+                Tienes {monthlyAlerts.total} día{monthlyAlerts.total > 1 ? 's' : ''} con alertas este mes: {parts.length > 1 ? (
                   <>
-                    Tienes {monthlyAlerts.total} día{monthlyAlerts.total > 1 ? 's' : ''} con alertas este mes: {parts.length > 1 ? (
-                      <>
-                        {parts[0]} y {parts[1]}
-                      </>
-                    ) : parts[0]}. Revisa el tab <span className="font-semibold">Horas Trabajadas → Alertas</span> para ver los detalles.
+                    {parts[0]} y {parts[1]}
                   </>
-                );
-              })()}
-            </p>
-          </div>
-        </div>
+                ) : parts[0]}. Revisa el tab <span className="font-semibold">Horas Trabajadas → Alertas</span> para ver los detalles.
+              </>
+            );
+          })()}
+        </AlertBanner>
       )}
 
-      {/* Card cu ceas și butoane */}
-      <Card>
-        <div className="text-center">
-          <div className={`${isMobile ? 'w-12 h-12 mb-3' : 'w-16 h-16 mb-4'} bg-red-100 rounded-full flex items-center justify-center mx-auto`}>
-            <span className={`text-red-600 ${isMobile ? 'text-xl' : 'text-2xl'}`}>🕒</span>
-          </div>
-          <div className={`${isMobile ? 'text-3xl' : 'text-4xl'} font-bold text-gray-900 mb-2`}>
-            {madridTimeStr || now.toLocaleTimeString()}
-          </div>
-          <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500 mb-6`}>Hora (Europe/Madrid)</div>
-          {/* Locația curentă afișată sub ceas - se obține doar când utilizatorul apasă Fichar (GDPR compliant) */}
-          <div className={`mb-6 ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600`}>
-            <div className="flex items-start justify-center gap-2">
-              <span className="text-red-600">📍</span>
-              <div className="text-center">
-                {!currentLocation && (
-                  <span className="text-gray-500 italic">
-                    La ubicación se obtendrá al fichar (se necesita permiso)
-                  </span>
-                )}
-                {currentLocation && (
-                  <>
-                    <div>
-                      {currentAddress ? (
-                        <span>{currentAddress}</span>
-                      ) : (
-                        <span>
-                          {currentLocation.latitude.toFixed(5)}, {currentLocation.longitude.toFixed(5)}
-                        </span>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
+      <div className="fichaje-mi-grid">
+      <section className="app-card app-card--pad fichaje-hoy">
+        <p className="fichaje-hoy__clock">{madridTimeStr || now.toLocaleTimeString()}</p>
+        <p className="fichaje-hoy__meta">Hora (Europe/Madrid)</p>
+        <p className="fichaje-hoy__location">
+          {!currentLocation && (
+            <span className="italic text-gray-500">La ubicación se obtendrá al fichar (se necesita permiso)</span>
+          )}
+          {currentLocation && (
+            <span>
+              {currentAddress
+                ? currentAddress
+                : `${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)}`}
+            </span>
+          )}
+        </p>
 
-          {/* Informații despre orarul/cuadrantul asignat */}
-          <div className="mb-6">
-            {loadingCuadrante || loadingHorario ? (
-              <div className={`flex items-center justify-center gap-2 ${isMobile ? 'text-xs' : 'text-sm'} text-gray-600`}>
-                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                <span>Cargando horario...</span>
-              </div>
-            ) : cuadranteAsignado ? (
-              <div className={`bg-green-50 border border-green-200 rounded-lg ${isMobile ? 'p-3' : 'p-4'}`}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-green-600">📋</span>
-                  <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-green-800`}>Cuadrantes Asignado</span>
+        <div className="fichaje-hoy__schedule">
+          {loadingCuadrante || loadingHorario ? (
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+              <span>Cargando horario...</span>
+            </div>
+          ) : (
+            <>
+              <div className="fichaje-hoy__schedule-row">
+                <div className="fichaje-hoy__schedule-main">
+                  {currentDaySchedule ? (
+                    <>
+                      <strong>Hoy:</strong> {currentDaySchedule}
+                      {hasScheduleSource ? <span> · {getCurrentDayHours()}h</span> : null}
+                    </>
+                  ) : (
+                    <strong>Sin horario asignado para hoy</strong>
+                  )}
+                  {scheduleCenter ? (
+                    <span className="fichaje-hoy__schedule-center">{scheduleCenter}</span>
+                  ) : null}
                 </div>
-                <div className={`${isMobile ? 'text-xs' : 'text-sm'} text-green-700`}>
+                {hasScheduleSource ? (
+                  <button
+                    type="button"
+                    className="fichaje-hoy__details-toggle"
+                    onClick={() => setScheduleDetailsOpen((open) => !open)}
+                  >
+                    {scheduleDetailsOpen ? 'Ocultar' : 'Detalles'}
+                  </button>
+                ) : null}
+              </div>
+
+              {scheduleDetailsOpen && cuadranteAsignado ? (
+                <div className="fichaje-hoy__details space-y-0.5 border border-emerald-200 bg-emerald-50 text-emerald-800">
                   <div><strong>Empleado:</strong> {cuadranteAsignado.NOMBRE || 'N/A'}</div>
                   <div><strong>Centro:</strong> {cuadranteAsignado.CENTRO || 'N/A'}</div>
                   <div><strong>Mes:</strong> {cuadranteAsignado.LUNA || 'N/A'}</div>
                   <div><strong>Fuente:</strong> Cuadrante generado</div>
-                  {currentDaySchedule && (
-                    <div className="mt-2 pt-2 border-t border-green-300">
-                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-white text-green-800 rounded-md">
-                        <span className="text-xs">📅 Hoy:</span>
-                        <span className="text-xs font-semibold">{currentDaySchedule}</span>
-                      </div>
-                    </div>
-                  )}
-                  {(() => {
-                    // Folosește calculul din orarul curent
-                    return (
-                      <div><strong>Horas Diarias:</strong> {getCurrentDayHours()}h</div>
-                    );
-                  })()}
+                  <div><strong>Horas Diarias:</strong> {getCurrentDayHours()}h</div>
                 </div>
-              </div>
-            ) : horarioAsignado ? (
-              <div className={`bg-blue-50 border border-blue-200 rounded-lg ${isMobile ? 'p-3' : 'p-4'}`}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-blue-600">📅</span>
-                  <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-blue-800`}>Horario Asignado</span>
-                </div>
-                <div className={`${isMobile ? 'text-xs' : 'text-sm'} text-blue-700`}>
+              ) : null}
+              {scheduleDetailsOpen && !cuadranteAsignado && horarioAsignado ? (
+                <div className="fichaje-hoy__details space-y-0.5 border border-sky-200 bg-sky-50 text-sky-800">
                   <div><strong>Centro:</strong> {horarioAsignado.centroNombre}</div>
                   <div><strong>Grupo:</strong> {horarioAsignado.grupoNombre}</div>
                   <div><strong>Horario:</strong> {horarioAsignado.nombre}</div>
-                  {currentDaySchedule && (
-                    <div className="mt-2 pt-2 border-t border-blue-300">
-                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-white text-blue-800 rounded-md">
-                        <span className="text-xs">📅 Hoy:</span>
-                        <span className="text-xs font-semibold">{currentDaySchedule}</span>
-                      </div>
-                    </div>
-                  )}
-                  {(() => {
-                    // Folosește calculul din orarul curent
-                    return (
-                      <div><strong>Horas Diarias:</strong> {getCurrentDayHours()}h</div>
-                    );
-                  })()}
+                  <div><strong>Horas Diarias:</strong> {getCurrentDayHours()}h</div>
                 </div>
-              </div>
-            ) : horarioMulticentroAsignado ? (
-              // Afișează informații despre horario_multicentro dacă există
-              <div className={`bg-purple-50 border border-purple-200 rounded-lg ${isMobile ? 'p-3' : 'p-4'}`}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-purple-600">📅</span>
-                  <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-purple-800`}>Horario Multicentro</span>
-                </div>
-                <div className={`${isMobile ? 'text-xs' : 'text-sm'} text-purple-700 space-y-1`}>
+              ) : null}
+              {scheduleDetailsOpen && !cuadranteAsignado && !horarioAsignado && horarioMulticentroAsignado ? (
+                <div className="fichaje-hoy__details space-y-0.5 border border-violet-200 bg-violet-50 text-violet-800">
                   <div><strong>Cliente:</strong> {horarioMulticentroAsignado.CLIENTE || 'N/A'}</div>
                   <div><strong>Horario:</strong> {horarioMulticentroAsignado.HORARIO || 'N/A'}</div>
                   <div><strong>Mes:</strong> {horarioMulticentroAsignado.LUNA || 'N/A'}</div>
-                  {currentDaySchedule && (
-                    <div className="mt-2 pt-2 border-t border-purple-300">
-                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-white text-purple-800 rounded-md">
-                        <span className="text-xs">📅 Hoy:</span>
-                        <span className="text-xs font-semibold">{currentDaySchedule}</span>
-                      </div>
-                    </div>
-                  )}
-                  {(() => {
-                    // Folosește calculul din orarul curent
-                    return (
-                      <div><strong>Horas Diarias:</strong> {getCurrentDayHours()}h</div>
-                    );
-                  })()}
-                  {!currentDaySchedule && (
-                    <div className="mt-2 pt-2 border-t border-purple-300 text-yellow-700">
-                      <span className="text-xs">⚠️ No tienes horario asignado para hoy</span>
-                    </div>
-                  )}
+                  <div><strong>Horas Diarias:</strong> {getCurrentDayHours()}h</div>
                 </div>
-              </div>
-            ) : (
-              // Afișează avertismentul doar dacă NU există orar pentru ziua CURENTĂ
-              // Verifică dacă există orar în cuadrante, horario_multicentro, sau horarios normal pentru ziua de astăzi
-              !currentDaySchedule ? (
-                <div className={`bg-yellow-50 border border-yellow-200 rounded-lg ${isMobile ? 'p-3' : 'p-4'}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-yellow-600">⚠️</span>
-                    <span className={`${isMobile ? 'text-xs' : 'text-sm'} font-semibold text-yellow-800`}>Sin Horario Asignado</span>
-                  </div>
-                  <div className={`${isMobile ? 'text-xs' : 'text-sm'} text-yellow-700`}>
-                    No se ha encontrado un horario específico para hoy.
-                  </div>
-                </div>
-              ) : null
-            )}
-          </div>
-          
-          {/* Mesaj informativ când butoanele sunt blocate */}
+              ) : null}
+            </>
+          )}
+        </div>
+
           {/* Avertisment pentru Baja Médica */}
           {isOnBajaMedica && currentBajaMedica && (
-            <div className={`mb-4 ${isMobile ? 'p-3' : 'p-4'} bg-gradient-to-r from-rose-50 to-pink-50 border-2 border-rose-300 rounded-xl shadow-lg`}>
-              <div className="flex items-start gap-3">
-                <div className="flex-shrink-0">
-                  <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-gradient-to-br from-rose-500 to-pink-600 rounded-lg flex items-center justify-center shadow-md`}>
-                    <span className={`text-white ${isMobile ? 'text-base' : 'text-xl'}`}>🏥</span>
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <h3 className={`${isMobile ? 'text-sm' : 'text-base'} font-bold text-rose-800 mb-1`}>
-                    ⚠️ Estás en Baja Médica
-                  </h3>
-                  <p className={`text-rose-700 ${isMobile ? 'text-xs' : 'text-sm'} mb-2`}>
-                    Actualmente estás de baja médica. No puedes registrar fichajes durante este período. Por favor, consulta con tu médico y sigue las indicaciones.
+            <div className="fichaje-hoy__banner">
+              <AlertBanner compact variant="danger" title="Estás en Baja Médica">
+                <p>Actualmente estás de baja médica. No puedes registrar fichajes durante este período. Por favor, consulta con tu médico y sigue las indicaciones.</p>
+                {currentBajaMedica.startDate && (
+                  <p>
+                    <strong>Período:</strong> {currentBajaMedica.startDate} - {(() => {
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      const endDate = currentBajaMedica.endDate ? new Date(currentBajaMedica.endDate) : null;
+                      if (endDate && endDate >= today) {
+                        return currentBajaMedica.endDate;
+                      } else {
+                        return 'presente';
+                      }
+                    })()}
                   </p>
-                  {currentBajaMedica.startDate && (
-                    <p className="text-rose-600 text-xs">
-                      <strong>Período:</strong> {currentBajaMedica.startDate} - {(() => {
-                        const today = new Date();
-                        today.setHours(0, 0, 0, 0);
-                        const endDate = currentBajaMedica.endDate ? new Date(currentBajaMedica.endDate) : null;
-                        
-                        // Dacă există endDate și este în viitor sau astăzi, afișăm endDate
-                        // Dacă endDate este în trecut sau nu există, afișăm "presente"
-                        if (endDate && endDate >= today) {
-                          return currentBajaMedica.endDate;
-                        } else {
-                          return 'presente';
-                        }
-                      })()}
-                    </p>
-                  )}
-                  {currentBajaMedica.situacion && (
-                    <p className="text-rose-600 text-xs mt-1">
-                      <strong>Situación:</strong> {currentBajaMedica.situacion}
-                    </p>
-                  )}
-                </div>
-              </div>
+                )}
+                {currentBajaMedica.situacion && (
+                  <p><strong>Situación:</strong> {currentBajaMedica.situacion}</p>
+                )}
+              </AlertBanner>
             </div>
           )}
 
@@ -3330,20 +3243,10 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             const trabajaEnFestivos = ['si', 'sí', 's', '1', 'true', 'da', 'y', 'yes'].includes(trabajaFestivosLower);
             if (!trabajaEnFestivos) {
               return (
-                <div className={`mb-4 ${isMobile ? 'p-3' : 'p-4'} bg-blue-50 border border-blue-200 rounded-xl`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`${isMobile ? 'w-6 h-6' : 'w-8 h-8'} bg-blue-100 rounded-lg flex items-center justify-center`}>
-                      <span className={`text-blue-600 ${isMobile ? 'text-base' : 'text-lg'}`}>🎉</span>
-                    </div>
-                    <div>
-                      <p className={`text-blue-800 ${isMobile ? 'text-xs' : 'text-sm'} font-semibold`}>
-                        Hoy es día festivo
-                      </p>
-                      <p className={`text-blue-600 ${isMobile ? 'text-[10px]' : 'text-sm'} mt-1`}>
-                        Según nuestros datos, no trabajas en días festivos, por lo que no necesitas fichar hoy. ¡Disfruta del día!
-                      </p>
-                    </div>
-                  </div>
+                <div className="fichaje-hoy__banner">
+                  <AlertBanner compact variant="info" title="Hoy es día festivo">
+                    Según nuestros datos, no trabajas en días festivos, por lo que no necesitas fichar hoy. ¡Disfruta del día!
+                  </AlertBanner>
                 </div>
               );
             }
@@ -3352,32 +3255,18 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
 
           {/* Avertisment pentru alte absențe */}
           {isOnVacationOrAbsence && !isOnBajaMedica && (
-            <div className={`mb-4 ${isMobile ? 'p-3' : 'p-4'} bg-yellow-50 border border-yellow-200 rounded-xl`}>
-              <div className="flex items-center gap-3">
-                <div className={`${isMobile ? 'w-6 h-6' : 'w-8 h-8'} bg-yellow-100 rounded-lg flex items-center justify-center`}>
-                  <span className={`text-yellow-600 ${isMobile ? 'text-base' : 'text-lg'}`}>⚠️</span>
-                </div>
-                <div>
-                  <p className={`text-yellow-800 ${isMobile ? 'text-xs' : 'text-sm'} font-semibold`}>
-                    No puedes fichar durante {currentAbsenceType}
-                  </p>
-                  <p className={`text-yellow-600 ${isMobile ? 'text-[10px]' : 'text-sm'}`}>
-                    Los botones de Entrada y Salida están deshabilitados
-                  </p>
-                </div>
-              </div>
+            <div className="fichaje-hoy__banner">
+              <AlertBanner compact variant="warning" title={`No puedes fichar durante ${currentAbsenceType}`}>
+                Los botones de Entrada y Salida están deshabilitados
+              </AlertBanner>
             </div>
           )}
 
           {/* Mesaj informativ când butoanele sunt blocate din cauza orarului SAU când s-a completat tura */}
           {!isOnVacationOrAbsence && (horarioAsignado || cuadranteAsignado) && (
-            <div className={`mb-4 ${isMobile ? 'p-3' : 'p-4'} bg-blue-50 border border-blue-200 rounded-xl`}>
-              <div className="flex items-center gap-3">
-                <div className={`${isMobile ? 'w-6 h-6' : 'w-8 h-8'} bg-blue-100 rounded-lg flex items-center justify-center`}>
-                  <span className={`text-blue-600 ${isMobile ? 'text-base' : 'text-lg'}`}>⏰</span>
-                </div>
-                <div>
-                  <p className={`text-blue-800 ${isMobile ? 'text-xs' : 'text-sm'} font-semibold`}>
+            <div className="fichaje-hoy__banner">
+              <AlertBanner compact variant="info">
+                  <p className="app-alert__title">
                     {(() => {
                       // Verifică dacă s-a completat tura de azi
                       const today = new Date().toISOString().split('T')[0];
@@ -3446,23 +3335,19 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                       return 'Fuera del horario asignado';
                     })()}
                   </p>
-                  <p className="text-blue-600 text-sm">
+                  <p>
                     {timeRestrictionMessage}
                   </p>
-                </div>
-              </div>
+              </AlertBanner>
             </div>
           )}
           
-          <div className="flex gap-4 justify-center flex-wrap">
+          <div className="fichaje-hoy__actions">
             <button
+              type="button"
               onClick={() => handleFichar('Entrada')}
               disabled={fichando || isOnVacationOrAbsence || ((horarioAsignado || cuadranteAsignado) && !isEntradaAllowed)}
-              className={`group relative ${isMobile ? 'px-4 py-3' : 'px-8 py-4'} rounded-xl font-bold transition-all duration-300 transform shadow-lg ${
-                isOnVacationOrAbsence || ((horarioAsignado || cuadranteAsignado) && !isEntradaAllowed)
-                  ? 'bg-gradient-to-r from-gray-400 to-gray-500 text-white shadow-gray-200 opacity-60 cursor-not-allowed'
-                  : 'hover:scale-105 hover:shadow-xl bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none'
-              }`}
+              className="fichaje-hoy__action fichaje-hoy__action--entrada"
               title={
                 isOnVacationOrAbsence 
                   ? `No puedes fichar durante ${currentAbsenceType}` 
@@ -3478,27 +3363,15 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                       : 'Iniciar jornada'
               }
             >
-              {/* Glow effect */}
-              <div className="absolute inset-0 rounded-xl bg-green-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-              <div className="relative flex items-center gap-3">
-                <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30`}>
-                  <span className={`text-white ${isMobile ? 'text-base' : 'text-xl'} group-hover:scale-110 transition-transform duration-300`}>🚪</span>
-                </div>
-                <div className="text-left">
-                  <div className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold`}>{fichando ? 'Marcando...' : 'Entrada'}</div>
-                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-white/80`}>Iniciar jornada</div>
-                </div>
-              </div>
+              <span className="fichaje-hoy__action-label">{fichando ? 'Marcando...' : 'Entrada'}</span>
+              <span className="fichaje-hoy__action-hint">Iniciar jornada</span>
             </button>
-            
+
             <button
+              type="button"
               onClick={() => handleFichar('Salida')}
               disabled={fichando || isOnVacationOrAbsence || ((horarioAsignado || cuadranteAsignado) && !isSalidaAllowed)}
-              className={`group relative ${isMobile ? 'px-4 py-3' : 'px-8 py-4'} rounded-xl font-bold transition-all duration-300 transform shadow-lg ${
-                isOnVacationOrAbsence || ((horarioAsignado || cuadranteAsignado) && !isSalidaAllowed)
-                  ? 'bg-gradient-to-r from-gray-400 to-gray-500 text-white shadow-gray-200 opacity-60 cursor-not-allowed'
-                  : 'hover:scale-105 hover:shadow-xl bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none'
-              }`}
+              className="fichaje-hoy__action fichaje-hoy__action--salida"
               title={
                 isOnVacationOrAbsence 
                   ? `No puedes fichar durante ${currentAbsenceType}` 
@@ -3514,27 +3387,17 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                       : 'Finalizar jornada'
               }
             >
-              {/* Glow effect */}
-              <div className="absolute inset-0 rounded-xl bg-red-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-              <div className="relative flex items-center gap-3">
-                <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30`}>
-                  <span className={`text-white ${isMobile ? 'text-base' : 'text-xl'} group-hover:scale-110 transition-transform duration-300`}>🚪</span>
-                </div>
-                <div className="text-left">
-                  <div className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold`}>{fichando ? 'Marcando...' : 'Salida'}</div>
-                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-white/80`}>Finalizar jornada</div>
-                </div>
-              </div>
+              <span className="fichaje-hoy__action-label">{fichando ? 'Marcando...' : 'Salida'}</span>
+              <span className="fichaje-hoy__action-hint">Finalizar jornada</span>
             </button>
+          </div>
 
+          <div className="fichaje-hoy__secondary">
             <button
+              type="button"
               onClick={() => handleFichar('Salida', 'Salida para incidencia', { bypassSchedule: true })}
               disabled={fichando || isOnVacationOrAbsence || !canUseIncidenceExit}
-              className={`group relative ${isMobile ? 'px-4 py-3' : 'px-8 py-4'} rounded-xl font-bold transition-all duration-300 transform shadow-lg ${
-                isOnVacationOrAbsence || !canUseIncidenceExit
-                  ? 'bg-gradient-to-r from-gray-400 to-gray-500 text-white shadow-gray-200 opacity-60 cursor-not-allowed'
-                  : 'hover:scale-105 hover:shadow-xl bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-amber-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none'
-              }`}
+              className="fichaje-hoy__secondary-btn fichaje-hoy__secondary-btn--incidencia"
               title={
                 isOnVacationOrAbsence 
                   ? `No puedes fichar durante ${currentAbsenceType}` 
@@ -3543,375 +3406,179 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                     : 'Salida imprevista para incidencia. Permite cerrar un turno abierto incluso si el botón normal de Salida está bloqueado.'
               }
             >
-              <div className="absolute inset-0 rounded-xl bg-amber-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-              <div className="relative flex items-center gap-3">
-                <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30`}>
-                  <span className={`text-white ${isMobile ? 'text-base' : 'text-xl'} group-hover:scale-110 transition-transform duration-300`}>⚡</span>
-                </div>
-                <div className="text-left">
-                  <div className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold`}>{fichando ? 'Marcando...' : 'Salida Incidencia'}</div>
-                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-white/80`}>Salida imprevista</div>
-                </div>
-              </div>
+              <span className="fichaje-hoy__secondary-icon" aria-hidden>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6.5 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2.5M7 8h7M11.5 5.5 14 8l-2.5 2.5" />
+                </svg>
+              </span>
+              <span>{fichando ? 'Marcando...' : 'Salida incidencia'}</span>
             </button>
-            
             <button
+              type="button"
               onClick={hasCompletedCycle ? onFicharIncidencia : null}
               disabled={fichando || !hasCompletedCycle}
-              className={`group relative ${isMobile ? 'px-4 py-3' : 'px-8 py-4'} rounded-xl font-bold transition-all duration-300 transform shadow-lg ${
-                hasCompletedCycle && !fichando
-                  ? 'hover:scale-105 hover:shadow-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-orange-200'
-                  : 'bg-gradient-to-r from-gray-400 to-gray-500 text-white shadow-gray-200 opacity-60 cursor-not-allowed'
-              }`}
+              className="fichaje-hoy__secondary-btn fichaje-hoy__secondary-btn--ausencia"
               title={!hasCompletedCycle ? 'Debes hacer Salida primero para poder registrar una ausencia' : 'Registrar ausencia médica o personal'}
             >
-              {/* Glow effect */}
-              <div className={`absolute inset-0 rounded-xl opacity-30 blur-md transition-all duration-300 ${
-                hasCompletedCycle && !fichando
-                  ? 'bg-orange-400 animate-pulse group-hover:opacity-40'
-                  : 'bg-gray-400'
-              }`}></div>
-              <div className="relative flex items-center gap-3">
-                <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30`}>
-                  <span className={`${isMobile ? 'text-base' : 'text-xl'} transition-transform duration-300 ${
-                    hasCompletedCycle && !fichando ? 'group-hover:scale-110' : ''
-                  }`}>
-                    {!hasCompletedCycle ? '🔒' : '⚠️'}
-                  </span>
-                </div>
-                <div className="text-left">
-                  <div className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold`}>
-                    Registrar Ausencia
-                  </div>
-                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-white/80`}>
-                    {!hasCompletedCycle ? 'Completa ciclo primero' : 'Registro especial'}
-                  </div>
-                </div>
-              </div>
+              <span className="fichaje-hoy__secondary-icon" aria-hidden>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2.5" y="3.5" width="11" height="10" rx="1.2" />
+                  <path d="M2.5 6.5h11M5.5 2.5v2M10.5 2.5v2" />
+                </svg>
+              </span>
+              <span>Registrar ausencia</span>
             </button>
-            
-            {/* Buton "Anunciar Baja Médica" */}
             <button
+              type="button"
               onClick={() => setShowBajaMedicaModal(true)}
               disabled={fichando}
-              className={`group relative ${isMobile ? 'px-4 py-3' : 'px-8 py-4'} rounded-xl font-bold transition-all duration-300 transform shadow-lg hover:scale-105 hover:shadow-xl bg-gradient-to-r from-rose-500 to-rose-600 text-white shadow-rose-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none`}
+              className="fichaje-hoy__secondary-btn fichaje-hoy__secondary-btn--baja"
               title="Anunciar baja médica"
             >
-              <div className="absolute inset-0 rounded-xl bg-rose-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-              <div className="relative flex items-center gap-3">
-                <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30`}>
-                  <span className={`text-white ${isMobile ? 'text-base' : 'text-xl'} group-hover:scale-110 transition-transform duration-300`}>🩺</span>
-                </div>
-                <div className="text-left">
-                  <div className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold`}>Anunciar Baja Médica</div>
-                  <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-white/80`}>Registro médico</div>
-                </div>
-              </div>
+              <span className="fichaje-hoy__secondary-icon" aria-hidden>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2.5" y="2.5" width="11" height="11" rx="2" />
+                  <path d="M8 5v6M5 8h6" />
+                </svg>
+              </span>
+              <span>Baja médica</span>
             </button>
           </div>
-          
-          {/* Mensaje explicativo para incidencia */}
+
           {!hasCompletedCycle && (
-            <div className={`mt-4 ${isMobile ? 'p-3' : 'p-4'} bg-amber-50 border border-amber-200 rounded-lg`}>
-              <div className="flex items-center">
-                <span className={`text-amber-600 ${isMobile ? 'text-base' : 'text-lg'} mr-3`}>ℹ️</span>
-                <div>
-                  <p className={`text-amber-800 ${isMobile ? 'text-xs' : 'text-sm'} font-medium`}>
-                    Para registrar una ausencia médica o personal
-                  </p>
-                  <p className={`text-amber-600 ${isMobile ? 'text-[10px]' : 'text-sm'}`}>
-                    Primero debes hacer <strong>Salida</strong> para terminar tu jornada
-                  </p>
-                </div>
-              </div>
+            <div className="fichaje-hoy__banner">
+              <AlertBanner compact variant="warning" title="Para registrar una ausencia médica o personal">
+                Primero debes hacer <strong>Salida</strong> para terminar tu jornada
+              </AlertBanner>
             </div>
           )}
-          
-          {/* Feedback pentru ultimul marcaj */}
+
           {lastFichaje && (
-            <div className={`mt-4 ${isMobile ? 'p-3' : 'p-4'} bg-green-50 border border-green-200 rounded-lg`}>
-              <div className="flex items-center">
-                <span className={`text-green-600 ${isMobile ? 'text-base' : 'text-lg'} mr-2`}>✅</span>
-                <div>
-                  <p className={`text-green-800 ${isMobile ? 'text-xs' : 'text-sm'} font-medium`}>
-                    {lastFichaje.tipo} marcado a las {lastFichaje.hora}
-                  </p>
-                  {lastFichaje.address && (
-                    <p className={`text-green-600 ${isMobile ? 'text-[10px]' : 'text-sm'}`}>{lastFichaje.address}</p>
-                  )}
-                </div>
-              </div>
+            <div className="fichaje-hoy__banner">
+              <AlertBanner compact variant="success" title={`${lastFichaje.tipo} marcado a las ${lastFichaje.hora}`}>
+                {lastFichaje.address || null}
+              </AlertBanner>
             </div>
           )}
 
-          {/* Feedback pentru incidencia */}
           {incidenciaMessage && (
-            <div className={`mt-4 ${isMobile ? 'p-3' : 'p-4'} border rounded-lg ${
-              incidenciaMessage.includes('succes') 
-                ? 'bg-green-50 border-green-200' 
-                : 'bg-red-50 border-red-200'
-            }`}>
-              <div className="flex items-center">
-                <span className={`${isMobile ? 'text-base' : 'text-lg'} mr-2 ${
-                  incidenciaMessage.includes('succes') ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {incidenciaMessage.includes('succes') ? '✅' : '❌'}
-                </span>
-                <div>
-                  <p className={`${isMobile ? 'text-xs' : 'text-sm'} font-medium ${
-                    incidenciaMessage.includes('succes') ? 'text-green-800' : 'text-red-800'
-                  }`}>
-                    {incidenciaMessage}
-                  </p>
-                </div>
-              </div>
+            <div className="fichaje-hoy__banner">
+              <AlertBanner compact variant={incidenciaMessage.includes('succes') ? 'success' : 'danger'}>
+                {incidenciaMessage}
+              </AlertBanner>
             </div>
           )}
-        </div>
-      </Card>
+      </section>
 
-              {/* Tab switcher pentru Registros/Ausencias */}
-          <Card>
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
-              <div className="flex items-start sm:items-center gap-4">
-                <div className="relative">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-all duration-300 ${
-                    changingMonth 
-                      ? 'bg-gradient-to-br from-yellow-500 to-yellow-600' 
-                      : 'bg-gradient-to-br from-red-500 to-red-600'
-                  }`}>
-                    <span className="text-white text-xl">
-                      {changingMonth ? '⏳' : '📅'}
-                    </span>
-                  </div>
-                  {/* Glow effect */}
-                  <div className={`absolute inset-0 w-12 h-12 rounded-xl opacity-20 blur-md animate-pulse transition-all duration-300 ${
-                    changingMonth ? 'bg-yellow-400' : 'bg-red-400'
-                  }`}></div>
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">
-                    {activeTab === 'registros' 
-                      ? `Registros de ${new Date(selectedMonth + '-01').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}`
-                      : activeTab === 'ausencias'
-                      ? `Ausencias de ${new Date().getFullYear()}`
-                      : 'Horas Trabajadas'
-                    }
-                  </h2>
-                  <div className="text-sm text-gray-600">
-                    {changingMonth ? 'Cargando...' : 
-                     activeTab === 'registros' ? 'Historial de fichajes del mes seleccionado' : 
-                     activeTab === 'ausencias' ? 'Registros de ausencias de todo el año' :
-                     'Resumen mensual y anual de tus horas trabajadas'}
-                    {activeTab === 'registros' && totalFichajeDuration && (
-                      <div className="ml-2 inline-flex items-center gap-2 flex-wrap">
-                        {typeof totalFichajeDuration === 'object' && totalFichajeDuration.original ? (
-                          <>
-                            <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-700 border border-gray-300">
-                              ⏱ Registrado: {totalFichajeDuration.original}
-                            </span>
-                            {totalFichajeDuration.hasRegularization && (
-                              <span 
-                                className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 border border-green-300 cursor-help"
-                                title="El tiempo efectivo es el que se tiene en cuenta según el horario confirmado."
-                              >
-                                ✅ Tiempo efectivo: {totalFichajeDuration.regularized}
-                              </span>
-                            )}
-                          </>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 border border-green-200">
-                            ⏱️ Total: {totalFichajeDuration}
+
+          <section className="app-card app-card--pad fichaje-history">
+            <div className="fichaje-history__head">
+              <div className="min-w-0">
+                <h2 className="fichaje-history__title">
+                  {activeTab === 'registros' 
+                    ? `Registros de ${new Date(selectedMonth + '-01').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}`
+                    : activeTab === 'ausencias'
+                    ? `Ausencias de ${new Date().getFullYear()}`
+                    : 'Horas Trabajadas'
+                  }
+                </h2>
+                <p className="fichaje-history__hint">
+                  {changingMonth ? 'Cargando...' : 
+                   activeTab === 'registros' ? 'Historial de fichajes del mes seleccionado' : 
+                   activeTab === 'ausencias' ? 'Registros de ausencias de todo el año' :
+                   'Resumen mensual y anual de tus horas trabajadas'}
+                </p>
+                {activeTab === 'registros' && totalFichajeDuration && (
+                  <div className="fichaje-metrics">
+                    {typeof totalFichajeDuration === 'object' && totalFichajeDuration.original ? (
+                      <>
+                        <span className="fichaje-metric">
+                          Registrado: {totalFichajeDuration.original}
+                        </span>
+                        {totalFichajeDuration.hasRegularization && (
+                          <span
+                            className="fichaje-metric fichaje-metric--ok"
+                            title="El tiempo efectivo es el que se tiene en cuenta según el horario confirmado."
+                          >
+                            Tiempo efectivo: {totalFichajeDuration.regularized}
                           </span>
                         )}
-                      </div>
-                    )}
-                    {activeTab === 'ausencias' && totalAusenciaDuration && (
-                      <span className="ml-2 inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                        ⏱️ Total: {totalAusenciaDuration}
-                      </span>
-                    )}
-                    {activeTab === 'ausencias' && totalAsuntoPropioDays && totalAsuntoPropioDays > 0 && (
-                      <span className={`ml-2 inline-flex items-center px-2 py-1 text-xs font-medium rounded-full border ${
-                        totalAsuntoPropioDays >= asuntosPropiosDiasAnuales 
-                          ? 'bg-red-100 text-red-800 border-red-200' 
-                          : 'bg-purple-100 text-purple-800 border-purple-200'
-                      }`}>
-                        📅 Asunto Propio: {totalAsuntoPropioDays}/{asuntosPropiosDiasAnuales} días
-                      </span>
-                    )}
-                    {activeTab === 'ausencias' && totalVacacionesDays && totalVacacionesDays > 0 && (
-                      <span className="ml-2 inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-cyan-100 text-cyan-800 border border-cyan-200">
-                        🏖️ Vacaciones: {totalVacacionesDays} días
+                      </>
+                    ) : (
+                      <span className="fichaje-metric fichaje-metric--ok">
+                        Total: {totalFichajeDuration}
                       </span>
                     )}
                   </div>
-                </div>
+                )}
+                {activeTab === 'ausencias' && (totalAusenciaDuration || (totalAsuntoPropioDays && totalAsuntoPropioDays > 0) || (totalVacacionesDays && totalVacacionesDays > 0)) && (
+                  <div className="fichaje-metrics">
+                    {totalAusenciaDuration ? (
+                      <span className="fichaje-metric fichaje-metric--info">
+                        Total: {totalAusenciaDuration}
+                      </span>
+                    ) : null}
+                    {totalAsuntoPropioDays && totalAsuntoPropioDays > 0 ? (
+                      <span className={`fichaje-metric${totalAsuntoPropioDays >= asuntosPropiosDiasAnuales ? ' fichaje-metric--warn' : ''}`}>
+                        Asunto Propio: {totalAsuntoPropioDays}/{asuntosPropiosDiasAnuales} días
+                      </span>
+                    ) : null}
+                    {totalVacacionesDays && totalVacacionesDays > 0 ? (
+                      <span className="fichaje-metric fichaje-metric--info">
+                        Vacaciones: {totalVacacionesDays} días
+                      </span>
+                    ) : null}
+                  </div>
+                )}
               </div>
-              
-              {/* Tab switcher - Optimizat pentru mobile */}
-              <div className={`flex w-full ${isMobile ? 'justify-between' : 'flex-wrap sm:flex-nowrap'} bg-gray-100 dark:bg-gray-800 rounded-xl ${isMobile ? 'p-0.5' : 'p-1'} ${isMobile ? 'gap-0.5' : 'gap-2 sm:w-auto sm:gap-1'}`}>
-                <button
-                  onClick={() => setActiveTab('registros')}
-                  className={`${isMobile ? 'flex-1 flex flex-col items-center justify-center px-2 py-2' : 'flex-1 sm:flex-none text-center px-4 py-2'} rounded-lg font-medium transition-all duration-200 ${
-                    activeTab === 'registros'
-                      ? 'bg-white dark:bg-gray-700 text-red-600 dark:text-red-400 shadow-sm'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
-                  }`}
-                >
-                  <span className={isMobile ? 'text-base' : ''}>📊</span>
-                  <span className={`${isMobile ? 'text-[10px] mt-0.5' : ''}`}>
-                    {isMobile ? 'Reg.' : 'Registros'}
-                  </span>
-                </button>
-                <button
-                  onClick={() => setActiveTab('ausencias')}
-                  className={`${isMobile ? 'flex-1 flex flex-col items-center justify-center px-2 py-2' : 'flex-1 sm:flex-none text-center px-4 py-2'} rounded-lg font-medium transition-all duration-200 ${
-                    activeTab === 'ausencias'
-                      ? 'bg-white dark:bg-gray-700 text-orange-600 dark:text-orange-400 shadow-sm'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
-                  }`}
-                >
-                  <span className={isMobile ? 'text-base' : ''}>⚠️</span>
-                  <span className={`${isMobile ? 'text-[10px] mt-0.5' : ''}`}>
-                    {isMobile ? 'Aus.' : 'Ausencias'}
-                  </span>
-                </button>
-                <button
-                  onClick={() => setActiveTab('horas-trabajadas')}
-                  className={`${isMobile ? 'flex-1 flex flex-col items-center justify-center px-2 py-2' : 'flex-1 sm:flex-none text-center px-4 py-2'} rounded-lg font-medium transition-all duration-200 ${
-                    activeTab === 'horas-trabajadas'
-                      ? 'bg-white dark:bg-gray-700 text-purple-600 dark:text-purple-400 shadow-sm'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
-                  }`}
-                >
-                  <span className={isMobile ? 'text-base' : ''}>⏰</span>
-                  <span className={`${isMobile ? 'text-[10px] mt-0.5' : ''}`}>
-                    {isMobile ? 'Horas' : 'Horas Trabajadas'}
-                  </span>
-                </button>
-              </div>
+
+              <SegmentedControl
+                value={activeTab}
+                onChange={setActiveTab}
+                items={[
+                  { id: 'registros', label: 'Registros', shortLabel: 'Reg.' },
+                  { id: 'ausencias', label: 'Ausencias', shortLabel: 'Aus.' },
+                  { id: 'horas-trabajadas', label: 'Horas', shortLabel: 'Horas' },
+                ]}
+              />
             </div>
             
-            {/* Controls only for registros tab */}
             {activeTab === 'registros' && (
-              <div className="grid grid-cols-1 sm:flex sm:items-center gap-3">
-                {/* Selector ULTRA MODERN de lună - Glassmorphism + 3D - RESPONSIVE */}
-                <div className="relative group flex-1">
-                  {/* Background blur effect */}
-                  <div className="absolute inset-0 bg-white/20 backdrop-blur-xl rounded-2xl border border-white/30 shadow-2xl group-hover:shadow-red-200/50 transition-all duration-500"></div>
-                  
-                  {/* Main container */}
-                  <div className="relative">
-                    <select
-                      id="registros-month-select"
-                      name="registros-month"
-                      value={selectedMonth}
-                      onChange={(e) => {
-                        loggerDebug('Month changed from', selectedMonth, 'to', e.target.value);
-                        setSelectedMonth(e.target.value);
-                      }}
-                      disabled={changingMonth}
-                      className={`appearance-none bg-transparent border-0 rounded-2xl px-4 sm:px-6 py-3 sm:py-4 pr-12 sm:pr-16 text-sm sm:text-base font-bold text-gray-800 focus:outline-none transition-all duration-300 w-full ${
-                        changingMonth ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
-                      }`}
-                      style={{
-                        textShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                        WebkitAppearance: 'none',
-                        MozAppearance: 'none'
-                      }}
-                    >
-                      {/* Ultimele 12 luni */}
-                      {getRecentFichajeMonthOptions().map(({ value, label }, i) => (
-                          <option key={`month-${i}-${value}`} value={value} className="py-2">
-                            {label}
-                          </option>
-                      ))}
-                    </select>
-                    
-                    {/* Icon spectaculos pentru dropdown */}
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 sm:pr-6 pointer-events-none">
-                      {changingMonth ? (
-                        <div className="w-4 h-4 sm:w-6 sm:h-6 border-2 sm:border-3 border-red-500 border-t-transparent rounded-full animate-spin shadow-lg"></div>
-                      ) : (
-                        <div className="relative">
-                          {/* Glow effect */}
-                          <div className="absolute inset-0 bg-red-400/30 rounded-full blur-sm sm:blur-md animate-pulse"></div>
-                          {/* Main icon */}
-                          <svg className="w-4 h-4 sm:w-6 sm:h-6 text-red-500 group-hover:text-red-600 transition-all duration-300 group-hover:scale-110 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Decorative elements - hidden on mobile */}
-                    <div className="hidden sm:block absolute top-2 left-2 w-2 h-2 bg-red-400/60 rounded-full animate-ping"></div>
-                    <div className="hidden sm:block absolute bottom-2 right-8 w-1 h-1 bg-red-300/80 rounded-full animate-pulse"></div>
-                  </div>
-                  
-                  {/* Shimmer effect */}
-                  <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-out"></div>
-                  </div>
-                </div>
-                
-                {/* Buton ULTRA MODERN "Hoy" - 3D + Glassmorphism - RESPONSIVE - Ascuns pe mobile */}
-                {!isMobile && (
+              <div className="fichaje-month">
+                <select
+                  id="registros-month-select"
+                  name="registros-month"
+                  value={selectedMonth}
+                  onChange={(e) => {
+                    loggerDebug('Month changed from', selectedMonth, 'to', e.target.value);
+                    setSelectedMonth(e.target.value);
+                  }}
+                  disabled={changingMonth}
+                  className="fichaje-month__select"
+                >
+                  {getRecentFichajeMonthOptions().map(({ value, label }, i) => (
+                    <option key={`month-${i}-${value}`} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
                 <button
+                  type="button"
                   onClick={() => {
                     const currentDate = new Date();
                     const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
                     setSelectedMonth(currentMonth);
                   }}
                   disabled={changingMonth}
-                  className={`group relative px-4 sm:px-8 py-3 sm:py-4 rounded-2xl font-bold transition-all duration-500 transform hover:scale-110 hover:-translate-y-1 shadow-2xl hover:shadow-red-300/50 w-full sm:w-auto ${
-                    changingMonth ? 'opacity-50 cursor-not-allowed transform-none' : ''
-                  }`}
-                  style={{
-                    background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 50%, #b91c1c 100%)',
-                    boxShadow: '0 10px 25px rgba(239, 68, 68, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-                  }}
+                  className="fichaje-month__hoy"
                   title="Volver al mes actual"
                 >
-                  {/* 3D depth effect */}
-                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-red-300 to-red-800 opacity-20 transform translate-y-1 group-active:translate-y-0 transition-transform duration-150"></div>
-                  
-                  {/* Main content */}
-                  <div className="relative flex items-center justify-center gap-2 sm:gap-3">
-                    {/* Icon cu animație spectaculoasă */}
-                    <div className="relative">
-                      <div className="absolute inset-0 bg-white/30 rounded-full blur-sm animate-pulse"></div>
-                      <span className="text-xl sm:text-2xl group-hover:scale-125 group-hover:rotate-12 transition-all duration-500 relative z-10">🎯</span>
-                    </div>
-                    
-                    {/* Text cu efecte */}
-                    <span className="text-base sm:text-lg font-black tracking-wide" style={{
-                      textShadow: '0 2px 4px rgba(0,0,0,0.3), 0 0 8px rgba(255,255,255,0.2)',
-                      background: 'linear-gradient(45deg, #ffffff, #fef2f2, #ffffff)',
-                      WebkitBackgroundClip: 'text',
-                      WebkitTextFillColor: 'transparent',
-                      backgroundClip: 'text'
-                    }}>
-                      Hoy
-                    </span>
-                  </div>
-                  
-                  {/* Shimmer effect */}
-                  <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-out"></div>
-                  </div>
-                  
-                  {/* Ripple effect on click */}
-                  <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
-                    <div className="absolute inset-0 bg-white/20 scale-0 group-active:scale-100 transition-transform duration-300 ease-out"></div>
-                  </div>
+                  Hoy
                 </button>
-                )}
               </div>
             )}
             
-            <div className="max-h-96 overflow-y-auto">
+            <div className="fichaje-list">
               {activeTab === 'registros' ? (
                 // Lista de registros
                 loadingLogs ? (
@@ -3942,48 +3609,32 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                     ))}
                   </div>
                 ) : (
-                // Desktop: Layout original (carduri mari)
-                <div className="space-y-3">
+                // Desktop: rânduri compacte Visual Refresh V2
+                <div className="space-y-2">
                   {logs.map((item, index) => (
-                <div key={index} className="card hover:shadow-lg transition-all duration-200 border-l-4 border-l-green-500">
-                  {/* Header compact pe mobil */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md flex-shrink-0 ${
-                        item.tipo === 'Entrada' 
-                          ? 'bg-gradient-to-br from-green-500 to-green-600' 
-                          : 'bg-gradient-to-br from-red-500 to-red-600'
-                      }`}>
-                        <span className="text-white text-lg">
-                          {item.tipo === 'Entrada' ? '🚪' : '🚪'}
-                        </span>
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <h3 className={`font-semibold text-lg truncate ${
-                          item.tipo === 'Entrada' ? 'text-green-900' : 'text-red-900'
-                        }`}>
-                          {item.tipo}
-                        </h3>
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          <span className="text-gray-600 font-medium text-sm sm:text-base">{item.hora}</span>
-                          {item.tipo === 'Salida' && (
-                            <>
+                <div key={index} className={`fichaje-row ${item.tipo === 'Entrada' ? 'fichaje-row--in' : 'fichaje-row--out'}`}>
+                  <div className="fichaje-row__bar">
+                    <span className="fichaje-row__tipo">{item.tipo}</span>
+                    <span className="fichaje-row__date">{item.data}</span>
+                    <span className="fichaje-row__time">{item.hora}</span>
+                    {item.tipo === 'Salida' && (
+                      <div className="fichaje-row__metrics">
                               {item.duration && (
-                                <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-700 border border-gray-300">
-                                  ⏱ Registrado: {item.duration}
+                                <span className="fichaje-metric">
+                                  Registrado: {item.duration}
                                 </span>
                               )}
                               {item.effective_duration && item.effective_duration.trim() !== '' && (
-                                <span 
-                                  className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800 border border-green-300 cursor-help"
+                                <span
+                                  className="fichaje-metric fichaje-metric--ok"
                                   title="El tiempo efectivo es el que se tiene en cuenta según el horario confirmado."
                                 >
-                                  ✅ Tiempo efectivo: {item.effective_duration}
+                                  Efectivo: {item.effective_duration}
                                 </span>
                               )}
                               {!item.duration && (!item.effective_duration || item.effective_duration.trim() === '') && (
-                                <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800 border border-red-200">
-                                  ⚠️ Sin duración
+                                <span className="fichaje-metric fichaje-metric--warn">
+                                  Sin duración
                                 </span>
                               )}
                               {/* Buton Regularizar - apare mereu dacă are duration dar nu există regularizare */}
@@ -3991,6 +3642,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                                 !(item.effective_duration && item.effective_duration.trim() !== '') && 
                                 !(item.has_regularizacion === 1 || item.has_regularizacion === true || item.has_regularizacion === '1') && (
                                 <button
+                                  type="button"
                                   onClick={async () => {
                                     try {
                                       // Verifică dacă managerul încearcă să-și regularizeze propriul registru
@@ -4056,35 +3708,20 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                                       });
                                     }
                                   }}
-                                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-700 border border-blue-300 hover:bg-blue-200 transition-colors"
+                                  className="fichaje-toolbar__btn fichaje-row__regularizar"
                                 >
-                                  🔄 Regularizar
+                                  Regularizar
                                 </button>
                               )}
-                            </>
-                          )}
-                        </div>
                       </div>
-                    </div>
-                    {/* Data trunchiată pe mobil */}
-                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded flex-shrink-0 ml-2">
-                      <span className="hidden sm:inline">{item.data}</span>
-                      <span className="sm:hidden">{item.data ? item.data.split('-').reverse().join('/') : '—'}</span>
-                    </span>
+                    )}
                   </div>
-                  
-                  {/* Ubicación cu text wrapping */}
                   {(item.address || item.loc) && (
-                    <div className="bg-gray-50 p-3 rounded-lg">
-                      <div className="block text-xs font-medium text-gray-600 mb-1">📍 Ubicación</div>
-                      {item.address ? (
-                        <p className="text-sm text-gray-800 break-words">{item.address}</p>
-                      ) : item.loc ? (
-                        <p className="text-sm text-gray-800">
-                          {item.loc.latitude.toFixed(5)}, {item.loc.longitude.toFixed(5)}
-                        </p>
-                      ) : null}
-                    </div>
+                    <p className="fichaje-row__loc" title={item.address || undefined}>
+                      {item.address
+                        ? item.address
+                        : `${item.loc.latitude.toFixed(5)}, ${item.loc.longitude.toFixed(5)}`}
+                    </p>
                   )}
                 </div>
                 ))}
@@ -4112,75 +3749,40 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                     ))}
                   </div>
                 ) : (
-                // Desktop: Layout original (carduri mari)
-                <div className="space-y-3">
+                // Desktop: rânduri compacte Visual Refresh V2
+                <div className="space-y-2">
                   {ausencias.map((item, index) => {
                     const durationDisplay = getAusenciaDurationDisplay(item);
                     return (
-                <div key={index} className="card hover:shadow-lg transition-all duration-200 border-l-4 border-l-orange-500">
-                  {/* Header compact pentru ausencias */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md flex-shrink-0 ${
-                        item.tipo === 'Salida del Centro' 
-                          ? 'bg-gradient-to-br from-orange-500 to-orange-600' 
-                          : item.tipo === 'Regreso al Centro'
-                          ? 'bg-gradient-to-br from-blue-500 to-blue-600'
-                          : 'bg-gradient-to-br from-purple-500 to-purple-600'
-                      }`}>
-                        <span className="text-white text-lg">
-                          {item.tipo === 'Salida del Centro' ? '🚶‍♂️' : 
-                            item.tipo === 'Regreso al Centro' ? '🔄' : '🏠'}
-                        </span>
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="font-semibold text-lg truncate text-gray-900">
-                          {item.tipo}
-                        </h3>
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          {/* Afișează FECHA în loc de hora pentru toate ausencias */}
-                          <span className="text-gray-600 font-medium text-sm sm:text-base">
+                <div key={index} className="fichaje-row fichaje-row--aus">
+                  <div className="fichaje-row__bar">
+                    <span className="fichaje-row__tipo">{item.tipo}</span>
+                    <span className="fichaje-row__date">
                             {item.FECHA ? formatDateRange(item.FECHA) : 
                              (item.fecha_inicio && item.fecha_fin ? 
                                formatDateRange(`${item.fecha_inicio} - ${item.fecha_fin}`) :
                                (item.data ? item.data.split('-').reverse().join('/') : '—'))}
-                          </span>
-                          <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full border ${
-                            durationDisplay.isDayBased
-                              ? 'bg-blue-100 text-blue-800 border-blue-200'
-                              : 'bg-purple-100 text-purple-800 border-purple-200'
-                          }`}>
-                            {durationDisplay.isDayBased ? `📅 ${durationDisplay.text}` : `⏱️ ${durationDisplay.text}`}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    {/* Eliminat duplicate date display - data este deja afișată mai sus */}
+                    </span>
+                    <span className={`fichaje-metric${durationDisplay.isDayBased ? ' fichaje-metric--info' : ''}`}>
+                      {durationDisplay.text}
+                    </span>
                   </div>
-                  
-                  {/* Motivo și locație */}
-                  <div className="space-y-2">
-                    <div className="bg-orange-50 p-3 rounded-lg">
-                      <div className="block text-xs font-medium text-orange-700 mb-1">📝 Motivo</div>
-                      <p className="text-sm text-orange-800 break-words">{item.motivo || 'Sin motivo especificado'}</p>
-                    </div>
-                    
+                  <p className="fichaje-row__note">{item.motivo || 'Sin motivo especificado'}</p>
                     {item.locatia && (
-                      <div className="bg-blue-50 p-3 rounded-lg">
-                        <div className="block text-xs font-medium text-blue-700 mb-1">📍 Ubicación</div>
-                        <p className="text-sm text-blue-800 break-words mb-2">{item.locatia}</p>
+                      <div className="fichaje-row__maps">
+                        <p className="fichaje-row__loc">{item.locatia}</p>
                         <button
-                          className="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded transition-colors"
+                          type="button"
+                          className="fichaje-row__maps-btn"
                           onClick={() => {
                             const encodedAddress = encodeURIComponent(item.locatia);
                             window.open(`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`, '_blank');
                           }}
                         >
-                          🌍 Ver en Google Maps
+                          Ver mapa
                         </button>
                       </div>
                     )}
-                  </div>
                   </div>
                   );
                   })}
@@ -4207,64 +3809,59 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                 </div>
               ) : null}
             </div>
-          </Card>
+          </section>
+      </div>
 
       {/* Modal de confirmare pentru fichaje */}
-      {showFichajeConfirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-96 max-w-md mx-4 shadow-2xl border border-blue-200">
-            <div className="flex items-center gap-4 mb-6">
-              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                <span className="text-2xl">⏰</span>
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Confirmar Registro</h3>
-                <p className="text-sm text-gray-600">Registro de {fichajeTipo.toLowerCase()}</p>
-              </div>
-            </div>
-            
-            <div className="mb-6">
-              <p className="text-gray-700 mb-2">
-                ¿Estás seguro de que quieres registrar tu <strong>{fichajeTipo.toLowerCase()}</strong>?
-              </p>
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm text-blue-700 font-medium">
-                  Hora: {madridTimeStr || new Date().toLocaleTimeString('es-ES', { timeZone: 'Europe/Madrid' })}
-                </p>
-                <p className="text-xs text-blue-600 mt-1">
-                  {currentAddress || 'Obteniendo ubicación...'}
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowFichajeConfirmModal(false);
-                  setFichajeTipo('');
-                  setFichajeCustomMotivo('');
-                }}
-                className="flex-1 px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg transition-colors duration-200 font-medium"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={confirmFichaje}
-                disabled={fichando}
-                className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors duration-200 font-medium flex items-center gap-2"
-              >
-                <span>✅</span>
-                Confirmar {fichajeTipo}
-              </button>
-            </div>
-            {fichajeCustomMotivo && (
-              <div className="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mt-3">
-                Motivo seleccionado: <strong>{fichajeCustomMotivo}</strong>
-              </div>
-            )}
-          </div>
+      <Modal
+        isOpen={showFichajeConfirmModal}
+        onClose={() => {
+          setShowFichajeConfirmModal(false);
+          setFichajeTipo('');
+          setFichajeCustomMotivo('');
+        }}
+        title="Confirmar registro"
+        size="sm"
+        showCloseButton={false}
+      >
+        <p className="text-sm text-gray-700 dark:text-gray-200 mb-3">
+          ¿Estás seguro de que quieres registrar tu <strong>{fichajeTipo.toLowerCase()}</strong>?
+        </p>
+        <div className="rounded-[var(--app-radius-sm)] border border-[var(--app-border)] bg-gray-50 dark:bg-gray-900 p-3 mb-3">
+          <p className="text-sm font-medium text-gray-800 dark:text-gray-100">
+            Hora: {madridTimeStr || new Date().toLocaleTimeString('es-ES', { timeZone: 'Europe/Madrid' })}
+          </p>
+          <p className="app-modal__hint">
+            {currentAddress || 'Obteniendo ubicación...'}
+          </p>
         </div>
-      )}
+        {fichajeCustomMotivo ? (
+          <p className="app-modal__hint mb-3">
+            Motivo seleccionado: <strong>{fichajeCustomMotivo}</strong>
+          </p>
+        ) : null}
+        <div className="app-modal__actions">
+          <button
+            type="button"
+            onClick={() => {
+              setShowFichajeConfirmModal(false);
+              setFichajeTipo('');
+              setFichajeCustomMotivo('');
+            }}
+            className="app-modal__btn"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={confirmFichaje}
+            disabled={fichando}
+            className="app-modal__btn app-modal__btn--primary"
+          >
+            Confirmar {fichajeTipo}
+          </button>
+        </div>
+      </Modal>
 
       {/* Modal Confirmar Jornada */}
       <ConfirmarJornadaModal
@@ -4294,18 +3891,17 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             recaida: false,
           });
         }}
-        title="🩺 Anunciar Baja Médica"
+        title="Anunciar baja médica"
         size="md"
+        showCloseButton={false}
       >
-        <div className="space-y-5">
-          <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-sm text-rose-800">
-            <p className="font-semibold mb-2">Información importante:</p>
-            <p>Anuncia tu baja médica. El sistema registrará automáticamente tu ausencia por motivos médicos.</p>
-            <p className="mt-2 text-xs">Esta información será visible para los gestores y se sincronizará con el sistema de bajas médicas.</p>
-          </div>
+        <div className="space-y-4">
+          <AlertBanner compact variant="danger" title="Información importante">
+            Anuncia tu baja médica. El sistema registrará automáticamente tu ausencia por motivos médicos. Esta información será visible para los gestores y se sincronizará con el sistema de bajas médicas.
+          </AlertBanner>
 
           <div>
-            <label htmlFor="baja-fecha-baja" className="block text-sm font-semibold text-gray-700 mb-2">
+            <label htmlFor="baja-fecha-baja" className="app-modal__label">
               Fecha de baja <span className="text-red-500">*</span>
             </label>
             <input
@@ -4314,12 +3910,12 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
               value={bajaMedicaForm.fechaBaja}
               onChange={(e) => setBajaMedicaForm({ ...bajaMedicaForm, fechaBaja: e.target.value })}
               required
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 transition-all duration-200 bg-white"
+              className="app-modal__input"
             />
           </div>
 
           <div>
-            <label htmlFor="baja-fecha-alta" className="block text-sm font-semibold text-gray-700 mb-2">
+            <label htmlFor="baja-fecha-alta" className="app-modal__label">
               Fecha de alta (opcional)
             </label>
             <input
@@ -4328,13 +3924,13 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
               value={bajaMedicaForm.fechaAlta}
               onChange={(e) => setBajaMedicaForm({ ...bajaMedicaForm, fechaAlta: e.target.value })}
               min={bajaMedicaForm.fechaBaja}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 transition-all duration-200 bg-white"
+              className="app-modal__input"
             />
             <p className="text-xs text-gray-500 mt-1">Si no conoces la fecha de alta, déjala vacía</p>
           </div>
 
           <div>
-            <label htmlFor="baja-tipo" className="block text-sm font-semibold text-gray-700 mb-2">
+            <label htmlFor="baja-tipo" className="app-modal__label">
               Tipo de baja (opcional)
             </label>
             <input
@@ -4343,7 +3939,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
               value={bajaMedicaForm.tipo}
               onChange={(e) => setBajaMedicaForm({ ...bajaMedicaForm, tipo: e.target.value })}
               placeholder="Ej: Baja médica común, Accidente laboral..."
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 transition-all duration-200 bg-white"
+              className="app-modal__input"
             />
           </div>
 
@@ -4361,9 +3957,9 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
           </div>
 
           {/* Upload documento médico (opcional) */}
-          <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
-            <label htmlFor="baja-medica-documento" className="block text-sm font-semibold text-gray-700 mb-2">
-              📄 Foaie medicală (opțional)
+          <div className="app-modal__field">
+            <label htmlFor="baja-medica-documento" className="app-modal__label">
+              Documento médico (opcional)
             </label>
             <input
               id="baja-medica-documento"
@@ -4385,7 +3981,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                   setBajaMedicaDocumento(null);
                 }
               }}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:border-rose-500 transition-all duration-200 bg-white text-sm"
+              className="app-modal__input text-sm"
             />
             {bajaMedicaDocumento && (
               <div className="mt-2 text-xs text-gray-600 flex items-center gap-2">
@@ -4396,7 +3992,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             <p className="text-xs text-gray-500 mt-1">Puedes subir el documento médico si lo tienes disponible</p>
           </div>
 
-          <div className="flex gap-3 pt-4">
+          <div className="app-modal__actions">
             <button
               onClick={() => {
                 setShowBajaMedicaModal(false);
@@ -4408,7 +4004,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                 });
                 setBajaMedicaDocumento(null);
               }}
-              className="flex-1 px-4 py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-xl transition-colors duration-200 font-medium"
+              className="app-modal__btn"
             >
               Cancelar
             </button>
@@ -4544,7 +4140,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                 }
               }}
               disabled={submittingBajaMedica || !bajaMedicaForm.fechaBaja}
-              className="flex-1 px-4 py-3 bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white rounded-xl transition-all duration-200 font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="app-modal__btn app-modal__btn--primary disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submittingBajaMedica ? (
                 <>
@@ -4552,10 +4148,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                   <span>Enviando...</span>
                 </>
               ) : (
-                <>
-                  <span>🩺</span>
-                  <span>Anunciar Baja Médica</span>
-                </>
+                <span>Anunciar baja médica</span>
               )}
             </button>
           </div>
@@ -6348,70 +5941,44 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
     });
   };
   return (
-    <div className="space-y-6">
-      {/* Header moderno */}
-      <div className={`flex items-center gap-4 mb-6`}>
-        <div className="relative">
-          <div className={`${isMobile ? 'w-10 h-10' : 'w-12 h-12'} bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg`}>
-            <span className={`text-white ${isMobile ? 'text-lg' : 'text-xl'}`}>👥</span>
-          </div>
-          {/* Glow effect */}
-          <div className={`absolute inset-0 ${isMobile ? 'w-10 h-10' : 'w-12 h-12'} bg-blue-400 rounded-xl opacity-20 blur-md animate-pulse`}></div>
+    <div className="fichaje-panel">
+      <div className="fichaje-filterbar">
+        <div className="fichaje-filterbar__head">
+          <h2 className="fichaje-filterbar__title">Registros de Empleados</h2>
+          <p className="fichaje-filterbar__hint">Administra y supervisa los marcajes del equipo</p>
         </div>
-        <div>
-          <h1 className={`${isMobile ? 'text-lg' : 'text-2xl'} font-bold text-gray-900`}>
-            Registros de Empleados
-          </h1>
-          <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-600`}>
-            Administra y supervisa los marcajes del equipo
-          </p>
-        </div>
-      </div>
-
-      {/* Butoane de export și refresh - Modernos */}
-      <div className={`flex flex-wrap gap-4 mb-6`}>
+        <div className="fichaje-filterbar__actions">
         <button
+          type="button"
           onClick={() => {
-            // Actualizează cu luna curentă, nu cu luna selectată
             const currentDate = new Date();
             const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
             loggerDebug('Actualizando con luna actual:', currentMonth);
             fetchRegistros(currentMonth);
-            // Actualizează și selectorul de lună la luna curentă
             setSelectedMonth(currentMonth);
           }}
-          className={`group relative ${isMobile ? 'px-4 py-2' : 'px-6 py-3'} rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200`}
+          className="fichaje-toolbar__btn"
         >
-          {/* Glow effect */}
-          <div className="absolute inset-0 rounded-xl bg-blue-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-          <div className="relative flex items-center gap-2">
-            <span className={`${isMobile ? 'text-base' : 'text-lg'} group-hover:scale-110 transition-transform duration-300`}>🔄</span>
-            <span className={isMobile ? 'text-xs' : 'text-sm'}>Actualizar</span>
-          </div>
+          <span aria-hidden>🔄</span>
+          <span>Actualizar</span>
         </button>
         
         <button
+          type="button"
           onClick={handleExportPDF}
-          className={`group relative ${isMobile ? 'px-4 py-2' : 'px-6 py-3'} rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-orange-200`}
+          className="fichaje-toolbar__btn"
         >
-          {/* Glow effect */}
-          <div className="absolute inset-0 rounded-xl bg-orange-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-          <div className="relative flex items-center gap-2">
-            <span className={`${isMobile ? 'text-base' : 'text-lg'} group-hover:scale-110 transition-transform duration-300`}>📄</span>
-            <span className={isMobile ? 'text-xs' : 'text-sm'}>{isMobile ? 'PDF' : 'Exportar PDF'}</span>
-          </div>
+          <span aria-hidden>📄</span>
+          <span>{isMobile ? 'PDF' : 'Exportar PDF'}</span>
         </button>
         
         <button
+          type="button"
           onClick={handleExportExcel}
-          className={`group relative ${isMobile ? 'px-4 py-2' : 'px-6 py-3'} rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-emerald-200`}
+          className="fichaje-toolbar__btn"
         >
-          {/* Glow effect */}
-          <div className="absolute inset-0 rounded-xl bg-emerald-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-          <div className="relative flex items-center gap-2">
-            <span className={`${isMobile ? 'text-base' : 'text-lg'} group-hover:scale-110 transition-transform duration-300`}>📊</span>
-            <span className={isMobile ? 'text-xs' : 'text-sm'}>{isMobile ? 'Excel' : 'Exportar Excel'}</span>
-          </div>
+          <span aria-hidden>📊</span>
+          <span>{isMobile ? 'Excel' : 'Exportar Excel'}</span>
         </button>
 
         <button
@@ -6472,59 +6039,42 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
               setRunningFichajeReminder(false);
             }
           }}
-          className={`group relative ${isMobile ? 'px-4 py-2' : 'px-6 py-3'} rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-violet-500 to-indigo-600 text-white shadow-violet-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none`}
+          className="fichaje-toolbar__btn"
         >
-          <div className="absolute inset-0 rounded-xl bg-violet-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-          <div className="relative flex items-center gap-2">
-            <span className={`${isMobile ? 'text-base' : 'text-lg'} group-hover:scale-110 transition-transform duration-300`}>
-              {fichajeReminderPreviewLoading ? '⏳' : '🔔'}
-            </span>
-            <span className={isMobile ? 'text-xs' : 'text-sm'}>
-              {fichajeReminderPreviewLoading
-                ? (isMobile ? '...' : 'Cargando…')
-                : (isMobile ? 'Recordatorio' : 'Probar recordatorio')}
-            </span>
-          </div>
-        </button>
-      </div>
-
-      {/* Buton adăugare - Moderno */}
-      <button
-        onClick={openAdd}
-        className={`group relative w-full ${isMobile ? 'px-4 py-3' : 'px-8 py-4'} rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200`}
-      >
-        {/* Glow effect */}
-        <div className="absolute inset-0 rounded-xl bg-purple-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-        <div className="relative flex items-center justify-center gap-3">
-          <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} bg-white/20 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:bg-white/30`}>
-            <span className={`text-white ${isMobile ? 'text-base' : 'text-xl'} group-hover:scale-110 transition-transform duration-300`}>➕</span>
-          </div>
-          <div className="text-left">
-            <div className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold`}>Añadir Registro</div>
-            <div className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-white/80`}>Crear nuevo fichaje</div>
-          </div>
-        </div>
-      </button>
-
-      {/* Buton pentru afișarea/ascunderea listei de angajați - Moderno */}
-      <button
-        onClick={() => setShowEmpleados(!showEmpleados)}
-        className={`group relative w-full ${isMobile ? 'px-4 py-2' : 'px-6 py-3'} rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-gray-500 to-gray-600 text-white shadow-gray-200`}
-      >
-        {/* Glow effect */}
-        <div className="absolute inset-0 rounded-xl bg-gray-400 opacity-20 blur-md animate-pulse group-hover:opacity-30 transition-all duration-300"></div>
-        <div className="relative flex items-center justify-center gap-2">
-          <span className={`${isMobile ? 'text-base' : 'text-lg'} group-hover:scale-110 transition-transform duration-300`}>
-            {showEmpleados ? '🔼' : '🔽'}
+          <span aria-hidden>
+            {fichajeReminderPreviewLoading ? '⏳' : '🔔'}
           </span>
-          <span className={isMobile ? 'text-xs' : 'text-sm'}>{showEmpleados ? (isMobile ? 'Ocultar' : 'Ocultar Lista de Empleados') : (isMobile ? 'Mostrar Empleados' : 'Mostrar Lista de Empleados')}</span>
+          <span>
+            {fichajeReminderPreviewLoading
+              ? (isMobile ? '...' : 'Cargando…')
+              : (isMobile ? 'Recordatorio' : 'Probar recordatorio')}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={openAdd}
+          className="fichaje-toolbar__btn fichaje-toolbar__btn--accent"
+        >
+          <span aria-hidden>➕</span>
+          <span>{isMobile ? 'Añadir' : 'Añadir Registro'}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowEmpleados(!showEmpleados)}
+          className="fichaje-toolbar__btn fichaje-toolbar__btn--ghost"
+        >
+          <span aria-hidden>{showEmpleados ? '▲' : '▼'}</span>
+          <span>{showEmpleados ? (isMobile ? 'Ocultar' : 'Ocultar empleados') : (isMobile ? 'Empleados' : 'Mostrar empleados')}</span>
+        </button>
         </div>
-      </button>
+      </div>
 
       {/* Lista angajați - ascunsă/afișată */}
       {showEmpleados && (
-        <Card>
-          <h2 className={`${isMobile ? 'text-base' : 'text-xl'} font-bold text-red-600 mb-4`}>Lista de empleados</h2>
+        <section className="app-card app-card--pad">
+          <h3 className="fichaje-filterbar__title mb-3">Lista de empleados</h3>
           
           {selectedEmpleado ? (
             // Afișează doar angajatul selectat
@@ -6532,7 +6082,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
               {empleados
                 .filter(item => item.nombre === selectedEmpleado)
                 .map((item, index) => (
-                  <div key={index} className="flex items-center justify-between p-4 bg-red-100 border-2 border-red-300 rounded-lg">
+                  <div key={index} className="fichaje-empleado-selected">
                     <div>
                       <p className="font-bold text-red-600">{item.nombre}</p>
                       <p className="text-gray-600">{item.email}</p>
@@ -6625,27 +6175,17 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
               </div>
             </>
           )}
-        </Card>
+        </section>
       )}
 
       {/* Lista registre - Tabel format */}
-      <Card>
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} rounded-full flex items-center justify-center transition-all duration-300 ${
-              changingMonth ? 'bg-yellow-100 animate-pulse' : 'bg-red-100'
-            }`}>
-              <span className={`${isMobile ? 'text-base' : 'text-lg'} transition-all duration-300 ${
-                changingMonth ? 'text-yellow-600' : 'text-red-600'
-              }`}>
-                {changingMonth ? '⏳' : '📊'}
-              </span>
-            </div>
-            <div>
-          <h2 className={`${isMobile ? 'text-base' : 'text-xl'} font-bold text-red-600`}>
+      <section className="app-card app-card--pad">
+        <div className="flex flex-col gap-3 mb-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <h3 className="fichaje-filterbar__title">
                 {selectedEmpleado ? (isMobile ? `Marcajes: ${selectedEmpleado.length > 15 ? selectedEmpleado.substring(0, 15) + '...' : selectedEmpleado}` : `Marcajes para: ${selectedEmpleado}`) : (isMobile ? `Registros ${new Date(selectedMonth + '-01').toLocaleDateString('es-ES', { month: 'short', year: 'numeric' })}` : `Registros de ${new Date(selectedMonth + '-01').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}`)}
                 {!changingMonth && filtered.length > 0 && (
-                  <span className={`ml-3 px-3 py-1 bg-blue-100 text-blue-700 rounded-full ${isMobile ? 'text-xs' : 'text-sm'} font-semibold`}>
+                  <span className="fichaje-metric ml-2 align-middle">
                     {selectedEmpleado 
                       ? (() => {
                           const empleadoRegistros = filtered.filter(item => item.empleado === selectedEmpleado);
@@ -6655,18 +6195,17 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                     }
                   </span>
                 )}
-          </h2>
-              <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-gray-500`}>
-                {changingMonth ? 'Cargando registros...' : (isMobile ? 'Administra marcajes' : 'Administra los marcajes de los empleados')}
-              </p>
-            </div>
+            </h3>
+            <p className="fichaje-filterbar__hint">
+              {changingMonth ? 'Cargando registros...' : (isMobile ? 'Administra marcajes' : 'Administra los marcajes de los empleados')}
+            </p>
           </div>
           
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="fichaje-filterbar__actions">
             {/* Afișează ziua curentă/perioada activă */}
             {!isPeriodMode ? (
-              <div className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              <div className="fichaje-metric">
+                <span>
                   {(() => {
                     const today = new Date();
                     const day = today.getDate();
@@ -6676,86 +6215,50 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                 </span>
               </div>
             ) : (
-              <div className="flex items-center gap-2 px-4 py-2 bg-red-100 dark:bg-red-900 rounded-lg">
-                <span className="text-sm font-medium text-red-700 dark:text-red-300">
+              <div className="fichaje-metric fichaje-metric--warn">
+                <span>
                   {periodStart} - {periodEnd}
                 </span>
               </div>
             )}
 
-            {/* Buton pentru selecția perioadei/mes */}
             <button
+              type="button"
               onClick={() => setShowPeriodSelector(!showPeriodSelector)}
               disabled={changingMonth}
-              className={`flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-xl text-sm font-medium shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 ${
-                changingMonth ? 'opacity-50 cursor-not-allowed transform-none' : ''
-              } ${isPeriodMode ? 'ring-2 ring-red-300' : ''}`}
+              className={`fichaje-toolbar__btn${isPeriodMode ? ' fichaje-toolbar__btn--accent' : ''}`}
               title={isPeriodMode ? 'Período personalizado activo' : 'Seleccionar período o mes'}
             >
-              <span className="text-lg">📅</span>
+              <span aria-hidden>📅</span>
               {isPeriodMode ? 'Período Activo' : 'Filtrar'}
             </button>
 
-            {/* Buton pentru reset perioadă */}
             {isPeriodMode && (
               <button
+                type="button"
                 onClick={handleResetPeriod}
                 disabled={changingMonth}
-                className={`flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white rounded-xl text-sm font-medium shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 ${
-                  changingMonth ? 'opacity-50 cursor-not-allowed transform-none' : ''
-                }`}
+                className="fichaje-toolbar__btn"
                 title="Volver a vista por mes"
               >
-                <span className="text-lg">↩️</span>
+                <span aria-hidden>↩️</span>
                 Reset
               </button>
             )}
             
-            {/* Buton ULTRA MODERN "Hoy" - 3D + Glassmorphism - RESPONSIVE - Ascuns pe mobile */}
             {!isMobile && (
             <button
+              type="button"
               onClick={() => {
                 const currentDate = new Date();
                 const currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
                 setSelectedMonth(currentMonth);
               }}
               disabled={changingMonth}
-              className={`group relative px-4 sm:px-8 py-3 sm:py-4 rounded-2xl font-bold transition-all duration-500 transform hover:scale-110 hover:-translate-y-1 shadow-2xl hover:shadow-red-300/50 w-full sm:w-auto ${
-                changingMonth ? 'opacity-50 cursor-not-allowed transform-none' : ''
-              }`}
-              style={{
-                background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 50%, #b91c1c 100%)',
-                boxShadow: '0 10px 25px rgba(239, 68, 68, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-              }}
+              className="fichaje-month__hoy"
               title="Volver al mes actual"
             >
-              {/* 3D depth effect */}
-              <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-red-300 to-red-800 opacity-20 transform translate-y-1 group-active:translate-y-0 transition-transform duration-150"></div>
-              
-              {/* Main content */}
-              <div className="relative flex items-center justify-center gap-2 sm:gap-3">
-                {/* Icon cu animație spectaculoasă */}
-                <div className="relative">
-                  <div className="absolute inset-0 bg-white/30 rounded-full blur-sm animate-pulse"></div>
-                  <span className="text-xl sm:text-2xl group-hover:scale-125 group-hover:rotate-12 transition-all duration-500 relative z-10">🎯</span>
-                </div>
-                
-                {/* Text cu efecte */}
-                <span className="text-base sm:text-lg font-black tracking-wide" style={{
-                  textShadow: '0 2px 4px rgba(0,0,0,0.3), 0 0 8px rgba(255,255,255,0.2)',
-                  background: 'linear-gradient(45deg, #ffffff, #fef2f2, #ffffff)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text'
-                }}>
-                  Hoy
-                </span>
-              </div>
-              
-              {/* Shimmer effect */}
-              <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-out"></div>
-              </div>
+              Hoy
             </button>
             )}
             
@@ -6784,7 +6287,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
           <>
             {/* Desktop: Tabel */}
             <div className="hidden lg:block overflow-x-auto">
-              <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-lg">
+              <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-lg fichaje-table">
                 <table className="w-full border-collapse">
                   <thead className="sticky top-0 bg-gray-50 z-10">
                     <tr className="border-b border-gray-200">
@@ -7249,36 +6752,19 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             </div>
           </>
         )}
-      </Card>
+      </section>
 
       {/* Modal pentru adăugare/editare - Modernizado */}
       <Modal
         isOpen={modalVisible}
         onClose={() => setModalVisible(false)}
-        title={`${editIdx !== null ? 'Editar' : 'Añadir'} Registro`}
+        title={`${editIdx !== null ? 'Editar' : 'Añadir'} registro`}
+        showCloseButton={false}
       >
-        <div className="space-y-6">
-          {/* Header del modal */}
-          <div className="text-center">
-            <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-              <span className="text-white text-2xl">{editIdx !== null ? '✏️' : '➕'}</span>
-            </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">
-              {editIdx !== null ? 'Editar Registro' : 'Añadir Nuevo Registro'}
-            </h3>
-            <p className="text-sm text-gray-600">
-              {editIdx !== null ? 'Modifica los datos del fichaje' : 'Crear un nuevo registro de fichaje'}
-            </p>
-          </div>
+        <div className="space-y-4">
 
-          {/* Empleado - Modernizado */}
-          <div className="card">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <span className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
-                👤
-              </span>
-              Seleccionar Empleado
-            </h4>
+          <div className="app-modal__field">
+            <label htmlFor="registro-empleado-input" className="app-modal__label">Empleado</label>
             <div className="relative">
               <input
                 id="registro-empleado-input"
@@ -7292,63 +6778,71 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                     setShowEmpleadosDropdown(false);
                     setSearchEmpleadoDropdown('');
                   }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setShowEmpleadosDropdown(false);
+                    setSearchEmpleadoDropdown('');
+                  }
                 }}
                 placeholder="Escribe para buscar empleado..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                className="app-modal__input"
+                aria-expanded={showEmpleadosDropdown}
+                aria-controls="search-empleado-dropdown"
+                autoComplete="off"
               />
               
               {/* Dropdown cu angajați */}
               {showEmpleadosDropdown && (
                 <>
-                  {/* Overlay pentru închidere */}
-                  <div 
-                    className="fixed inset-0 z-[99998] bg-black/20 backdrop-blur-sm"
+                  <div
+                    className="app-picker__backdrop"
                     onClick={() => {
                       setShowEmpleadosDropdown(false);
                       setSearchEmpleadoDropdown('');
                     }}
                   ></div>
                   
-                  {/* Dropdown centrat */}
-                  <div className="fixed z-[99999] bg-white border-2 border-gray-300 rounded-xl shadow-2xl max-h-80 overflow-y-auto" style={{
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    width: '90%',
-                    maxWidth: '500px'
-                  }}>
-                  <div className="p-4">
-                    {/* Header dropdown */}
-                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-200">
-                      <h4 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                        <span className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                          👥
-                        </span>
-                        Seleccionar Empleado
-                      </h4>
+                  <div
+                    className="app-picker"
+                    role="listbox"
+                    aria-label="Seleccionar empleado"
+                  >
+                    <div className="app-picker__head">
+                      <span>Empleado</span>
                       <button
+                        type="button"
                         onClick={() => {
                           setShowEmpleadosDropdown(false);
                           setSearchEmpleadoDropdown('');
                         }}
-                        className="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center justify-center transition-colors"
+                        className="app-modal__close"
+                        aria-label="Cerrar"
                       >
-                        ❌
+                        ×
                       </button>
                     </div>
                     
+                    <div className="app-picker__search-wrap">
                     <input
                       id="search-empleado-dropdown"
                       name="search-empleado-dropdown"
                       type="text"
-                      placeholder="🔍 Buscar empleado..."
+                      placeholder="Buscar por nombre, email o grupo..."
                       value={searchEmpleadoDropdown}
                       onChange={(e) => setSearchEmpleadoDropdown(e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm mb-4 focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-gray-50 focus:bg-white transition-all duration-200"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          e.preventDefault();
+                          setShowEmpleadosDropdown(false);
+                          setSearchEmpleadoDropdown('');
+                        }
+                      }}
+                      className="app-modal__input"
                       autoFocus
                     />
+                    </div>
                     
-                    <div className="space-y-2">
+                    <div className="app-picker__list">
                       {empleados
                         .filter(item => 
                           item.nombre.toLowerCase().includes(searchEmpleadoDropdown.toLowerCase()) ||
@@ -7356,44 +6850,40 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                           (item.grupo && item.grupo.toLowerCase().includes(searchEmpleadoDropdown.toLowerCase()))
                         )
                         .map((empleado, index) => (
-                          <div
+                          <button
+                            type="button"
                             key={index}
+                            role="option"
+                            aria-selected={form.empleado === empleado.nombre}
                             onClick={() => {
                               loggerDebug('Setting empleado from dropdown:', empleado.nombre);
                               setForm(f => ({ ...f, empleado: empleado.nombre }));
                               setShowEmpleadosDropdown(false);
                               setSearchEmpleadoDropdown('');
                             }}
-                            className="group p-3 hover:bg-red-50 cursor-pointer rounded-xl transition-all duration-200 border border-transparent hover:border-red-200"
+                            className={`app-picker__item${form.empleado === empleado.nombre ? ' is-selected' : ''}`}
                           >
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center shadow-md">
-                                <span className="text-white text-sm font-bold">
-                                  {empleado.nombre.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                                </span>
-                              </div>
-                              <div className="flex-1">
-                                <div className="font-medium text-gray-900">{empleado.nombre}</div>
-                                {empleado.email && (
-                                  <div className="text-xs text-gray-500">{empleado.email}</div>
-                                )}
-                                {empleado.grupo && (
-                                  <div className="text-xs text-blue-600">Grupo: {empleado.grupo}</div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
+                            <span className="app-picker__avatar" aria-hidden>
+                              {empleado.nombre.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="app-picker__name">{empleado.nombre}</span>
+                              {empleado.email && (
+                                <span className="app-picker__meta">{empleado.email}</span>
+                              )}
+                              {empleado.grupo && (
+                                <span className="app-picker__meta">Grupo: {empleado.grupo}</span>
+                              )}
+                            </span>
+                          </button>
                         ))}
-                    </div>
                      
                      {empleados.length === 0 ? (
-                       <div className="px-3 py-2 text-sm">
-                         <div className="text-gray-500 text-center mb-2">
-                           No hay empleados disponibles
-                         </div>
+                       <div className="app-picker__empty">
+                         <div>No hay empleados disponibles</div>
                          {import.meta.env.PROD && (
-                           <div className="bg-yellow-50 border border-yellow-200 rounded p-2 text-xs text-yellow-700">
-                             <div className="font-semibold">⚠️ CORS Error</div>
+                           <div className="app-picker__warn">
+                             <div className="font-semibold">CORS Error</div>
                              <div>Lista no se puede cargar en producción</div>
                            </div>
                          )}
@@ -7403,123 +6893,58 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                        item.email.toLowerCase().includes(searchEmpleadoDropdown.toLowerCase()) ||
                        (item.grupo && item.grupo.toLowerCase().includes(searchEmpleadoDropdown.toLowerCase()))
                      ).length === 0 && searchEmpleadoDropdown.length > 0 && (
-                       <div className="px-3 py-2 text-gray-500 text-sm text-center">
+                       <div className="app-picker__empty">
                          No se encontraron empleados
                        </div>
                      )}
-                  </div>
+                    </div>
                   </div>
                 </>
               )}
             </div>
           </div>
 
-          {/* Tipo - Modernizado */}
-          <div className="card">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <span className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3">
-                🕒
-              </span>
-              Tipo de Registro
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Entrada */}
+          <div className="app-modal__field">
+            <p className="app-modal__label">Tipo de registro</p>
+            <div className="app-modal__choices">
               <button
                 type="button"
                 onClick={() => setForm(f => ({ ...f, tipo: 'Entrada' }))}
-                className={`group relative p-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
-                  form.tipo === 'Entrada'
-                    ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200'
-                    : 'bg-white text-green-600 border-2 border-green-200 hover:border-green-400 hover:bg-green-50'
-                }`}
+                className={`app-modal__choice${form.tipo === 'Entrada' ? ' is-active is-active--ok' : ''}`}
               >
-                {/* Glow effect */}
-                <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                  form.tipo === 'Entrada' 
-                    ? 'bg-green-400 opacity-25 blur-md animate-pulse' 
-                    : 'bg-green-400 opacity-0 group-hover:opacity-15 blur-md'
-                }`}></div>
-                <div className="relative text-center">
-                  <span className="text-2xl mb-2 block">🚪</span>
-                  <div className="text-sm font-bold">Entrada</div>
-                  <div className={`text-xs ${
-                    form.tipo === 'Entrada' ? 'text-white/80' : 'text-green-500'
-                  }`}>Iniciar jornada</div>
-                </div>
+                <span className="app-modal__choice-label">Entrada</span>
+                <span className="app-modal__choice-hint">Iniciar jornada</span>
               </button>
-
-              {/* Salida */}
               <button
                 type="button"
                 onClick={() => setForm(f => ({ ...f, tipo: 'Salida' }))}
-                className={`group relative p-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
-                  form.tipo === 'Salida'
-                    ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200'
-                    : 'bg-white text-red-600 border-2 border-red-200 hover:border-red-400 hover:bg-red-50'
-                }`}
+                className={`app-modal__choice${form.tipo === 'Salida' ? ' is-active is-active--danger' : ''}`}
               >
-                {/* Glow effect */}
-                <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                  form.tipo === 'Salida' 
-                    ? 'bg-red-400 opacity-25 blur-md animate-pulse' 
-                    : 'bg-red-400 opacity-0 group-hover:opacity-15 blur-md'
-                }`}></div>
-                <div className="relative text-center">
-                  <span className="text-2xl mb-2 block">🚪</span>
-                  <div className="text-sm font-bold">Salida</div>
-                  <div className={`text-xs ${
-                    form.tipo === 'Salida' ? 'text-white/80' : 'text-red-500'
-                  }`}>Finalizar jornada</div>
-                </div>
+                <span className="app-modal__choice-label">Salida</span>
+                <span className="app-modal__choice-hint">Finalizar jornada</span>
               </button>
             </div>
           </div>
 
-          {/* Hora - Modernizado */}
-          <div className="card">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <span className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center mr-3">
-                ⏰
-              </span>
-              Hora del Registro
-            </h4>
+          <div className="app-modal__field">
+            <label className="app-modal__label">Hora</label>
             <Input
               type="time"
               value={form.hora}
               onChange={(e) => setForm(f => ({ ...f, hora: e.target.value }))}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-gray-50 focus:bg-white transition-all duration-200 font-medium text-lg"
+              className="w-full"
             />
           </div>
 
-          {/* Dirección - Modernizado */}
-          <div className="card">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <span className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center mr-3">
-                📍
-              </span>
-              <span className="flex items-center gap-2">
-                Ubicación del Registro
-                <div className="group relative">
-                  <svg className="w-4 h-4 text-gray-400 hover:text-gray-600 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none">
-                    <div className="text-center">
-                      Este permiso es obligatorio para fichar. La ubicación solo se usa al registrar la jornada.
-                    </div>
-                    <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
-                  </div>
-                </div>
-              </span>
-            </h4>
+          <div className="app-modal__field">
+            <label className="app-modal__label">Ubicación</label>
             <div className="space-y-2">
-              {/* Input editabil pentru direcție */}
               <input
                 type="text"
                 value={form.address || ''}
                 onChange={(e) => setForm(prev => ({ ...prev, address: e.target.value }))}
                 placeholder="Dirección del registro..."
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300"
+                className="app-modal__input"
               />
               
               {/* Buton pentru obținere automată direcție */}
@@ -7600,49 +7025,31 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
             </p>
           </div>
 
-          {/* Fecha - Modernizado */}
-          <div className="card">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <span className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
-                📅
-              </span>
-              Fecha del Registro
-            </h4>
+          <div className="app-modal__field">
+            <label className="app-modal__label">Fecha</label>
             <Input
               type="date"
               value={form.data}
               onChange={(e) => setForm(f => ({ ...f, data: e.target.value }))}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-gray-50 focus:bg-white transition-all duration-200 font-medium text-lg"
+              className="w-full"
             />
           </div>
 
-          {/* Botones modernos */}
-          <div className="flex gap-3 justify-end pt-4">
+          <div className="app-modal__actions">
             <button
+              type="button"
               onClick={() => setModalVisible(false)}
-              className="group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-white text-gray-600 border-2 border-gray-200 hover:border-gray-400 hover:bg-gray-50"
+              className="app-modal__btn"
             >
-              <div className="relative flex items-center gap-2">
-                <span className="text-lg">❌</span>
-                <span>Cancelar</span>
-              </div>
+              Cancelar
             </button>
-            
             <button
+              type="button"
               onClick={handleSave}
               disabled={saving}
-              className="group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+              className="app-modal__btn app-modal__btn--primary"
             >
-              {/* Glow effect */}
-              <div className="absolute inset-0 rounded-xl bg-purple-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-              <div className="relative flex items-center gap-2">
-                <span className="text-lg group-hover:scale-110 transition-transform duration-300">
-                  {saving ? '⏳' : editIdx !== null ? '💾' : '✅'}
-                </span>
-                <span>
-                  {saving ? 'Guardando...' : editIdx !== null ? 'Guardar Cambios' : 'Guardar Registro'}
-                </span>
-              </div>
+              {saving ? 'Guardando...' : editIdx !== null ? 'Guardar cambios' : 'Guardar registro'}
             </button>
           </div>
         </div>
@@ -7650,9 +7057,8 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
 
       {/* Modal pentru selecția perioadei/mes */}
       {showPeriodSelector && (
-        <Modal isOpen={showPeriodSelector} onClose={() => setShowPeriodSelector(false)}>
+        <Modal isOpen={showPeriodSelector} onClose={() => setShowPeriodSelector(false)} title="Seleccionar período" size="sm" showCloseButton={false}>
           <div className="space-y-4">
-            <h2 className="text-xl font-bold text-gray-800">Seleccionar Período</h2>
             
             {/* Toggle între Mes și Rango de fechas */}
             <div className="flex gap-2 p-1 bg-gray-100 dark:bg-gray-700 rounded-lg">
@@ -7696,7 +7102,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                       value={selectedMonth}
                       onChange={(e) => setSelectedMonth(e.target.value)}
                       disabled={changingMonth}
-                      className="appearance-none bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 pr-10 w-full text-sm font-medium text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      className="app-modal__input appearance-none pr-10"
                     >
                       {/* Ultimele 12 luni */}
                       {getRecentFichajeMonthOptions().map(({ value, label }, i) => (
@@ -7800,6 +7206,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
           isOpen={!!filterModal}
           onClose={() => setFilterModal(null)}
           title="Filtrar registros"
+          showCloseButton={false}
         >
           <div className="space-y-4">
             <div>
@@ -8015,7 +7422,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                   setFichajeReminderModalOpen(false);
                   setFichajeReminderPreview(null);
                 }}
-                className="px-5 py-2.5 rounded-xl font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 transition disabled:opacity-50"
+                className="app-modal__btn"
               >
                 Cancelar
               </button>
@@ -8068,7 +7475,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
                     setFichajeReminderSending(false);
                   }
                 }}
-                className="px-5 py-2.5 rounded-xl font-semibold bg-gradient-to-r from-violet-500 to-indigo-600 text-white shadow-md hover:opacity-95 transition disabled:opacity-50"
+                className="app-modal__btn app-modal__btn--primary"
               >
                 {fichajeReminderSending
                   ? 'Enviando…'
@@ -9823,35 +9230,23 @@ export default function FichajePage() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header moderno */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Back3DButton to="/inicio" title="Regresar al Dashboard" />
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
-              Registro de Jornada
-            </h1>
-            <p className="text-gray-600 dark:text-white text-sm sm:text-base">
-              Sistema de registro de jornada para empleados
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Botón Reportar Error */}
-      <div className="flex justify-end mb-4">
-        <button
-          type="button"
-          onClick={() => openWhatsAppErrorReport(buildErrorReportMessage())}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
-        >
-          <span className="text-base" aria-hidden>
-            💬
-          </span>
-          Reportar error
-        </button>
-      </div>
+    <div className="app-page fichaje-page">
+      <PageHeader
+        className="fichaje-page-header"
+        title="Registro de Jornada"
+        subtitle="Sistema de registro de jornada para empleados"
+        backTo="/inicio"
+        backTitle="Regresar al Dashboard"
+        actions={
+          <button
+            type="button"
+            onClick={() => openWhatsAppErrorReport(buildErrorReportMessage())}
+            className="inline-flex items-center gap-1.5 rounded-[var(--app-radius-sm,0.65rem)] border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+          >
+            Reportar error
+          </button>
+        }
+      />
 
       {/* Verifică dacă utilizatorul are acces la pagină */}
       {loadingPermissions && (
@@ -9884,164 +9279,41 @@ export default function FichajePage() {
 
       {/* Para empleado - solo MiFichaje (fichar-empleados) */}
       {canAccessPage && !canAccessAllTabs && (
-        <Card>
-          <MiFichajeScreen 
-            onFicharIncidencia={handleFicharIncidencia} 
-            incidenciaMessage={incidenciaMessage}
-            setNotification={setNotification}
-            horarioAsignado={horarioAsignado}
-            loadingHorario={loadingHorario}
-            cuadranteAsignado={cuadranteAsignado}
-            loadingCuadrante={loadingCuadrante}
-            isTimeWithinSchedule={isTimeWithinSchedule}
-            getTimeRestrictionMessage={getTimeRestrictionMessage}
-            hasAnySchedule={hasAnySchedule}
-            horarioMulticentroAsignado={horarioMulticentroAsignado}
-            onLogsUpdate={(logs) => {
-              loggerDebug('onLogsUpdate - logs primit:', logs);
-              setLogs(logs);
-            }}
-          />
-        </Card>
+        <MiFichajeScreen 
+          onFicharIncidencia={handleFicharIncidencia} 
+          incidenciaMessage={incidenciaMessage}
+          setNotification={setNotification}
+          horarioAsignado={horarioAsignado}
+          loadingHorario={loadingHorario}
+          cuadranteAsignado={cuadranteAsignado}
+          loadingCuadrante={loadingCuadrante}
+          isTimeWithinSchedule={isTimeWithinSchedule}
+          getTimeRestrictionMessage={getTimeRestrictionMessage}
+          hasAnySchedule={hasAnySchedule}
+          horarioMulticentroAsignado={horarioMulticentroAsignado}
+          onLogsUpdate={(logs) => {
+            loggerDebug('onLogsUpdate - logs primit:', logs);
+            setLogs(logs);
+          }}
+        />
       )}
 
       {/* Para manager/admin - tabs con MiFichaje y Registros Empleados (fichar-admin) */}
       {canAccessAllTabs && (
-        <Card>
-          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-4 mb-8">
-            <button
-              onClick={() => setActiveTab('personal')}
-              className={`group relative w-full sm:w-auto px-8 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                activeTab === 'personal'
-                  ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200'
-                  : 'bg-white text-green-600 border-2 border-green-200 hover:border-green-400 hover:bg-green-50'
-              }`}
-            >
-              {/* Glow effect */}
-              <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                activeTab === 'personal' 
-                  ? 'bg-green-400 opacity-30 blur-md animate-pulse' 
-                  : 'bg-green-400 opacity-0 group-hover:opacity-20 blur-md'
-              }`}></div>
-              <div className="relative flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
-                  activeTab === 'personal' 
-                    ? 'bg-white/20' 
-                    : 'bg-green-100 group-hover:bg-green-200'
-                }`}>
-                  <span className={`text-xl ${
-                    activeTab === 'personal' ? 'text-white' : 'text-green-600'
-                  }`}>⏰</span>
-                </div>
-                <div className="text-left">
-                  <div className="text-lg font-bold">Mi Fichaje</div>
-                  <div className={`text-xs ${
-                    activeTab === 'personal' ? 'text-white/80' : 'text-green-500'
-                  }`}>Control personal</div>
-                </div>
-              </div>
-            </button>
-            
-            <button
-              onClick={() => setActiveTab('empleados')}
-              className={`group relative w-full sm:w-auto px-8 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                activeTab === 'empleados'
-                  ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200'
-                  : 'bg-white text-blue-600 border-2 border-blue-200 hover:border-blue-400 hover:bg-blue-50'
-              }`}
-            >
-              {/* Glow effect */}
-              <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                activeTab === 'empleados' 
-                  ? 'bg-blue-400 opacity-30 blur-md animate-pulse' 
-                  : 'bg-blue-400 opacity-0 group-hover:opacity-20 blur-md'
-              }`}></div>
-              <div className="relative flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
-                  activeTab === 'empleados' 
-                    ? 'bg-white/20' 
-                    : 'bg-blue-100 group-hover:bg-blue-200'
-                }`}>
-                  <span className={`text-xl ${
-                    activeTab === 'empleados' ? 'text-white' : 'text-blue-600'
-                  }`}>👥</span>
-                </div>
-                <div className="text-left">
-                  <div className="text-lg font-bold">Registros Empleados</div>
-                  <div className={`text-xs ${
-                    activeTab === 'empleados' ? 'text-white/80' : 'text-blue-500'
-                  }`}>Gestionar equipo</div>
-                </div>
-              </div>
-            </button>
-            
-            <button
-              onClick={() => setActiveTab('horas')}
-              className={`group relative w-full sm:w-auto px-8 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                activeTab === 'horas'
-                  ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200'
-                  : 'bg-white text-purple-600 border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50'
-              }`}
-            >
-              {/* Glow effect */}
-              <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                activeTab === 'horas' 
-                  ? 'bg-purple-400 opacity-30 blur-md animate-pulse' 
-                  : 'bg-purple-400 opacity-0 group-hover:opacity-20 blur-md'
-              }`}></div>
-              <div className="relative flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
-                  activeTab === 'horas' 
-                    ? 'bg-white/20' 
-                    : 'bg-purple-100 group-hover:bg-purple-200'
-                }`}>
-                  <span className={`text-xl ${
-                    activeTab === 'horas' ? 'text-white' : 'text-purple-600'
-                  }`}>⏰</span>
-                </div>
-                <div className="text-left">
-                  <div className="text-lg font-bold">Horas Trabajadas</div>
-                  <div className={`text-xs ${
-                    activeTab === 'horas' ? 'text-white/80' : 'text-purple-500'
-                  }`}>Resumen mensual</div>
-                </div>
-              </div>
-            </button>
-            
-            <button
-              onClick={() => setActiveTab('permitidas')}
-              className={`group relative w-full sm:w-auto px-8 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                activeTab === 'permitidas'
-                  ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-orange-200'
-                  : 'bg-white text-orange-600 border-2 border-orange-200 hover:border-orange-400 hover:bg-orange-50'
-              }`}
-            >
-              {/* Glow effect */}
-              <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                activeTab === 'permitidas' 
-                  ? 'bg-orange-400 opacity-30 blur-md animate-pulse' 
-                  : 'bg-orange-400 opacity-0 group-hover:opacity-20 blur-md'
-              }`}></div>
-              <div className="relative flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
-                  activeTab === 'permitidas' 
-                    ? 'bg-white/20' 
-                    : 'bg-orange-100 group-hover:bg-orange-200'
-                }`}>
-                  <span className={`text-xl ${
-                    activeTab === 'permitidas' ? 'text-white' : 'text-orange-600'
-                  }`}>📊</span>
-                </div>
-                <div className="text-left">
-                  <div className="text-lg font-bold">Horas Permitidas</div>
-                  <div className={`text-xs ${
-                    activeTab === 'permitidas' ? 'text-white/80' : 'text-orange-500'
-                  }`}>Límites por grupo</div>
-                </div>
-              </div>
-            </button>
-          </div>
+        <div className="fichaje-admin">
+          <SegmentedControl
+            layout="grid"
+            value={activeTab}
+            onChange={setActiveTab}
+            items={[
+              { id: 'personal', label: 'Mi Fichaje', shortLabel: 'Fichaje' },
+              { id: 'empleados', label: 'Equipo', shortLabel: 'Equipo' },
+              { id: 'horas', label: 'Horas', shortLabel: 'Horas' },
+              { id: 'permitidas', label: 'Permitidas', shortLabel: 'Límites' },
+            ]}
+          />
 
+          <div className="fichaje-admin__panel">
           {activeTab === 'personal' ? (
             <MiFichajeScreen 
               onFicharIncidencia={handleFicharIncidencia} 
@@ -10071,215 +9343,143 @@ export default function FichajePage() {
           ) : (
             <HorasPermitidas setNotification={setNotification} />
           )}
-        </Card>
+          </div>
+        </div>
       )}
 
-      {/* Modal ULTRA MODERN pentru Ausencia - Glassmorphism + 3D */}
+      {/* Modal Registrar Ausencia */}
       <Modal
         isOpen={showIncidenciaModal}
         onClose={() => setShowIncidenciaModal(false)}
-        title="Registrar Ausencia"
+        title="Registrar ausencia"
+        size="md"
+        showCloseButton={false}
       >
-        <div className="space-y-8">
-          <div className="text-center">
-            <h3 className="text-2xl sm:text-3xl font-black text-gray-900">Registro de Ausencia</h3>
-            {/* Hora Madrid y ubicación */}
-            <div className="mt-3 flex flex-col items-center gap-1 text-sm text-gray-700">
-              <div>
-                <span className="font-semibold">Hora (Madrid):</span> {madridDate} {madridTime}
-              </div>
-              <div className="max-w-[720px] px-4">
-                <span className="font-semibold">Ubicación:</span> {loadingModalLocation ? 'Obteniendo ubicación...' : (modalAddress || (modalCoords ? `${modalCoords.latitude.toFixed(5)}, ${modalCoords.longitude.toFixed(5)}` : 'Sin ubicación'))}
-              </div>
-            </div>
-          </div>
+        <p className="app-modal__meta">
+          <span><strong>Hora (Madrid):</strong> {madridDate} {madridTime}</span>
+          <span><strong>Ubicación:</strong> {loadingModalLocation ? 'Obteniendo ubicación...' : (modalAddress || (modalCoords ? `${modalCoords.latitude.toFixed(5)}, ${modalCoords.longitude.toFixed(5)}` : 'Sin ubicación'))}</span>
+        </p>
 
-          <div className="p-6 sm:p-8 rounded-3xl border border-white/20 shadow-2xl backdrop-blur-xl bg-white/10">
-            <div className="text-center mb-6">
-              <p className="text-sm font-medium text-gray-700">Elige el tipo de ausencia que mejor se adapte a tu situación</p>
-            </div>
-            {/* Mesaj de avertizare dacă nu există "Ausencias justificada" pentru ziua curentă */}
-            {!hasAusenciaJustificadaHoy && (
-              <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-400 rounded-xl">
-                <div className="flex items-start gap-3">
-                  <span className="text-red-600 text-xl">⚠️</span>
-                  <div>
-                    <h3 className="text-sm font-bold text-red-800 mb-1">
-                      Debes registrar primero una &quot;Ausencias justificada&quot;
-                    </h3>
-                    <p className="text-sm text-red-700">
-                      Para poder registrar &quot;Salida del Centro&quot;, &quot;Regreso al Centro&quot; o &quot;Salida Sin Regreso&quot;, primero debes registrar una &quot;Ausencias justificada&quot; para el día de hoy.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <button
-                onClick={() =>
-                  setIncidenciaForm(f => ({
-                    ...f,
-                    tipo: 'Salida del Centro',
-                    permisoFechaInicio: '',
-                    permisoFechaFin: ''
-                  }))
-                }
-                disabled={!hasAusenciaJustificadaHoy}
-                className={`p-4 rounded-xl font-bold transition-all duration-300 shadow-lg ${
-                  !hasAusenciaJustificadaHoy
-                    ? 'bg-gray-300 text-gray-500 border-2 border-gray-300 cursor-not-allowed opacity-60'
-                    : incidenciaForm.tipo === 'Salida del Centro'
-                    ? 'bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 text-white hover:shadow-xl'
-                    : 'bg-white/90 text-orange-700 border-2 border-orange-300/50 hover:border-orange-400 hover:shadow-xl'
-                }`}
-                title={!hasAusenciaJustificadaHoy ? 'Debes registrar primero una "Ausencias justificada" para el día de hoy' : ''}
-              >
-                <div className="text-center">
-                  <span className="text-3xl block mb-2">🚶‍♂️</span>
-                  <div className="text-lg font-extrabold">Salida del Centro</div>
-                  <div className={`text-xs mt-1 ${incidenciaForm.tipo === 'Salida del Centro' ? 'text-white/90' : 'text-orange-600'}`}>Salir temporalmente</div>
-                </div>
-              </button>
-              <button
-                onClick={() =>
-                  setIncidenciaForm(f => ({
-                    ...f,
-                    tipo: 'Regreso al Centro',
-                    permisoFechaInicio: '',
-                    permisoFechaFin: ''
-                  }))
-                }
-                disabled={!hasAusenciaJustificadaHoy}
-                className={`p-4 rounded-xl font-bold transition-all duration-300 shadow-lg ${
-                  !hasAusenciaJustificadaHoy
-                    ? 'bg-gray-300 text-gray-500 border-2 border-gray-300 cursor-not-allowed opacity-60'
-                    : incidenciaForm.tipo === 'Regreso al Centro'
-                    ? 'bg-gradient-to-br from-blue-500 via-cyan-500 to-teal-500 text-white hover:shadow-xl'
-                    : 'bg-white/90 text-blue-700 border-2 border-blue-300/50 hover:border-blue-400 hover:shadow-xl'
-                }`}
-                title={!hasAusenciaJustificadaHoy ? 'Debes registrar primero una "Ausencias justificada" para el día de hoy' : ''}
-              >
-                <div className="text-center">
-                  <span className="text-3xl block mb-2">🔄</span>
-                  <div className="text-lg font-extrabold">Regreso al Centro</div>
-                  <div className={`text-xs mt-1 ${incidenciaForm.tipo === 'Regreso al Centro' ? 'text-white/90' : 'text-blue-600'}`}>Ya regresé</div>
-                </div>
-              </button>
-              <button
-                onClick={() =>
-                  setIncidenciaForm(f => ({
-                    ...f,
-                    tipo: 'Salida Sin Regreso',
-                    permisoFechaInicio: '',
-                    permisoFechaFin: ''
-                  }))
-                }
-                disabled={!hasAusenciaJustificadaHoy}
-                className={`p-4 rounded-xl font-bold transition-all duration-300 shadow-lg ${
-                  !hasAusenciaJustificadaHoy
-                    ? 'bg-gray-300 text-gray-500 border-2 border-gray-300 cursor-not-allowed opacity-60'
-                    : incidenciaForm.tipo === 'Salida Sin Regreso'
-                    ? 'bg-gradient-to-br from-purple-500 via-pink-500 to-rose-500 text-white hover:shadow-xl'
-                    : 'bg-white/90 text-purple-700 border-2 border-purple-300/50 hover:border-purple-400 hover:shadow-xl'
-                }`}
-                title={!hasAusenciaJustificadaHoy ? 'Debes registrar primero una "Ausencias justificada" para el día de hoy' : ''}
-              >
-                <div className="text-center">
-                  <span className="text-3xl block mb-2">🏠</span>
-                  <div className="text-lg font-extrabold">Salida Sin Regreso</div>
-                  <div className={`text-xs mt-1 ${incidenciaForm.tipo === 'Salida Sin Regreso' ? 'text-white/90' : 'text-purple-600'}`}>No regresa hoy</div>
-                </div>
-              </button>
-            </div>
+        <p className="app-modal__label">Tipo de ausencia</p>
+        {!hasAusenciaJustificadaHoy && (
+          <div className="mb-3">
+            <AlertBanner compact variant="danger" title='Debes registrar primero una "Ausencias justificada"'>
+              Para poder registrar &quot;Salida del Centro&quot;, &quot;Regreso al Centro&quot; o &quot;Salida Sin Regreso&quot;, primero debes registrar una &quot;Ausencias justificada&quot; para el día de hoy.
+            </AlertBanner>
           </div>
-          
-          {/* Info message despre Asunto Propio */}
-          <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-            <div className="flex items-start gap-3">
-              <span className="text-amber-600 text-xl">ℹ️</span>
-              <div>
-                <p className="text-sm font-medium text-amber-800">
-                  <strong>Asunto Propio:</strong> No requiere un registro suplementario si se ha solicitado correctamente en el sistema de solicitudes.
-                </p>
-              </div>
-            </div>
-          </div>
+        )}
 
-          <div className="p-6 sm:p-8 rounded-3xl border border-white/20 shadow-2xl backdrop-blur-xl bg-white/10">
-            <div className="text-center mb-6">
-              <h4 className="text-xl sm:text-2xl font-black text-gray-900">Motivo de la Ausencia</h4>
-              <p className="text-sm text-gray-600 font-medium">Describe el motivo de tu ausencia</p>
-            </div>
-            <div className="mt-2">
-              <label htmlFor="incidencia-motivo-textarea" className="block text-sm font-bold text-gray-700 mb-2">
-                Escribe el motivo {incidenciaForm.tipo === 'Salida del Centro' && <span className="text-red-500">*</span>}
-              </label>
-              <textarea
-                id="incidencia-motivo-textarea"
-                name="motivo"
-                value={incidenciaForm.motivo}
-                onChange={(e) => setIncidenciaForm(f => ({ ...f, motivo: e.target.value }))}
-                placeholder={incidenciaForm.tipo === 'Salida del Centro' ? "El motivo es obligatorio para Salida del Centro..." : "Describe el motivo de la ausencia..."}
-                className={`w-full px-4 py-2 border-2 rounded-xl focus:outline-none focus:ring-4 focus:border-orange-400 bg-white/80 backdrop-blur-sm focus:bg-white transition-all duration-300 font-medium text-gray-800 shadow-lg resize-none ${
-                  incidenciaForm.tipo === 'Salida del Centro' 
-                    ? 'border-orange-400 focus:ring-orange-300/50' 
-                    : 'border-orange-200/50 focus:ring-orange-300/50'
-                }`}
-                rows="2"
-                required={incidenciaForm.tipo === 'Salida del Centro'}
-              />
-              {incidenciaForm.tipo === 'Salida del Centro' && (
-                <p className="text-xs text-red-600 mt-1 font-medium">* Campo obligatorio</p>
-              )}
-            </div>
-          </div>
+        <div className="app-modal__choices mb-3">
+          <button
+            type="button"
+            onClick={() =>
+              setIncidenciaForm(f => ({
+                ...f,
+                tipo: 'Salida del Centro',
+                permisoFechaInicio: '',
+                permisoFechaFin: ''
+              }))
+            }
+            disabled={!hasAusenciaJustificadaHoy}
+            className={`app-modal__choice${incidenciaForm.tipo === 'Salida del Centro' ? ' is-active is-active--warn' : ''}`}
+            title={!hasAusenciaJustificadaHoy ? 'Debes registrar primero una "Ausencias justificada" para el día de hoy' : ''}
+          >
+            <span className="app-modal__choice-label">Salida del Centro</span>
+            <span className="app-modal__choice-hint">Salir temporalmente</span>
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setIncidenciaForm(f => ({
+                ...f,
+                tipo: 'Regreso al Centro',
+                permisoFechaInicio: '',
+                permisoFechaFin: ''
+              }))
+            }
+            disabled={!hasAusenciaJustificadaHoy}
+            className={`app-modal__choice${incidenciaForm.tipo === 'Regreso al Centro' ? ' is-active' : ''}`}
+            title={!hasAusenciaJustificadaHoy ? 'Debes registrar primero una "Ausencias justificada" para el día de hoy' : ''}
+          >
+            <span className="app-modal__choice-label">Regreso al Centro</span>
+            <span className="app-modal__choice-hint">Ya regresé</span>
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setIncidenciaForm(f => ({
+                ...f,
+                tipo: 'Salida Sin Regreso',
+                permisoFechaInicio: '',
+                permisoFechaFin: ''
+              }))
+            }
+            disabled={!hasAusenciaJustificadaHoy}
+            className={`app-modal__choice${incidenciaForm.tipo === 'Salida Sin Regreso' ? ' is-active is-active--danger' : ''}`}
+            title={!hasAusenciaJustificadaHoy ? 'Debes registrar primero una "Ausencias justificada" para el día de hoy' : ''}
+          >
+            <span className="app-modal__choice-label">Salida Sin Regreso</span>
+            <span className="app-modal__choice-hint">No regresa hoy</span>
+          </button>
+        </div>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-end pt-2">
-            <button onClick={() => setShowIncidenciaModal(false)} disabled={isSubmittingIncidencia} className="px-8 py-4 rounded-2xl font-bold transition-all duration-300 shadow-2xl bg-white/80 text-gray-600 border-2 border-gray-200/50">Cancelar</button>
-            {(() => {
-              const tiposValidos = ['Salida del Centro', 'Regreso al Centro', 'Salida Sin Regreso'];
-              const tieneTipoSeleccionado = incidenciaForm.tipo && tiposValidos.includes(incidenciaForm.tipo);
-              const isDisabled = isSubmittingIncidencia || !tieneTipoSeleccionado;
-              
-              return (
-                <button 
-                  onClick={handleSubmitIncidencia} 
-                  disabled={isDisabled} 
-                  className={`px-8 py-4 rounded-2xl font-bold transition-all duration-300 shadow-2xl ${
-                    isDisabled 
-                      ? 'bg-gray-400 text-gray-600 cursor-not-allowed opacity-60' 
-                      : 'bg-gradient-to-br from-red-500 via-pink-500 to-purple-500 text-white hover:shadow-xl'
-                  }`}
-                  title={!tieneTipoSeleccionado ? 'Debes seleccionar un tipo de ausencia antes de registrar' : ''}
-                >
-                  {isSubmittingIncidencia ? 'Registrando...' : 'Registrar Ausencia'}
-                </button>
-              );
-            })()}
-          </div>
+        <div className="mb-3">
+          <AlertBanner compact variant="warning" title="Asunto Propio">
+            No requiere un registro suplementario si se ha solicitado correctamente en el sistema de solicitudes.
+          </AlertBanner>
+        </div>
+
+        <div className="app-modal__field">
+          <label htmlFor="incidencia-motivo-textarea" className="app-modal__label">
+            Motivo {incidenciaForm.tipo === 'Salida del Centro' && <span className="text-red-500">*</span>}
+          </label>
+          <textarea
+            id="incidencia-motivo-textarea"
+            name="motivo"
+            value={incidenciaForm.motivo}
+            onChange={(e) => setIncidenciaForm(f => ({ ...f, motivo: e.target.value }))}
+            placeholder={incidenciaForm.tipo === 'Salida del Centro' ? "El motivo es obligatorio para Salida del Centro..." : "Describe el motivo de la ausencia..."}
+            className="app-modal__input"
+            rows="3"
+            required={incidenciaForm.tipo === 'Salida del Centro'}
+          />
+          {incidenciaForm.tipo === 'Salida del Centro' && (
+            <p className="app-modal__hint">* Campo obligatorio</p>
+          )}
+        </div>
+
+        <div className="app-modal__actions">
+          <button type="button" onClick={() => setShowIncidenciaModal(false)} disabled={isSubmittingIncidencia} className="app-modal__btn">Cancelar</button>
+          {(() => {
+            const tiposValidos = ['Salida del Centro', 'Regreso al Centro', 'Salida Sin Regreso'];
+            const tieneTipoSeleccionado = incidenciaForm.tipo && tiposValidos.includes(incidenciaForm.tipo);
+            const isDisabled = isSubmittingIncidencia || !tieneTipoSeleccionado;
+
+            return (
+              <button
+                type="button"
+                onClick={handleSubmitIncidencia}
+                disabled={isDisabled}
+                className="app-modal__btn app-modal__btn--primary"
+                title={!tieneTipoSeleccionado ? 'Debes seleccionar un tipo de ausencia antes de registrar' : ''}
+              >
+                {isSubmittingIncidencia ? 'Registrando...' : 'Registrar ausencia'}
+              </button>
+            );
+          })()}
         </div>
       </Modal>
-      
 
-      
-      {/* Dialog de Confirmare pentru Ștergere */}
-      {deleteConfirmDialog.isOpen && (
-        <Notification
-          type="error"
-          title="Confirmar Eliminación"
-          message="¿Seguro que quieres borrar este registro? Esta acción no se puede deshacer."
-          isConfirmDialog={true}
-          onConfirm={() => {
-            confirmDelete();
-            setDeleteConfirmDialog({ isOpen: false, registroIndex: null });
-          }}
-          onCancel={() => setDeleteConfirmDialog({ isOpen: false, registroIndex: null })}
-          confirmText="Eliminar"
-          cancelText="Cancelar"
-          duration={0}
-        />
-      )}
+      <ConfirmModal
+        isOpen={deleteConfirmDialog.isOpen}
+        onClose={() => setDeleteConfirmDialog({ isOpen: false, registroIndex: null })}
+        onConfirm={confirmDelete}
+        title="Confirmar eliminación"
+        message="¿Seguro que quieres borrar este registro? Esta acción no se puede deshacer."
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        type="danger"
+      />
       
       {/* Componenta de Notificări */}
       {notification && (

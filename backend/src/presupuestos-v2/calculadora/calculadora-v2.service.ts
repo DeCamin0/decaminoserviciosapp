@@ -1,11 +1,7 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import {
-  CalcParams,
-  DEFAULT_CALC_PARAMS,
-  LineaCalcResult,
-} from './tipos';
+import { CalcParams, DEFAULT_CALC_PARAMS, LineaCalcResult } from './tipos';
 import {
   assertMotorImplemented,
   getMotorDefinition,

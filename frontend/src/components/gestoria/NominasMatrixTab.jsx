@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { routes } from '../../utils/routes';
 import { config } from '../../config/env';
@@ -13,7 +13,7 @@ const MESES = [
 ];
 
 // Helper function pentru maparea erorilor
-const getErrorText = (error, nombreDetectado, empleadoEncontrado) => {
+const getErrorText = (error, nombreDetectado) => {
   if (!error) return null; // Nu e eroare dacă error este null
   
   if (error === 'nombre_no_detectado') {
@@ -21,7 +21,7 @@ const getErrorText = (error, nombreDetectado, empleadoEncontrado) => {
   } else if (error === 'employee_not_found') {
     return `Empleado "${nombreDetectado || 'N/A'}" no encontrado`;
   } else if (error === 'duplicate') {
-    return `Duplicado para ${empleadoEncontrado || nombreDetectado || 'N/A'}`;
+    return null;
   } else if (error === 'mes_o_ano_no_detectado') {
     return 'Mes o año no detectado';
   } else if (error.startsWith('fecha_baja_establecida:')) {
@@ -30,8 +30,8 @@ const getErrorText = (error, nombreDetectado, empleadoEncontrado) => {
     const fechaOk =
       fechaBaja &&
       !/undefined|null|invalid/i.test(fechaBaja) &&
-      (/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}/.test(fechaBaja) ||
-        /\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}/.test(fechaBaja));
+      (/\d{1,2}[/-]\d{1,2}[/-]\d{4}/.test(fechaBaja) ||
+        /\d{4}[/-]\d{1,2}[/-]\d{1,2}/.test(fechaBaja));
     return fechaOk
       ? `Empleado tiene FECHA BAJA establecida (${fechaBaja}). No se puede subir ${config.NOMINAS_LABEL_SINGULAR}.`
       : `Empleado tiene FECHA BAJA establecida. No se puede subir ${config.NOMINAS_LABEL_SINGULAR}.`;
@@ -95,6 +95,11 @@ export default function NominasMatrixTab() {
   const [accesosLoading, setAccesosLoading] = useState(false);
   const [selectedNominaId, setSelectedNominaId] = useState(null);
   const [downloadingAllCodigo, setDownloadingAllCodigo] = useState(null);
+
+  const topScrollRef = useRef(null);
+  const tableScrollRef = useRef(null);
+  const [tableScrollWidth, setTableScrollWidth] = useState(0);
+  const [hasTableOverflow, setHasTableOverflow] = useState(false);
 
   // Căutare și filtrare
   const filteredEmpleados = useMemo(() => {
@@ -163,6 +168,62 @@ export default function NominasMatrixTab() {
 
     return filtered;
   }, [empleados, searchTerm, centroFilter, showPendientes, filterByNomina]);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      const container = tableScrollRef.current;
+      if (!container) return;
+      const contentWidth = container.scrollWidth;
+      const visibleWidth = container.clientWidth;
+      setTableScrollWidth(contentWidth);
+      setHasTableOverflow(contentWidth > visibleWidth + 1);
+    };
+
+    const rafId = requestAnimationFrame(updateWidth);
+    window.addEventListener('resize', updateWidth);
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', updateWidth);
+    };
+  }, [filteredEmpleados, loading]);
+
+  useEffect(() => {
+    const topEl = topScrollRef.current;
+    const tableEl = tableScrollRef.current;
+    if (!topEl || !tableEl) return;
+
+    let syncingFromTop = false;
+    let syncingFromTable = false;
+
+    const handleTopScroll = () => {
+      if (syncingFromTable) {
+        syncingFromTable = false;
+        return;
+      }
+      if (!tableScrollRef.current) return;
+      syncingFromTop = true;
+      tableScrollRef.current.scrollLeft = topEl.scrollLeft;
+    };
+
+    const handleTableScroll = () => {
+      if (syncingFromTop) {
+        syncingFromTop = false;
+        return;
+      }
+      if (!topScrollRef.current) return;
+      syncingFromTable = true;
+      topScrollRef.current.scrollLeft = tableEl.scrollLeft;
+    };
+
+    topEl.addEventListener('scroll', handleTopScroll);
+    tableEl.addEventListener('scroll', handleTableScroll);
+    return () => {
+      topEl.removeEventListener('scroll', handleTopScroll);
+      tableEl.removeEventListener('scroll', handleTableScroll);
+    };
+  }, [filteredEmpleados.length, loading, hasTableOverflow]);
+
+  const topScrollContentWidth = tableScrollWidth > 0 ? `${tableScrollWidth}px` : '100%';
 
   // Încărcare date
   const fetchData = useCallback(async () => {
@@ -816,10 +877,10 @@ export default function NominasMatrixTab() {
   return (
     <div className="space-y-4">
       {/* Header con controles */}
-      <div className="bg-gradient-to-r from-green-50 to-green-100 p-4 rounded-xl border border-green-200">
+      <div className="app-card app-card--pad">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <h2 className="text-xl font-bold text-gray-900">💰 Gestión de {N}</h2>
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Gestión de {N}</h2>
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(parseInt(e.target.value))}
@@ -903,9 +964,9 @@ export default function NominasMatrixTab() {
       <div className="mb-4 flex justify-end">
         <button
           onClick={() => setShowBulkUploadModal(true)}
-          className="px-6 py-3 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-xl font-semibold hover:from-purple-600 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all transform hover:scale-105 flex items-center gap-2"
+          className="solicitud-admin-btn solicitud-admin-btn--primary inline-flex items-center gap-2"
         >
-          📦 Subir Múltiples {N}
+          Subir múltiples {N}
         </button>
       </div>
 
@@ -949,9 +1010,22 @@ export default function NominasMatrixTab() {
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto">
+          <div
+            ref={topScrollRef}
+            className="app-table-scroll-top"
+            style={{
+              height: hasTableOverflow ? 20 : 0,
+              marginBottom: hasTableOverflow ? 8 : 0,
+              border: hasTableOverflow ? undefined : 'none',
+              overflow: hasTableOverflow ? 'auto' : 'hidden',
+            }}
+            aria-hidden="true"
+          >
+            <div style={{ width: topScrollContentWidth, height: 1 }} />
+          </div>
+          <div ref={tableScrollRef} className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gradient-to-r from-green-500 to-green-600 text-white sticky top-0">
+              <thead className="bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 sticky top-0">
                 <tr>
                   <th className="px-4 py-3 text-left font-bold sticky left-0 bg-green-600 z-10 min-w-[200px]">
                     Empleado
@@ -1484,9 +1558,8 @@ export default function NominasMatrixTab() {
                 <div className="bg-green-50 border border-green-200 rounded-xl p-4">
                   <div className="text-sm text-green-600 font-medium">Listas para Subir</div>
                   <div className="text-3xl font-bold text-green-700">
-                    {bulkPreviewData.procesadas + (bulkPreviewData.detalle?.filter((item, idx) => 
-                      (item.error === 'duplicate' && forceReplaceItems.has(idx)) ||
-                      (item.error && item.error.startsWith('fecha_baja_establecida:') && forceFechaBajaItems.has(idx))
+                    {bulkPreviewData.procesadas + (bulkPreviewData.detalle?.filter((item, idx) =>
+                      item.error && item.error.startsWith('fecha_baja_establecida:') && forceFechaBajaItems.has(idx)
                     ).length || 0)}
                   </div>
                 </div>
@@ -1549,13 +1622,11 @@ export default function NominasMatrixTab() {
                         <tr key={idx} className={
                           item.inserted 
                             ? 'bg-green-50' 
-                            : item.error === 'duplicate' 
-                              ? 'bg-yellow-50' 
-                              : item.error 
-                                ? 'bg-red-50' 
-                                : item.empleado_encontrado && item.codigo 
-                                  ? 'bg-green-50' 
-                                  : 'bg-gray-50'
+                            : item.error && item.error !== 'duplicate'
+                              ? 'bg-red-50' 
+                              : item.empleado_encontrado && item.codigo 
+                                ? 'bg-green-50' 
+                                : 'bg-gray-50'
                         }>
                           <td className="px-3 py-2 text-xs text-gray-600">
                             {item.nombre_archivo ? (
@@ -1652,33 +1723,15 @@ export default function NominasMatrixTab() {
                             <div className="space-y-1">
                               {item.inserted ? (
                                 <span className="text-green-600 font-semibold">✅ Listo</span>
-                              ) : item.error === 'duplicate' ? (
-                                <div className="flex flex-col gap-1">
-                                  {forceReplaceItems.has(idx) ? (
-                                    <span className="text-green-600 font-semibold">✅ Listo para subir (reemplazar)</span>
-                                  ) : (
-                                    <>
-                                      <span className="text-yellow-600 font-semibold">⚠️ Duplicado</span>
-                                      <button
-                                        onClick={() => {
-                                          const newSet = new Set(forceReplaceItems);
-                                          newSet.add(idx);
-                                          setForceReplaceItems(newSet);
-                                        }}
-                                        className="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
-                                      >
-                                        Marcar para reemplazar
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
+                              ) : item.ya_existe_otra || item.error === 'duplicate' ? (
+                                <span className="text-green-600 font-semibold">✅ Listo para subir</span>
                               ) : item.error && item.error.startsWith('fecha_baja_establecida:') ? (
                                 <div className="flex flex-col gap-1">
                                   {forceFechaBajaItems.has(idx) ? (
                                     <span className="text-green-600 font-semibold">✅ Listo para subir (con FECHA BAJA)</span>
                                   ) : (
                                     <>
-                                      <span className="text-red-600 font-semibold">❌ {getErrorText(item.error, item.nombre_detectado, item.empleado_encontrado)}</span>
+                                      <span className="text-red-600 font-semibold">❌ {getErrorText(item.error, item.nombre_detectado)}</span>
                                       <button
                                         onClick={() => {
                                           const newSet = new Set(forceFechaBajaItems);
@@ -1694,7 +1747,7 @@ export default function NominasMatrixTab() {
                                 </div>
                               ) : item.error ? (
                                 <span className="text-red-600 font-semibold" title={item.error || 'Error'}>
-                                  ❌ {getErrorText(item.error, item.nombre_detectado, item.empleado_encontrado)}
+                                  ❌ {getErrorText(item.error, item.nombre_detectado)}
                                 </span>
                               ) : item.empleado_encontrado && item.codigo ? (
                                 <span className="text-green-600 font-semibold">✅ Listo para subir</span>
@@ -1720,14 +1773,24 @@ export default function NominasMatrixTab() {
                 </div>
               </div>
 
-              {/* Resumen de errores */}
-              {bulkPreviewData.erori > 0 && (
+              {/* Resumen de errores (excluye avisos multi-contrato) */}
+              {bulkPreviewData.detalle?.some(item =>
+                !item.inserted &&
+                item.error &&
+                item.error !== 'duplicate' &&
+                !item.ya_existe_otra
+              ) && (
                 <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg mb-4">
                   <div className="font-semibold mb-2">⚠️ Errores encontrados:</div>
                   <ul className="list-disc list-inside text-sm space-y-1">
-                    {bulkPreviewData.detalle?.filter(item => !item.inserted && item.error).map((item, idx) => {
-                      const errorText = getErrorText(item.error, item.nombre_detectado, item.empleado_encontrado);
-                      if (!errorText) return null; // Skip dacă nu e eroare
+                    {bulkPreviewData.detalle?.filter(item =>
+                      !item.inserted &&
+                      item.error &&
+                      item.error !== 'duplicate' &&
+                      !item.ya_existe_otra
+                    ).map((item, idx) => {
+                      const errorText = getErrorText(item.error, item.nombre_detectado);
+                      if (!errorText) return null;
                       return (
                         <li key={idx}>
                           Página {item.pagina}: {errorText}
@@ -1737,6 +1800,7 @@ export default function NominasMatrixTab() {
                   </ul>
                 </div>
               )}
+
             </div>
 
             <div className="p-6 border-t border-gray-200 bg-gray-50">
@@ -1752,16 +1816,14 @@ export default function NominasMatrixTab() {
                 </button>
                 <button
                   onClick={handleConfirmBulkUpload}
-                  disabled={bulkUploading || (bulkPreviewData.procesadas + (bulkPreviewData.detalle?.filter((item, idx) => 
-                    (item.error === 'duplicate' && forceReplaceItems.has(idx)) ||
-                    (item.error && item.error.startsWith('fecha_baja_establecida:') && forceFechaBajaItems.has(idx))
+                  disabled={bulkUploading || (bulkPreviewData.procesadas + (bulkPreviewData.detalle?.filter((item, idx) =>
+                    item.error && item.error.startsWith('fecha_baja_establecida:') && forceFechaBajaItems.has(idx)
                   ).length || 0)) === 0}
                   className="flex-1 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-semibold"
                 >
-                  {bulkUploading ? 'Subiendo...' : `Confirmar y Subir (${bulkPreviewData.procesadas + (bulkPreviewData.detalle?.filter((item, idx) => 
-                    (item.error === 'duplicate' && forceReplaceItems.has(idx)) ||
-                    (item.error && item.error.startsWith('fecha_baja_establecida:') && forceFechaBajaItems.has(idx))
-                  ).length || 0)} {N})`}
+                  {bulkUploading ? 'Subiendo...' : `Confirmar y Subir (${bulkPreviewData.procesadas + (bulkPreviewData.detalle?.filter((item, idx) =>
+                    item.error && item.error.startsWith('fecha_baja_establecida:') && forceFechaBajaItems.has(idx)
+                  ).length || 0)} ${N})`}
                 </button>
               </div>
             </div>

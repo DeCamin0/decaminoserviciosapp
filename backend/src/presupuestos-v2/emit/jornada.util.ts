@@ -122,7 +122,9 @@ function guessDaysFromLabel(label: string): number {
 }
 
 /** Client-facing lines for PDF / UI. */
-export function formatJornadaLines(jornada: JornadaOpcion | null | undefined): string[] {
+export function formatJornadaLines(
+  jornada: JornadaOpcion | null | undefined,
+): string[] {
   if (!jornada) return [];
   const lines: string[] = [];
   if (jornada.horas_semana != null) {
@@ -131,9 +133,7 @@ export function formatJornadaLines(jornada: JornadaOpcion | null | undefined): s
   for (const t of jornada.tramos || []) {
     const label = t.dias_label || (t.dias || []).join(', ');
     const slot =
-      t.hora_inicio && t.hora_fin
-        ? `${t.hora_inicio}–${t.hora_fin}`
-        : '';
+      t.hora_inicio && t.hora_fin ? `${t.hora_inicio}–${t.hora_fin}` : '';
     if (label && slot) lines.push(`${label}: ${slot}`);
     else if (label) lines.push(label);
     else if (slot) lines.push(slot);

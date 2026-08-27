@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Card, Button, Input } from '../components/ui';
+import { Card, Button, Input, PageHeader, SegmentedControl } from '../components/ui';
 import {
   ProductListItem,
   StickyCartBar,
@@ -9,12 +9,16 @@ import {
   extractFrequentProductIdsFromPedidos,
   sumQtyForProduct,
   lineasAfterSetProductQty,
+  PedidosStatusBadge,
+  PedidosLoadingState,
+  PedidosEmptyState,
+  pedidosItemsPreview,
+  EmpleadoPedidoRowActions,
   type PedidoCatalogProduct,
 } from '../components/pedidos';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
-import { Link } from 'react-router';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, ShoppingCart, ClipboardList, RefreshCw, Loader2, CheckCircle2, XCircle, AlertTriangle, Info } from 'lucide-react';
 import { config } from '../config/env';
 import heic2any from 'heic2any';
 import {
@@ -252,17 +256,18 @@ const ToastComponent: React.FC<{ toast: Toast; onClose: (id: string) => void }> 
   };
 
   const getIcon = () => {
+    const cls = 'w-5 h-5 shrink-0';
     switch (toast.type) {
       case 'success':
-        return '✅';
+        return <CheckCircle2 className={cls} aria-hidden />;
       case 'error':
-        return '❌';
+        return <XCircle className={cls} aria-hidden />;
       case 'warning':
-        return '⚠️';
+        return <AlertTriangle className={cls} aria-hidden />;
       case 'info':
-        return 'ℹ️';
+        return <Info className={cls} aria-hidden />;
       default:
-        return '📢';
+        return <Info className={cls} aria-hidden />;
     }
   };
 
@@ -274,7 +279,7 @@ const ToastComponent: React.FC<{ toast: Toast; onClose: (id: string) => void }> 
     >
       <div className="flex items-start justify-between">
         <div className="flex items-start">
-          <span className="text-lg mr-2">{getIcon()}</span>
+          <span className="mr-2 shrink-0">{getIcon()}</span>
           <div>
             <h4 className="font-semibold">{toast.title}</h4>
             <p className="text-sm mt-1">{toast.message}</p>
@@ -407,89 +412,51 @@ const EmpleadoPedidosPage: React.FC = () => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
 
+  const empleadoTabItems = useMemo(() => {
+    const items = [];
+    if (hasDerechoPedidos) {
+      items.push({
+        id: 'nuevo-pedido',
+        label: 'Nuevo Pedido',
+        shortLabel: 'Nuevo',
+        icon: <ShoppingCart className="w-4 h-4" aria-hidden />,
+      });
+    }
+    items.push({
+      id: 'mis-pedidos',
+      label: 'Mis Pedidos',
+      shortLabel: 'Mis',
+      icon: <ClipboardList className="w-4 h-4" aria-hidden />,
+    });
+    return items;
+  }, [hasDerechoPedidos]);
+
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-7xl mx-auto">
-        {/* Banner cu instrucțiuni (note) */}
-        <BannerNotasInstrucciones />
-        
-        {/* Header */}
-        <div className="mb-8">
-          <Link 
-            to="/inicio" 
-            className="group flex items-center gap-2 text-red-600 hover:text-red-700 transition-colors duration-200 mb-4"
-          >
-            <div className="relative">
-              <div className="absolute inset-0 bg-red-100 rounded-full blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-              <div className="relative w-8 h-8 bg-red-500 rounded-full flex items-center justify-center shadow-md hover:shadow-lg transform hover:scale-110 transition-all duration-200">
-                <span className="text-white font-bold text-sm">←</span>
-              </div>
-            </div>
-            <span className="text-sm font-medium">Volver a Inicio</span>
-          </Link>
-          
-          <div className="text-center">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">🛒 Pedidos</h1>
-            <p className="text-gray-600">Gestiona tus pedidos</p>
-          </div>
-        </div>
+    <div className="pedidos-page app-page pedidos-page--empleado">
+      <BannerNotasInstrucciones />
 
-        {/* Tabs */}
-        <Card className="mb-6">
-          <div className="flex flex-wrap gap-3 p-4">
-            {/* Tab "Nuevo Pedido" - afișat doar dacă are DerechoPedidos */}
-            {hasDerechoPedidos && (
-              <button
-                onClick={() => setActiveTab('nuevo-pedido')}
-                className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                  activeTab === 'nuevo-pedido'
-                    ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200'
-                    : 'bg-white text-red-600 border-2 border-red-200 hover:border-red-400 hover:bg-red-50'
-                }`}
-              >
-                <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                  activeTab === 'nuevo-pedido' 
-                    ? 'bg-red-400 opacity-30 blur-md animate-pulse' 
-                    : 'bg-red-400 opacity-0 group-hover:opacity-20 blur-md'
-                }`}></div>
-                <div className="relative flex items-center gap-2">
-                  <span className="text-xl">🛒</span>
-                  <span>Nuevo Pedido</span>
-                </div>
-              </button>
-            )}
-            
-            {/* Tab "Mis Pedidos" - mereu vizibil pentru toți */}
-            <button
-              onClick={() => setActiveTab('mis-pedidos')}
-              className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                activeTab === 'mis-pedidos'
-                  ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200'
-                  : 'bg-white text-blue-600 border-2 border-blue-200 hover:border-blue-400 hover:bg-blue-50'
-              }`}
-            >
-              <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                activeTab === 'mis-pedidos' 
-                  ? 'bg-blue-400 opacity-30 blur-md animate-pulse' 
-                  : 'bg-blue-400 opacity-0 group-hover:opacity-20 blur-md'
-              }`}></div>
-              <div className="relative flex items-center gap-2">
-                <span className="text-xl">📋</span>
-                <span>Mis Pedidos</span>
-              </div>
-            </button>
-          </div>
-        </Card>
+      <PageHeader
+        title="Pedidos"
+        subtitle="Gestiona tus pedidos"
+        backTo="/inicio"
+        backTitle="Volver a Inicio"
+      />
 
-        {/* Content */}
-        {activeTab === 'nuevo-pedido' ? (
+      <SegmentedControl
+        items={empleadoTabItems}
+        value={activeTab}
+        onChange={setActiveTab}
+        className="pedidos-page__tabs"
+      />
+
+      <div className="pedidos-page__content">
+        {activeTab === 'nuevo-pedido' && hasDerechoPedidos ? (
           <TabNuevoPedido addToast={addToast} />
         ) : (
           <TabMisPedidos addToast={addToast} />
         )}
       </div>
-      
-      {/* Container pentru notificări */}
+
       <ToastContainer toasts={toasts} onClose={removeToast} />
     </div>
   );
@@ -2048,40 +2015,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
     }
   };
 
-  // Funcții pentru stilizarea stării
-  const getEstadoColor = (estado: string) => {
-    switch (estado?.toLowerCase()) {
-      case 'aprobado':
-        return 'bg-green-100 text-green-800 border-green-300';
-      case 'rechazado':
-        return 'bg-red-100 text-red-800 border-red-300';
-      case 'pendiente':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-      case 'entregado':
-        return 'bg-blue-100 text-blue-800 border-blue-300';
-      case 'enviado':
-        return 'bg-indigo-100 text-indigo-800 border-indigo-300';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-300';
-    }
-  };
-
-  const getEstadoTexto = (estado: string) => {
-    switch (estado?.toLowerCase()) {
-      case 'aprobado':
-        return '✅ Aprobado';
-      case 'rechazado':
-        return '❌ Rechazado';
-      case 'pendiente':
-        return '⏳ Pendiente';
-      case 'entregado':
-        return '📦 Entregado';
-      case 'enviado':
-        return '🚚 Enviado';
-      default:
-        return estado || 'Desconocido';
-    }
-  };
+  // Funcții pentru stilizarea stării — PedidosStatusBadge (pedidosUi)
 
   // Selecție unul sau mai multe fișiere pentru albarán
   const handleAlbaranFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -2508,81 +2442,69 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
   }, [loadPedidos]);
 
   return (
-    <div className="space-y-6">
-      {/* Buton de actualizare */}
+    <div className="space-y-4">
       <div className="flex justify-end">
-        <button
-          onClick={() => loadPedidos()}
-          className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors duration-200"
-          title="Actualizar pedidos"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-        </button>
+        <Button type="button" variant="secondary" size="sm" className="min-h-[44px]" onClick={() => loadPedidos()} disabled={loading}>
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : <RefreshCw className="w-4 h-4" aria-hidden />}
+          Actualizar
+        </Button>
       </div>
 
-      {/* Lista de pedidos */}
       {loading ? (
-        <Card>
-          <div className="p-12 text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Cargando pedidos...</p>
-          </div>
-        </Card>
+        <PedidosLoadingState />
       ) : pedidos.length === 0 ? (
-        <Card>
-          <div className="p-12 text-center">
-            <div className="text-6xl mb-4">📦</div>
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">No hay pedidos</h3>
-            <p className="text-gray-500">No se encontraron pedidos con los filtros seleccionados.</p>
-          </div>
-        </Card>
+        <PedidosEmptyState title="No hay pedidos" message="Aún no tienes pedidos registrados." />
       ) : (
-        <div className="space-y-4">
+        <div className="pedidos-list">
           {pedidos.map((pedido: Pedido) => (
-            <Card key={pedido.pedido_uid} className="overflow-hidden">
-              <div className="p-6">
-                {/* Header del pedido */}
-                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4 pb-4 border-b">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-lg font-bold text-gray-800">Pedido: {pedido.pedido_uid}</h3>
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${getEstadoColor(pedido.estado)}`}>
-                        {getEstadoTexto(pedido.estado)}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600">
-                      <div><strong>Comunidad:</strong> {pedido.comunidad?.nombre || 'N/A'}</div>
-                      <div><strong>Fecha:</strong> {formatDate(pedido.fecha)}</div>
-                      {pedido.fecha_envio && (
-                        <div><strong>Fecha de Envío:</strong> {formatDate(pedido.fecha_envio)}</div>
-                      )}
-                      {pedido.aprobado_por && (
-                        <div className="text-green-600">
-                          <strong>✅ Aprobado por:</strong> {pedido.aprobado_por}
-                          {pedido.aprobado_en && ` el ${formatDate(pedido.aprobado_en)}`}
-                        </div>
-                      )}
-                      {pedido.rechazado_por && (
-                        <div className="text-red-600">
-                          <strong>❌ Rechazado por:</strong> {pedido.rechazado_por}
-                          {pedido.rechazado_en && ` el ${formatDate(pedido.rechazado_en)}`}
-                        </div>
-                      )}
-                    </div>
-                    {pedido.notas && (
-                      <div className="mt-2 text-sm text-gray-600">
-                        <strong>Notas:</strong> {pedido.notas}
-                      </div>
-                    )}
-                  </div>
+            <article key={pedido.pedido_uid} className="app-card pedidos-list-row">
+              <div className="pedidos-list-row__head">
+                <div className="min-w-0">
+                  <p className="pedidos-list-row__id">{pedido.pedido_uid}</p>
+                  <p className="pedidos-list-row__meta">
+                    {pedido.comunidad?.nombre || 'N/A'} · {formatDate(pedido.fecha)}
+                  </p>
+                  <p className="pedidos-list-row__items-preview">{pedidosItemsPreview(pedido.items)}</p>
                 </div>
+                <PedidosStatusBadge estado={pedido.estado} compact />
+              </div>
+              <div className="pedidos-list-row__body">
+                {pedido.fecha_envio ? (
+                  <p className="text-xs text-gray-500 mb-2"><strong>Envío:</strong> {formatDate(pedido.fecha_envio)}</p>
+                ) : null}
+                {pedido.aprobado_por ? (
+                  <p className="text-xs text-green-700 mb-1">Aprobado por: {pedido.aprobado_por}{pedido.aprobado_en ? ` · ${formatDate(pedido.aprobado_en)}` : ''}</p>
+                ) : null}
+                {pedido.rechazado_por ? (
+                  <p className="text-xs text-red-700 mb-1">Rechazado por: {pedido.rechazado_por}{pedido.rechazado_en ? ` · ${formatDate(pedido.rechazado_en)}` : ''}</p>
+                ) : null}
+                {pedido.notas ? (
+                  <p className="text-sm text-gray-600 mb-2"><strong>Notas:</strong> {pedido.notas}</p>
+                ) : null}
+
+                <EmpleadoPedidoRowActions
+                  estado={pedido.estado}
+                  detallesOpen={pedidoSeleccionado === pedido.pedido_uid}
+                  onToggleDetalles={() => {
+                    setPedidoSeleccionado(
+                      pedidoSeleccionado === pedido.pedido_uid ? null : pedido.pedido_uid,
+                    );
+                  }}
+                  onEditar={() => abrirEditarPedido(pedido)}
+                  onAlbaran={() => {
+                    if (pedido.estado?.toLowerCase() === 'entregado') {
+                      setPedidoViendoAlbaran(pedido.pedido_uid);
+                    } else {
+                      setPedidoCargandoAlbaran(pedido.pedido_uid);
+                    }
+                  }}
+                  onAnadirAlbaran={() => setPedidoCargandoAlbaran(pedido.pedido_uid)}
+                />
 
                 {/* Detalii produse */}
                 {pedidoSeleccionado === pedido.pedido_uid && pedido.items && pedido.items.length > 0 && (
-                  <div className="mt-4 pt-4 border-t">
-                    <h4 className="font-semibold text-gray-700 mb-3">Productos:</h4>
+                  <div className="pedidos-detail-table mt-3 pt-3 border-t border-[var(--app-border,#e5e7eb)]">
+                    <h4 className="pedidos-detail-table__title">Productos</h4>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
@@ -2606,88 +2528,33 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                   </div>
                 )}
 
-                {/* Butoane pentru a vedea/ascunde detalii și editare */}
-                <div className="mt-4 flex gap-2 flex-wrap">
-                  <Button
-                    onClick={() => {
-                      setPedidoSeleccionado(pedidoSeleccionado === pedido.pedido_uid ? null : pedido.pedido_uid);
-                    }}
-                    className="bg-gray-600 hover:bg-gray-700 text-white"
-                    size="sm"
-                  >
-                    {pedidoSeleccionado === pedido.pedido_uid ? '👁️ Ocultar Detalles' : '👁️ Ver Detalles'}
-                  </Button>
-                  {pedido.estado?.toLowerCase() === 'pendiente' && (
-                    <Button
-                      onClick={() => abrirEditarPedido(pedido)}
-                      className="bg-blue-600 hover:bg-blue-700 text-white"
-                      size="sm"
-                    >
-                      ✏️ Editar
-                    </Button>
-                  )}
-                  {/* Ver albarán (entregado) vs Cargar albarán (aprobado/enviado) */}
-                  {(pedido.estado?.toLowerCase() === 'aprobado' || pedido.estado?.toLowerCase() === 'enviado' || pedido.estado?.toLowerCase() === 'entregado') && (
-                    <Button
-                      onClick={() => {
-                        if (pedido.estado?.toLowerCase() === 'entregado') {
-                          setPedidoViendoAlbaran(pedido.pedido_uid);
-                        } else {
-                          setPedidoCargandoAlbaran(pedido.pedido_uid);
-                        }
-                      }}
-                      className="bg-green-600 hover:bg-green-700 text-white"
-                      size="sm"
-                    >
-                      📄 {pedido.estado?.toLowerCase() === 'entregado' ? 'Ver Albarán' : 'Cargar Albarán'}
-                    </Button>
-                  )}
-                  {pedido.estado?.toLowerCase() === 'entregado' && (
-                    <Button
-                      onClick={() => setPedidoCargandoAlbaran(pedido.pedido_uid)}
-                      className="bg-white border-2 border-green-600 text-green-800 hover:bg-green-50"
-                      size="sm"
-                      title="Subir más documentos de albarán"
-                    >
-                      ➕ Añadir albarán
-                    </Button>
-                  )}
-                </div>
-
                 {/* Avis de atenționare pentru albarán */}
                 {(pedido.estado?.toLowerCase() === 'aprobado' || pedido.estado?.toLowerCase() === 'enviado' || pedido.estado?.toLowerCase() === 'entregado') && (
-                  <div className="mt-3 p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded-r">
-                    <div className="flex items-start">
-                      <div className="flex-shrink-0">
-                        <span className="text-yellow-600 text-lg">⚠️</span>
-                      </div>
-                      <div className="ml-3">
-                        <p className="text-sm text-yellow-800 font-medium">
-                          Importante: Antes de firmar el albarán, verifica que:
-                        </p>
-                        <ul className="mt-1 text-sm text-yellow-700 list-disc list-inside space-y-1">
-                          <li>Los productos recibidos coinciden con el pedido</li>
-                          <li>Las cantidades son correctas</li>
-                          <li>El estado de los productos es adecuado</li>
-                          <li>No hay daños ni faltantes</li>
-                        </ul>
-                      </div>
-                    </div>
+                  <div className="pedidos-callout pedidos-callout--warn mt-3">
+                    <p className="text-sm font-medium">
+                      Importante: Antes de firmar el albarán, verifica que:
+                    </p>
+                    <ul className="mt-1 text-sm list-disc list-inside space-y-1 opacity-90">
+                      <li>Los productos recibidos coinciden con el pedido</li>
+                      <li>Las cantidades son correctas</li>
+                      <li>El estado de los productos es adecuado</li>
+                      <li>No hay daños ni faltantes</li>
+                    </ul>
                   </div>
                 )}
               </div>
-            </Card>
+            </article>
           ))}
         </div>
       )}
 
       {/* Modal de editare pentru comenzile pendiente */}
       {pedidoEditando && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="pedidos-modal-overlay fixed inset-0 flex items-center justify-center z-50 p-4">
+          <div className="pedidos-modal-panel bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-bold text-gray-800">✏️ Editar Pedido: {(pedidoEditando || '').replace(/^=+/, '')}</h2>
+                <h2 className="text-2xl font-bold text-gray-800">Editar pedido: {(pedidoEditando || '').replace(/^=+/, '')}</h2>
                 <button
                   onClick={() => {
                     setPedidoEditando(null);
@@ -2894,7 +2761,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                   size="sm"
                   disabled={guardando || productosNuevos.length === 0}
                 >
-                  {guardando ? 'Guardando...' : '💾 Guardar Cambios'}
+                  {guardando ? 'Guardando…' : 'Guardar cambios'}
                 </Button>
               </div>
             </div>
@@ -2904,10 +2771,10 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
 
       {/* Modal Ver Albarán (vizualizare când pedido ya entregado) */}
       {pedidoViendoAlbaran && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="pedidos-modal-overlay fixed inset-0 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
             <div className="flex justify-between items-center p-4 border-b">
-              <h2 className="text-xl font-bold text-gray-800">📄 Ver Albarán</h2>
+              <h2 className="text-xl font-bold text-gray-800">Ver albarán</h2>
               <button
                 type="button"
                 onClick={() => {
@@ -3000,7 +2867,7 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                         return (
                           <div className="p-8 text-center">
                             <p className="text-gray-600 mb-2">
-                              📄 <strong>{albaranViewName}</strong>
+                              <strong>{albaranViewName}</strong>
                             </p>
                             <p className="text-sm text-gray-500 mb-4">
                               Vista previa no disponible para este formato (p. ej. HEIC). Use el botón{' '}
@@ -3072,10 +2939,10 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
 
       {/* Modal pentru upload albarán */}
       {pedidoCargandoAlbaran && (
-        <div className="fixed inset-0 z-[10060] flex items-end landscape:items-center justify-center bg-black/50 p-0 landscape:p-2 sm:p-4">
+        <div className="pedidos-modal-overlay pedidos-modal-overlay--sheet fixed inset-0 z-[10060] flex items-end landscape:items-center justify-center p-0 landscape:p-2 sm:p-4">
           <div className="bg-white rounded-t-2xl landscape:rounded-lg sm:rounded-lg shadow-xl max-w-2xl landscape:max-w-4xl w-full max-h-[min(92dvh,100%)] landscape:max-h-[min(96dvh,100%)] flex flex-col overflow-hidden">
             <div className="flex-shrink-0 flex justify-between items-center gap-3 px-4 sm:px-6 pt-4 sm:pt-6 pb-3 border-b border-gray-100">
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-800">📄 Cargar Albarán</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Cargar albarán</h2>
               <button
                 type="button"
                 onClick={() => {
@@ -3257,7 +3124,7 @@ const BannerNotasInstrucciones: React.FC = () => {
       <button
         type="button"
         onClick={() => setAvisosAbiertos((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 rounded-xl border border-purple-200/90 bg-gradient-to-r from-purple-50/95 to-white px-4 py-3 text-left shadow-sm transition hover:from-purple-100/90 hover:to-purple-50/80 dark:border-purple-900/50 dark:from-zinc-900 dark:to-zinc-900/95 dark:hover:from-zinc-800 dark:hover:to-zinc-900"
+        className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--app-border)] bg-white px-4 py-3 text-left transition hover:bg-gray-50 dark:bg-zinc-900 dark:hover:bg-zinc-800 min-h-[44px]"
         aria-expanded={avisosAbiertos}
         id="avisos-pedidos-toggle"
       >
@@ -3286,7 +3153,7 @@ const BannerNotasInstrucciones: React.FC = () => {
           {notas.map((nota) => (
             <Card
               key={nota.id}
-              className="border-l-[3px] border-purple-400 bg-gradient-to-r from-purple-50/80 to-white shadow-sm transition-shadow dark:border-l-purple-500 dark:from-zinc-900/90 dark:to-zinc-950 dark:shadow-none"
+              className="app-card app-card--pad border-l-[3px] border-[var(--primary-color)]"
             >
               <div className="p-4">
                 <div className="flex items-start gap-3">

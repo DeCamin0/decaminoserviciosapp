@@ -1,7 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContextBase';
-import { Button, Input, Card, Modal } from '../components/ui';
+import { Button, Input, Modal, PageHeader, AlertBanner, SegmentedControl } from '../components/ui';
+import {
+  Eye, Mail, Key, File, Archive, ClipboardList, CheckSquare, UserX, X, RefreshCw,
+  FileSpreadsheet, FileText, MoreHorizontal,
+} from 'lucide-react';
 import Notification from '../components/ui/Notification';
 import { useLoadingState } from '../hooks/useLoadingState';
 import { 
@@ -10,9 +14,8 @@ import {
 import { useApi } from '../hooks/useApi';
 import { SHEET_FIELDS, API_ENDPOINTS } from '../utils/constants';
 import { routes } from '../utils/routes';
-import Back3DButton from '../components/Back3DButton.jsx';
 import EmployeePDFGenerator from '../components/employees/EmployeePDFGenerator.jsx';
-import { fetchAvatarOnce, getCachedAvatar, setCachedAvatar, DEFAULT_AVATAR } from '../utils/avatarCache';
+import { fetchAvatarOnce, getCachedAvatar, DEFAULT_AVATAR, mapBulkAvatarsResponse, isRealAvatarUrl } from '../utils/avatarCache';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { usePermissions } from '../hooks/usePermissions';
 
@@ -45,8 +48,24 @@ function mergeFileSelections(existing, fileList) {
   return merged;
 }
 
-const HORAS_CONTRATO_INPUT_CLASS =
-  'w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 hover:border-gray-300';
+const HORAS_CONTRATO_INPUT_CLASS = 'app-modal__input w-full';
+
+function empleadoEstadoStatusClass(estado) {
+  const e = (estado || '').toString().trim().toUpperCase();
+  if (e === 'ACTIVO') return 'solicitud-status--ok';
+  if (e === 'PENDIENTE') return 'solicitud-status--pendiente';
+  if (e === 'INACTIVO') return 'solicitud-status--anulada';
+  return 'solicitud-status--neutral';
+}
+
+function getEmployeeFieldLabel(field) {
+  if (field === 'fecha_baja_programada') return 'Fecha de Baja Programada';
+  if (field === 'VACACIONES_RESTANTES_ANO_ANTERIOR') return 'Vacaciones Restantes Año Anterior';
+  if (field === 'certificado_handicap_confirmado') return 'Certificado Handicap Confirmado';
+  if (field === 'DerechoPedidos') return 'Derecho Pedidos';
+  if (field === 'TrabajaFestivos') return 'Trabaja Festivos';
+  return field;
+}
 
 function HorasContratoField({ id, name, value, onChange }) {
   return (
@@ -789,7 +808,6 @@ export default function EmpleadosPage() {
   const [editForm, setEditForm] = useState({});
   const [originalEmployeeData, setOriginalEmployeeData] = useState(null); // Datele originale pentru comparație
   const [showEditModal, setShowEditModal] = useState(false);
-  const [mostrarContraseña, setMostrarContraseña] = useState(false); // State pentru afișarea parolei
   const [loadingPassword, setLoadingPassword] = useState(false); // State pentru loading la obținerea parolei
 
   // Formulario para añadir empleado
@@ -1069,31 +1087,7 @@ export default function EmpleadosPage() {
         return;
       }
 
-      const avatarsMap = {};
-
-      data.forEach(item => {
-        if (!item) return;
-        const codigo = item.CODIGO || item.codigo || item.codEmpleado || item.employeeCode;
-        if (!codigo) return;
-
-        const avatarB64 = item.AVATAR_B64 || item.avatar_b64 || item.avatarBase64;
-        const avatarUrlField = item.AVATAR || item.avatar || item.url || item.imageUrl || item.imagen;
-
-        let avatarUrl = null;
-
-        if (avatarB64) {
-          avatarUrl = `data:image/jpeg;base64,${String(avatarB64).replace(/\n/g, '')}`;
-        } else if (avatarUrlField) {
-          avatarUrl = avatarUrlField;
-        }
-
-        if (avatarUrl) {
-          avatarsMap[codigo] = avatarUrl;
-          setCachedAvatar(codigo, avatarUrl);
-        } else {
-          avatarsMap[codigo] = DEFAULT_AVATAR;
-        }
-      });
+      const avatarsMap = mapBulkAvatarsResponse(data);
 
       if (Object.keys(avatarsMap).length > 0) {
         setEmployeeAvatars(prev => ({ ...avatarsMap, ...prev }));
@@ -1114,10 +1108,7 @@ export default function EmpleadosPage() {
   const loadEmployeeAvatar = useCallback(async (codigo, nombre) => {
     if (!codigo) return;
 
-    if (
-      Object.prototype.hasOwnProperty.call(employeeAvatars, codigo) ||
-      loadingAvatarsRef.current.has(codigo)
-    ) {
+    if (isRealAvatarUrl(employeeAvatars[codigo]) || loadingAvatarsRef.current.has(codigo)) {
       return;
     }
 
@@ -2066,7 +2057,7 @@ export default function EmpleadosPage() {
       usersToLoad.forEach(user => {
         if (
           user.CODIGO &&
-          !Object.prototype.hasOwnProperty.call(employeeAvatars, user.CODIGO) &&
+          !isRealAvatarUrl(employeeAvatars[user.CODIGO]) &&
           !loadingAvatarsRef.current.has(user.CODIGO)
         ) {
           loadEmployeeAvatar(user.CODIGO, getFormattedNombre(user));
@@ -4346,991 +4337,205 @@ export default function EmpleadosPage() {
     }
   }, [filtroDropdownAbierto]);
 
+  const empleadosTabs = useMemo(() => {
+    const tabs = [];
+    if (canManageEmployees) tabs.push({ id: 'lista', label: 'Lista de empleados', shortLabel: 'Lista' });
+    tabs.push({ id: 'adauga', label: 'Añadir empleado', shortLabel: 'Añadir' });
+    if (canManageEmployees) {
+      tabs.push({ id: 'corregir-nombres', label: 'Corregir nombres', shortLabel: 'Nombres' });
+      tabs.push({ id: 'estadisticas', label: 'Estadísticas empleados', shortLabel: 'Stats' });
+    }
+    return tabs;
+  }, [canManageEmployees]);
+
+  const activosCount = users.filter((u) => (u.ESTADO || u['ESTADO'] || '').toString().trim().toUpperCase() === 'ACTIVO').length;
+  const inactivosCount = users.filter((u) => (u.ESTADO || u['ESTADO'] || '').toString().trim().toUpperCase() === 'INACTIVO').length;
+  const pendientesCount = users.filter((u) => (u.ESTADO || u['ESTADO'] || '').toString().trim().toUpperCase() === 'PENDIENTE').length;
+
   return (
-    <div className="space-y-6">
-      {/* Header ULTRA MODERN */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Back3DButton to="/inicio" title="Regresar al Dashboard" />
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
-              {canManageEmployees ? 'Gestión de Empleados' : 'Mis Inspecciones'}
-            </h1>
-            <p className="text-gray-600 dark:text-white text-sm sm:text-base">
-              {canManageEmployees 
-                ? 'Administra la lista de empleados y añade nuevos usuarios'
-                : 'Consulta tus inspecciones programadas'
-              }
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Tabs ULTRA MODERN */}
-      <Card>
-        <div className="flex flex-col sm:flex-row flex-wrap gap-3 sm:gap-4 mb-6">
-          {canManageEmployees && (
-            <button
-              onClick={() => setActiveTab('lista')}
-              className={`group relative px-4 sm:px-6 py-3 sm:py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                activeTab === 'lista'
-                  ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200'
-                  : 'bg-white text-blue-600 border-2 border-blue-200 hover:border-blue-400 hover:bg-blue-50'
-              }`}
-            >
-              {/* Glow effect */}
-              <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                activeTab === 'lista' 
-                  ? 'bg-blue-400 opacity-30 blur-md animate-pulse' 
-                  : 'bg-blue-400 opacity-0 group-hover:opacity-20 blur-md'
-              }`}></div>
-              <div className="relative flex items-center gap-2">
-                <span className="text-xl">👥</span>
-                <span>Lista de empleados</span>
-              </div>
-            </button>
-          )}
-          {(
-            <button
-              onClick={() => {
-                console.log('🔄 Switching to adauga tab');
-                setActiveTab('adauga');
-              }}
-              className={`group relative px-4 sm:px-6 py-3 sm:py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                activeTab === 'adauga'
-                  ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200'
-                  : 'bg-white text-green-600 border-2 border-green-200 hover:border-green-400 hover:bg-green-50'
-              }`}
-            >
-              {/* Glow effect */}
-              <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                activeTab === 'adauga' 
-                  ? 'bg-green-400 opacity-30 blur-md animate-pulse' 
-                  : 'bg-green-400 opacity-0 group-hover:opacity-20 blur-md'
-              }`}></div>
-              <div className="relative flex items-center gap-2">
-                <span className="text-xl">➕</span>
-                <span>Añadir empleado</span>
-              </div>
-            </button>
-          )}
-          {canManageEmployees && (
-            <button
-              onClick={() => setActiveTab('corregir-nombres')}
-              className={`group relative px-4 sm:px-6 py-3 sm:py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                activeTab === 'corregir-nombres'
-                  ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200'
-                  : 'bg-white text-purple-600 border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50'
-              }`}
-            >
-              <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                activeTab === 'corregir-nombres' 
-                  ? 'bg-purple-400 opacity-30 blur-md animate-pulse' 
-                  : 'bg-purple-400 opacity-0 group-hover:opacity-20 blur-md'
-              }`}></div>
-              <div className="relative flex items-center gap-2">
-                <span className="text-xl">✏️</span>
-                <span>Corregir Nombres</span>
-              </div>
-            </button>
-          )}
-          {canManageEmployees && (
-            <button
-              onClick={() => setActiveTab('estadisticas')}
-              className={`group relative px-4 sm:px-6 py-3 sm:py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                activeTab === 'estadisticas'
-                  ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-orange-200'
-                  : 'bg-white text-orange-600 border-2 border-orange-200 hover:border-orange-400 hover:bg-orange-50'
-              }`}
-            >
-              <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                activeTab === 'estadisticas' 
-                  ? 'bg-orange-400 opacity-30 blur-md animate-pulse' 
-                  : 'bg-orange-400 opacity-0 group-hover:opacity-20 blur-md'
-              }`}></div>
-              <div className="relative flex items-center gap-2">
-                <span className="text-xl">📊</span>
-                <span>Estadísticas Empleados</span>
-              </div>
-            </button>
-          )}
-
-        </div>
-
+    <div className="app-page empleados-page">
+      <PageHeader
+        title={canManageEmployees ? 'Gestión de Empleados' : 'Mis Inspecciones'}
+        subtitle={canManageEmployees
+          ? 'Administra la lista de empleados y añade nuevos usuarios'
+          : 'Consulta tus inspecciones programadas'}
+        backTo="/inicio"
+      />
+      <SegmentedControl items={empleadosTabs} value={activeTab} onChange={setActiveTab} layout="grid" />
+      <div className="empleados-tab-panel">
         {activeTab === 'lista' && canManageEmployees ? (
           // Lista de angajați
           <div>
             {isOperationLoading('users') ? (
               <TableLoading columns={6} rows={5} className="p-4" />
             ) : errorUsers ? (
-              <div className="text-center text-red-600 font-bold py-8">{errorUsers}</div>
+              <AlertBanner variant="danger" title="Error">{errorUsers}</AlertBanner>
             ) : (
               <>
-                {/* Estadísticas SUPER ELEGANTES y compactas */}
-                <div className="flex flex-wrap gap-3 mb-5">
-                  {/* Card 1 - Total Empleados - BLUE */}
-                  <div 
-                    className="group relative overflow-hidden flex-1 min-w-[140px] cursor-pointer"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(37, 99, 235, 0.08) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '1rem',
-                      border: '1px solid rgba(59, 130, 246, 0.2)',
-                      boxShadow: '0 4px 15px rgba(59, 130, 246, 0.12)',
-                      padding: '1rem'
-                    }}
-                  onClick={() => setStatusFilter('ALL')}
-                  role="button"
-                  >
-                    {/* Glow sutil en hover */}
-                    <div className="absolute inset-0 rounded-2xl bg-blue-400 opacity-0 group-hover:opacity-15 blur-lg transition-opacity duration-300"></div>
-                    
-                    {/* Contenido */}
-                    <div className="relative flex items-center gap-3">
-                      <div 
-                        className="w-10 h-10 rounded-xl flex items-center justify-center shadow-md transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
-                        style={{
-                          background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                          boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
-                        }}
-                      >
-                        <span className="text-xl">👥</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-2xl font-black text-blue-900">
-                          {searchTerm ? getFilteredUsers.length : users.length}
-                        </div>
-                        <div className="text-xs font-semibold text-blue-700 truncate">
-                          {searchTerm ? `de ${users.length}` : 'Total'}
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Shimmer effect */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000"></div>
-                  </div>
-
-                  {/* Card 2 - Activos - GREEN */}
-                  <div 
-                    className="group relative overflow-hidden flex-1 min-w-[140px] cursor-pointer"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.08) 0%, rgba(22, 163, 74, 0.08) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '1rem',
-                      border: '1px solid rgba(34, 197, 94, 0.2)',
-                      boxShadow: '0 4px 15px rgba(34, 197, 94, 0.12)',
-                      padding: '1rem'
-                    }}
-                  onClick={() => setStatusFilter('ACTIVO')}
-                  role="button"
-                  >
-                    {/* Glow sutil en hover */}
-                    <div className="absolute inset-0 rounded-2xl bg-green-400 opacity-0 group-hover:opacity-15 blur-lg transition-opacity duration-300"></div>
-                    
-                    {/* Contenido */}
-                    <div className="relative flex items-center gap-3">
-                      <div 
-                        className="w-10 h-10 rounded-xl flex items-center justify-center shadow-md transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
-                        style={{
-                          background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-                          boxShadow: '0 4px 12px rgba(34, 197, 94, 0.3)'
-                        }}
-                      >
-                        <span className="text-xl">✅</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-2xl font-black text-green-900">
-                          {users.filter(u => (u['ESTADO'] || u.ESTADO || '').toString().trim().toUpperCase() === 'ACTIVO').length}
-                        </div>
-                        <div className="text-xs font-semibold text-green-700 truncate">Activos</div>
-                      </div>
-                    </div>
-                    
-                    {/* Shimmer effect */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000"></div>
-                  </div>
-
-                  {/* Card 3 - Inactivos - RED */}
-                  <div 
-                    className="group relative overflow-hidden flex-1 min-w-[140px] cursor-pointer"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.08) 0%, rgba(220, 38, 38, 0.08) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '1rem',
-                      border: '1px solid rgba(239, 68, 68, 0.2)',
-                      boxShadow: '0 4px 15px rgba(239, 68, 68, 0.12)',
-                      padding: '1rem'
-                    }}
-                  onClick={() => setStatusFilter('INACTIVO')}
-                  role="button"
-                  >
-                    <div className="absolute inset-0 rounded-2xl bg-red-400 opacity-0 group-hover:opacity-15 blur-lg transition-opacity duration-300"></div>
-                    
-                    <div className="relative flex items-center gap-3">
-                      <div 
-                        className="w-10 h-10 rounded-xl flex items-center justify-center shadow-md transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
-                        style={{
-                          background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                          boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)'
-                        }}
-                      >
-                        <span className="text-xl">🔴</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-2xl font-black text-red-900">
-                          {users.filter(u => (u['ESTADO'] || u.ESTADO || '').toString().trim().toUpperCase() === 'INACTIVO').length}
-                        </div>
-                        <div className="text-xs font-semibold text-red-700 truncate">Inactivos</div>
-                      </div>
-                    </div>
-                    
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000"></div>
-                  </div>
-
-                  {/* Card 4 - Pendientes - YELLOW */}
-                  <div 
-                    className="group relative overflow-hidden flex-1 min-w-[140px] cursor-pointer"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, rgba(245, 158, 11, 0.08) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '1rem',
-                      border: '1px solid rgba(251, 191, 36, 0.2)',
-                      boxShadow: '0 4px 15px rgba(251, 191, 36, 0.12)',
-                      padding: '1rem'
-                    }}
-                  onClick={() => setStatusFilter('PENDIENTE')}
-                  role="button"
-                  >
-                    {/* Glow sutil en hover */}
-                    <div className="absolute inset-0 rounded-2xl bg-yellow-400 opacity-0 group-hover:opacity-15 blur-lg transition-opacity duration-300"></div>
-                    
-                    {/* Contenido */}
-                    <div className="relative flex items-center gap-3">
-                      <div 
-                        className="w-10 h-10 rounded-xl flex items-center justify-center shadow-md transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
-                        style={{
-                          background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
-                          boxShadow: '0 4px 12px rgba(251, 191, 36, 0.3)'
-                        }}
-                      >
-                        <span className="text-xl">🕒</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-2xl font-black text-yellow-900">
-                          {users.filter(u => (u['ESTADO'] || u.ESTADO || '').toString().trim().toUpperCase() === 'PENDIENTE').length}
-                        </div>
-                        <div className="text-xs font-semibold text-yellow-700 truncate">Pendientes</div>
-                      </div>
-                    </div>
-                    
-                    {/* Shimmer effect */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000"></div>
-                  </div>
-
-                  {/* Card 4 - Online - TEAL */}
-                  <div
-                    className="group relative overflow-hidden flex-1 min-w-[140px] cursor-pointer"
-                    style={{
-                      background:
-                        'linear-gradient(135deg, rgba(45, 212, 191, 0.08) 0%, rgba(20, 184, 166, 0.08) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '1rem',
-                      border: '1px solid rgba(45, 212, 191, 0.2)',
-                      boxShadow: '0 4px 15px rgba(45, 212, 191, 0.12)',
-                      padding: '1rem',
-                    }}
-                  onClick={() => setStatusFilter('ONLINE')}
-                  role="button"
-                  >
-                    {/* Glow sutil en hover */}
-                    <div className="absolute inset-0 rounded-2xl bg-teal-400 opacity-0 group-hover:opacity-15 blur-lg transition-opacity duration-300"></div>
-
-                    {/* Contenido */}
-                    <div className="relative flex items-center gap-3">
-                      <div
-                        className="w-10 h-10 rounded-xl flex items-center justify-center shadow-md transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
-                        style={{
-                          background:
-                            'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
-                          boxShadow: '0 4px 12px rgba(45, 212, 191, 0.3)',
-                        }}
-                      >
-                        <span className="text-xl">🟢</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-2xl font-black text-teal-900">
-                          {onlineUserIds.size}
-                        </div>
-                        <div className="text-xs font-semibold text-teal-700 truncate">
-                          Online
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Shimmer effect */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000"></div>
-                  </div>
-                </div>
-
-                {/* Barra de búsqueda moderna */}
-                <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-                  <div className="flex flex-col md:flex-row gap-4 items-center">
-                    {/* Input búsqueda */}
-                    <div className="flex-1 relative">
-                      <label htmlFor="search-empleados" className="sr-only">
-                        Buscar empleados
-                      </label>
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <span className="text-gray-400 text-lg">🔍</span>
-                      </div>
-                      <input
-                        id="search-empleados"
-                        name="searchTerm"
-                        type="text"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder={
-                          searchBy === 'sin_fecha_alta'
-                            ? 'Mostrando solo empleados sin Fecha Alta...'
-                            : searchBy === 'certificado_handicap'
-                            ? 'Mostrando solo empleados con certificado de discapacidad confirmado...'
-                            : searchBy === 'fecha_alta'
-                            ? 'Buscar por fecha...'
-                            : 'Buscar empleados...'
-                        }
-                        disabled={searchBy === 'sin_fecha_alta' || searchBy === 'certificado_handicap'}
-                        className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200"
-                      />
-                    </div>
-                    
-                    {/* Selector tipo búsqueda */}
-                    <div className="relative">
-                      <label htmlFor="search-by-empleados" className="sr-only">
-                        Tipo de búsqueda
-                      </label>
-                      <select
-                        id="search-by-empleados"
-                        name="searchBy"
-                        value={searchBy}
-                        onChange={(e) => setSearchBy(e.target.value)}
-                        className="px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all duration-200 bg-white"
-                      >
-                        <option value="nombre">👤 Nombre</option>
-                        <option value="codigo">🔢 Código</option>
-                        <option value="email">📧 Email</option>
-                        <option value="grupo">👥 Grupo</option>
-                        <option value="estado">✅ Estado</option>
-                        <option value="centro">📍 Centro</option>
-                        <option value="fecha_alta">📅 Fecha Alta</option>
-                        <option value="sin_fecha_alta">⚠️ Sin Fecha Alta</option>
-                        <option value="certificado_handicap">♿ Con Certificado Discapacidad</option>
-                        <option value="activos_sin_iban">💳 Activos sin IBAN</option>
-                        <option value="todos">🔍 Todos</option>
-                      </select>
-                    </div>
-                    
-                    {/* Botón clear */}
-                    {searchTerm && (
-                      <button
-                        onClick={() => setSearchTerm('')}
-                        className="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl transition-colors duration-200"
-                      >
-                        ✖️ Clear
-                      </button>
-                    )}
-                  </div>
-                  
-                  {/* Resultados búsqueda */}
-                  {searchTerm && (
-                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-blue-800 text-sm">
-                        <span className="font-medium">{getFilteredUsers.length}</span> resultados para &quot;{searchTerm}&quot;
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Botones ELEGANTES y compactos */}
-                <div className="flex flex-wrap gap-2 mb-5">
-                  {/* Exportar Excel - GREEN */}
-                  <button
-                    onClick={handleExportExcel}
-                    className="group relative overflow-hidden flex-1 min-w-[120px] transition-all duration-300"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.1) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '0.75rem',
-                      border: '1px solid rgba(16, 185, 129, 0.25)',
-                      boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
-                      padding: '0.75rem'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'scale(1.02) translateY(-1px)';
-                      e.currentTarget.style.boxShadow = '0 6px 18px rgba(16, 185, 129, 0.25)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'scale(1)';
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.15)';
-                    }}
-                  >
-                    {/* Glow sutil en hover */}
-                    <div className="absolute inset-0 rounded-xl bg-emerald-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
-                    
-                    {/* Contenido */}
-                    <div className="relative flex items-center gap-2 justify-center">
-                      <div 
-                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm transform group-hover:scale-110 transition-all duration-300"
-                        style={{
-                          background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                          boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
-                        }}
-                      >
-                        <span className="text-base">📊</span>
-                      </div>
-                      <span className="text-sm font-bold text-emerald-800">Exportar Excel</span>
-                    </div>
-                    
-                    {/* Shimmer effect */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
+                <div className="empleados-kpi-strip" role="group" aria-label="Resumen de empleados">
+                  <button type="button" className={`empleados-kpi ${statusFilter === 'ALL' ? 'empleados-kpi--active' : ''}`} onClick={() => setStatusFilter('ALL')}>
+                    <span className="empleados-kpi__value">{searchTerm ? getFilteredUsers.length : users.length}</span>
+                    <span className="empleados-kpi__label">{searchTerm ? `de ${users.length}` : 'Total'}</span>
                   </button>
-
-                  {/* Exportar PDF - PURPLE */}
-                  <button
-                    onClick={handleExportPDF}
-                    className="group relative overflow-hidden flex-1 min-w-[120px] transition-all duration-300"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(124, 58, 237, 0.1) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '0.75rem',
-                      border: '1px solid rgba(139, 92, 246, 0.25)',
-                      boxShadow: '0 4px 12px rgba(139, 92, 246, 0.15)',
-                      padding: '0.75rem'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'scale(1.02) translateY(-1px)';
-                      e.currentTarget.style.boxShadow = '0 6px 18px rgba(139, 92, 246, 0.25)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'scale(1)';
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(139, 92, 246, 0.15)';
-                    }}
-                  >
-                    {/* Glow sutil en hover */}
-                    <div className="absolute inset-0 rounded-xl bg-purple-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
-                    
-                    {/* Contenido */}
-                    <div className="relative flex items-center gap-2 justify-center">
-                      <div 
-                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm transform group-hover:scale-110 transition-all duration-300"
-                        style={{
-                          background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                          boxShadow: '0 2px 8px rgba(139, 92, 246, 0.3)'
-                        }}
-                      >
-                        <span className="text-base">📋</span>
-                      </div>
-                      <span className="text-sm font-bold text-purple-800">Exportar PDF</span>
-                    </div>
-                    
-                    {/* Shimmer effect */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
+                  <button type="button" className={`empleados-kpi ${statusFilter === 'ACTIVO' ? 'empleados-kpi--active' : ''}`} onClick={() => setStatusFilter('ACTIVO')}>
+                    <span className="empleados-kpi__value">{activosCount}</span>
+                    <span className="empleados-kpi__label">Activos</span>
                   </button>
-
-                  {/* Enviar Lista Activos - ORANGE */}
-                  <button
-                    type="button"
-                    onClick={openConfirmSendActiveEmployeesList}
-                    disabled={emailListPrepareLoading}
-                    className="group relative overflow-hidden flex-1 min-w-[160px] transition-all duration-300 disabled:opacity-60 disabled:cursor-wait"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(234, 88, 12, 0.1) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '0.75rem',
-                      border: '1px solid rgba(249, 115, 22, 0.25)',
-                      boxShadow: '0 4px 12px rgba(249, 115, 22, 0.15)',
-                      padding: '0.75rem'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'scale(1.02) translateY(-1px)';
-                      e.currentTarget.style.boxShadow = '0 6px 18px rgba(249, 115, 22, 0.25)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'scale(1)';
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(249, 115, 22, 0.15)';
-                    }}
-                  >
-                    {/* Glow sutil en hover */}
-                    <div className="absolute inset-0 rounded-xl bg-orange-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
-                    
-                    {/* Contenido */}
-                    <div className="relative flex items-center gap-2 justify-center">
-                      <div 
-                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm transform group-hover:scale-110 transition-all duration-300"
-                        style={{
-                          background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                          boxShadow: '0 2px 8px rgba(249, 115, 22, 0.3)'
-                        }}
-                      >
-                        <span className="text-base">📧</span>
-                      </div>
-                      <span className="text-sm font-bold text-orange-800">Enviar Lista Activos</span>
-                    </div>
-                    
-                    {/* Shimmer effect */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
+                  <button type="button" className={`empleados-kpi ${statusFilter === 'INACTIVO' ? 'empleados-kpi--active' : ''}`} onClick={() => setStatusFilter('INACTIVO')}>
+                    <span className="empleados-kpi__value">{inactivosCount}</span>
+                    <span className="empleados-kpi__label">Inactivos</span>
                   </button>
-
-                  {/* Enviar Lista Iban - ORANGE */}
-                  <button
-                    type="button"
-                    onClick={openConfirmSendListaIban}
-                    disabled={emailListPrepareLoading}
-                    className="group relative overflow-hidden flex-1 min-w-[160px] transition-all duration-300 disabled:opacity-60 disabled:cursor-wait"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(234, 88, 12, 0.1) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '0.75rem',
-                      border: '1px solid rgba(249, 115, 22, 0.25)',
-                      boxShadow: '0 4px 12px rgba(249, 115, 22, 0.15)',
-                      padding: '0.75rem'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'scale(1.02) translateY(-1px)';
-                      e.currentTarget.style.boxShadow = '0 6px 18px rgba(249, 115, 22, 0.25)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'scale(1)';
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(249, 115, 22, 0.15)';
-                    }}
-                  >
-                    {/* Glow sutil en hover */}
-                    <div className="absolute inset-0 rounded-xl bg-orange-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
-                    
-                    {/* Contenido */}
-                    <div className="relative flex items-center gap-2 justify-center">
-                      <div 
-                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm transform group-hover:scale-110 transition-all duration-300"
-                        style={{
-                          background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                          boxShadow: '0 2px 8px rgba(249, 115, 22, 0.3)'
-                        }}
-                      >
-                        <span className="text-base">💳</span>
-                      </div>
-                      <span className="text-sm font-bold text-orange-800">Enviar Lista Iban</span>
-                    </div>
-                    
-                    {/* Shimmer effect */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
+                  <button type="button" className={`empleados-kpi ${statusFilter === 'PENDIENTE' ? 'empleados-kpi--active' : ''}`} onClick={() => setStatusFilter('PENDIENTE')}>
+                    <span className="empleados-kpi__value">{pendientesCount}</span>
+                    <span className="empleados-kpi__label">Pendientes</span>
                   </button>
-
-                  {/* Actualizar - BLUE */}
-                  <button
-                    onClick={fetchUsers}
-                    className="group relative overflow-hidden flex-1 min-w-[120px] transition-all duration-300"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.1) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '0.75rem',
-                      border: '1px solid rgba(59, 130, 246, 0.25)',
-                      boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)',
-                      padding: '0.75rem'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'scale(1.02) translateY(-1px)';
-                      e.currentTarget.style.boxShadow = '0 6px 18px rgba(59, 130, 246, 0.25)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'scale(1)';
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.15)';
-                    }}
-                  >
-                    {/* Glow sutil en hover */}
-                    <div className="absolute inset-0 rounded-xl bg-blue-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
-                    
-                    {/* Contenido */}
-                    <div className="relative flex items-center gap-2 justify-center">
-                      <div 
-                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm transform group-hover:scale-110 group-hover:rotate-180 transition-all duration-300"
-                        style={{
-                          background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                          boxShadow: '0 2px 8px rgba(59, 130, 246, 0.3)'
-                        }}
-                      >
-                        <span className="text-base">🔄</span>
-                      </div>
-                      <span className="text-sm font-bold text-blue-800">Actualizar</span>
-                    </div>
-                    
-                    {/* Shimmer effect */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
-                  </button>
-
-                  {/* Exportar Todos ZIP - GREEN */}
-                  <button
-                    onClick={handleExportAllEmployeesZIP}
-                    className="group relative overflow-hidden flex-1 min-w-[140px] transition-all duration-300"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(22, 163, 74, 0.1) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '0.75rem',
-                      border: '1px solid rgba(34, 197, 94, 0.25)',
-                      boxShadow: '0 4px 12px rgba(34, 197, 94, 0.15)',
-                      padding: '0.75rem'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'scale(1.02) translateY(-1px)';
-                      e.currentTarget.style.boxShadow = '0 6px 18px rgba(34, 197, 94, 0.25)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'scale(1)';
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(34, 197, 94, 0.15)';
-                    }}
-                  >
-                    {/* Glow sutil en hover */}
-                    <div className="absolute inset-0 rounded-xl bg-green-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
-                    
-                    {/* Contenido */}
-                    <div className="relative flex items-center gap-2 justify-center">
-                      <div 
-                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm transform group-hover:scale-110 transition-all duration-300"
-                        style={{
-                          background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-                          boxShadow: '0 2px 8px rgba(34, 197, 94, 0.3)'
-                        }}
-                      >
-                        <span className="text-base">📦</span>
-                      </div>
-                      <span className="text-sm font-bold text-green-800">Exportar Todos ZIP</span>
-                    </div>
-                    
-                    {/* Shimmer effect */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
-                  </button>
-
-                  {/* Actualizar IBAN desde PDF - TEAL */}
-                  <button
-                    onClick={openIbanModal}
-                    className="group relative overflow-hidden flex-1 min-w-[160px] transition-all duration-300"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(20, 184, 166, 0.1) 0%, rgba(15, 118, 110, 0.1) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '0.75rem',
-                      border: '1px solid rgba(20, 184, 166, 0.25)',
-                      boxShadow: '0 4px 12px rgba(20, 184, 166, 0.15)',
-                      padding: '0.75rem'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'scale(1.02) translateY(-1px)';
-                      e.currentTarget.style.boxShadow = '0 6px 18px rgba(20, 184, 166, 0.25)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'scale(1)';
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(20, 184, 166, 0.15)';
-                    }}
-                  >
-                    {/* Glow sutil en hover */}
-                    <div className="absolute inset-0 rounded-xl bg-teal-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
-                    
-                    {/* Contenido */}
-                    <div className="relative flex items-center gap-2 justify-center">
-                      <div 
-                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm transform group-hover:scale-110 transition-all duration-300"
-                        style={{
-                          background: 'linear-gradient(135deg, #14b8a6 0%, #0f766e 100%)',
-                          boxShadow: '0 2px 8px rgba(20, 184, 166, 0.3)'
-                        }}
-                      >
-                        <span className="text-base">🏦</span>
-                      </div>
-                      <span className="text-sm font-bold text-teal-800">Actualizar IBAN</span>
-                    </div>
-                    
-                    {/* Shimmer effect */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
-                  </button>
-
-                  {/* Solicitar Documento a Todos - ORANGE */}
-                  <button
-                    onClick={openSolicitarDocumentoTodosModal}
-                    className="group relative overflow-hidden flex-1 min-w-[140px] transition-all duration-300"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, rgba(234, 88, 12, 0.1) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '0.75rem',
-                      border: '1px solid rgba(249, 115, 22, 0.25)',
-                      boxShadow: '0 4px 12px rgba(249, 115, 22, 0.15)',
-                      padding: '0.75rem'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'scale(1.02) translateY(-1px)';
-                      e.currentTarget.style.boxShadow = '0 6px 18px rgba(249, 115, 22, 0.25)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'scale(1)';
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(249, 115, 22, 0.15)';
-                    }}
-                  >
-                    {/* Glow sutil en hover */}
-                    <div className="absolute inset-0 rounded-xl bg-orange-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
-                    
-                    {/* Contenido */}
-                    <div className="relative flex items-center gap-2 justify-center">
-                      <div 
-                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm transform group-hover:scale-110 transition-all duration-300"
-                        style={{
-                          background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                          boxShadow: '0 2px 8px rgba(249, 115, 22, 0.3)'
-                        }}
-                      >
-                        <span className="text-base">📄</span>
-                      </div>
-                      <span className="text-sm font-bold text-orange-800">Solicitar Doc a Todos</span>
-                    </div>
-                    
-                    {/* Shimmer effect */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
-                  </button>
-
-                  {/* Enviar email de bienvenida a todos - TEAL/CYAN */}
-                  <button
-                    onClick={openWelcomeEmailModal}
-                    className="group relative overflow-hidden flex-1 min-w-[160px] transition-all duration-300"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(8, 145, 178, 0.1) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '0.75rem',
-                      border: '1px solid rgba(6, 182, 212, 0.25)',
-                      boxShadow: '0 4px 12px rgba(6, 182, 212, 0.15)',
-                      padding: '0.75rem'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'scale(1.02) translateY(-1px)';
-                      e.currentTarget.style.boxShadow = '0 6px 18px rgba(6, 182, 212, 0.25)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'scale(1)';
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(6, 182, 212, 0.15)';
-                    }}
-                  >
-                    <div className="absolute inset-0 rounded-xl bg-cyan-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
-                    <div className="relative flex items-center gap-2 justify-center">
-                      <div
-                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm transform group-hover:scale-110 transition-all duration-300"
-                        style={{
-                          background: 'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)',
-                          boxShadow: '0 2px 8px rgba(6, 182, 212, 0.3)'
-                        }}
-                      >
-                        <span className="text-base">✉️</span>
-                      </div>
-                      <span className="text-sm font-bold text-cyan-800">Email bienvenida a todos</span>
-                    </div>
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-700"></div>
+                  <button type="button" className={`empleados-kpi ${statusFilter === 'ONLINE' ? 'empleados-kpi--active' : ''}`} onClick={() => setStatusFilter('ONLINE')}>
+                    <span className="empleados-kpi__value">{onlineUserIds.size}</span>
+                    <span className="empleados-kpi__label">Online</span>
                   </button>
                 </div>
-
+                <div className="empleados-filter-bar app-card app-card--pad">
+                  <input id="search-empleados" name="searchTerm" type="search" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder={searchBy === 'sin_fecha_alta' ? 'Empleados sin Fecha Alta…' : searchBy === 'certificado_handicap' ? 'Con certificado discapacidad…' : searchBy === 'fecha_alta' ? 'Buscar por fecha…' : 'Buscar empleados…'}
+                    disabled={searchBy === 'sin_fecha_alta' || searchBy === 'certificado_handicap'} aria-label="Buscar empleados" />
+                  <select id="search-by-empleados" name="searchBy" value={searchBy} onChange={(e) => setSearchBy(e.target.value)} aria-label="Tipo de búsqueda">
+                    <option value="nombre">Nombre</option><option value="codigo">Código</option><option value="email">Email</option>
+                    <option value="grupo">Grupo</option><option value="estado">Estado</option><option value="centro">Centro</option>
+                    <option value="fecha_alta">Fecha Alta</option><option value="sin_fecha_alta">Sin Fecha Alta</option>
+                    <option value="certificado_handicap">Certificado discapacidad</option><option value="activos_sin_iban">Activos sin IBAN</option><option value="todos">Todos</option>
+                  </select>
+                  {searchTerm && <button type="button" onClick={() => setSearchTerm('')} className="solicitud-admin-btn" aria-label="Limpiar"><X className="w-4 h-4" /></button>}
+                </div>
+                {searchTerm && <AlertBanner variant="info" compact>{getFilteredUsers.length} resultados para &quot;{searchTerm}&quot;</AlertBanner>}
+                <div className="solicitud-admin-toolbar documentos-actions flex-wrap mb-3">
+                  <button type="button" onClick={handleExportExcel} className="solicitud-admin-btn"><FileSpreadsheet className="w-4 h-4" /><span>Excel</span></button>
+                  <button type="button" onClick={handleExportPDF} className="solicitud-admin-btn"><FileText className="w-4 h-4" /><span>PDF</span></button>
+                  <button type="button" onClick={openConfirmSendActiveEmployeesList} disabled={emailListPrepareLoading} className="solicitud-admin-btn"><Mail className="w-4 h-4" /><span>Lista activos</span></button>
+                  <button type="button" onClick={openConfirmSendListaIban} disabled={emailListPrepareLoading} className="solicitud-admin-btn"><FileText className="w-4 h-4" /><span>Lista IBAN</span></button>
+                  <button type="button" onClick={fetchUsers} className="solicitud-admin-btn"><RefreshCw className="w-4 h-4" /><span>Actualizar</span></button>
+                  <button type="button" onClick={handleExportAllEmployeesZIP} className="solicitud-admin-btn"><Archive className="w-4 h-4" /><span>ZIP todos</span></button>
+                  <button type="button" onClick={openIbanModal} className="solicitud-admin-btn"><FileText className="w-4 h-4" /><span>IBAN</span></button>
+                  <button type="button" onClick={openSolicitarDocumentoTodosModal} className="solicitud-admin-btn"><File className="w-4 h-4" /><span>Doc. todos</span></button>
+                  <button type="button" onClick={openWelcomeEmailModal} className="solicitud-admin-btn solicitud-admin-btn--primary"><Mail className="w-4 h-4" /><span>Bienvenida</span></button>
+                </div>
                 {/* Lista empleados */}
-                <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                  <div className="max-h-96 overflow-y-auto">
-                    <div className="divide-y divide-gray-200">
+                <div className="empleados-list-wrap solicitud-admin-mobile-list">
                       {getFilteredUsers.map((user, idx) => {
                         const codigo = (user['CODIGO'] || '').toString().trim();
                         const isOnline = codigo && onlineUserIds.has(codigo);
 
                         return (
-                        <div key={user['CODIGO'] || idx} className="p-4 hover:bg-gray-50 transition-colors">
-                          {/* Header - Avatar + Nume */}
-                          <div className="flex items-center gap-3 mb-3">
-                            {/* Avatar con imagen o iniciales */}
-                            <div className="relative group/avatar">
-                              {/* Glow sutil en hover */}
-                              <div className="absolute inset-0 bg-gradient-to-br from-red-400 to-pink-500 rounded-full blur-sm opacity-0 group-hover/avatar:opacity-40 transition-opacity duration-300"></div>
-                              
-                              <div 
-                                className="relative w-10 h-10 rounded-full flex items-center justify-center overflow-hidden shadow-md transform group-hover/avatar:scale-110 transition-all duration-300"
-                                style={{
-                                  background: employeeAvatars[user['CODIGO']] 
-                                    ? 'transparent' 
-                                    : 'linear-gradient(135deg, #fecaca 0%, #fca5a5 100%)',
-                                  border: '2px solid rgba(239, 68, 68, 0.2)'
-                                }}
-                              >
+                          <article key={user['CODIGO'] || idx} className="solicitud-admin-mobile-card">
+                            <div className="solicitud-admin-mobile-card__head">
+                              <div className="empleados-avatar">
                                 {employeeAvatars[user['CODIGO']] ? (
-                                  <img 
-                                    src={employeeAvatars[user['CODIGO']]} 
-                                    alt={getFormattedNombre(user)} 
-                                    className="w-full h-full object-cover"
-                                  />
+                                  <img src={employeeAvatars[user['CODIGO']]} alt="" />
                                 ) : (
-                                  <span className="text-red-600 font-bold text-sm">
-                                    {getEmployeeInitials(user)}
-                                  </span>
+                                  getEmployeeInitials(user)
                                 )}
                               </div>
-                            </div>
-                            
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <h3 className="font-bold text-gray-900">
+                              <div className="min-w-0 flex-1">
+                                <p className="solicitud-admin-mobile-card__title truncate">
                                   {getFormattedNombre(user) || 'Sin nombre'}
-                                </h3>
+                                </p>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                  {user['CODIGO']}
+                                  {user['CENTRO TRABAJO'] ? ` · ${user['CENTRO TRABAJO']}` : ''}
+                                </p>
+                                <p className="text-xs text-gray-500 truncate">{user['CORREO ELECTRONICO']}</p>
+                              </div>
+                              <div className="flex flex-col items-end gap-1 shrink-0">
+                                {user['ESTADO'] && (
+                                  <span className={`solicitud-status ${empleadoEstadoStatusClass(user['ESTADO'])}`}>
+                                    {(user['ESTADO'] || '').toString().toUpperCase()}
+                                  </span>
+                                )}
                                 {codigo && (
-                                  <span className="flex items-center gap-1 text-[11px] font-medium text-gray-500">
-                                    <span
-                                      className={`inline-block h-2 w-2 rounded-full ${
-                                        isOnline
-                                          ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.3)]'
-                                          : 'bg-gray-300'
-                                      }`}
-                                    />
-                                    <span className="uppercase tracking-wide">
-                                      {isOnline ? 'Online' : 'Offline'}
-                                    </span>
+                                  <span className="text-[10px] text-gray-500 inline-flex items-center gap-1">
+                                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                                    {isOnline ? 'Online' : 'Offline'}
                                   </span>
                                 )}
                               </div>
                             </div>
-                          </div>
-
-                          {/* Info - Cod + Email */}
-                          <div className="ml-13 mb-3">
-                            <p className="text-sm text-gray-600">Cod: {user['CODIGO']}</p>
-                            <p className="text-sm text-gray-500">{user['CORREO ELECTRONICO']}</p>
-                          </div>
-
-                          {/* Bottom - Rol + Status + Butoane */}
-                          <div className="ml-13 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                            {/* Rol și Status */}
-                            <div className="flex flex-wrap gap-2">
-                              {user['GRUPO'] && (
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  user['GRUPO'] === 'Manager' || user['GRUPO'] === 'Supervisor'
-                                    ? 'bg-blue-100 text-blue-800'
-                                    : 'bg-gray-100 text-gray-800'
-                                }`}>
-                                  {user['GRUPO']}
-                                </span>
-                              )}
-                              {user['ESTADO'] && (
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                  (user['ESTADO'] || '').toString().toUpperCase() === 'ACTIVO'
-                                    ? 'bg-green-100 text-green-800'
-                                    : 'bg-red-100 text-red-800'
-                                }`}>
-                                  {(user['ESTADO'] || '').toString().toUpperCase()}
-                                </span>
-                              )}
-                            </div>
-                            
-                            {/* Butoane */}
-                            <div className="flex gap-2">
-                              {/* Icon MODERN Editar */}
-                              <button
-                                onClick={() => openEditModal(user)}
-                                className="group relative p-1.5 rounded-lg transition-all duration-300 transform hover:scale-125 hover:rotate-12"
-                                title="Modificar datos"
-                              >
-                                <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
-                                  filter: 'drop-shadow(0 2px 4px rgba(59, 130, 246, 0.4))',
-                                }}>⚙️</span>
+                            {user['GRUPO'] && (
+                              <p className="text-xs text-gray-500 mt-1">{user['GRUPO']}</p>
+                            )}
+                            <div className="empleados-card-actions">
+                              <button type="button" onClick={() => openEditModal(user)} className="solicitud-admin-btn solicitud-admin-btn--primary empleados-card-actions__primary">
+                                <Eye className="w-4 h-4" aria-hidden /><span>Ver detalle</span>
                               </button>
-                              
-                              {/* Icon MODERN Email */}
-                              <button
-                                onClick={() => openEmailModal(user)}
-                                className="group relative p-1.5 rounded-lg transition-all duration-300 transform hover:scale-125"
-                                title="Enviar email"
-                              >
-                                <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
-                                  filter: 'drop-shadow(0 2px 4px rgba(16, 185, 129, 0.4))',
-                                }}>📧</span>
-                              </button>
-                              
-                              {/* Icon Reset Password */}
-                              <button
-                                onClick={() => handleResetPassword(user)}
-                                disabled={loadingPassword}
-                                className="group relative p-1.5 rounded-lg transition-all duration-300 transform hover:scale-125 disabled:opacity-50 disabled:cursor-not-allowed"
-                                title="Resetear contraseña y enviar por email"
-                              >
-                                <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
-                                  filter: 'drop-shadow(0 2px 4px rgba(139, 92, 246, 0.4))',
-                                }}>🔑</span>
-                              </button>
-                              
-                              {/* Icon Solicitar Documento */}
-                              <button
-                                onClick={() => openSolicitarDocumentoModal(user)}
-                                className="group relative p-1.5 rounded-lg transition-all duration-300 transform hover:scale-125"
-                                title="Solicitar documento (DNI, Justificantes de banco, etc.)"
-                              >
-                                <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
-                                  filter: 'drop-shadow(0 2px 4px rgba(234, 179, 8, 0.4))',
-                                }}>📄</span>
-                              </button>
-                              
-                              {/* Icon Export ZIP */}
-                              <button
-                                onClick={() => handleExportEmployeeZIP(user)}
-                                className="group relative p-1.5 rounded-lg transition-all duration-300 transform hover:scale-125"
-                                title="Exportar todos los documentos (ZIP)"
-                              >
-                                <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
-                                  filter: 'drop-shadow(0 2px 4px rgba(34, 197, 94, 0.4))',
-                                }}>📦</span>
-                              </button>
-                              
-                              {/* Icon Solicitar Inspección */}
-                              <button
-                                onClick={() => handleCrearSolicitudInspeccion(user)}
-                                className="group relative p-1.5 rounded-lg transition-all duration-300 transform hover:scale-125"
-                                title="Crear solicitud de inspección"
-                              >
-                                <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
-                                  filter: 'drop-shadow(0 2px 4px rgba(59, 130, 246, 0.4))',
-                                }}>🔍</span>
-                              </button>
-
-                              {canCreateTareas && (
-                                <button
-                                  onClick={() => handleCrearTarea(user)}
-                                  className="group relative p-1.5 rounded-lg transition-all duration-300 transform hover:scale-125"
-                                  title="Crear solicitud de tarea"
-                                >
-                                  <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
-                                    filter: 'drop-shadow(0 2px 4px rgba(16, 185, 129, 0.4))',
-                                  }}>✅</span>
+                              <details className="empleados-card-actions__more">
+                                <summary className="solicitud-admin-btn" aria-label="Más acciones">
+                                  <MoreHorizontal className="w-4 h-4" aria-hidden /><span>Más acciones</span>
+                                </summary>
+                                <div className="empleados-card-actions__secondary solicitud-admin-toolbar documentos-actions">
+                                  <button type="button" onClick={() => openEmailModal(user)} className="solicitud-admin-btn" title="Enviar email">
+                                    <Mail className="w-4 h-4" aria-hidden /><span className="sr-only">Email</span>
+                                  </button>
+                                  <button type="button" onClick={() => handleResetPassword(user)} disabled={loadingPassword} className="solicitud-admin-btn" title="Resetear contraseña">
+                                    <Key className="w-4 h-4" aria-hidden /><span className="sr-only">Contraseña</span>
+                                  </button>
+                                  <button type="button" onClick={() => openSolicitarDocumentoModal(user)} className="solicitud-admin-btn" title="Solicitar documento">
+                                    <File className="w-4 h-4" aria-hidden /><span className="sr-only">Documento</span>
+                                  </button>
+                                  <button type="button" onClick={() => handleExportEmployeeZIP(user)} className="solicitud-admin-btn" title="Exportar ZIP">
+                                    <Archive className="w-4 h-4" aria-hidden /><span className="sr-only">ZIP</span>
+                                  </button>
+                                  <button type="button" onClick={() => handleCrearSolicitudInspeccion(user)} className="solicitud-admin-btn" title="Solicitar inspección">
+                                    <ClipboardList className="w-4 h-4" aria-hidden /><span className="sr-only">Inspección</span>
+                                  </button>
+                                  {canCreateTareas && (
+                                    <button type="button" onClick={() => handleCrearTarea(user)} className="solicitud-admin-btn" title="Crear tarea">
+                                      <CheckSquare className="w-4 h-4" aria-hidden /><span className="sr-only">Tarea</span>
+                                    </button>
+                                  )}
+                                  {(authUser?.GRUPO === 'Admin' || authUser?.grupo === 'Admin' || authUser?.GRUPO === 'Developer' || authUser?.grupo === 'Developer') && (
+                                    <button type="button" onClick={() => openDespidoModal(user)} className="solicitud-admin-btn" title="Despido improcedente">
+                                      <UserX className="w-4 h-4" aria-hidden /><span className="sr-only">Despido</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </details>
+                              <div className="empleados-card-actions__desktop solicitud-admin-toolbar documentos-actions flex-wrap">
+                                <button type="button" onClick={() => openEmailModal(user)} className="solicitud-admin-btn" title="Enviar email">
+                                  <Mail className="w-4 h-4" aria-hidden />
                                 </button>
-                              )}
-                              
-                              {/* Icon Despido Improcedente - SOLO ADMIN */}
-                              {(authUser?.GRUPO === 'Admin' || authUser?.grupo === 'Admin' || authUser?.GRUPO === 'Developer' || authUser?.grupo === 'Developer') && (
-                                <button
-                                  onClick={() => openDespidoModal(user)}
-                                  className="group relative p-1.5 rounded-lg transition-all duration-300 transform hover:scale-125"
-                                  title="Despido improcedente (solo administradores)"
-                                >
-                                  <span className="text-xl relative z-10 inline-block transition-all duration-300 filter group-hover:drop-shadow-lg" style={{
-                                    filter: 'drop-shadow(0 2px 4px rgba(220, 38, 38, 0.4))',
-                                  }}>🔴</span>
+                                <button type="button" onClick={() => handleResetPassword(user)} disabled={loadingPassword} className="solicitud-admin-btn" title="Resetear contraseña">
+                                  <Key className="w-4 h-4" aria-hidden />
                                 </button>
-                              )}
+                                <button type="button" onClick={() => openSolicitarDocumentoModal(user)} className="solicitud-admin-btn" title="Solicitar documento">
+                                  <File className="w-4 h-4" aria-hidden />
+                                </button>
+                                <button type="button" onClick={() => handleExportEmployeeZIP(user)} className="solicitud-admin-btn" title="Exportar ZIP">
+                                  <Archive className="w-4 h-4" aria-hidden />
+                                </button>
+                                <button type="button" onClick={() => handleCrearSolicitudInspeccion(user)} className="solicitud-admin-btn" title="Solicitar inspección">
+                                  <ClipboardList className="w-4 h-4" aria-hidden />
+                                </button>
+                                {canCreateTareas && (
+                                  <button type="button" onClick={() => handleCrearTarea(user)} className="solicitud-admin-btn" title="Crear tarea">
+                                    <CheckSquare className="w-4 h-4" aria-hidden />
+                                  </button>
+                                )}
+                                {(authUser?.GRUPO === 'Admin' || authUser?.grupo === 'Admin' || authUser?.GRUPO === 'Developer' || authUser?.grupo === 'Developer') && (
+                                  <button type="button" onClick={() => openDespidoModal(user)} className="solicitud-admin-btn" title="Despido improcedente">
+                                    <UserX className="w-4 h-4" aria-hidden />
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        </div>
-                      );})}
-                    </div>
-                  </div>
+                          </article>
+                        );
+                      })}
                 </div>
               </>
             )}
           </div>
         ) : activeTab === 'adauga' ? (
-          // Formulario añadir empleado
-          <div className="max-w-2xl mx-auto">
-            <h2 className="text-xl font-bold text-gray-900 mb-6 text-center">
-              Añadir Nuevo Empleado
+          <div className="app-card app-card--pad max-w-3xl mx-auto w-full">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+              Añadir nuevo empleado
             </h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -5338,32 +4543,7 @@ export default function EmpleadosPage() {
                 const fieldId = `add-${field.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
                 return (
                 <div key={field}>
-                  <label htmlFor={fieldId} className="block text-sm font-medium text-gray-700 mb-2">
-                    {field === 'CODIGO' && '🆔'} 
-                    {field === 'NOMBRE / APELLIDOS' && '👤'} 
-                    {field === 'CORREO ELECTRONICO' && '📧'} 
-                    {field === 'NACIONALIDAD' && '🌍'} 
-                    {field === 'DIRECCION' && '🏠'} 
-                    {field === 'D.N.I. / NIE' && '📄'} 
-                    {field === 'SEG. SOCIAL' && '🏥'} 
-                    {field === 'Nº Cuenta' && '💳'} 
-                    {field === 'TELEFONO' && '📞'} 
-                    {field === 'FECHA NACIMIENTO' && '🎂'} 
-                    {field === 'FECHA DE ALTA' && '📅'} 
-                    {field === 'FECHA BAJA' && '🚪'} 
-                    {field === 'Fecha Antigüedad' && '📆'} 
-                    {field === 'Antigüedad' && '🎯'} 
-                    {field === 'CENTRO TRABAJO' && '🏢'} 
-                    {field === 'TIPO DE CONTRATO' && '📋'} 
-                    {field === 'SUELDO BRUTO MENSUAL' && '💰'} 
-                    {field === 'HORAS DE CONTRATO' && '⏰'} 
-                    {field === 'EMPRESA' && '🏢'} 
-                    {field === 'GRUPO' && '👥'} 
-                    {field === 'ESTADO' && '📊'} 
-                    {field === 'DerechoPedidos' && '🛒'} 
-                    {field === 'TrabajaFestivos' && '🎉'} 
-                    {field}
-                  </label>
+                  <label htmlFor={fieldId} className="app-modal__label block mb-2">{getEmployeeFieldLabel(field)}</label>
                   {field === 'CODIGO' ? (
                     <Input
                       id={fieldId}
@@ -6135,101 +5315,46 @@ export default function EmpleadosPage() {
                         </div>
                       )}
                       
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {/* Card: Sin cuadrante ni horario */}
-                        <div 
+                      <div className="empleados-kpi-strip" role="group" aria-label="Resumen estadísticas">
+                        <button
+                          type="button"
                           onClick={() => setFiltroActivo(filtroActivo === 'sin_cuadrante_ni_horario' ? null : 'sin_cuadrante_ni_horario')}
-                          className={`bg-red-50 border-2 rounded-xl p-4 shadow-sm cursor-pointer transition-all hover:scale-105 ${
-                            filtroActivo === 'sin_cuadrante_ni_horario'
-                              ? 'border-red-500 shadow-lg ring-2 ring-red-300'
-                              : 'border-red-200 hover:border-red-300'
-                          }`}
+                          className={`empleados-kpi text-left ${filtroActivo === 'sin_cuadrante_ni_horario' ? 'empleados-kpi--active' : ''}`}
                         >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-sm font-medium text-red-700 mb-1">⚠️ Sin Cuadrante ni Horario</p>
-                              <p className="text-3xl font-bold text-red-800">{sinCuadranteNiHorario}</p>
-                              <p className="text-xs text-red-600 mt-1">de {totalEmpleados} empleados</p>
-                            </div>
-                            <div className="text-4xl">🚨</div>
-                          </div>
-                          {filtroActivo === 'sin_cuadrante_ni_horario' && (
-                            <div className="mt-2 text-xs text-red-700 font-semibold">✓ Filtro activo</div>
-                          )}
-                        </div>
-                        
-                        {/* Card: Con cuadrante */}
-                        <div 
+                          <span className="empleados-kpi__value">{sinCuadranteNiHorario}</span>
+                          <span className="empleados-kpi__label">Sin cuadrante ni horario</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setFiltroActivo(filtroActivo === 'con_cuadrante' ? null : 'con_cuadrante')}
-                          className={`bg-green-50 border-2 rounded-xl p-4 shadow-sm cursor-pointer transition-all hover:scale-105 ${
-                            filtroActivo === 'con_cuadrante'
-                              ? 'border-green-500 shadow-lg ring-2 ring-green-300'
-                              : 'border-green-200 hover:border-green-300'
-                          }`}
+                          className={`empleados-kpi text-left ${filtroActivo === 'con_cuadrante' ? 'empleados-kpi--active' : ''}`}
                         >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-sm font-medium text-green-700 mb-1">✅ Con Cuadrante</p>
-                              <p className="text-3xl font-bold text-green-800">{conCuadrante}</p>
-                              <p className="text-xs text-green-600 mt-1">de {totalEmpleados} empleados</p>
-                            </div>
-                            <div className="text-4xl">📅</div>
-                          </div>
-                          {filtroActivo === 'con_cuadrante' && (
-                            <div className="mt-2 text-xs text-green-700 font-semibold">✓ Filtro activo</div>
-                          )}
-                        </div>
-                        
-                        {/* Card: Con horario */}
-                        <div 
+                          <span className="empleados-kpi__value">{conCuadrante}</span>
+                          <span className="empleados-kpi__label">Con cuadrante</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setFiltroActivo(filtroActivo === 'con_horario' ? null : 'con_horario')}
-                          className={`bg-blue-50 border-2 rounded-xl p-4 shadow-sm cursor-pointer transition-all hover:scale-105 ${
-                            filtroActivo === 'con_horario'
-                              ? 'border-blue-500 shadow-lg ring-2 ring-blue-300'
-                              : 'border-blue-200 hover:border-blue-300'
-                          }`}
+                          className={`empleados-kpi text-left ${filtroActivo === 'con_horario' ? 'empleados-kpi--active' : ''}`}
                         >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-sm font-medium text-blue-700 mb-1">⏰ Con Horario</p>
-                              <p className="text-3xl font-bold text-blue-800">{conHorario}</p>
-                              <p className="text-xs text-blue-600 mt-1">de {totalEmpleados} empleados</p>
-                          </div>
-                            <div className="text-4xl">🕐</div>
-                          </div>
-                          {filtroActivo === 'con_horario' && (
-                            <div className="mt-2 text-xs text-blue-700 font-semibold">✓ Filtro activo</div>
-                          )}
-                        </div>
-                        
-                        {/* Card: Con ambele */}
-                        <div 
+                          <span className="empleados-kpi__value">{conHorario}</span>
+                          <span className="empleados-kpi__label">Con horario</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setFiltroActivo(filtroActivo === 'con_ambos' ? null : 'con_ambos')}
-                          className={`bg-purple-50 border-2 rounded-xl p-4 shadow-sm cursor-pointer transition-all hover:scale-105 ${
-                            filtroActivo === 'con_ambos'
-                              ? 'border-purple-500 shadow-lg ring-2 ring-purple-300'
-                              : 'border-purple-200 hover:border-purple-300'
-                          }`}
+                          className={`empleados-kpi text-left ${filtroActivo === 'con_ambos' ? 'empleados-kpi--active' : ''}`}
                         >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-sm font-medium text-purple-700 mb-1">✨ Con ambos</p>
-                              <p className="text-3xl font-bold text-purple-800">{conAmbele}</p>
-                              <p className="text-xs text-purple-600 mt-1">cuadrante y horario</p>
-                            </div>
-                            <div className="text-4xl">⭐</div>
-                          </div>
-                          {filtroActivo === 'con_ambos' && (
-                            <div className="mt-2 text-xs text-purple-700 font-semibold">✓ Filtro activo</div>
-                          )}
-                        </div>
+                          <span className="empleados-kpi__value">{conAmbele}</span>
+                          <span className="empleados-kpi__label">Con ambos</span>
+                        </button>
                       </div>
                     </div>
                   );
                 })()}
                 
                 <div className="overflow-x-auto w-full">
-                <table className="w-full bg-white border border-gray-200 rounded-lg shadow-sm" style={{ minWidth: '1520px' }}>
+                <div className="empleados-stats-table-wrap hidden md:block"><table className="w-full bg-white" style={{ minWidth: '1520px' }}>
                   <thead className="bg-gray-50">
                     <tr>
                       <th 
@@ -6859,19 +5984,23 @@ export default function EmpleadosPage() {
                         <td className="px-3 py-3 text-sm">
                           <div className="flex flex-wrap gap-2">
                             <button
+                              type="button"
                               onClick={() => handleCrearSolicitudInspeccion(emp)}
-                              className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg text-xs font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap"
+                              className="solicitud-admin-btn text-xs"
                               title="Crear solicitud de inspección"
                             >
-                              🔍 Solicitar Inspección
+                              <ClipboardList className="w-4 h-4" aria-hidden />
+                              <span>Solicitar inspección</span>
                             </button>
                             {canCreateTareas && (
                               <button
+                                type="button"
                                 onClick={() => handleCrearTarea(emp)}
-                                className="px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg text-xs font-semibold hover:from-emerald-600 hover:to-teal-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap"
+                                className="solicitud-admin-btn text-xs"
                                 title="Crear solicitud de tarea"
                               >
-                                ✅ Crear tarea
+                                <CheckSquare className="w-4 h-4" aria-hidden />
+                                <span>Crear tarea</span>
                               </button>
                             )}
                           </div>
@@ -6879,25 +6008,15 @@ export default function EmpleadosPage() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></div>
                 
                 {/* Butoane de export */}
-                <div className="mt-4 flex gap-3 justify-end">
-                  <button
-                    onClick={handleExportEstadisticasExcel}
-                    disabled={loadingEstadisticas || estadisticas.length === 0}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    <span>📊</span>
-                    <span>Exportar Excel</span>
+                <div className="solicitud-admin-toolbar documentos-actions flex-wrap justify-end mt-4">
+                  <button type="button" onClick={handleExportEstadisticasExcel} disabled={loadingEstadisticas || estadisticas.length === 0} className="solicitud-admin-btn">
+                    <FileSpreadsheet className="w-4 h-4" aria-hidden /><span>Exportar Excel</span>
                   </button>
-                  <button
-                    onClick={handleExportEstadisticasPDF}
-                    disabled={loadingEstadisticas || estadisticas.length === 0}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  >
-                    <span>📄</span>
-                    <span>Exportar PDF</span>
+                  <button type="button" onClick={handleExportEstadisticasPDF} disabled={loadingEstadisticas || estadisticas.length === 0} className="solicitud-admin-btn">
+                    <FileText className="w-4 h-4" aria-hidden /><span>Exportar PDF</span>
                   </button>
                 </div>
                 </div>
@@ -6933,74 +6052,32 @@ export default function EmpleadosPage() {
             }}
           />
         ) : null}
-      </Card>
+      </div>
 
       {/* Modal editar empleado: portal a body para z-index real (main tiene z-10; nav y FAB quedaban encima) */}
       {showEditModal &&
         typeof document !== 'undefined' &&
         createPortal(
           <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-[10500]"
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex empleados-edit-overlay justify-center z-[10500]"
             role="dialog"
             aria-modal="true"
             aria-labelledby="edit-empleado-modal-title"
           >
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[min(95dvh,calc(100dvh-2rem))] flex flex-col overflow-hidden shadow-2xl border border-gray-200 animate-in fade-in duration-300 mb-[env(safe-area-inset-bottom,0px)]">
-            {/* Header ULTRA MODERN */}
-            <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-6 py-4 border-b border-blue-200 flex-shrink-0">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <span className="text-white text-xl">✏️</span>
-                  </div>
-                  <div>
-                    <h2 id="edit-empleado-modal-title" className="text-xl font-bold text-gray-900">Detalles del empleado</h2>
-                    <p className="text-sm text-blue-600 font-medium">Modificar información del empleado</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowEditModal(false)}
-                  className="w-10 h-10 bg-white hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-xl flex items-center justify-center transition-all duration-200 shadow-md hover:shadow-lg group"
-                >
-                  <span className="text-gray-400 group-hover:text-blue-500 text-xl">✕</span>
-                </button>
-              </div>
+          <div className="app-modal app-modal--form max-w-4xl w-full max-h-[min(95dvh,calc(100dvh-2rem))] flex flex-col overflow-hidden mb-[env(safe-area-inset-bottom,0px)]">
+            <div className="app-modal__header flex-shrink-0">
+              <h2 id="edit-empleado-modal-title" className="app-modal__title">Detalles del empleado</h2>
+              <button type="button" onClick={() => setShowEditModal(false)} className="app-modal__close" aria-label="Cerrar"><X className="w-5 h-5" /></button>
             </div>
             
             {/* Content - SCROLLABIL (min-h-0: flex child poate scrolla fără să împingă footerul) */}
-            <div className="flex-1 min-h-0 overflow-y-auto p-6">
+            <div className="app-modal__body flex-1 min-h-0 overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {SHEET_FIELDS.filter(field => field !== 'NOMBRE' && field !== 'APELLIDO1' && field !== 'APELLIDO2' && field !== 'NOMBRE_SPLIT_CONFIANZA').map(field => {
                   const fieldId = `add-${field.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
                   return (
                   <div key={field}>
-                <label htmlFor={fieldId} className="block text-sm font-medium text-gray-700 mb-2">
-                  {field === 'CODIGO' && '🆔'} 
-                  {field === 'NOMBRE / APELLIDOS' && '👤'} 
-                  {field === 'CORREO ELECTRONICO' && '📧'} 
-                  {field === 'NACIONALIDAD' && '🌍'} 
-                  {field === 'DIRECCION' && '🏠'} 
-                  {field === 'D.N.I. / NIE' && '📄'} 
-                  {field === 'SEG. SOCIAL' && '🏥'} 
-                  {field === 'Nº Cuenta' && '💳'} 
-                  {field === 'TELEFONO' && '📞'} 
-                  {field === 'Fecha Antigüedad' && '📆'} 
-                  {field === 'FECHA NACIMIENTO' && '🎂'} 
-                  {field === 'FECHA DE ALTA' && '📅'} 
-                  {field === 'FECHA BAJA' && '🚪'} 
-                  {field === 'DerechoPedidos' && '🛒'} 
-                  {field === 'TrabajaFestivos' && '🎉'} 
-                  {field === 'Contraseña' && '🔑'} 
-                  {field === 'fecha_baja_programada' && '📅'} 
-                  {field === 'VACACIONES_RESTANTES_ANO_ANTERIOR' && '🏖️'} 
-                  {field === 'certificado_handicap_confirmado' && '♿'} 
-                  {field === 'fecha_baja_programada' ? 'Fecha de Baja Programada' :
-                   field === 'VACACIONES_RESTANTES_ANO_ANTERIOR' ? 'Vacaciones Restantes Año Anterior' :
-                   field === 'certificado_handicap_confirmado' ? 'Certificado Handicap Confirmado' :
-                   field === 'DerechoPedidos' ? 'Derecho Pedidos' :
-                   field === 'TrabajaFestivos' ? 'Trabaja Festivos' :
-                   field}
-                </label>
+                <label htmlFor={fieldId} className="app-modal__label block mb-2">{getEmployeeFieldLabel(field)}</label>
                 {field === 'CODIGO' ? (
                   <Input
                     id={fieldId}
@@ -7438,7 +6515,7 @@ export default function EmpleadosPage() {
                       type="button"
                       onClick={() => handleImpersonate(editForm)}
                       disabled={impersonatingBusy}
-                      className="px-4 py-3 bg-gradient-to-r from-sky-500 to-blue-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 disabled:opacity-60 disabled:transform-none"
+                      className="solicitud-admin-btn solicitud-admin-btn--primary w-full justify-center"
                     >
                       {impersonatingBusy ? 'Entrando…' : 'Entrar como este empleado'}
                     </button>
@@ -7712,9 +6789,9 @@ export default function EmpleadosPage() {
             </div>
             
             {/* Footer fix — mereu vizibil pe split / ecran scurt */}
-            <div className="flex-shrink-0 flex gap-3 sm:gap-4 justify-end p-4 sm:p-6 border-t border-gray-200 bg-gray-50">
-              {/* Buton Cancelar */}
+            <div className="app-modal__footer flex-shrink-0 flex gap-3 justify-end">
               <button
+                type="button"
                 onClick={() => {
                   setShowEditModal(false);
                   setEnviarAGestoriaEdit(false); // Reset checkbox la închidere
@@ -7723,60 +6800,17 @@ export default function EmpleadosPage() {
                   setArchivosGestoriaEdit([]); // Reset fișiere
                   setOriginalEmployeeData(null); // Reset datele originale
                 }}
-                className="group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-white border-2 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900"
+                className="solicitud-admin-btn"
               >
-                <div className="relative flex items-center gap-2">
-                  <span className="text-lg group-hover:scale-110 transition-transform duration-300">❌</span>
-                  <span>Cancelar</span>
-                </div>
+                Cancelar
               </button>
-              
-              {/* Buton Guardar */}
               <button
+                type="button"
                 onClick={handleEditUser}
                 disabled={addLoading}
-                className={`group relative px-8 py-3 rounded-2xl font-bold transition-all duration-500 transform hover:scale-110 hover:-translate-y-1 shadow-2xl hover:shadow-green-300/50 ${
-                  addLoading ? 'opacity-50 cursor-not-allowed transform-none' : ''
-                }`}
-                style={{
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%)',
-                  boxShadow: '0 10px 25px rgba(16, 185, 129, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-                }}
+                className="solicitud-admin-btn solicitud-admin-btn--primary min-w-[8rem]"
               >
-                {/* 3D depth effect */}
-                <div className="absolute inset-0 rounded-2xl bg-gradient-to-b from-green-300 to-green-800 opacity-20 transform translate-y-1 group-active:translate-y-0 transition-transform duration-150"></div>
-                
-                {/* Main content */}
-                <div className="relative flex items-center justify-center gap-2">
-                  {addLoading ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      <span className="font-black" style={{
-                        textShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                        background: 'linear-gradient(45deg, #ffffff, #d1fae5, #ffffff)',
-                        WebkitBackgroundClip: 'text',
-                        WebkitTextFillColor: 'transparent',
-                        backgroundClip: 'text'
-                      }}>Guardando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-xl group-hover:scale-125 transition-all duration-500">💾</span>
-                      <span className="font-black" style={{
-                        textShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                        background: 'linear-gradient(45deg, #ffffff, #d1fae5, #ffffff)',
-                        WebkitBackgroundClip: 'text',
-                        WebkitTextFillColor: 'transparent',
-                        backgroundClip: 'text'
-                      }}>Guardar</span>
-                    </>
-                  )}
-                </div>
-                
-                {/* Shimmer effect */}
-                <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
-                </div>
+                {addLoading ? 'Guardando…' : 'Guardar'}
               </button>
             </div>
           </div>
@@ -7800,6 +6834,7 @@ export default function EmpleadosPage() {
         size="lg"
         showCloseButton={false}
         closeOnBackdrop={!emailListSending}
+        className="app-modal--form"
       >
         {emailListConfirm && (
           <div className="space-y-4">
@@ -7879,20 +6914,15 @@ export default function EmpleadosPage() {
       <Modal
         isOpen={showWelcomeEmailModal}
         onClose={() => !welcomeEmailLoading && setShowWelcomeEmailModal(false)}
-        title=""
+        title="Email de bienvenida a todos"
         size="lg"
+        showCloseButton={false}
+        className="app-modal--form"
       >
-        <div className="max-w-xl mx-auto">
-          <div className="text-center mb-6">
-            <div className="w-14 h-14 bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-full flex items-center justify-center mx-auto mb-3">
-              <span className="text-white text-xl">✉️</span>
-            </div>
-            <h2 className="text-xl font-bold text-gray-900 mb-1">Email de bienvenida a todos</h2>
-            <p className="text-gray-600 text-sm">Se enviará a todos los empleados activos. Cada uno recibirá su usuario y contraseña personalizados al final del mensaje. Si algunos fallaron por límite SMTP, usa <strong>Reintentar fallidos</strong> (mismo asunto) para omitir los ya enviados.</p>
-          </div>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Asunto</label>
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-300">Se enviará a todos los empleados activos. Cada uno recibirá su usuario y contraseña personalizados al final del mensaje. Si algunos fallaron por límite SMTP, usa <strong>Reintentar fallidos</strong> (mismo asunto) para omitir los ya enviados.</p>
+          <div>
+            <label className="app-modal__label block mb-1">Asunto</label>
               <Input
                 value={welcomeEmailSubject}
                 onChange={(e) => setWelcomeEmailSubject(e.target.value)}
@@ -7901,27 +6931,25 @@ export default function EmpleadosPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Mensaje</label>
+              <label className="app-modal__label block mb-1">Mensaje</label>
               <textarea
                 value={welcomeEmailMessage}
                 onChange={(e) => setWelcomeEmailMessage(e.target.value)}
                 placeholder="Escribe el mensaje de bienvenida..."
                 rows={8}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 resize-y"
+                className="app-modal__input w-full min-h-[8rem] resize-y"
               />
             </div>
             {welcomeEmailError && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                {welcomeEmailError}
-              </div>
+              <AlertBanner variant="danger" compact>{welcomeEmailError}</AlertBanner>
             )}
           </div>
-          <div className="flex flex-wrap gap-3 justify-end mt-6 pt-4 border-t border-gray-200">
+          <div className="empleados-modal-actions mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
             <button
               type="button"
               onClick={() => !welcomeEmailLoading && setShowWelcomeEmailModal(false)}
               disabled={welcomeEmailLoading}
-              className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-50"
+              className="solicitud-admin-btn"
             >
               Cancelar
             </button>
@@ -7929,138 +6957,62 @@ export default function EmpleadosPage() {
               type="button"
               onClick={() => handleSendWelcomeEmailToAll({ excludeAlreadySent: true })}
               disabled={welcomeEmailLoading}
-              title="Reenvía solo a quienes no recibieron este asunto con éxito (omite los 33 ya enviados)"
-              className="px-4 py-2 rounded-lg border border-amber-400 bg-amber-50 text-amber-900 font-medium hover:bg-amber-100 disabled:opacity-50 flex items-center gap-2"
+              title="Reenvía solo a quienes no recibieron este asunto con éxito"
+              className="solicitud-admin-btn"
             >
-              {welcomeEmailLoading ? (
-                <>
-                  <span className="w-4 h-4 border-2 border-amber-600 border-t-transparent rounded-full animate-spin" />
-                  Enviando...
-                </>
-              ) : (
-                'Reintentar fallidos'
-              )}
+              {welcomeEmailLoading ? 'Enviando…' : 'Reintentar fallidos'}
             </button>
             <button
               type="button"
               onClick={() => handleSendWelcomeEmailToAll({ excludeAlreadySent: false })}
               disabled={welcomeEmailLoading}
-              className="px-5 py-2 rounded-lg bg-cyan-600 text-white font-medium hover:bg-cyan-700 disabled:opacity-50 flex items-center gap-2"
+              className="solicitud-admin-btn solicitud-admin-btn--primary"
             >
-              {welcomeEmailLoading ? (
-                <>
-                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Enviando...
-                </>
-              ) : (
-                'Enviar a todos'
-              )}
+              {welcomeEmailLoading ? 'Enviando…' : 'Enviar a todos'}
             </button>
           </div>
-        </div>
       </Modal>
 
       {/* Modal para enviar email - Diseño moderno */}
       <Modal
         isOpen={showEmailModal}
         onClose={() => setShowEmailModal(false)}
-        title=""
+        title="Enviar email"
         size="xl"
+        showCloseButton={false}
+        className="app-modal--form"
       >
-        <div className="max-w-2xl mx-auto">
-          {/* Header moderno */}
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-white text-2xl">📧</span>
-            </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Enviar Email</h2>
-            <p className="text-gray-600">Comunicación profesional con el equipo</p>
-          </div>
-
-          {/* Información empleado seleccionado - Diseño moderno */}
+        <div className="space-y-4">
           {selectedUserForEmail && emailForm.destinatar === 'angajat' && (
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6 mb-6">
-              <div className="flex items-center">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center mr-4">
-                  <span className="text-white font-bold text-lg">
-                    {selectedUserForEmail['NOMBRE / APELLIDOS']?.charAt(0) || 'A'}
-                  </span>
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    {selectedUserForEmail['NOMBRE / APELLIDOS']}
-                  </h3>
-                  <p className="text-blue-600 font-medium">
-                    Código: {selectedUserForEmail.CODIGO}
-                  </p>
-                </div>
-              </div>
+            <div className="empleados-modal-employee">
+              <p className="empleados-modal-employee__name">{selectedUserForEmail['NOMBRE / APELLIDOS']}</p>
+              <p className="empleados-modal-employee__meta">Código: {selectedUserForEmail.CODIGO}</p>
             </div>
           )}
 
-          {/* Selector destinatario moderno */}
-          <div className="mb-6">
-            <label className="block text-sm font-semibold text-gray-700 mb-3">
-              Destinatario
-            </label>
-            <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="app-modal__label block mb-2">Destinatario</label>
+            <div className="empleados-kpi-strip">
               <button
                 type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setEmailForm(prev => ({ ...prev, destinatar: 'angajat' }));
-                }}
-                className={`p-4 rounded-xl border-2 transition-all duration-200 ${
-                  emailForm.destinatar === 'angajat'
-                    ? 'border-red-500 bg-red-50 text-red-700 shadow-lg'
-                    : 'border-gray-200 bg-white text-gray-700 hover:border-red-300 hover:bg-red-50'
-                }`}
+                onClick={() => setEmailForm((prev) => ({ ...prev, destinatar: 'angajat' }))}
+                className={`empleados-kpi text-left ${emailForm.destinatar === 'angajat' ? 'empleados-kpi--active' : ''}`}
               >
-                <div className="text-center">
-                  <div className="text-2xl mb-2">👤</div>
-                  <div className="font-medium">Empleado</div>
-                  <div className="text-xs text-gray-500 mt-1">Individual</div>
-                </div>
+                <span className="empleados-kpi__label">Empleado</span>
               </button>
               <button
                 type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setEmailForm(prev => ({ ...prev, destinatar: 'toti' }));
-                }}
-                className={`p-4 rounded-xl border-2 transition-all duration-200 ${
-                  emailForm.destinatar === 'toti'
-                    ? 'border-red-500 bg-red-50 text-red-700 shadow-lg'
-                    : 'border-gray-200 bg-white text-gray-700 hover:border-red-300 hover:bg-red-50'
-                }`}
+                onClick={() => setEmailForm((prev) => ({ ...prev, destinatar: 'toti' }))}
+                className={`empleados-kpi text-left ${emailForm.destinatar === 'toti' ? 'empleados-kpi--active' : ''}`}
               >
-                <div className="text-center">
-                  <div className="text-2xl mb-2">👥</div>
-                  <div className="font-medium">Todos</div>
-                  <div className="text-xs text-gray-500 mt-1">Completo</div>
-                </div>
+                <span className="empleados-kpi__label">Todos</span>
               </button>
               <button
                 type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  console.log('Cambio destinatario a grupo');
-                  setEmailForm(prev => ({ ...prev, destinatar: 'grup', grup: prev.grup || (gruposList.length > 0 ? gruposList[0] : 'Empleado') }));
-                }}
-                className={`p-4 rounded-xl border-2 transition-all duration-200 ${
-                  emailForm.destinatar === 'grup'
-                    ? 'border-red-500 bg-red-50 text-red-700 shadow-lg'
-                    : 'border-gray-200 bg-white text-gray-700 hover:border-red-300 hover:bg-red-50'
-                }`}
+                onClick={() => setEmailForm((prev) => ({ ...prev, destinatar: 'grup', grup: prev.grup || (gruposList.length > 0 ? gruposList[0] : 'Empleado') }))}
+                className={`empleados-kpi text-left ${emailForm.destinatar === 'grup' ? 'empleados-kpi--active' : ''}`}
               >
-                <div className="text-center">
-                  <div className="text-2xl mb-2">🏢</div>
-                  <div className="font-medium">Grupo</div>
-                  <div className="text-xs text-gray-500 mt-1">Selectivo</div>
-                </div>
+                <span className="empleados-kpi__label">Grupo</span>
               </button>
             </div>
           </div>
@@ -8130,104 +7082,47 @@ export default function EmpleadosPage() {
 
           {/* Bară de progres pentru trimiterea email-urilor */}
           {emailProgress && (
-            <div className="mt-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6">
-              <div className="mb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-semibold text-blue-900">
-                    {emailProgress.status === 'starting' && '⏳ Preparando...'}
-                    {emailProgress.status === 'sending' && '📧 Se trimit email-uri...'}
-                    {emailProgress.status === 'completed' && '✅ Finalizat!'}
-                  </span>
-                  <span className="text-sm font-bold text-blue-700">
-                    {emailProgress.current} / {emailProgress.total}
-                  </span>
-                </div>
-                
-                {/* Bară de progres */}
-                <div className="w-full bg-blue-200 rounded-full h-3 overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full transition-all duration-300 ease-out"
-                    style={{
-                      width: `${(emailProgress.current / emailProgress.total) * 100}%`,
-                    }}
-                  />
-                </div>
-                
-                {/* Statistici */}
-                <div className="mt-3 flex items-center justify-between text-xs text-blue-700">
-                  <span>✅ Correctos: {emailProgress.success}</span>
-                  {emailProgress.failed > 0 && (
-                    <span className="text-red-600">❌ Fallidos: {emailProgress.failed}</span>
-                  )}
-                  <span className="font-semibold">
-                    {Math.round((emailProgress.current / emailProgress.total) * 100)}%
-                  </span>
-                </div>
+            <div className="app-card app-card--pad mt-4">
+              <div className="flex items-center justify-between mb-2 text-sm">
+                <span className="font-semibold text-gray-800 dark:text-gray-100">
+                  {emailProgress.status === 'starting' && 'Preparando…'}
+                  {emailProgress.status === 'sending' && 'Enviando emails…'}
+                  {emailProgress.status === 'completed' && 'Finalizado'}
+                </span>
+                <span className="font-bold">{emailProgress.current} / {emailProgress.total}</span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
+                <div
+                  className="h-full bg-[var(--primary-color,#e53935)] rounded-full transition-all duration-300"
+                  style={{ width: `${(emailProgress.current / emailProgress.total) * 100}%` }}
+                />
+              </div>
+              <div className="mt-2 flex justify-between text-xs text-gray-600 dark:text-gray-300">
+                <span>Correctos: {emailProgress.success}</span>
+                {emailProgress.failed > 0 && <span className="text-red-600">Fallidos: {emailProgress.failed}</span>}
               </div>
             </div>
           )}
 
-          {/* Mensajes de feedback moderno */}
           {emailError && !emailProgress && (
-            <div className="mt-6 bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl p-4">
-              <div className="flex items-center">
-                <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center mr-3">
-                  <span className="text-red-600 text-lg">⚠️</span>
-                </div>
-                <div>
-                  <p className="text-red-800 font-medium">Error al enviar</p>
-                  <p className="text-red-600 text-sm">{emailError}</p>
-                </div>
-              </div>
-            </div>
+            <AlertBanner variant="danger" compact title="Error al enviar">{emailError}</AlertBanner>
           )}
-          
+
           {emailSuccess && !emailProgress && (
-            <div className="mt-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
-              <div className="flex items-center">
-                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mr-3">
-                  <span className="text-green-600 text-lg">✅</span>
-                </div>
-                <div>
-                  <p className="text-green-800 font-medium">¡Correo enviado con éxito!</p>
-                  <p className="text-green-600 text-sm">El mensaje ha sido enviado correctamente</p>
-                </div>
-              </div>
-            </div>
+            <AlertBanner variant="success" compact>Correo enviado con éxito</AlertBanner>
           )}
         </div>
         
-        {/* Botones modernos */}
-        <div className="flex gap-4 justify-center mt-8">
-          <Button
-            onClick={() => setShowEmailModal(false)}
-            variant="outline"
-            size="lg"
-            className="px-8 py-3 border-2 border-gray-300 hover:border-gray-400"
-          >
-            <span className="mr-2">✖️</span>
-            Cancelar
-          </Button>
-          <Button
+        <div className="empleados-modal-actions mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <button type="button" onClick={() => setShowEmailModal(false)} className="solicitud-admin-btn">Cancelar</button>
+          <button
+            type="button"
             onClick={handleSendEmail}
-            variant="primary"
-            size="lg"
-            loading={emailLoading || (emailProgress && emailProgress.status !== 'completed')}
             disabled={emailLoading || (emailProgress && emailProgress.status !== 'completed')}
-            className="px-8 py-3 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 shadow-lg"
+            className="solicitud-admin-btn solicitud-admin-btn--primary"
           >
-            {emailLoading ? (
-              <>
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                Enviando...
-              </>
-            ) : (
-              <>
-                <span className="mr-2">📧</span>
-                Enviar Email
-              </>
-            )}
-          </Button>
+            {emailLoading || (emailProgress && emailProgress.status !== 'completed') ? 'Enviando…' : 'Enviar email'}
+          </button>
         </div>
       </Modal>
 
@@ -8242,24 +7137,15 @@ export default function EmpleadosPage() {
         }}
         title="Solicitar Documento"
         size="md"
+        showCloseButton={false}
+        className="app-modal--form"
       >
         {selectedUserForDocumento && (
           <div className="space-y-6">
             {/* Info angajat */}
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-lg">
-                  <span className="text-white text-xl">👤</span>
-                </div>
-                <div>
-                  <p className="font-bold text-gray-900">
-                    {getFormattedNombre(selectedUserForDocumento) || 'Sin nombre'}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    Código: {selectedUserForDocumento.CODIGO}
-                  </p>
-                </div>
-              </div>
+            <div className="empleados-modal-employee">
+              <p className="empleados-modal-employee__name">{getFormattedNombre(selectedUserForDocumento) || 'Sin nombre'}</p>
+              <p className="empleados-modal-employee__meta">Código: {selectedUserForDocumento.CODIGO}</p>
             </div>
 
             {/* Selector tip document */}
@@ -8331,55 +7217,30 @@ export default function EmpleadosPage() {
 
             {/* Error message */}
             {documentoSolicitudError && (
-              <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl p-4">
-                <div className="flex items-center">
-                  <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center mr-3">
-                    <span className="text-red-600 text-lg">⚠️</span>
-                  </div>
-                  <div>
-                    <p className="text-red-800 font-medium">Error</p>
-                    <p className="text-red-600 text-sm">{documentoSolicitudError}</p>
-                  </div>
-                </div>
-              </div>
+              <AlertBanner variant="danger" compact title="Error">{documentoSolicitudError}</AlertBanner>
             )}
 
-            {/* Butoane */}
-            <div className="flex gap-4 justify-center mt-8">
-              <Button
+            <div className="empleados-modal-actions mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
                 onClick={() => {
                   setShowSolicitarDocumentoModal(false);
                   setSelectedUserForDocumento(null);
                   setDocumentoSolicitudForm({ tipo_documento: '', tipo_personalizado: '', notas: '' });
                   setDocumentoSolicitudError(null);
                 }}
-                variant="outline"
-                size="lg"
-                className="px-8 py-3 border-2 border-gray-300 hover:border-gray-400"
+                className="solicitud-admin-btn"
               >
-                <span className="mr-2">✖️</span>
                 Cancelar
-              </Button>
-              <Button
+              </button>
+              <button
+                type="button"
                 onClick={handleSolicitarDocumento}
-                variant="primary"
-                size="lg"
-                loading={documentoSolicitudLoading}
                 disabled={documentoSolicitudLoading || !documentoSolicitudForm.tipo_documento || (documentoSolicitudForm.tipo_documento === 'otro' && !documentoSolicitudForm.tipo_personalizado?.trim())}
-                className="px-8 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-lg"
+                className="solicitud-admin-btn solicitud-admin-btn--primary"
               >
-                {documentoSolicitudLoading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                    Creando...
-                  </>
-                ) : (
-                  <>
-                    <span className="mr-2">📄</span>
-                    Solicitar Documento
-                  </>
-                )}
-              </Button>
+                {documentoSolicitudLoading ? 'Creando…' : 'Solicitar documento'}
+              </button>
             </div>
           </div>
         )}
@@ -8398,28 +7259,20 @@ export default function EmpleadosPage() {
         }}
         title={documentoTodosStep === 'confirm' ? 'Confirmar solicitud a todos' : 'Solicitar Documento a Todos los Empleados'}
         size="md"
+        showCloseButton={false}
+        className="app-modal--form"
       >
         <div className="space-y-6">
           {documentoTodosStep === 'form' && (
             <>
           {/* Info */}
-          <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-500 rounded-full flex items-center justify-center shadow-lg">
-                <span className="text-white text-xl">👥</span>
-              </div>
-              <div>
-                <p className="font-bold text-gray-900">
-                  {documentoTodosForm.solo_activos 
-                    ? users.filter(u => (u['ESTADO'] || u.ESTADO || '').toString().trim().toUpperCase() === 'ACTIVO').length
-                    : users.length
-                  } empleados
-                </p>
-                <p className="text-sm text-gray-600">
-                  {documentoTodosForm.solo_activos ? 'Solo activos' : 'Todos los empleados'}
-                </p>
-              </div>
-            </div>
+          <div className="empleados-modal-employee">
+            <p className="empleados-modal-employee__name">
+              {documentoTodosForm.solo_activos
+                ? users.filter(u => (u['ESTADO'] || u.ESTADO || '').toString().trim().toUpperCase() === 'ACTIVO').length
+                : users.length} empleados
+            </p>
+            <p className="empleados-modal-employee__meta">{documentoTodosForm.solo_activos ? 'Solo activos' : 'Todos los empleados'}</p>
           </div>
 
           {/* Selector tip document */}
@@ -8532,8 +7385,8 @@ export default function EmpleadosPage() {
           )}
 
           {documentoTodosStep === 'confirm' && !documentoTodosLoading && (
-            <div className="rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50 p-4 space-y-3">
-              <p className="font-bold text-gray-900">Vista previa — confirma los datos</p>
+            <div className="app-card app-card--pad space-y-3">
+              <p className="font-bold text-gray-900 dark:text-white">Vista previa — confirma los datos</p>
               <ul className="text-sm text-gray-800 space-y-1 list-disc list-inside">
                 <li>
                   <strong>Tipo de documento:</strong>{' '}
@@ -8589,59 +7442,31 @@ export default function EmpleadosPage() {
 
           {/* Progress bar pentru procesare în masă */}
           {documentoTodosLoading && documentoTodosProgress.total > 0 && (
-            <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-6">
-              <div className="mb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-semibold text-orange-900">
-                    Procesando solicitudes...
-                  </span>
-                  <span className="text-sm font-bold text-orange-700">
-                    {documentoTodosProgress.current} / {documentoTodosProgress.total}
-                  </span>
-                </div>
-                
-                {/* Bară de progres */}
-                <div className="w-full bg-orange-200 rounded-full h-3 overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-orange-500 to-amber-600 rounded-full transition-all duration-300 ease-out"
-                    style={{
-                      width: `${(documentoTodosProgress.current / documentoTodosProgress.total) * 100}%`,
-                    }}
-                  />
-                </div>
-                
-                {/* Statistici */}
-                <div className="mt-3 flex items-center justify-between text-xs text-orange-700">
-                  <span>✅ Correctos: {documentoTodosProgress.success}</span>
-                  {documentoTodosProgress.failed > 0 && (
-                    <span className="text-red-600">❌ Fallidos: {documentoTodosProgress.failed}</span>
-                  )}
-                  <span className="font-semibold">
-                    {Math.round((documentoTodosProgress.current / documentoTodosProgress.total) * 100)}%
-                  </span>
-                </div>
+            <div className="app-card app-card--pad">
+              <div className="flex items-center justify-between mb-2 text-sm">
+                <span className="font-semibold">Procesando solicitudes…</span>
+                <span className="font-bold">{documentoTodosProgress.current} / {documentoTodosProgress.total}</span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
+                <div
+                  className="h-full bg-[var(--primary-color,#e53935)] rounded-full transition-all duration-300"
+                  style={{ width: `${(documentoTodosProgress.current / documentoTodosProgress.total) * 100}%` }}
+                />
+              </div>
+              <div className="mt-2 flex justify-between text-xs text-gray-600 dark:text-gray-300">
+                <span>Correctos: {documentoTodosProgress.success}</span>
+                {documentoTodosProgress.failed > 0 && <span className="text-red-600">Fallidos: {documentoTodosProgress.failed}</span>}
               </div>
             </div>
           )}
 
-          {/* Error message */}
           {documentoTodosError && (
-            <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl p-4">
-              <div className="flex items-center">
-                <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center mr-3">
-                  <span className="text-red-600 text-lg">⚠️</span>
-                </div>
-                <div>
-                  <p className="text-red-800 font-medium">Error</p>
-                  <p className="text-red-600 text-sm">{documentoTodosError}</p>
-                </div>
-              </div>
-            </div>
+            <AlertBanner variant="danger" compact title="Error">{documentoTodosError}</AlertBanner>
           )}
 
-          {/* Butoane */}
-          <div className="flex flex-wrap gap-3 justify-center mt-8">
-            <Button
+          <div className="empleados-modal-actions mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              type="button"
               onClick={() => {
                 setShowSolicitarDocumentoTodosModal(false);
                 setDocumentoTodosStep('form');
@@ -8649,53 +7474,31 @@ export default function EmpleadosPage() {
                 setDocumentoTodosError(null);
                 setDocumentoTodosProgress({ current: 0, total: 0, success: 0, failed: 0 });
               }}
-              variant="outline"
-              size="lg"
-              className="px-8 py-3 border-2 border-gray-300 hover:border-gray-400"
+              className="solicitud-admin-btn"
               disabled={documentoTodosLoading}
             >
-              <span className="mr-2">✖️</span>
               Cancelar
-            </Button>
+            </button>
             {documentoTodosStep === 'confirm' && !documentoTodosLoading && (
-              <Button
+              <button
                 type="button"
-                variant="outline"
-                size="lg"
-                className="px-8 py-3 border-2 border-orange-300 text-orange-800"
+                className="solicitud-admin-btn"
                 onClick={() => {
                   setDocumentoTodosStep('form');
                   setDocumentoTodosError(null);
                 }}
               >
-                ← Volver
-              </Button>
+                Volver
+              </button>
             )}
-            <Button
+            <button
+              type="button"
               onClick={handleDocumentoTodosContinueOrConfirm}
-              variant="primary"
-              size="lg"
-              loading={documentoTodosLoading}
               disabled={documentoTodosLoading || !documentoTodosForm.tipo_documento || (documentoTodosForm.tipo_documento === 'otro' && !documentoTodosForm.tipo_personalizado?.trim())}
-              className="px-8 py-3 bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 shadow-lg"
+              className="solicitud-admin-btn solicitud-admin-btn--primary"
             >
-              {documentoTodosLoading ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                  Procesando...
-                </>
-              ) : documentoTodosStep === 'form' ? (
-                <>
-                  <span className="mr-2">➡️</span>
-                  Continuar
-                </>
-              ) : (
-                <>
-                  <span className="mr-2">📄</span>
-                  Confirmar y enviar
-                </>
-              )}
-            </Button>
+              {documentoTodosLoading ? 'Procesando…' : documentoTodosStep === 'form' ? 'Continuar' : 'Confirmar y enviar'}
+            </button>
           </div>
         </div>
       </Modal>
@@ -8768,22 +7571,17 @@ export default function EmpleadosPage() {
           setDespidoError(null);
           setSelectedUserForDespido(null);
         }}
-        title="🔴 Despido Improcedente"
+        title="Despido improcedente"
         size="md"
+        showCloseButton={false}
+        className="app-modal--form"
       >
         {selectedUserForDespido && (
           <div className="space-y-6">
             {/* Info angajat */}
-            <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl p-4">
-              <div className="flex items-center gap-3">
-                <div className="text-3xl">👤</div>
-                <div>
-                  <p className="font-bold text-gray-900">
-                    {selectedUserForDespido['NOMBRE / APELLIDOS'] || selectedUserForDespido.NOMBRE || 'N/A'}
-                  </p>
-                  <p className="text-sm text-gray-600">Código: {selectedUserForDespido.CODIGO}</p>
-                </div>
-              </div>
+            <div className="empleados-modal-employee">
+              <p className="empleados-modal-employee__name">{selectedUserForDespido['NOMBRE / APELLIDOS'] || selectedUserForDespido.NOMBRE || 'N/A'}</p>
+              <p className="empleados-modal-employee__meta">Código: {selectedUserForDespido.CODIGO}</p>
             </div>
 
             {/* Warning */}
@@ -8881,9 +7679,9 @@ export default function EmpleadosPage() {
               </p>
             </div>
 
-            {/* Butoane */}
-            <div className="flex gap-4 justify-center mt-8">
-              <Button
+            <div className="empleados-modal-actions mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
                 onClick={() => {
                   setShowDespidoModal(false);
                   setDespidoForm({ fecha_efectiva: '', comentario_empresa: '', confirmar: false });
@@ -8891,54 +7689,27 @@ export default function EmpleadosPage() {
                   setDespidoError(null);
                   setSelectedUserForDespido(null);
                 }}
-                variant="outline"
-                size="lg"
-                className="px-8 py-3 border-2 border-gray-300 hover:border-gray-400"
+                className="solicitud-admin-btn"
                 disabled={despidoLoading}
               >
-                <span className="mr-2">✖️</span>
                 Cancelar
-              </Button>
-              <Button
+              </button>
+              <button
+                type="button"
                 onClick={() => handleDespidoSubmit(false)}
-                variant="outline"
-                size="lg"
-                loading={despidoLoading}
                 disabled={despidoLoading || !despidoForm.fecha_efectiva}
-                className="px-8 py-3 border-2 border-blue-300 hover:border-blue-400 text-blue-700"
+                className="solicitud-admin-btn"
               >
-                {despidoLoading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2"></div>
-                    Guardando...
-                  </>
-                ) : (
-                  <>
-                    <span className="mr-2">💾</span>
-                    Guardar borrador
-                  </>
-                )}
-              </Button>
-              <Button
+                {despidoLoading ? 'Guardando…' : 'Guardar borrador'}
+              </button>
+              <button
+                type="button"
                 onClick={() => handleDespidoSubmit(true)}
-                variant="primary"
-                size="lg"
-                loading={despidoLoading}
                 disabled={despidoLoading || !despidoForm.fecha_efectiva || !despidoForm.confirmar}
-                className="px-8 py-3 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 shadow-lg"
+                className="solicitud-admin-btn solicitud-admin-btn--primary"
               >
-                {despidoLoading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                    Procesando...
-                  </>
-                ) : (
-                  <>
-                    <span className="mr-2">✅</span>
-                    Confirmar y notificar gestoria
-                  </>
-                )}
-              </Button>
+                {despidoLoading ? 'Procesando…' : 'Confirmar y notificar'}
+              </button>
             </div>
           </div>
         )}
@@ -8956,6 +7727,8 @@ export default function EmpleadosPage() {
         }}
         title="Actualizar IBAN desde PDF SOPORTE"
         size="large"
+        showCloseButton={false}
+        className="app-modal--form"
       >
         <div className="space-y-6">
           {/* Upload PDF */}
@@ -9151,9 +7924,9 @@ export default function EmpleadosPage() {
             </div>
           )}
 
-          {/* Butoane */}
-          <div className="flex gap-4 justify-center mt-8">
-            <Button
+          <div className="empleados-modal-actions mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              type="button"
               onClick={() => {
                 setShowIbanModal(false);
                 setIbanPdfFile(null);
@@ -9161,35 +7934,20 @@ export default function EmpleadosPage() {
                 setIbanError(null);
                 setIbanSeleccionadas({});
               }}
-              variant="outline"
-              size="lg"
-              className="px-8 py-3 border-2 border-gray-300 hover:border-gray-400"
+              className="solicitud-admin-btn"
               disabled={ibanConfirmando}
             >
-              <span className="mr-2">✖️</span>
               Cancelar
-            </Button>
+            </button>
             {ibanPreview && (
-              <Button
+              <button
+                type="button"
                 onClick={handleIbanConfirmar}
-                variant="primary"
-                size="lg"
-                loading={ibanConfirmando}
-                disabled={ibanConfirmando || Object.values(ibanSeleccionadas).filter(v => v === true).length === 0}
-                className="px-8 py-3 bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700 shadow-lg"
+                disabled={ibanConfirmando || Object.values(ibanSeleccionadas).filter((v) => v === true).length === 0}
+                className="solicitud-admin-btn solicitud-admin-btn--primary"
               >
-                {ibanConfirmando ? (
-                  <>
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                    Actualizando...
-                  </>
-                ) : (
-                  <>
-                    <span className="mr-2">💾</span>
-                    Confirmar Actualización
-                  </>
-                )}
-              </Button>
+                {ibanConfirmando ? 'Actualizando…' : 'Confirmar actualización'}
+              </button>
             )}
           </div>
         </div>

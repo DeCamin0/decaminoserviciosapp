@@ -1,7 +1,21 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContextBase';
-import Back3DButton from '../components/Back3DButton.jsx';
-import { Button, LoadingSpinner, Notification } from '../components/ui';
+import { PageHeader, AlertBanner, SegmentedControl, Modal, Notification } from '../components/ui';
+import {
+  RefreshCw,
+  Eye,
+  Download,
+  Mail,
+  Upload,
+  FileText,
+  PenLine,
+  MessageCircleWarning,
+  Camera,
+  Image as ImageIcon,
+  Replace,
+  X,
+} from 'lucide-react';
 import ContractSigner from '../components/ContractSigner';
 import PRLDocumentSigner from '../components/PRLDocumentSigner';
 import PRLAutoevaluacionModal from '../components/PRLAutoevaluacionModal';
@@ -2632,431 +2646,218 @@ export default function DocumentosPage() {
     }
   };
 
+  const prlPendingFirmaCount = documentosPRL.filter((d) => d.estado === 'PENDIENTE' && d.requiere_firma).length;
+
+  const handleReportError = () => {
+    const tabNames = {
+      nominas: config.NOMINAS_LABEL,
+      'mis-documentos': 'Mis Documentos',
+      'contrato-documentos': 'Documentos Oficiales',
+      'prl-documentos': 'Documentos PRL',
+      diplomas: 'Diplomas',
+    };
+
+    const pageData = {
+      additionalInfo: [
+        `[TAB ACTIVO] ${tabNames[activeTab] || activeTab}`,
+        nominas?.length > 0 ? `[${config.NOMINAS_LABEL.toUpperCase()}] ${nominas.length} disponibles` : null,
+        documentos?.length > 0 ? `[DOCUMENTOS] ${documentos.length} disponibles` : null,
+      ].filter(Boolean),
+    };
+
+    const message = buildErrorReportMessage({
+      authUser,
+      pageName: 'Documentos',
+      pageData,
+    });
+
+    openWhatsAppErrorReport(message);
+  };
+
   if (!email) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-red-600 mb-4">
-            Error: ¡email faltante!
-          </h1>
-          <p className="text-gray-600">
-            No se pudo identificar al usuario.
-          </p>
-        </div>
+      <div className="app-page documentos-page">
+        <PageHeader title="Documentos" backTo="/inicio" />
+        <AlertBanner variant="danger" title="Error: email faltante">
+          No se pudo identificar al usuario.
+        </AlertBanner>
       </div>
     );
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="w-32 h-32 mx-auto mb-4 bg-blue-100 rounded-full flex items-center justify-center">
-            <span className="text-6xl">✍️</span>
-          </div>
-          <div className="animate-pulse">
-            <h2 className="text-xl font-semibold text-gray-700 mb-2">AutoFirma</h2>
-            <p className="text-gray-500">Preparando documentos...</p>
-          </div>
-        </div>
+      <div className="app-page documentos-page">
+        <PageHeader title="Documentos" subtitle={`${config.NOMINAS_LABEL}, contratos y documentos personales`} backTo="/inicio" />
+        <AlertBanner variant="loading" loading>Preparando documentos...</AlertBanner>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-red-600 mb-4">
-            {error}
-          </h1>
-          <Button
-            onClick={fetchNominas}
-            variant="primary"
-            size="lg"
-          >
-            Inténtalo de nuevo
-          </Button>
-        </div>
+      <div className="app-page documentos-page">
+        <PageHeader title="Documentos" backTo="/inicio" />
+        <AlertBanner variant="danger" title="Error">{error}</AlertBanner>
+        <button type="button" onClick={fetchNominas} className="solicitud-admin-btn solicitud-admin-btn--primary mt-2">
+          <RefreshCw className="w-4 h-4" aria-hidden />
+          <span>Inténtalo de nuevo</span>
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header moderno */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Back3DButton to="/inicio" title="Regresar al Dashboard" />
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
-              Gestión de Documentos
-            </h1>
-            <p className="text-gray-600 dark:text-white text-sm sm:text-base">
-              Administra {config.NOMINAS_LABEL.toLowerCase()}, contratos y documentos personales
-            </p>
-          </div>
-        </div>
-      </div>
-
-
-      {/* Botón Reportar Error */}
-      <div className="flex justify-end mb-4">
-        <button 
-          onClick={() => {
-            // Date relevante pentru pagina de documentos
-            const tabNames = {
-              'nominas': config.NOMINAS_LABEL,
-              'mis-documentos': 'Mis Documentos',
-              'contrato-documentos': 'Documentos Oficiales',
-              'prl-documentos': 'Documentos PRL'
-            };
-            
-            const pageData = {
-              additionalInfo: [
-                `[TAB ACTIVO] ${tabNames[activeTab] || activeTab}`,
-                nominas?.length > 0 ? `[${config.NOMINAS_LABEL.toUpperCase()}] ${nominas.length} disponibles` : null,
-                documentos?.length > 0 ? `[DOCUMENTOS] ${documentos.length} disponibles` : null,
-              ].filter(Boolean),
-            };
-            
-            const message = buildErrorReportMessage({
-              authUser,
-              pageName: "Documentos",
-              pageData,
-            });
-            
-            openWhatsAppErrorReport(message);
-          }}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
-        >
-          <span className="text-base">📱</span>
-          Reportar error
-        </button>
-      </div>
-
-      {/* Tabs de navegación - Modernos */}
-      <div className="card">
-        <div className="flex flex-col sm:flex-row flex-wrap gap-3 sm:gap-4 mb-6">
-          <button
-            onClick={() => setActiveTab('nominas')}
-            className={`group relative px-4 sm:px-6 py-3 sm:py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-              activeTab === 'nominas'
-                ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200'
-                : 'bg-white text-green-600 border-2 border-green-200 hover:border-green-400 hover:bg-green-50'
-            }`}
-          >
-            {/* Glow effect */}
-            <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-              activeTab === 'nominas' 
-                ? 'bg-green-400 opacity-30 blur-md animate-pulse' 
-                : 'bg-green-400 opacity-0 group-hover:opacity-20 blur-md'
-            }`}></div>
-            <div className="relative flex items-center gap-2">
-              <span className="text-xl">💰</span>
-              <span>{config.NOMINAS_LABEL}</span>
-            </div>
+    <div className="app-page documentos-page">
+      <PageHeader
+        title="Documentos"
+        subtitle={`${config.NOMINAS_LABEL}, contratos y documentos personales`}
+        backTo="/inicio"
+        actions={(
+          <button type="button" onClick={handleReportError} className="solicitud-admin-btn" title="Reportar error">
+            <MessageCircleWarning className="w-4 h-4" aria-hidden />
+            <span className="hidden sm:inline">Reportar error</span>
           </button>
-          <button
-            onClick={() => setActiveTab('mis-documentos')}
-            className={`group relative px-4 sm:px-6 py-3 sm:py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-              activeTab === 'mis-documentos'
-                ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200'
-                : 'bg-white text-blue-600 border-2 border-blue-200 hover:border-blue-400 hover:bg-blue-50'
-            }`}
-          >
-            {/* Glow effect */}
-            <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-              activeTab === 'mis-documentos' 
-                ? 'bg-blue-400 opacity-30 blur-md animate-pulse' 
-                : 'bg-blue-400 opacity-0 group-hover:opacity-20 blur-md'
-            }`}></div>
-            <div className="relative flex items-center gap-2">
-              <span className="text-xl">📁</span>
-              <span>Mis Documentos</span>
-              {documentosSolicitados.length > 0 && (
-                <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold ${
-                  activeTab === 'mis-documentos'
-                    ? 'bg-white text-blue-600'
-                    : 'bg-red-500 text-white'
-                }`}>
-                  {documentosSolicitados.length > 99 ? '99+' : documentosSolicitados.length}
-                </span>
-              )}
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab('contrato-documentos')}
-            className={`group relative px-4 sm:px-6 py-3 sm:py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-              activeTab === 'contrato-documentos'
-                ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200'
-                : 'bg-white text-purple-600 border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50'
-            }`}
-          >
-            {/* Glow effect */}
-            <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-              activeTab === 'contrato-documentos' 
-                ? 'bg-purple-400 opacity-30 blur-md animate-pulse' 
-                : 'bg-purple-400 opacity-0 group-hover:opacity-20 blur-md'
-            }`}></div>
-            <div className="relative flex items-center gap-2">
-              <span className="text-xl">📋</span>
-              <span>Documentos Oficiales</span>
-              {documentosOficialesNecesitanFirmaCount > 0 && (
-                <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold ${
-                  activeTab === 'contrato-documentos'
-                    ? 'bg-white text-purple-600'
-                    : 'bg-red-500 text-white'
-                }`}>
-                  {documentosOficialesNecesitanFirmaCount > 99 ? '99+' : documentosOficialesNecesitanFirmaCount}
-                </span>
-              )}
-            </div>
-          </button>
-          
-          <button
-            onClick={() => setActiveTab('prl-documentos')}
-            className={`group relative px-4 sm:px-6 py-3 sm:py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-              activeTab === 'prl-documentos'
-                ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200'
-                : 'bg-white text-red-600 border-2 border-red-200 hover:border-red-400 hover:bg-red-50'
-            }`}
-          >
-            {/* Glow effect */}
-            <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-              activeTab === 'prl-documentos' 
-                ? 'bg-red-400 opacity-30 blur-md animate-pulse' 
-                : 'bg-red-400 opacity-0 group-hover:opacity-20 blur-md'
-            }`}></div>
-            <div className="relative flex items-center gap-2">
-              <span className="text-xl">🛡️</span>
-              <span>Documentos PRL</span>
-              {documentosPRL.filter(d => d.estado === 'PENDIENTE' && d.requiere_firma).length > 0 && (
-                <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold ${
-                  activeTab === 'prl-documentos'
-                    ? 'bg-white text-red-600'
-                    : 'bg-red-500 text-white'
-                }`}>
-                  {documentosPRL.filter(d => d.estado === 'PENDIENTE' && d.requiere_firma).length}
-                </span>
-              )}
-            </div>
-          </button>
+        )}
+      />
 
-          <button
-            onClick={() => setActiveTab('diplomas')}
-            className={`group relative px-4 sm:px-6 py-3 sm:py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-              activeTab === 'diplomas'
-                ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white shadow-yellow-200'
-                : 'bg-white text-yellow-600 border-2 border-yellow-200 hover:border-yellow-400 hover:bg-yellow-50'
-            }`}
-          >
-            {/* Glow effect */}
-            <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-              activeTab === 'diplomas' 
-                ? 'bg-yellow-400 opacity-30 blur-md animate-pulse' 
-                : 'bg-yellow-400 opacity-0 group-hover:opacity-20 blur-md'
-            }`}></div>
-            <div className="relative flex items-center gap-2">
-              <span className="text-xl">🎓</span>
-              <span>Diplomas</span>
-            </div>
-          </button>
-        </div>
+      <SegmentedControl
+        layout="grid"
+        value={activeTab}
+        onChange={setActiveTab}
+        className="documentos-tabs solicitud-admin-tabs"
+        items={[
+          { id: 'nominas', label: `${config.NOMINAS_LABEL} (${nominas.length})`, shortLabel: `Nom. (${nominas.length})` },
+          { id: 'mis-documentos', label: `Mis Docs (${documentosSolicitados.length})`, shortLabel: `Docs (${documentosSolicitados.length})` },
+          { id: 'contrato-documentos', label: `Oficiales (${documentosOficialesNecesitanFirmaCount})`, shortLabel: `Ofic. (${documentosOficialesNecesitanFirmaCount})` },
+          { id: 'prl-documentos', label: `PRL (${prlPendingFirmaCount})`, shortLabel: `PRL (${prlPendingFirmaCount})` },
+          { id: 'diplomas', label: 'Diplomas', shortLabel: 'Dipl.' },
+        ]}
+      />
 
-                 {/* Contenido de tabs */}
-         <div className="p-4 sm:p-6">
-           {activeTab === 'nominas' && (
-             <div>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
-                <div className="flex items-center gap-3 sm:gap-4">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <span className="text-white text-xl sm:text-2xl">💰</span>
-                  </div>
-                  <div>
-                    <h2 className="text-xl sm:text-2xl font-bold text-gray-900">{config.NOMINAS_LABEL} Disponibles</h2>
-                    <p className="text-gray-600 text-xs sm:text-sm">Recibos de sueldo y documentos salariales</p>
-                  </div>
+      <div className="app-card app-card--pad">
+        {activeTab === 'nominas' && (
+            <div>
+              <div className="solicitud-admin-toolbar">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100">{config.NOMINAS_LABEL} Disponibles</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Recibos de sueldo y documentos salariales</p>
                 </div>
-                
-                {/* Text legal pentru livrarea nóminelor */}
-                <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4 rounded-lg">
-                  <p className="text-sm text-blue-800">
-                    <strong>📋 Información Legal:</strong> Esta aplicación es el canal oficial de entrega de{' '}
-                    {config.NOMINAS_LABEL.toLowerCase()}. Al acceder a tu cuenta, aceptas que{' '}
-                    {config.NOMINAS_LABEL.toLowerCase()} están disponibles y puestas a tu disposición. Todas las acciones de acceso y descarga son registradas para cumplimiento legal.
-                  </p>
-                </div>
-                
-                 <button
-                   onClick={fetchNominas}
-                   disabled={nominasLoading}
-                   className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                 >
-                   {/* Glow effect */}
-                   <div className="absolute inset-0 rounded-xl bg-blue-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-                   <div className="relative flex items-center gap-2">
-                     {nominasLoading ? (
-                       <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
-                     ) : (
-                       <span className="text-lg">🔄</span>
-                     )}
-                     <span>Actualizar</span>
-                   </div>
-                 </button>
-               </div>
-              
+                <button type="button" onClick={fetchNominas} disabled={nominasLoading} className="solicitud-admin-btn" title="Actualizar">
+                  <RefreshCw className={`w-4 h-4 ${nominasLoading ? 'animate-spin' : ''}`} aria-hidden />
+                  <span className="hidden sm:inline">Actualizar</span>
+                </button>
+              </div>
+
+              <AlertBanner variant="info" className="mt-3" title="Información Legal">
+                Esta aplicación es el canal oficial de entrega de {config.NOMINAS_LABEL.toLowerCase()}. Al acceder a tu cuenta, aceptas que {config.NOMINAS_LABEL.toLowerCase()} están disponibles y puestas a tu disposición. Todas las acciones de acceso y descarga son registradas para cumplimiento legal.
+              </AlertBanner>
+
               {nominasLoading ? (
-                <div className="flex justify-center py-8">
-                  <LoadingSpinner size="lg" text={`Cargando ${config.NOMINAS_LABEL.toLowerCase()}...`} />
-                </div>
+                <AlertBanner variant="loading" loading className="mt-3">Cargando {config.NOMINAS_LABEL.toLowerCase()}...</AlertBanner>
               ) : nominas.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="text-gray-300 text-8xl mb-6">💰</div>
-                  <h3 className="text-2xl font-bold text-gray-600 mb-3">No se encontraron {config.NOMINAS_LABEL.toLowerCase()}</h3>
-                  <p className="text-gray-500 text-lg mb-2">No hay {config.NOMINAS_LABEL.toLowerCase()} disponibles para tu usuario</p>
-                  <p className="text-gray-400 text-sm">Las {config.NOMINAS_LABEL.toLowerCase()} aparecerán aquí cuando estén disponibles</p>
-                </div>
+                <AlertBanner variant="info" title={`No se encontraron ${config.NOMINAS_LABEL.toLowerCase()}`} className="mt-3">
+                  Las {config.NOMINAS_LABEL.toLowerCase()} aparecerán aquí cuando estén disponibles.
+                </AlertBanner>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                <div className="solicitud-admin-mobile-list mt-3">
                   {nominas.map((item, idx) => (
-                    <div key={item.id || idx} 
-                         className="group relative bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 border border-gray-200 hover:border-green-300 overflow-hidden">
-                      {/* Header card */}
-                      <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 sm:p-4 border-b border-green-200">
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all duration-300">
-                            <span className="text-white text-xl group-hover:scale-110 transition-transform duration-300">💰</span>
-                          </div>
-                          <div className="flex-1">
-                            {(item.mes || item.luna || item.month || item.periodo) && (item.año || item.ano || item.an || item.year) ? (
-                            <h3 className="text-lg font-bold text-gray-900 group-hover:text-green-800 transition-colors duration-300 truncate overflow-hidden" title={`${item.mes || item.luna || item.month || item.periodo} / ${item.año || item.ano || item.an || item.year}`}>
-                                {item.mes || item.luna || item.month || item.periodo} / {item.año || item.ano || item.an || item.year}
-                            </h3>
-                            ) : (
-                              <h3 className="text-lg font-bold text-gray-700 group-hover:text-green-800 transition-colors duration-300">
-                                {config.NOMINAS_LABEL_SINGULAR.charAt(0).toUpperCase() + config.NOMINAS_LABEL_SINGULAR.slice(1)} Disponible
-                              </h3>
-                            )}
-                            <p className="text-sm text-green-600 font-medium">Recibo de sueldo</p>
-                          </div>
+                    <article key={item.id || idx} className="solicitud-admin-mobile-card">
+                      <div className="solicitud-admin-mobile-card__head">
+                        <div className="min-w-0">
+                          <h3 className="solicitud-admin-mobile-card__title">
+                            {(item.mes || item.luna || item.month || item.periodo) && (item.año || item.ano || item.an || item.year)
+                              ? `${item.mes || item.luna || item.month || item.periodo} / ${item.año || item.ano || item.an || item.year}`
+                              : `${config.NOMINAS_LABEL_SINGULAR.charAt(0).toUpperCase() + config.NOMINAS_LABEL_SINGULAR.slice(1)} Disponible`}
+                          </h3>
+                          {item.fileName && <p className="text-xs text-gray-500 truncate">{item.fileName}</p>}
                         </div>
                       </div>
-                      
-                      {/* Content */}
-                      <div className="p-3 sm:p-4">
-                        {item.fileName && (
-                          <div className="mb-4">
-                            <label className="block text-xs font-medium text-gray-600 mb-1">📄 Archivo:</label>
-                            <p className="text-sm text-gray-800 bg-gray-50 px-3 py-2 rounded-lg border">
-                              {item.fileName}
-                            </p>
-                          </div>
-                        )}
-                        
-                          {/* Actions */}
-                          <div className="flex flex-col sm:flex-row gap-2">
-                            <button
-                              onClick={() => handlePreviewDocument(item)}
-                              className="flex-1 group relative px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200"
-                            >
-                              <div className="absolute inset-0 rounded-lg bg-blue-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
-                              <div className="relative flex items-center justify-center gap-1 sm:gap-2">
-                                <span className="text-xs sm:text-sm">👁️</span>
-                                <span className="text-xs sm:text-sm">Preview</span>
-                              </div>
-                            </button>
-                            <button
-                              onClick={async () => {
-                                try {
-                                  const token = localStorage.getItem('auth_token');
-                                  const userEmail = authUser?.email || authUser?.['CORREO ELECTRONICO'] || '';
-                                  const userName = authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre || '';
-                                  
-                                  if (!userEmail) {
-                                    setNotification({
-                                      type: 'error',
-                                      title: 'Error',
-                                      message: 'No se encontró tu email. Por favor, contacta con RRHH.'
-                                    });
-                                    return;
-                                  }
-
-                                  setNotification({
-                                    type: 'info',
-                                    title: 'Enviando...',
-                                    message: `Enviando ${config.NOMINAS_LABEL_SINGULAR} por correo electrónico...`
-                                  });
-
-                                  const response = await fetch(routes.sendNominaByEmail(item.id), {
-                                    method: 'POST',
-                                    headers: {
-                                      'Content-Type': 'application/json',
-                                      'Authorization': token ? `Bearer ${token}` : '',
-                                    },
-                                    body: JSON.stringify({
-                                      email: userEmail,
-                                      nombre: userName,
-                                    }),
-                                  });
-
-                                  if (!response.ok) {
-                                    const errorData = await response.json();
-                                    throw new Error(errorData.message || 'Error al enviar email');
-                                  }
-
-                                  await response.json();
-                                  setNotification({
-                                    type: 'success',
-                                    title: '✅ Email Enviado',
-                                    message: `Tu ${config.NOMINAS_LABEL_SINGULAR} ha sido enviada a ${userEmail}`
-                                  });
-                                } catch (error) {
-                                  console.error('❌ Error enviando nómina por email:', error);
-                                  setNotification({
-                                    type: 'error',
-                                    title: 'Error',
-                                    message: error.message || `Error al enviar la ${config.NOMINAS_LABEL_SINGULAR} por email`
-                                  });
-                                }
-                              }}
-                              className="flex-1 group relative px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200"
-                            >
-                              <div className="absolute inset-0 rounded-lg bg-purple-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
-                              <div className="relative flex items-center justify-center gap-1 sm:gap-2">
-                                <span className="text-xs sm:text-sm">📧</span>
-                                <span className="text-xs sm:text-sm">Enviar por correo</span>
-                              </div>
-                            </button>
-                            <button
-                            onClick={async () => {
+                      <div className="solicitud-admin-toolbar documentos-actions mt-2">
+                        <button type="button" onClick={() => handlePreviewDocument(item)} className="solicitud-admin-btn">
+                          <Eye className="w-4 h-4" aria-hidden />
+                          <span>Ver</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
                             try {
-                            // Log descargar nómina
-                            await activityLogger.logAction('nomina_downloaded', {
+                              const token = localStorage.getItem('auth_token');
+                              const userEmail = authUser?.email || authUser?.['CORREO ELECTRONICO'] || '';
+                              const userName = authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre || '';
+
+                              if (!userEmail) {
+                                setNotification({
+                                  type: 'error',
+                                  title: 'Error',
+                                  message: 'No se encontró tu email. Por favor, contacta con RRHH.'
+                                });
+                                return;
+                              }
+
+                              setNotification({
+                                type: 'info',
+                                title: 'Enviando...',
+                                message: `Enviando ${config.NOMINAS_LABEL_SINGULAR} por correo electrónico...`
+                              });
+
+                              const response = await fetch(routes.sendNominaByEmail(item.id), {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  'Authorization': token ? `Bearer ${token}` : '',
+                                },
+                                body: JSON.stringify({
+                                  email: userEmail,
+                                  nombre: userName,
+                                }),
+                              });
+
+                              if (!response.ok) {
+                                const errorData = await response.json();
+                                throw new Error(errorData.message || 'Error al enviar email');
+                              }
+
+                              await response.json();
+                              setNotification({
+                                type: 'success',
+                                title: 'Email Enviado',
+                                message: `Tu ${config.NOMINAS_LABEL_SINGULAR} ha sido enviada a ${userEmail}`
+                              });
+                            } catch (error) {
+                              console.error('❌ Error enviando nómina por email:', error);
+                              setNotification({
+                                type: 'error',
+                                title: 'Error',
+                                message: error.message || `Error al enviar la ${config.NOMINAS_LABEL_SINGULAR} por email`
+                              });
+                            }
+                          }}
+                          className="solicitud-admin-btn"
+                        >
+                          <Mail className="w-4 h-4" aria-hidden />
+                          <span>Email</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await activityLogger.logAction('nomina_downloaded', {
                                 luna: item.mes,
                                 an: item.año || item.ano || item.an || item.year,
                                 fileName: item.fileName,
-                              user: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre,
-                              email: authUser?.email
-                            });
-                            
-                              // Construir URL para descarga con parámetros correctos
-                              const downloadUrl = `${routes.downloadNomina}?id=${item.id}&nombre=${encodeURIComponent(authUser?.['NOMBRE / APELLIDOS'] || authUser?.name || '')}`;
-                              
-                              console.log('📥 Download para nómina:', downloadUrl);
-                              console.log('🔍 Parámetros enviados:', { 
-                                id: item.id, 
-                                nombre: authUser?.['NOMBRE / APELLIDOS'] || authUser?.name 
+                                user: authUser?.['NOMBRE / APELLIDOS'] || authUser?.nombre,
+                                email: authUser?.email
                               });
-                              
-                              // Add JWT token for backend API calls
+
+                              const downloadUrl = `${routes.downloadNomina}?id=${item.id}&nombre=${encodeURIComponent(authUser?.['NOMBRE / APELLIDOS'] || authUser?.name || '')}`;
+
                               const token = localStorage.getItem('auth_token');
                               const fetchHeaders = {};
                               if (token) {
                                 fetchHeaders['Authorization'] = `Bearer ${token}`;
                               }
-                              
-                              // Descarga directamente
+
                               const response = await fetch(downloadUrl, { headers: fetchHeaders });
                               if (response.ok) {
                                 const blob = await response.blob();
@@ -3085,17 +2886,13 @@ export default function DocumentosPage() {
                               });
                             }
                           }}
-                            className="flex-1 group relative px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200"
-                          >
-                            <div className="absolute inset-0 rounded-lg bg-red-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
-                            <div className="relative flex items-center justify-center gap-1 sm:gap-2">
-                              <span className="text-xs sm:text-sm">📄</span>
-                              <span className="text-xs sm:text-sm">Descargar</span>
-                            </div>
-                          </button>
-                        </div>
+                          className="solicitud-admin-btn"
+                        >
+                          <Download className="w-4 h-4" aria-hidden />
+                          <span>Descargar</span>
+                        </button>
                       </div>
-                    </div>
+                    </article>
                   ))}
                 </div>
               )}
@@ -3104,197 +2901,97 @@ export default function DocumentosPage() {
 
                                {activeTab === 'mis-documentos' && (
             <div>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
-                <div className="flex items-center gap-3 sm:gap-4">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <span className="text-white text-xl sm:text-2xl">📁</span>
-                  </div>
-                  <div>
-                    <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Mis Documentos</h2>
-                    <p className="text-gray-600 text-xs sm:text-sm">Archivos y documentos personales</p>
-                  </div>
+              <div className="solicitud-admin-toolbar">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100">Mis Documentos</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Archivos y documentos personales</p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => {
                     fetchDocumentos();
                     fetchDocumentosSolicitados();
                   }}
                   disabled={documentosLoading}
-                  className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                  className="solicitud-admin-btn"
+                  title="Actualizar"
                 >
-                  {/* Glow effect */}
-                  <div className="absolute inset-0 rounded-xl bg-blue-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-                  <div className="relative flex items-center gap-2">
-                    {documentosLoading ? (
-                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
-                    ) : (
-                      <span className="text-lg">🔄</span>
-                    )}
-                    <span>Actualizar</span>
-                  </div>
+                  <RefreshCw className={`w-4 h-4 ${documentosLoading ? 'animate-spin' : ''}`} aria-hidden />
+                  <span className="hidden sm:inline">Actualizar</span>
                 </button>
               </div>
 
-              {/* Secțiune Documentos Solicitados */}
               {documentosSolicitados.length > 0 && (
-                <div className="mb-6">
-                  <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-300 rounded-xl p-4 sm:p-6 shadow-lg">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-10 h-10 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-full flex items-center justify-center shadow-lg">
-                        <span className="text-white text-xl">📄</span>
-                      </div>
-                      <div>
-                        <h3 className="text-lg sm:text-xl font-bold text-gray-900">Documentos Solicitados</h3>
-                        <p className="text-sm text-gray-600">Tienes documentos pendientes de subir</p>
-                      </div>
-                    </div>
-                    
-                    {/* Informare clară */}
-                    <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-3 mb-4">
-                      <div className="flex items-start">
-                        <div className="flex-shrink-0">
-                          <span className="text-blue-600 text-lg">ℹ️</span>
-                        </div>
-                        <div className="ml-3">
-                          <p className="text-xs sm:text-sm text-blue-800 font-medium">
-                            Los documentos se solicitan exclusivamente para la verificación de identidad y cuenta bancaria, con fines contractuales y fiscales.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-3">
+                <div className="mt-3">
+                  <AlertBanner variant="warning" title="Documentos Solicitados" className="mb-3">
+                    Tienes documentos pendientes de subir. Los documentos se solicitan exclusivamente para la verificación de identidad y cuenta bancaria, con fines contractuales y fiscales.
+                  </AlertBanner>
+                  <div className="solicitud-admin-mobile-list">
                       {documentosSolicitados.map((solicitud) => (
-                        <div
-                          key={solicitud.id}
-                          className="bg-white rounded-lg border-2 border-yellow-200 p-4 shadow-md hover:shadow-lg transition-all duration-300"
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-2">
-                                <span className="text-2xl">
-                                  {solicitud.tipo_documento === 'DNI' ? '🆔' : '🏦'}
-                                </span>
-                                <h4 className="font-bold text-gray-900">{solicitud.tipo_documento}</h4>
-                                <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded-full">
-                                  Pendiente
-                                </span>
-                              </div>
-                              {solicitud.notas && (
-                                <p className="text-sm text-gray-600 mb-2">{solicitud.notas}</p>
-                              )}
-                              <p className="text-xs text-gray-500">
-                                Solicitado el {formatDate(solicitud.fecha_solicitud)}
-                              </p>
+                        <article key={solicitud.id} className="solicitud-admin-mobile-card">
+                          <div className="solicitud-admin-mobile-card__head">
+                            <div className="min-w-0">
+                              <h3 className="solicitud-admin-mobile-card__title">{solicitud.tipo_documento}</h3>
+                              {solicitud.notas && <p className="text-xs text-gray-500">{solicitud.notas}</p>}
+                              <p className="text-xs text-gray-500">Solicitado el {formatDate(solicitud.fecha_solicitud)}</p>
                             </div>
+                            <span className="solicitud-status solicitud-status--pendiente">Pendiente</span>
+                          </div>
+                          <div className="solicitud-admin-toolbar documentos-actions mt-2">
                             <button
+                              type="button"
                               onClick={() => {
-                                // Setează tipul documentului și deschide direct modalul de upload
                                 setDocumentType(solicitud.tipo_documento);
                                 setShowCustomTypeSourceModal(true);
                               }}
-                              className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105"
+                              className="solicitud-admin-btn solicitud-admin-btn--primary"
                             >
-                              📤 Subir Documento
+                              <Upload className="w-4 h-4" aria-hidden />
+                              <span>Subir Documento</span>
                             </button>
                           </div>
-                        </div>
+                        </article>
                       ))}
                     </div>
-                  </div>
                 </div>
               )}
-              
+
               {documentosLoading ? (
-                <div className="flex justify-center py-8">
-                  <LoadingSpinner size="lg" text="Cargando documentos..." />
-                </div>
+                <AlertBanner variant="loading" loading className="mt-3">Cargando documentos...</AlertBanner>
               ) : documentos.length === 0 ? (
-                <div className="text-center text-gray-500 py-12">
-                  <div className="text-gray-300 text-8xl mb-6">📁</div>
-                  <h3 className="text-2xl font-bold text-gray-600 mb-3">No hay documentos</h3>
-                  <p className="text-gray-500 text-lg mb-2">No tienes documentos subidos en la base de datos</p>
-                  <p className="text-gray-400 text-sm">Los documentos aparecerán aquí cuando los subas</p>
-                </div>
+                <AlertBanner variant="info" title="No hay documentos" className="mt-3">
+                  Los documentos aparecerán aquí cuando los subas.
+                </AlertBanner>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-                  {documentos.map((documento, idx) => {
-                    return (
-                      <div key={`${documento.id || 'no-id'}-${idx}-${documento.fileName || 'no-name'}`} 
-                           className="group relative bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 border border-gray-200 hover:border-blue-300 overflow-hidden">
-                        {/* Header card */}
-                        <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-3 sm:p-4 border-b border-blue-200">
-                          <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all duration-300">
-                              <span className="text-white text-xl group-hover:scale-110 transition-transform duration-300">📄</span>
-                            </div>
-                            <div className="flex-1">
-                              <h3 className="text-sm font-bold text-gray-900 group-hover:text-blue-800 transition-colors duration-300 break-all overflow-wrap-anywhere leading-tight max-w-full" style={{wordBreak: 'break-all', overflowWrap: 'anywhere'}} title={documento.fileName || `Documento ${idx + 1}`}>
-                                {documento.fileName || `Documento ${idx + 1}`}
-                              </h3>
-                              <p className="text-sm text-blue-600 font-medium">{documento.tipo || 'Documento personal'}</p>
-                            </div>
+                <div className="solicitud-admin-mobile-list mt-3">
+                  {documentos.map((documento, idx) => (
+                      <article key={`${documento.id || 'no-id'}-${idx}-${documento.fileName || 'no-name'}`} className="solicitud-admin-mobile-card">
+                        <div className="solicitud-admin-mobile-card__head">
+                          <div className="min-w-0">
+                            <h3 className="solicitud-admin-mobile-card__title break-all" title={documento.fileName || `Documento ${idx + 1}`}>
+                              {documento.fileName || `Documento ${idx + 1}`}
+                            </h3>
+                            <p className="text-xs text-gray-500">{documento.tipo || 'Documento personal'}</p>
+                            <p className="text-xs text-gray-500">Subido: {formatDate(documento.uploadDate)}</p>
                           </div>
+                          {documento.status && (
+                            <span className={`solicitud-status ${
+                              documento.status === 'aprobado' ? 'solicitud-status--ok'
+                                : documento.status === 'rechazado' ? 'solicitud-status--rechazada'
+                                : 'solicitud-status--pendiente'
+                            }`}>
+                              {documento.status === 'aprobado' ? 'Aprobado' : documento.status === 'rechazado' ? 'Rechazado' : 'Pendiente'}
+                            </span>
+                          )}
                         </div>
-                        
-                        {/* Content */}
-                        <div className="p-4">
-                          <div className="space-y-3 mb-4">
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">📅 Fecha de subida:</label>
-                              <p className="text-sm text-gray-800 bg-gray-50 px-3 py-2 rounded-lg border">
-                                {formatDate(documento.uploadDate)}
-                              </p>
-                            </div>
-                            
-                            <div className="flex gap-2">
-                              <div className="flex-1">
-                                <label className="block text-xs font-medium text-gray-600 mb-1">🆔 ID:</label>
-                                <p className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded border">
-                                  {documento.id || 'N/A'}
-                                </p>
-                              </div>
-                              <div className="flex-1">
-                                <label className="block text-xs font-medium text-gray-600 mb-1">📋 Doc ID:</label>
-                                <p className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded border">
-                                  {documento.doc_id || 'N/A'}
-                                </p>
-                              </div>
-                            </div>
-                            
-                            {documento.status && (
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">⚡ Estado:</label>
-                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                                  documento.status === 'aprobado' 
-                                    ? 'bg-green-100 text-green-800 border border-green-200'
-                                    : documento.status === 'rechazado'
-                                    ? 'bg-red-100 text-red-800 border border-red-200'
-                                    : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
-                                }`}>
-                                  {documento.status === 'aprobado' ? '✅ Aprobado' : 
-                                   documento.status === 'rechazado' ? '❌ Rechazado' : '⏳ Pendiente'}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                           
-                          {/* Actions */}
-                          <div className="flex flex-col gap-2">
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => handlePreviewDocument(documento)}
-                                className="flex-1 group relative px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200"
-                              >
-                                <div className="absolute inset-0 rounded-lg bg-blue-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
-                                <div className="relative flex items-center justify-center gap-1 sm:gap-2">
-                                  <span className="text-xs sm:text-sm">👁️</span>
-                                  <span className="text-xs sm:text-sm">Preview</span>
-                                </div>
+                        <div className="solicitud-admin-toolbar documentos-actions mt-2 flex-wrap">
+                              <button type="button" onClick={() => handlePreviewDocument(documento)} className="solicitud-admin-btn">
+                                <Eye className="w-4 h-4" aria-hidden />
+                                <span>Ver</span>
                               </button>
-                              
                               <button
-                                   onClick={async () => {
+                                type="button"
+                                onClick={async () => {
                                    try {
                                      // Log descargar documento
                                      await activityLogger.logAction('documento_downloaded', {
@@ -3412,48 +3109,32 @@ export default function DocumentosPage() {
                                      }
                                    }
                                  }}
-                              className="flex-1 group relative px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200"
+                              className="solicitud-admin-btn"
                             >
-                              <div className="absolute inset-0 rounded-lg bg-red-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
-                              <div className="relative flex items-center justify-center gap-1 sm:gap-2">
-                                <span className="text-xs sm:text-sm">📥</span>
-                                <span className="text-xs sm:text-sm">Descargar</span>
-                              </div>
+                              <Download className="w-4 h-4" aria-hidden />
+                              <span>Descargar</span>
                             </button>
-                            </div>
-                            
-                            {/* Buton de Reemplazar pentru DNI și Certificado de titularidad */}
                             {(documento.tipo === 'DNI' || documento.tipo === 'Certificado de titularidad') && (
                               <button
+                                type="button"
                                 onClick={() => {
-                                  // Deschide modalul de confirmare
                                   setDocumentToReplace(documento);
                                   setShowReplaceConfirmModal(true);
                                 }}
                                 disabled={uploading}
-                                className="w-full group relative px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-amber-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+                                className="solicitud-admin-btn"
                               >
-                                <div className="absolute inset-0 rounded-lg bg-amber-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
-                                <div className="relative flex items-center justify-center gap-1 sm:gap-2">
-                                  {uploading ? (
-                                    <>
-                                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                      <span className="text-xs sm:text-sm">Eliminando...</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <span className="text-xs sm:text-sm">🔄</span>
-                                      <span className="text-xs sm:text-sm">Reemplazar</span>
-                                    </>
-                                  )}
-                                </div>
+                                {uploading ? (
+                                  <RefreshCw className="w-4 h-4 animate-spin" aria-hidden />
+                                ) : (
+                                  <Replace className="w-4 h-4" aria-hidden />
+                                )}
+                                <span>{uploading ? 'Eliminando...' : 'Reemplazar'}</span>
                               </button>
                             )}
-                          </div>
                         </div>
-                      </div>
-                       );
-                     })}
+                      </article>
+                     ))}
                     
 
                   </div>
@@ -3463,433 +3144,149 @@ export default function DocumentosPage() {
 
           {activeTab === 'contrato-documentos' && (
             <div>
-              {/* Header pentru Documentos Oficiales */}
-              <div className="flex items-center gap-4 mb-6">
-                <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                  <span className="text-white text-2xl">📋</span>
+              <div className="solicitud-admin-toolbar">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100">Documentos Oficiales</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Contratos, certificados y documentos legales</p>
                 </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Documentos Oficiales</h2>
-                  <p className="text-gray-600 text-sm">Contratos, certificados y documentos legales</p>
-                </div>
-              </div>
-              
-              {/* Buton Actualizar separat, deasupra listei */}
-              <div className="flex justify-center mb-6">
-                <button
-                  onClick={fetchDocumentosOficiales}
-                  disabled={documentosOficialesLoading}
-                  className="group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                >
-                  {/* Glow effect */}
-                  <div className="absolute inset-0 rounded-xl bg-purple-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-                  <div className="relative flex items-center gap-2">
-                    {documentosOficialesLoading ? (
-                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
-                    ) : (
-                      <span className="text-lg">🔄</span>
-                    )}
-                    <span>Actualizar</span>
-                  </div>
+                <button type="button" onClick={fetchDocumentosOficiales} disabled={documentosOficialesLoading} className="solicitud-admin-btn" title="Actualizar">
+                  <RefreshCw className={`w-4 h-4 ${documentosOficialesLoading ? 'animate-spin' : ''}`} aria-hidden />
+                  <span className="hidden sm:inline">Actualizar</span>
                 </button>
               </div>
-              
-              {documentosOficialesLoading ? (
-                <div className="flex justify-center py-8">
-                  <LoadingSpinner size="lg" text="Cargando documentos oficiales..." />
-                </div>
-              ) : documentosOficialesError ? (
-                <div className="text-center py-12">
-                  <div className="text-red-300 text-8xl mb-6">❌</div>
-                  <h3 className="text-2xl font-bold text-red-600 mb-3">Error al cargar documentos oficiales</h3>
-                  <p className="text-gray-600 text-lg mb-4">{documentosOficialesError}</p>
-                  <button
-                    onClick={fetchDocumentosOficiales}
-                    className="group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200"
-                  >
-                    <div className="absolute inset-0 rounded-xl bg-red-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-                    <div className="relative flex items-center gap-2">
-                      <span className="text-lg">🔄</span>
-                      <span>Reintentar</span>
-                    </div>
-                  </button>
-                </div>
-              ) : documentosOficiales.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="text-gray-300 text-8xl mb-6">📋</div>
-                  <h3 className="text-2xl font-bold text-gray-600 mb-3">No se encontraron documentos oficiales</h3>
-                  <p className="text-gray-500 text-lg mb-2">No hay documentos oficiales disponibles para ti</p>
-                  <p className="text-gray-400 text-sm">Los documentos oficiales aparecerán aquí cuando estén disponibles</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
 
-                    {documentosOficiales
-                      .map((documento, idx) => (
-                      <div key={`${documento.id || 'no-id'}-${idx}-${documento.fileName || 'no-name'}`} 
-                           className="group relative bg-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 border border-gray-200 hover:border-purple-300 overflow-hidden">
-                        {/* Header card */}
-                        <div className="bg-gradient-to-r from-purple-50 to-purple-100 p-4 border-b border-purple-200">
-                          <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all duration-300">
-                              <span className="text-white text-xl group-hover:scale-110 transition-transform duration-300">
-                                {documento.es_certificado_retencion ? '🧾' : '📋'}
-                              </span>
-                            </div>
-                            <div className="flex-1">
-                              <h3 className="text-sm font-bold text-gray-900 group-hover:text-purple-800 transition-colors duration-300 break-all overflow-wrap-anywhere leading-tight max-w-full" style={{wordBreak: 'break-all', overflowWrap: 'anywhere'}} title={documento.fileName || `Documento Oficial ${idx + 1}`}>
-                                {documento.fileName || `Documento Oficial ${idx + 1}`}
-                              </h3>
-                              <p className="text-sm text-purple-600 font-medium">{documento.tipo || 'Documento oficial'}</p>
-                            </div>
+              {documentosOficialesLoading ? (
+                <AlertBanner variant="loading" loading className="mt-3">Cargando documentos oficiales...</AlertBanner>
+              ) : documentosOficialesError ? (
+                <AlertBanner variant="danger" title="Error al cargar documentos oficiales" className="mt-3">
+                  {documentosOficialesError}
+                  <button type="button" onClick={fetchDocumentosOficiales} className="solicitud-admin-btn mt-2">
+                    <RefreshCw className="w-4 h-4" aria-hidden />
+                    <span>Reintentar</span>
+                  </button>
+                </AlertBanner>
+              ) : documentosOficiales.length === 0 ? (
+                <AlertBanner variant="info" title="No se encontraron documentos oficiales" className="mt-3">
+                  Los documentos oficiales aparecerán aquí cuando estén disponibles.
+                </AlertBanner>
+              ) : (
+                <div className="solicitud-admin-mobile-list mt-3">
+                    {documentosOficiales.map((documento, idx) => (
+                      <article key={`${documento.id || 'no-id'}-${idx}-${documento.fileName || 'no-name'}`} className="solicitud-admin-mobile-card">
+                        <div className="solicitud-admin-mobile-card__head">
+                          <div className="min-w-0">
+                            <h3 className="solicitud-admin-mobile-card__title break-all" title={documento.fileName || `Documento Oficial ${idx + 1}`}>
+                              {documento.fileName || `Documento Oficial ${idx + 1}`}
+                            </h3>
+                            <p className="text-xs text-gray-500">{documento.tipo || 'Documento oficial'}</p>
+                            <p className="text-xs text-gray-500">
+                              {formatDate(documento.uploadDate)}
+                              {documento.fileSize > 0 ? ` · ${(documento.fileSize / 1024).toFixed(1)} KB` : ''}
+                            </p>
                           </div>
+                          <span className={`solicitud-status ${documento.necesita_firma === true ? 'solicitud-status--pendiente' : 'solicitud-status--ok'}`}>
+                            {documento.necesita_firma === true ? 'Firma pendiente' : 'Sin firma'}
+                          </span>
                         </div>
-                        
-                        {/* Content */}
-                        <div className="p-4">
-                          <div className="space-y-3 mb-4">
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">📅 Fecha:</label>
-                              <p className="text-sm text-gray-800 bg-gray-50 px-3 py-2 rounded-lg border">
-                                {formatDate(documento.uploadDate)}
-                              </p>
-                            </div>
-                            
-                            {documento.fileSize > 0 && (
-                              <div>
-                                <label className="block text-xs font-medium text-gray-600 mb-1">📊 Tamaño:</label>
-                                <p className="text-sm text-gray-800 bg-gray-50 px-3 py-2 rounded-lg border">
-                                  {(documento.fileSize / 1024).toFixed(1)} KB
-                                </p>
-                              </div>
-                            )}
-                            
-                            <div className="flex gap-2">
-                              <div className="flex-1">
-                                <label className="block text-xs font-medium text-gray-600 mb-1">🆔 ID:</label>
-                                <p className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded border">
-                                  {documento.es_certificado_retencion
-                                    ? documento.certificadoRetencionId ?? documento.id
-                                    : documento.id || 'N/A'}
-                                </p>
-                              </div>
-                              <div className="flex-1">
-                                <label className="block text-xs font-medium text-gray-600 mb-1">📋 Doc ID:</label>
-                                <p className="text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded border">
-                                  {documento.es_certificado_retencion ? '—' : documento.doc_id || 'N/A'}
-                                </p>
-                              </div>
-                            </div>
-                            
-                            {/* Badge para necesita_firma */}
-                            <div className="mt-3">
-                              <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium ${
-                                documento.necesita_firma === true
-                                  ? 'bg-green-100 text-green-700 border border-green-300'
-                                  : 'bg-gray-100 text-gray-600 border border-gray-300'
-                              }`}>
-                                {documento.necesita_firma === true ? (
-                                  <>
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                    </svg>
-                                    <span>✓ Necesita Firma</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                    <span>No Necesita Firma</span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          
-                          {/* Actions */}
-                          <div className="flex gap-2 mb-2">
+                        <div className="solicitud-admin-toolbar documentos-actions mt-2 flex-wrap">
                             <button
+                              type="button"
                               onClick={() => handlePreviewDocumentOficial(documento)}
                               disabled={documento.necesita_firma === true}
-                              className={`flex-1 group relative px-3 py-2 rounded-lg font-medium transition-all duration-300 ${
-                                documento.necesita_firma === true
-                                  ? 'opacity-50 cursor-not-allowed bg-gray-400 text-gray-600'
-                                  : 'transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200'
-                              }`}
+                              className="solicitud-admin-btn"
                               title={documento.necesita_firma === true ? 'Este documento requiere firma antes de poder visualizarlo' : 'Vista previa del documento'}
                             >
-                              {documento.necesita_firma !== true && (
-                                <div className="absolute inset-0 rounded-lg bg-blue-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
-                              )}
-                              <div className="relative flex items-center justify-center gap-1">
-                                <span className="text-xs">👁️</span>
-                                <span className="text-xs">Preview</span>
-                              </div>
+                              <Eye className="w-4 h-4" aria-hidden />
+                              <span>Ver</span>
                             </button>
-                            
                             <button
+                              type="button"
                               onClick={() => handleDownloadDocumentOficial(documento)}
                               disabled={documento.necesita_firma === true}
-                              className={`flex-1 group relative px-3 py-2 rounded-lg font-medium transition-all duration-300 ${
-                                documento.necesita_firma === true
-                                  ? 'opacity-50 cursor-not-allowed bg-gray-400 text-gray-600'
-                                  : 'transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200'
-                              }`}
+                              className="solicitud-admin-btn"
                               title={documento.necesita_firma === true ? 'Este documento requiere firma antes de poder descargarlo' : 'Descargar documento'}
                             >
-                              {documento.necesita_firma !== true && (
-                                <div className="absolute inset-0 rounded-lg bg-green-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
-                              )}
-                              <div className="relative flex items-center justify-center gap-1">
-                                <span className="text-xs">⬇️</span>
-                                <span className="text-xs">Descargar</span>
-                              </div>
+                              <Download className="w-4 h-4" aria-hidden />
+                              <span>Descargar</span>
                             </button>
-                          </div>
-                          
                           {!documento.es_certificado_retencion && (
-                          <div className="flex gap-2">
+                            <>
                             <button
+                              type="button"
                               onClick={() => handleFirmarDocumentoOficial(documento)}
-                              className="flex-1 group relative px-3 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-orange-200"
+                              className="solicitud-admin-btn solicitud-admin-btn--primary"
                             >
-                              <div className="absolute inset-0 rounded-lg bg-orange-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
-                              <div className="relative flex items-center justify-center gap-1">
-                                <span className="text-xs">✍️</span>
-                                <span className="text-xs">Firmar</span>
-                              </div>
+                              <PenLine className="w-4 h-4" aria-hidden />
+                              <span>Firmar</span>
                             </button>
                             <button
+                              type="button"
                               onClick={() => {
                                 console.log('🖱️ BOTÓN AUTOFIRMA HA SIDO PRESIONADO!');
                                 console.log('📄 Documento para AutoFirma:', documento);
                                 handleSignWithAutoFirmaOficial(documento);
                               }}
-                              className="flex-1 group relative px-3 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200"
+                              className="solicitud-admin-btn"
                             >
-                              <div className="absolute inset-0 rounded-lg bg-purple-400 opacity-0 group-hover:opacity-20 blur-sm transition-all duration-300"></div>
-                              <div className="relative flex items-center justify-center gap-1">
-                                <span className="text-xs">✍️</span>
-                                <span className="text-xs">AutoFirma</span>
-                              </div>
+                              <PenLine className="w-4 h-4" aria-hidden />
+                              <span>AutoFirma</span>
                             </button>
-                          </div>
+                            </>
                           )}
                         </div>
-                      </div>
+                      </article>
                     ))}
                   </div>
                 )}
             </div>
           )}
 
-        </div>
-      </div>
-
-
-      {/* Componente de Notificaciones */}
-      {notification && (
-        <Notification
-          type={notification.type}
-          title={notification.title}
-          message={notification.message}
-          onClose={() => setNotification(null)}
-        />
-      )}
-
-      {/* Modal para selecția sursei de fișier personalizat */}
-      {showCustomTypeSourceModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl border border-gray-200 animate-in fade-in duration-300">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-orange-50 to-orange-100 px-6 py-4 border-b border-orange-200 rounded-t-2xl">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <span className="text-white text-lg">📤</span>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900">Subir Documento</h3>
-                    <p className="text-sm text-orange-600 font-medium">Selecciona una opción</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowCustomTypeSourceModal(false)}
-                  className="w-8 h-8 bg-white hover:bg-orange-50 border border-gray-200 hover:border-orange-300 rounded-lg flex items-center justify-center transition-all duration-200 shadow-md hover:shadow-lg group"
-                >
-                  <span className="text-gray-400 group-hover:text-orange-500 text-lg">✕</span>
-                </button>
-              </div>
-            </div>
-            
-            {/* Content */}
-            <div className="p-6">
-              <div className="space-y-4">
-                {/* Opțiunea pentru galerie */}
-                <button
-                  onClick={() => {
-                    customFileInputRef.current?.click();
-                    setShowCustomTypeSourceModal(false);
-                  }}
-                  className="w-full group relative px-6 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200"
-                >
-                  <div className="absolute inset-0 rounded-xl bg-blue-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-                  <div className="relative flex items-center justify-center gap-3">
-                    <span className="text-2xl">📁</span>
-                    <div className="text-left">
-                      <div className="text-lg font-bold">Fototeca</div>
-                      <div className="text-sm opacity-90">Seleccionar foto existente</div>
-                    </div>
-                  </div>
-                </button>
-
-                {/* Opțiunea pentru cameră */}
-                <button
-                  onClick={() => {
-                    customCameraInputRef.current?.click();
-                    setShowCustomTypeSourceModal(false);
-                  }}
-                  className="w-full group relative px-6 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200"
-                >
-                  <div className="absolute inset-0 rounded-xl bg-green-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-                  <div className="relative flex items-center justify-center gap-3">
-                    <span className="text-2xl">📸</span>
-                    <div className="text-left">
-                      <div className="text-lg font-bold">Hacer foto</div>
-                      <div className="text-sm opacity-90">Tomar nueva foto con cámara</div>
-                    </div>
-                  </div>
-                </button>
-
-                {/* Opțiunea pentru selecție fișier */}
-                <button
-                  onClick={() => {
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.accept = '.pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.gif,.webp';
-                    input.onchange = (e) => {
-                      if (e.target.files && e.target.files[0]) {
-                        const tipoFinal = documentType === 'otro' ? customDocumentType : documentType;
-                        handleWebFileChange(e, tipoFinal);
-                      }
-                    };
-                    input.click();
-                    setShowCustomTypeSourceModal(false);
-                  }}
-                  className="w-full group relative px-6 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200"
-                >
-                  <div className="absolute inset-0 rounded-xl bg-purple-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-                  <div className="relative flex items-center justify-center gap-3">
-                    <span className="text-2xl">📄</span>
-                    <div className="text-left">
-                      <div className="text-lg font-bold">Seleccionar Archivo</div>
-                      <div className="text-sm opacity-90">Elegir archivo del dispositivo</div>
-                    </div>
-                  </div>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Tab Documentos PRL */}
       {activeTab === 'prl-documentos' && (
         <div>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center shadow-lg">
-                <span className="text-white text-xl sm:text-2xl">🛡️</span>
-              </div>
-              <div>
-                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Documentos PRL</h2>
-                <p className="text-gray-600 text-xs sm:text-sm">Prevención de Riesgos Laborales - Documentos asignados</p>
-              </div>
+          <div className="solicitud-admin-toolbar">
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100">Documentos PRL</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Prevención de Riesgos Laborales — documentos asignados</p>
             </div>
-            
-            <button
-              onClick={fetchDocumentosPRL}
-              disabled={documentosPRLLoading}
-              className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-            >
-              <div className="absolute inset-0 rounded-xl bg-red-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-              <div className="relative flex items-center gap-2">
-                {documentosPRLLoading ? (
-                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
-                ) : (
-                  <span className="text-lg">🔄</span>
-                )}
-                <span>Actualizar</span>
-              </div>
+            <button type="button" onClick={fetchDocumentosPRL} disabled={documentosPRLLoading} className="solicitud-admin-btn" title="Actualizar">
+              <RefreshCw className={`w-4 h-4 ${documentosPRLLoading ? 'animate-spin' : ''}`} aria-hidden />
+              <span className="hidden sm:inline">Actualizar</span>
             </button>
           </div>
 
           {documentosPRLLoading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-4 border-red-500 border-t-transparent mx-auto mb-4"></div>
-              <p className="text-gray-600">Cargando documentos PRL...</p>
-            </div>
+            <AlertBanner variant="loading" loading className="mt-3">Cargando documentos PRL...</AlertBanner>
           ) : documentosPRLError ? (
-            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
-              <p className="text-red-800">Error: {documentosPRLError}</p>
-            </div>
+            <AlertBanner variant="danger" className="mt-3">{documentosPRLError}</AlertBanner>
           ) : documentosPRL.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">🛡️</div>
-              <p className="text-gray-600 mb-2 font-bold text-lg">No hay documentos PRL asignados</p>
-              <p className="text-sm text-gray-500">Los documentos PRL aparecerán aquí cuando te sean asignados</p>
-            </div>
+            <AlertBanner variant="info" title="No hay documentos PRL asignados" className="mt-3">
+              Los documentos PRL aparecerán aquí cuando te sean asignados.
+            </AlertBanner>
           ) : (
-            <div className="space-y-4">
-              {/* Documentos pendientes de firma */}
-              {documentosPRL.filter(d => d.estado === 'PENDIENTE' && d.requiere_firma).length > 0 && (
-                <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg mb-4">
-                  <h3 className="font-bold text-yellow-800 mb-2">⚠️ Documentos pendientes de firma</h3>
-                  <p className="text-sm text-yellow-700">
-                    Tienes {documentosPRL.filter(d => d.estado === 'PENDIENTE' && d.requiere_firma).length} documento(s) que requieren firma y deben ser devueltos.
-                  </p>
-                </div>
+            <div className="solicitud-admin-mobile-list mt-3">
+              {prlPendingFirmaCount > 0 && (
+                <AlertBanner variant="warning" title="Documentos pendientes de firma" className="mb-3">
+                  Tienes {prlPendingFirmaCount} documento(s) que requieren firma y deben ser devueltos.
+                </AlertBanner>
               )}
-
-              {/* Lista de documentos */}
               {documentosPRL.map((doc) => {
                 const getEstadoBadge = () => {
                   switch (doc.estado) {
                     case 'PENDIENTE':
-                      return doc.requiere_firma ? (
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800 border border-yellow-300">
-                          ⚠️ Pendiente de Firma
-                        </span>
-                      ) : (
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300">
-                          📋 Pendiente
+                      return (
+                        <span className={`solicitud-status ${doc.requiere_firma ? 'solicitud-status--pendiente' : 'solicitud-status--neutral'}`}>
+                          {doc.requiere_firma ? 'Pendiente de firma' : 'Pendiente'}
                         </span>
                       );
                     case 'FIRMADO':
-                      return (
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-300">
-                          ✅ Firmado
-                        </span>
-                      );
+                      return <span className="solicitud-status solicitud-status--ok">Firmado</span>;
                     case 'INFORMATIVO':
-                      return (
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-800 border border-gray-300">
-                          📄 Informativo
-                        </span>
-                      );
+                      return <span className="solicitud-status solicitud-status--neutral">Informativo</span>;
                     case 'NO_APLICA':
-                      return (
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-800 border border-gray-300">
-                          ℹ️ No Aplica
-                        </span>
-                      );
+                      return <span className="solicitud-status solicitud-status--neutral">No aplica</span>;
                     default:
-                      return (
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-800 border border-gray-300">
-                          {doc.estado}
-                        </span>
-                      );
+                      return <span className="solicitud-status solicitud-status--neutral">{doc.estado}</span>;
                   }
                 };
 
@@ -3905,115 +3302,102 @@ export default function DocumentosPage() {
                 };
 
                 return (
-                  <div
+                  <article
                     key={doc.id}
-                    className={`border rounded-lg p-4 hover:shadow-md transition-shadow ${
-                      doc.estado === 'PENDIENTE' && doc.requiere_firma
-                        ? 'border-yellow-300 bg-yellow-50'
-                        : 'border-gray-200 bg-white'
-                    }`}
+                    className={`solicitud-admin-mobile-card ${doc.estado === 'PENDIENTE' && doc.requiere_firma ? 'border-yellow-300' : ''}`}
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <h3 className="font-semibold text-gray-900">{doc.template_nombre}</h3>
+                    <div className="solicitud-admin-mobile-card__head">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <h3 className="solicitud-admin-mobile-card__title">{doc.template_nombre}</h3>
                           {getEstadoBadge()}
                         </div>
-                        <p className="text-sm text-gray-600 mb-2">
-                          {getTipoLabel(doc.tipo_documento)}
-                        </p>
-                        <div className="text-xs text-gray-500 space-y-1">
-                          <p>📅 Asignado: {formatDate(doc.asignado_en)}</p>
-                          {doc.fecha_firma && (
-                            <p>✍️ Firmado: {formatDate(doc.fecha_firma)}</p>
-                          )}
-                          {doc.es_manual_test && doc.estado === 'PENDIENTE' && !doc.test_completado && (
-                            <p>📝 Autoevaluación pendiente — completa el test para poder firmar</p>
-                          )}
-                          {doc.es_manual_test && doc.test_completado && (
-                            <div className="space-y-1">
-                              <p>
-                                ✅ Test completado:{' '}
-                                {doc.test_puntuacion !== null
-                                  ? `${doc.test_puntuacion} puntos`
-                                  : 'Completado'}
-                              </p>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setPrlDocumentForResult(doc);
-                                  setShowPRLAutoevaluacionResult(true);
-                                }}
-                                className="text-blue-700 hover:underline font-medium"
-                              >
-                                Ver mis respuestas del test
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                        {doc.requiere_firma && doc.estado === 'PENDIENTE' && (
-                          <div className="mt-2 p-2 bg-yellow-100 border border-yellow-300 rounded text-xs text-yellow-800">
-                            {doc.es_manual_test && !doc.test_completado ? (
-                              <>📝 Completa la autoevaluación y después firma el manual en la última página.</>
-                            ) : (
-                              <>⚠️ Este documento requiere firma. Debes descargarlo, firmarlo y devolverlo.</>
-                            )}
-                          </div>
+                        <p className="text-xs text-gray-500">{getTipoLabel(doc.tipo_documento)}</p>
+                        <p className="text-xs text-gray-500">Asignado: {formatDate(doc.asignado_en)}</p>
+                        {doc.fecha_firma && (
+                          <p className="text-xs text-gray-500">Firmado: {formatDate(doc.fecha_firma)}</p>
                         )}
-                        {doc.es_renuncia_rm && (
-                          <div className="mt-2 p-2 bg-orange-100 border border-orange-300 rounded text-xs text-orange-800">
-                            ℹ️ Este documento se firma únicamente si rechazas el Reconocimiento Médico.
-                            {doc.estado === 'NO_APLICA' && (
-                              <div className="mt-2 flex items-center gap-2">
-                                <input
-                                  type="checkbox"
-                                  id={`renuncia-rm-${doc.id}`}
-                                  onChange={async (e) => {
-                                    if (e.target.checked) {
-                                      try {
-                                        const token = localStorage.getItem('auth_token');
-                                        const response = await fetch(routes.prlRenunciarRM(doc.id), {
-                                          method: 'POST',
-                                          headers: {
-                                            Authorization: `Bearer ${token}`,
-                                            'Content-Type': 'application/json',
-                                          },
-                                        });
-
-                                        if (!response.ok) {
-                                          const errorData = await response.json();
-                                          throw new Error(errorData.message || 'Error al renunciar a RM');
-                                        }
-
-                                        // Reîncarcă documentele pentru a actualiza statusul
-                                        await fetchDocumentosPRL();
-
-                                        setNotification({
-                                          type: 'success',
-                                          title: 'Renuncia registrada',
-                                          message: 'Debes descargar el documento, firmarlo y subirlo.',
-                                        });
-                                      } catch (error) {
-                                        e.target.checked = false;
-                                        setNotification({
-                                          type: 'error',
-                                          title: 'Error',
-                                          message: `Error al renunciar a RM: ${error.message}`,
-                                        });
-                                      }
-                                    }
-                                  }}
-                                  className="w-4 h-4 text-orange-600 border-orange-300 rounded focus:ring-orange-500"
-                                />
-                                <label htmlFor={`renuncia-rm-${doc.id}`} className="cursor-pointer font-medium">
-                                  Renuncio al Reconocimiento Médico
-                                </label>
-                              </div>
-                            )}
+                        {doc.es_manual_test && doc.estado === 'PENDIENTE' && !doc.test_completado && (
+                          <p className="text-xs text-amber-700 mt-1">Autoevaluación pendiente — completa el test para poder firmar</p>
+                        )}
+                        {doc.es_manual_test && doc.test_completado && (
+                          <div className="mt-1 space-y-1">
+                            <p className="text-xs text-gray-500">
+                              Test completado: {doc.test_puntuacion !== null ? `${doc.test_puntuacion} puntos` : 'Completado'}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPrlDocumentForResult(doc);
+                                setShowPRLAutoevaluacionResult(true);
+                              }}
+                              className="text-xs text-blue-700 hover:underline font-medium"
+                            >
+                              Ver mis respuestas del test
+                            </button>
                           </div>
                         )}
                       </div>
-                      <div className="flex flex-col gap-2">
+                    </div>
+                    {doc.requiere_firma && doc.estado === 'PENDIENTE' && (
+                      <AlertBanner variant="warning" className="mt-2 text-xs">
+                        {doc.es_manual_test && !doc.test_completado
+                          ? 'Completa la autoevaluación y después firma el manual en la última página.'
+                          : 'Este documento requiere firma. Debes descargarlo, firmarlo y devolverlo.'}
+                      </AlertBanner>
+                    )}
+                    {doc.es_renuncia_rm && (
+                      <div className="solicitud-admin-callout mt-2 text-xs">
+                        Este documento se firma únicamente si rechazas el Reconocimiento Médico.
+                        {doc.estado === 'NO_APLICA' && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              id={`renuncia-rm-${doc.id}`}
+                              onChange={async (e) => {
+                                if (e.target.checked) {
+                                  try {
+                                    const token = localStorage.getItem('auth_token');
+                                    const response = await fetch(routes.prlRenunciarRM(doc.id), {
+                                      method: 'POST',
+                                      headers: {
+                                        Authorization: `Bearer ${token}`,
+                                        'Content-Type': 'application/json',
+                                      },
+                                    });
+
+                                    if (!response.ok) {
+                                      const errorData = await response.json();
+                                      throw new Error(errorData.message || 'Error al renunciar a RM');
+                                    }
+
+                                    await fetchDocumentosPRL();
+
+                                    setNotification({
+                                      type: 'success',
+                                      title: 'Renuncia registrada',
+                                      message: 'Debes descargar el documento, firmarlo y subirlo.',
+                                    });
+                                  } catch (error) {
+                                    e.target.checked = false;
+                                    setNotification({
+                                      type: 'error',
+                                      title: 'Error',
+                                      message: `Error al renunciar a RM: ${error.message}`,
+                                    });
+                                  }
+                                }
+                              }}
+                              className="w-4 h-4"
+                            />
+                            <label htmlFor={`renuncia-rm-${doc.id}`} className="cursor-pointer font-medium">
+                              Renuncio al Reconocimiento Médico
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="solicitud-admin-toolbar documentos-actions mt-2 flex-wrap">
                         {/* Buton de descărcare - ascuns pentru RENUNCIA_RM cu status NO_APLICA */}
                         {!(doc.es_renuncia_rm && doc.estado === 'NO_APLICA') && (
                           <button
@@ -4053,49 +3437,41 @@ export default function DocumentosPage() {
                                 });
                               }
                             }}
-                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors text-sm"
+                            className="solicitud-admin-btn"
                           >
-                            📥 Descargar
+                            <Download className="w-4 h-4" aria-hidden />
+                            <span>Descargar</span>
                           </button>
                         )}
-                        {/* Mesaj pentru RENUNCIA_RM cu status NO_APLICA */}
                         {doc.es_renuncia_rm && doc.estado === 'NO_APLICA' && (
-                          <div className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm text-center border border-gray-300">
-                            ℹ️ Marca la casilla para descargar
-                          </div>
+                          <p className="text-xs text-gray-500 w-full">Marca la casilla arriba para descargar</p>
                         )}
-                        {/* Buton de semnare pentru documente care necesită semnătură cu status PENDIENTE */}
                         {doc.requiere_firma && doc.estado === 'PENDIENTE' && (
                           <>
                             {doc.es_manual_test && (
                               <button
                                 type="button"
                                 onClick={() => handleOpenPRLAutoevaluacion(doc)}
-                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors text-sm"
+                                className="solicitud-admin-btn"
                               >
-                                📝 Completar autoevaluación
+                                <FileText className="w-4 h-4" aria-hidden />
+                                <span>Autoevaluación</span>
                               </button>
                             )}
                             <button
                               type="button"
                               onClick={() => handleOpenPRLSigner(doc)}
                               disabled={doc.es_manual_test && !doc.test_completado}
-                              className={`px-4 py-2 rounded-lg font-medium transition-colors text-sm ${
-                                doc.es_manual_test && !doc.test_completado
-                                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-                              }`}
+                              className="solicitud-admin-btn solicitud-admin-btn--primary"
                             >
-                              ✍️ Firmar
+                              <PenLine className="w-4 h-4" aria-hidden />
+                              <span>Firmar</span>
                             </button>
                             <label
-                              className={`px-4 py-2 rounded-lg font-medium transition-colors text-sm text-center ${
-                                doc.es_manual_test && !doc.test_completado
-                                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                  : 'bg-yellow-600 hover:bg-yellow-700 text-white cursor-pointer'
-                              }`}
+                              className={`solicitud-admin-btn ${doc.es_manual_test && !doc.test_completado ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
                             >
-                              📤 Subir Firmado
+                              <Upload className="w-4 h-4" aria-hidden />
+                              <span>Subir firmado</span>
                               <input
                                 type="file"
                                 accept=".pdf,.docx,.doc"
@@ -4233,14 +3609,14 @@ export default function DocumentosPage() {
                                 });
                               }
                             }}
-                            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors text-sm"
+                            className="solicitud-admin-btn"
                           >
-                            📄 Descargar Firmado
+                            <Download className="w-4 h-4" aria-hidden />
+                            <span>Descargar firmado</span>
                           </button>
                         )}
-                      </div>
                     </div>
-                  </div>
+                  </article>
                 );
               })}
             </div>
@@ -4248,7 +3624,171 @@ export default function DocumentosPage() {
         </div>
       )}
 
-      {/* Input-uri ascunse pentru modalul personalizat */}
+      {/* Tab Diplomas */}
+      {activeTab === 'diplomas' && (
+        <div>
+          <div className="solicitud-admin-toolbar">
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100">Diplomas</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Tus diplomas y certificados</p>
+            </div>
+            <button type="button" onClick={fetchDiplomas} disabled={diplomasLoading} className="solicitud-admin-btn" title="Actualizar">
+              <RefreshCw className={`w-4 h-4 ${diplomasLoading ? 'animate-spin' : ''}`} aria-hidden />
+              <span className="hidden sm:inline">Actualizar</span>
+            </button>
+          </div>
+
+          {diplomasLoading ? (
+            <AlertBanner variant="loading" loading className="mt-3">Cargando diplomas...</AlertBanner>
+          ) : diplomasError ? (
+            <AlertBanner variant="danger" className="mt-3">{diplomasError}</AlertBanner>
+          ) : diplomas.length === 0 ? (
+            <AlertBanner variant="info" title="No se encontraron diplomas" className="mt-3">
+              Los diplomas aparecerán aquí cuando estén disponibles.
+            </AlertBanner>
+          ) : (
+            <div className="solicitud-admin-mobile-list mt-3">
+              {diplomas.map((diploma) => (
+                <article key={diploma.id} className="solicitud-admin-mobile-card">
+                  <div className="solicitud-admin-mobile-card__head">
+                    <div className="min-w-0">
+                      <h3 className="solicitud-admin-mobile-card__title">{diploma.nombre_archivo}</h3>
+                      <p className="text-xs text-gray-500">
+                        Subido el: {new Date(diploma.uploaded_at).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="solicitud-admin-toolbar documentos-actions mt-2">
+                    <button type="button" onClick={() => handlePreviewDiploma(diploma)} className="solicitud-admin-btn">
+                      <Eye className="w-4 h-4" aria-hidden />
+                      <span>Ver</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const token = localStorage.getItem('auth_token');
+                          const response = await fetch(routes.diplomasDescargar(diploma.id), {
+                            headers: {
+                              Authorization: `Bearer ${token}`,
+                            },
+                          });
+
+                          if (!response.ok) {
+                            throw new Error('Error al descargar diploma');
+                          }
+
+                          const blob = await response.blob();
+                          const url = window.URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          const contentDisposition = response.headers.get('Content-Disposition');
+                          const filename = contentDisposition
+                            ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || diploma.nombre_archivo
+                            : diploma.nombre_archivo;
+                          a.download = filename;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          window.URL.revokeObjectURL(url);
+                        } catch (error) {
+                          setNotification({
+                            type: 'error',
+                            title: 'Error',
+                            message: `Error al descargar diploma: ${error.message}`,
+                          });
+                        }
+                      }}
+                      className="solicitud-admin-btn"
+                    >
+                      <Download className="w-4 h-4" aria-hidden />
+                      <span>Descargar</span>
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      </div>
+
+      {notification && (
+        <Notification
+          type={notification.type}
+          title={notification.title}
+          message={notification.message}
+          onClose={() => setNotification(null)}
+        />
+      )}
+
+      {typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={showCustomTypeSourceModal}
+          onClose={() => setShowCustomTypeSourceModal(false)}
+          title="Subir Documento"
+          className="app-modal--form"
+          showCloseButton={false}
+        >
+          <p className="text-sm text-gray-500 mb-3">Selecciona una opción</p>
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => {
+                customFileInputRef.current?.click();
+                setShowCustomTypeSourceModal(false);
+              }}
+              className="solicitud-admin-btn w-full justify-start"
+            >
+              <ImageIcon className="w-5 h-5" aria-hidden />
+              <div className="text-left">
+                <div className="font-semibold">Fototeca</div>
+                <div className="text-xs text-gray-500">Seleccionar foto existente</div>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                customCameraInputRef.current?.click();
+                setShowCustomTypeSourceModal(false);
+              }}
+              className="solicitud-admin-btn w-full justify-start"
+            >
+              <Camera className="w-5 h-5" aria-hidden />
+              <div className="text-left">
+                <div className="font-semibold">Hacer foto</div>
+                <div className="text-xs text-gray-500">Tomar nueva foto con cámara</div>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.gif,.webp';
+                input.onchange = (e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    const tipoFinal = documentType === 'otro' ? customDocumentType : documentType;
+                    handleWebFileChange(e, tipoFinal);
+                  }
+                };
+                input.click();
+                setShowCustomTypeSourceModal(false);
+              }}
+              className="solicitud-admin-btn w-full justify-start"
+            >
+              <FileText className="w-5 h-5" aria-hidden />
+              <div className="text-left">
+                <div className="font-semibold">Seleccionar Archivo</div>
+                <div className="text-xs text-gray-500">Elegir archivo del dispositivo</div>
+              </div>
+            </button>
+          </div>
+        </Modal>,
+        document.body
+      )}
+
       <input
         id="custom-file-input"
         name="customFileInput"
@@ -4287,162 +3827,104 @@ export default function DocumentosPage() {
         aria-label="Tomar foto con cámara"
       />
 
-      {/* Modal para Tipo Personalizado de Documento */}
-      {showCustomTypeModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg max-w-md w-full mx-4 shadow-xl">
-            {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h3 className="text-xl font-bold text-gray-900">
-                📝 Tipo de Documento Personalizado
-              </h3>
-              <button
-                onClick={() => {
-                  setShowCustomTypeModal(false);
-                  setCustomDocumentType('');
-                }}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="p-6">
-              <div className="mb-6">
-                <label htmlFor="custom-document-type-modal-input" className="block text-sm font-medium text-gray-700 mb-2">
-                  📋 Especificar Tipo de Documento *
-                       </label>
-                         <input
-                           id="custom-document-type-modal-input"
-                           name="customDocumentTypeModal"
-                           type="text"
-                           placeholder="Ej: Certificado de Residencia, Certificado de Trabajo, etc."
-                           value={customDocumentType}
-                           onChange={(e) => setCustomDocumentType(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors"
-                           required
-                  autoFocus
-                />
-              </div>
-
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  📁 Seleccionar Archivo
-                </label>
-                <div 
-                  className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-red-400 transition-colors cursor-pointer"
-                  onClick={() => {
-                    if (customDocumentType && customDocumentType.trim()) {
-                      setShowCustomTypeModal(false);
-                      setShowCustomTypeSourceModal(true);
-                    } else {
-                      setNotification({
-                        type: 'warning',
-                        title: 'Campo Requerido',
-                        message: 'Por favor, especifica el tipo de documento'
-                      });
-                    }
-                  }}
-                >
-                  <div className="text-gray-400 mb-2">
-                    <svg className="mx-auto h-12 w-12" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                      <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </div>
-                  <p className="text-sm text-gray-600 mb-2">
-                    Haz clic aquí para seleccionar un archivo
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    PDF, DOC, DOCX, JPG, PNG (máx. 10MB)
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="flex justify-end space-x-3 p-6 border-t border-gray-200 bg-gray-50 rounded-b-lg">
-              <button
-                onClick={() => {
-                  setShowCustomTypeModal(false);
-                  setCustomDocumentType('');
-                }}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => {
-                  if (customDocumentType && customDocumentType.trim()) {
-                    if (fileInputRefs.current.customFile) {
-                      fileInputRefs.current.customFile.click();
-                    }
-                  } else {
-                    setNotification({
-                      type: 'warning',
-                      title: 'Campo Requerido',
-                      message: 'Por favor, especifica el tipo de documento'
-                    });
+      {typeof document !== 'undefined' && createPortal(
+      <Modal
+        isOpen={showCustomTypeModal}
+        onClose={() => { setShowCustomTypeModal(false); setCustomDocumentType(''); }}
+        title="Tipo de documento personalizado"
+        showCloseButton={false}
+        className="app-modal--form"
+        footer={(
+          <div className="app-modal__actions">
+            <button type="button" onClick={() => { setShowCustomTypeModal(false); setCustomDocumentType(''); }} className="app-modal__btn">Cancelar</button>
+            <button
+              type="button"
+              onClick={() => {
+                if (customDocumentType && customDocumentType.trim()) {
+                  if (fileInputRefs.current.customFile) {
+                    fileInputRefs.current.customFile.click();
                   }
-                }}
-                disabled={!customDocumentType || !customDocumentType.trim()}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-              >
-                📁 Seleccionar Archivo
-              </button>
-                 </div>
-               </div>
-             </div>
-           )}
+                } else {
+                  setNotification({
+                    type: 'warning',
+                    title: 'Campo Requerido',
+                    message: 'Por favor, especifica el tipo de documento'
+                  });
+                }
+              }}
+              disabled={!customDocumentType || !customDocumentType.trim()}
+              className="app-modal__btn app-modal__btn--primary"
+            >
+              Seleccionar archivo
+            </button>
+          </div>
+        )}
+      >
+        <div className="app-modal__field">
+          <label htmlFor="custom-document-type-modal-input" className="app-modal__label">Especificar tipo de documento</label>
+          <input
+            id="custom-document-type-modal-input"
+            name="customDocumentTypeModal"
+            type="text"
+            placeholder="Ej: Certificado de Residencia, Certificado de Trabajo..."
+            value={customDocumentType}
+            onChange={(e) => setCustomDocumentType(e.target.value)}
+            className="app-modal__input"
+            required
+            autoFocus
+          />
+        </div>
+        <button
+          type="button"
+          className="w-full border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition-colors"
+          onClick={() => {
+            if (customDocumentType && customDocumentType.trim()) {
+              setShowCustomTypeModal(false);
+              setShowCustomTypeSourceModal(true);
+            } else {
+              setNotification({
+                type: 'warning',
+                title: 'Campo Requerido',
+                message: 'Por favor, especifica el tipo de documento'
+              });
+            }
+          }}
+        >
+          <Upload className="w-8 h-8 mx-auto text-gray-400 mb-2" aria-hidden />
+          <p className="text-sm text-gray-600">Haz clic para seleccionar un archivo</p>
+          <p className="text-xs text-gray-500 mt-1">PDF, DOC, DOCX, JPG, PNG (máx. 10MB)</p>
+        </button>
+      </Modal>,
+      document.body
+      )}
 
-      {/* Modal de Preview - Modernizado */}
-      {showPreviewModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-0 sm:p-4">
-        <div className="bg-white rounded-none sm:rounded-2xl max-w-6xl w-full h-full sm:h-auto sm:max-h-[95vh] overflow-hidden shadow-2xl border-0 sm:border border-gray-200 animate-in fade-in duration-300 relative flex flex-col">
-            {/* Header moderno */}
-            <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-4 sm:px-6 py-3 sm:py-4 border-b border-blue-200 relative flex-shrink-0">
-              <div className="flex items-center justify-between gap-2 pr-16 sm:pr-0">
-                <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
-                    <span className="text-white text-lg sm:text-xl">👁️</span>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-base sm:text-xl font-bold text-gray-900 break-all leading-tight truncate">
-                      Vista Previa: {previewDocument?.fileName}
-                    </h3>
-                    <p className="text-xs sm:text-sm text-blue-600 font-medium hidden sm:block">Visualización de documento</p>
-                  </div>
-                </div>
-                {/* Buton de închidere în header - ascuns pe mobil, vizibil pe desktop */}
-                <button
-                  onClick={handleClosePreview}
-                  className="hidden sm:flex w-10 h-10 bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-xl items-center justify-center transition-all duration-200 shadow-md hover:shadow-lg group flex-shrink-0 touch-manipulation"
-                  aria-label="Cerrar preview"
-                >
-                  <span className="text-gray-400 group-hover:text-red-500 text-xl">✕</span>
-                </button>
-              </div>
-            </div>
-
+      {typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={showPreviewModal}
+          onClose={handleClosePreview}
+          title={`Vista Previa: ${previewDocument?.fileName || ''}`}
+          size="xl"
+          className="app-modal--preview"
+          showCloseButton={false}
+          footer={(
+            <button type="button" onClick={handleClosePreview} className="app-modal__btn">
+              Cerrar
+            </button>
+          )}
+        >
+          <div className="documentos-preview-body relative">
             {previewLoading && (
               <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3 z-50">
-                <LoadingSpinner />
+                <RefreshCw className="w-6 h-6 animate-spin text-gray-500" aria-hidden />
                 <p className="text-gray-600 text-sm font-medium">Cargando vista previa...</p>
               </div>
             )}
 
             {previewError && (
-              <div className="px-4 py-3 bg-red-50 border-b border-red-200 text-red-600 text-sm font-semibold">
-                {previewError}
-              </div>
+              <AlertBanner variant="danger" className="mb-3">{previewError}</AlertBanner>
             )}
 
-            <div className="p-4">
-
-              {/* Contenido del documento */}
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <div className="border border-gray-200 rounded-lg overflow-hidden flex-1 min-h-0">
                 {previewDocument?.fileName?.toLowerCase().endsWith('.txt') && previewDocument?.content ? (
                   <div className="p-4 bg-gray-50 max-h-[75vh] overflow-y-auto">
                     <pre className="text-sm text-gray-800 whitespace-pre-wrap font-mono">{previewDocument.content}</pre>
@@ -4556,32 +4038,31 @@ export default function DocumentosPage() {
                 )}
               </div>
             </div>
-            
-          </div>
-        </div>
+        </Modal>,
+        document.body
       )}
 
       {/* Buton pentru AutoFirma - click manual necesar */}
       {autoFirmaUrl && (
-        <div className="fixed bottom-4 right-4 z-50">
-          <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-4 max-w-sm">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                <span className="text-blue-600 text-lg">✍️</span>
-              </div>
-              <div className="flex-1">
+        <div className="fixed bottom-4 right-4 z-50 max-w-sm">
+          <div className="solicitud-admin-callout p-4 shadow-lg">
+            <div className="flex items-center gap-3">
+              <PenLine className="w-5 h-5 text-blue-600 shrink-0" aria-hidden />
+              <div className="flex-1 min-w-0">
                 <h3 className="text-sm font-semibold text-gray-900">AutoFirma</h3>
-                <p className="text-xs text-gray-600">Haz clic en 🚀 para abrir AutoFirma o en 📋 para copiar la URL</p>
+                <p className="text-xs text-gray-600">Abre AutoFirma o copia la URL al portapapeles</p>
               </div>
             </div>
-            <div className="mt-3 flex space-x-2">
+            <div className="mt-3 flex gap-2">
               <a
                 href={autoFirmaUrl}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-3 rounded-md text-center transition-colors"
+                className="solicitud-admin-btn solicitud-admin-btn--primary flex-1 justify-center"
               >
-                🚀 Semnează cu AutoFirma
+                <PenLine className="w-4 h-4" aria-hidden />
+                <span>Semnează cu AutoFirma</span>
               </a>
               <button
+                type="button"
                 onClick={() => {
                   navigator.clipboard.writeText(autoFirmaUrl).then(() => {
                     alert('La URL de AutoFirma se ha copiado al portapapeles. Puedes abrirla manualmente en el navegador.');
@@ -4589,101 +4070,73 @@ export default function DocumentosPage() {
                     alert('URL de AutoFirma: ' + autoFirmaUrl);
                   });
                 }}
-                className="px-3 py-2 bg-gray-500 hover:bg-gray-600 text-white text-sm transition-colors"
+                className="solicitud-admin-icon-btn"
                 title="Copiar URL"
               >
-                📋
+                <FileText className="w-4 h-4" aria-hidden />
               </button>
               <button
+                type="button"
                 onClick={() => setAutoFirmaUrl(null)}
-                className="px-3 py-2 text-gray-500 hover:text-gray-700 text-sm transition-colors"
+                className="solicitud-admin-icon-btn"
+                title="Cerrar"
               >
-                ✕
+                <X className="w-4 h-4" aria-hidden />
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal modern de confirmare pentru înlocuirea documentului */}
-      {showReplaceConfirmModal && documentToReplace && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm transition-opacity duration-200">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full transform transition-all duration-200 scale-100">
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shadow-lg">
-                  <span className="text-2xl">⚠️</span>
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-                    Confirmar Reemplazo
-                  </h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Esta acción no se puede deshacer
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Body */}
-            <div className="px-6 py-4">
-              <p className="text-gray-700 dark:text-gray-300 mb-4">
-                ¿Estás seguro de que deseas reemplazar el documento{' '}
-                <span className="font-semibold text-amber-600 dark:text-amber-400">
-                  &quot;{documentToReplace.fileName}&quot;
-                </span>
-                ?
-              </p>
-              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 mb-4">
-                <p className="text-sm text-amber-800 dark:text-amber-200">
-                  ⚠️ El documento actual se eliminará permanentemente y podrás subir uno nuevo.
-                </p>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3 justify-end">
+      {typeof document !== 'undefined' && showReplaceConfirmModal && documentToReplace && createPortal(
+        <Modal
+          isOpen={showReplaceConfirmModal}
+          onClose={() => {
+            setShowReplaceConfirmModal(false);
+            setDocumentToReplace(null);
+          }}
+          title="Confirmar Reemplazo"
+          showCloseButton={false}
+          footer={(
+            <>
               <button
+                type="button"
                 onClick={() => {
                   setShowReplaceConfirmModal(false);
                   setDocumentToReplace(null);
                 }}
-                className="px-5 py-2.5 rounded-lg font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200"
+                className="solicitud-admin-btn"
               >
                 Cancelar
               </button>
               <button
+                type="button"
                 onClick={async () => {
                   setShowReplaceConfirmModal(false);
-                  
+
                   try {
                     setUploading(true);
-                    
-                    // Obține fileName cu fallback pentru compatibilitate
-                    const fileNameToDelete = documentToReplace.fileName || 
-                                            documentToReplace.nombre_archivo || 
+
+                    const fileNameToDelete = documentToReplace.fileName ||
+                                            documentToReplace.nombre_archivo ||
                                             documentToReplace.filename ||
                                             documentToReplace.archivo;
-                    
+
                     console.log('🔍 [Modal Replace] Document to replace:', documentToReplace);
                     console.log('🔍 [Modal Replace] fileName to delete:', fileNameToDelete);
-                    
+
                     if (!fileNameToDelete) {
                       throw new Error('No se pudo obtener el nombre del archivo del documento');
                     }
-                    
-                    // Șterge documentul vechi
+
                     const deleted = await handleDeleteDocumento(documentToReplace.id, documentToReplace.doc_id, fileNameToDelete);
-                    
+
                     if (deleted) {
-                      // Așteaptă puțin pentru a se actualiza lista
                       await new Promise(resolve => setTimeout(resolve, 500));
-                      
-                      // Setează tipul documentului și deschide modalul de upload
+
                       setDocumentType(documentToReplace.tipo);
                       setShowCustomTypeSourceModal(true);
-                      
+
                       setNotification({
                         type: 'success',
                         title: 'Documento Eliminado',
@@ -4703,147 +4156,28 @@ export default function DocumentosPage() {
                   }
                 }}
                 disabled={uploading}
-                className="px-5 py-2.5 rounded-lg font-medium text-white bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="solicitud-admin-btn solicitud-admin-btn--primary"
               >
                 {uploading ? (
                   <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <RefreshCw className="w-4 h-4 animate-spin" aria-hidden />
                     <span>Eliminando...</span>
                   </>
                 ) : (
                   <>
-                    <span>🔄</span>
+                    <Replace className="w-4 h-4" aria-hidden />
                     <span>Confirmar Reemplazo</span>
                   </>
                 )}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tab Diplomas */}
-      {activeTab === 'diplomas' && (
-        <div>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-xl flex items-center justify-center shadow-lg">
-                <span className="text-white text-xl sm:text-2xl">🎓</span>
-              </div>
-              <div>
-                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Diplomas</h2>
-                <p className="text-gray-600 text-xs sm:text-sm">Tus diplomas y certificados</p>
-              </div>
-            </div>
-            
-            <button
-              onClick={fetchDiplomas}
-              disabled={diplomasLoading}
-              className="group relative px-4 sm:px-6 py-2 sm:py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl bg-gradient-to-r from-yellow-500 to-yellow-600 text-white shadow-yellow-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-            >
-              <div className="absolute inset-0 rounded-xl bg-yellow-400 opacity-30 blur-md animate-pulse group-hover:opacity-40 transition-all duration-300"></div>
-              <div className="relative flex items-center gap-2">
-                {diplomasLoading ? (
-                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
-                ) : (
-                  <span className="text-lg">🔄</span>
-                )}
-                <span>Actualizar</span>
-              </div>
-            </button>
-          </div>
-
-          {diplomasLoading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-4 border-yellow-500 border-t-transparent mx-auto mb-4"></div>
-              <p className="text-gray-600">Cargando diplomas...</p>
-            </div>
-          ) : diplomasError ? (
-            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
-              <p className="text-red-800">❌ {diplomasError}</p>
-            </div>
-          ) : diplomas.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="text-6xl mb-4">🎓</div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">No se encontraron diplomas</h3>
-              <p className="text-gray-600">No hay diplomas disponibles para tu usuario</p>
-              <p className="text-gray-500 text-sm mt-2">Los diplomas aparecerán aquí cuando estén disponibles</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {diplomas.map((diploma) => (
-                <div
-                  key={diploma.id}
-                  className="card p-4 sm:p-6 hover:shadow-xl transition-shadow duration-200"
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex-1">
-                      <h3 className="text-lg font-bold text-gray-900 mb-1">
-                        {diploma.nombre_archivo}
-                      </h3>
-                      <p className="text-sm text-gray-600">
-                        Subido el: {new Date(diploma.uploaded_at).toLocaleDateString('es-ES', {
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric',
-                        })}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handlePreviewDiploma(diploma)}
-                        className="px-4 py-2.5 rounded-lg font-medium text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
-                      >
-                        <span>👁️</span>
-                        <span className="hidden sm:inline">Preview</span>
-                      </button>
-                      <button
-                        onClick={async () => {
-                          try {
-                            const token = localStorage.getItem('auth_token');
-                            const response = await fetch(routes.diplomasDescargar(diploma.id), {
-                              headers: {
-                                Authorization: `Bearer ${token}`,
-                              },
-                            });
-
-                            if (!response.ok) {
-                              throw new Error('Error al descargar diploma');
-                            }
-
-                            const blob = await response.blob();
-                            const url = window.URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            const contentDisposition = response.headers.get('Content-Disposition');
-                            const filename = contentDisposition
-                              ? contentDisposition.split('filename=')[1]?.replace(/"/g, '') || diploma.nombre_archivo
-                              : diploma.nombre_archivo;
-                            a.download = filename;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            window.URL.revokeObjectURL(url);
-                          } catch (error) {
-                            setNotification({
-                              type: 'error',
-                              title: 'Error',
-                              message: `Error al descargar diploma: ${error.message}`,
-                            });
-                          }
-                        }}
-                        className="px-4 py-2.5 rounded-lg font-medium text-white bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
-                      >
-                        <span>📥</span>
-                        <span className="hidden sm:inline">Descargar</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            </>
           )}
-        </div>
+        >
+          <AlertBanner variant="warning" title="Esta acción no se puede deshacer">
+            ¿Estás seguro de que deseas reemplazar el documento &quot;{documentToReplace.fileName}&quot;? El documento actual se eliminará permanentemente y podrás subir uno nuevo.
+          </AlertBanner>
+        </Modal>,
+        document.body
       )}
 
       {/* Modal autoevaluación PRL (antes de firmar manual) */}

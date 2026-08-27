@@ -2958,7 +2958,10 @@ export class EmpleadosController {
 
   @Get('get-password/:codigo')
   @UseGuards(JwtAuthGuard)
-  async getPassword(@CurrentUser() _user: any, @Param('codigo') _codigo: string) {
+  async getPassword(
+    @CurrentUser() _user: any,
+    @Param('codigo') _codigo: string,
+  ) {
     throw new BadRequestException(
       'Las contraseñas no se pueden consultar. Usa «Resetear contraseña» o el flujo «¿Has olvidado tu contraseña?».',
     );

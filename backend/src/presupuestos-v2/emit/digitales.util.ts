@@ -30,9 +30,7 @@ export function resolveServicioDigital(
   };
 }
 
-export function normalizeServiciosDigitales(
-  raw: unknown,
-): ServicioDigital[] {
+export function normalizeServiciosDigitales(raw: unknown): ServicioDigital[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .map((row: any, i: number) => ({
@@ -47,18 +45,17 @@ export function normalizeServiciosDigitales(
     .sort((a, b) => (a.orden || 0) - (b.orden || 0));
 }
 
-export function resolveAllDigitales(
-  raw: unknown,
-): ServicioDigitalResolved[] {
+export function resolveAllDigitales(raw: unknown): ServicioDigitalResolved[] {
   return normalizeServiciosDigitales(raw)
     .filter((s) => s.activo)
     .map(resolveServicioDigital);
 }
 
 /** Sum only digitales with precio_final > 0 into document totals. */
-export function sumDigitalesCobrables(
-  raw: unknown,
-): { mensualidad_sin_iva: number; anualidad_sin_iva: number } {
+export function sumDigitalesCobrables(raw: unknown): {
+  mensualidad_sin_iva: number;
+  anualidad_sin_iva: number;
+} {
   let mensual = 0;
   for (const s of resolveAllDigitales(raw)) {
     if (!s.incluido && s.precio_final_mensual > 0) {
@@ -89,7 +86,10 @@ export function digitalesFromBrandConfig(
     brandConfig && typeof brandConfig === 'object'
       ? (brandConfig as Record<string, any>)
       : {};
-  if (Array.isArray(cfg.servicios_digitales) && cfg.servicios_digitales.length) {
+  if (
+    Array.isArray(cfg.servicios_digitales) &&
+    cfg.servicios_digitales.length
+  ) {
     return normalizeServiciosDigitales(cfg.servicios_digitales);
   }
   return [DEFAULT_VECINDARIO];

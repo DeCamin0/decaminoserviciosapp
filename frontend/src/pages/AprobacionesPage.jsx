@@ -1,12 +1,26 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContextBase';
-import { Card, Button, Modal, Notification } from '../components/ui';
-import Back3DButton from '../components/Back3DButton.jsx';
+import { PageHeader, AlertBanner, SegmentedControl, Modal, Notification } from '../components/ui';
+import { RefreshCw, Check, X, Eye, MessageCircleWarning } from 'lucide-react';
 import { API_ENDPOINTS } from '../utils/constants';
 import { useAdminApi } from '../hooks/useAdminApi';
 import activityLogger from '../utils/activityLogger';
 import { routes } from '../utils/routes';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
+
+const REGULARIZACION_REASON_LABELS = {
+  employee_confirmed_no_extra: 'Empleado confirmó: No trabajó de más',
+  employee_confirmed_punch_error: 'Empleado confirmó: Error de fichaje',
+  employee_confirmed_worked_less: 'Empleado confirmó: Trabajó de menos',
+  employee_declares_extra: 'Empleado declara: Trabajó de más',
+  employee_declares_less: 'Empleado declara: Trabajó de menos',
+  AUSENCIA_INJUSTIFICADA: 'Ausencia injustificada',
+  OLVIDO_FICHAR: 'Olvidó fichar',
+  OTRO: 'Otro motivo',
+};
+
+const getRegularizacionReasonLabel = (code) => REGULARIZACION_REASON_LABELS[code] || code || '';
 
 
 export default function AprobacionesPage() {
@@ -913,398 +927,247 @@ export default function AprobacionesPage() {
     setShowDetailsModal(true);
   };
 
-  // Așteaptă până când permisiunile sunt verificate
+  const handleReportError = () => {
+    const pageData = {
+      additionalInfo: [
+        `[TAB ACTIVO] ${activeTab === 'cambios' ? 'Cambios de Datos' : 'Regularizaciones'}`,
+        pendingCambios?.length > 0 ? `[CAMBIOS PENDIENTES] ${pendingCambios.length}` : null,
+        activeTab === 'regularizaciones' ? (
+          activeRegularizacionSubtab === 'pending'
+            ? (pendingRegularizaciones?.length > 0 ? `[REGULARIZACIONES PENDIENTES] ${pendingRegularizaciones.length}` : null)
+            : (confirmedRegularizaciones?.length > 0 ? `[REGULARIZACIONES CONFIRMADAS] ${confirmedRegularizaciones.length}` : null)
+        ) : null,
+      ].filter(Boolean),
+    };
+    const message = buildErrorReportMessage({
+      authUser,
+      pageName: 'Aprobaciones',
+      pageData,
+    });
+    openWhatsAppErrorReport(message);
+  };
+
+  const renderCambioActions = (cambio) => (
+    <div className="solicitud-admin-toolbar aprobaciones-actions">
+      <button type="button" onClick={() => handleViewDetails(cambio)} className="solicitud-admin-btn">
+        <Eye className="w-4 h-4" aria-hidden />
+        <span>Detalles</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => handleApproveCambio(cambio)}
+        disabled={processingAction}
+        className="solicitud-admin-icon-btn solicitud-admin-icon-btn--approve"
+        aria-label="Aprobar"
+      >
+        <Check className="w-4 h-4" />
+      </button>
+      <button
+        type="button"
+        onClick={() => handleRejectCambio(cambio)}
+        disabled={processingAction}
+        className="solicitud-admin-icon-btn solicitud-admin-icon-btn--reject"
+        aria-label="Rechazar"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+
+  const renderRegularizacionActions = (regularizacion) => (
+    <div className="solicitud-admin-toolbar aprobaciones-actions">
+      <button
+        type="button"
+        onClick={() => handleApproveRegularizacion(regularizacion)}
+        disabled={processingAction}
+        className="solicitud-admin-btn solicitud-admin-btn--primary"
+      >
+        <Check className="w-4 h-4" aria-hidden />
+        <span>Aprobar</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => handleRejectRegularizacion(regularizacion)}
+        disabled={processingAction}
+        className="solicitud-admin-btn"
+      >
+        <X className="w-4 h-4" aria-hidden />
+        <span>Rechazar</span>
+      </button>
+    </div>
+  );
+
   if (canAccess === null || loadingPermissions) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Verificando permisos...</p>
-        </div>
+      <div className="app-page aprobaciones-page">
+        <PageHeader title="Aprobaciones" subtitle="Gestiona aprobaciones" backTo="/inicio" />
+        <AlertBanner variant="loading" loading>Cargando permisos...</AlertBanner>
       </div>
     );
   }
 
-  // Dacă nu are permisiuni, afișează mesajul de eroare
   if (!canAccess) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center max-w-md mx-auto p-6">
-          <h1 className="text-2xl font-bold text-red-600 mb-4">
-            Acceso Restringido
-          </h1>
-          <p className="text-gray-600 mb-4">
-            No tienes permisos configurados para acceder a la página de Aprobaciones.
-          </p>
-          <p className="text-gray-600 mb-6">
-            Por favor, contacta con tu supervisor para que te asigne los permisos necesarios.
-          </p>
-          <Back3DButton to="/inicio" title="Volver al Inicio" />
-        </div>
+      <div className="app-page aprobaciones-page">
+        <PageHeader title="Aprobaciones" backTo="/inicio" />
+        <AlertBanner variant="danger" title="Acceso Restringido">
+          No tienes permisos configurados para acceder a la página de Aprobaciones. Contacta con tu supervisor.
+        </AlertBanner>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Back3DButton to="/inicio" title="Regresar a Inicio" />
-          <div>
-            <h1 className="text-2xl font-bold text-red-600">Aprobaciones</h1>
-            <p className="text-gray-600">Gestiona aprobaciones de cambios de datos</p>
-          </div>
-        </div>
-        
-        {/* Buton Reportar error */}
-        <button
-          onClick={() => {
-            // Date relevante pentru pagina de aprobaciones
-            const pageData = {
-              additionalInfo: [
-                `[TAB ACTIVO] ${activeTab === 'cambios' ? 'Cambios de Datos' : 'Regularizaciones'}`,
-                pendingCambios?.length > 0 ? `[CAMBIOS PENDIENTES] ${pendingCambios.length}` : null,
-                activeTab === 'regularizaciones' ? (
-                  activeRegularizacionSubtab === 'pending' 
-                    ? (pendingRegularizaciones?.length > 0 ? `[REGULARIZACIONES PENDIENTES] ${pendingRegularizaciones.length}` : null)
-                    : (confirmedRegularizaciones?.length > 0 ? `[REGULARIZACIONES CONFIRMADAS] ${confirmedRegularizaciones.length}` : null)
-                ) : null,
-              ].filter(Boolean),
-            };
-            
-            const message = buildErrorReportMessage({
-              authUser,
-              pageName: "Aprobaciones",
-              pageData,
-            });
-            
-            openWhatsAppErrorReport(message);
-          }}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg"
-          title="Reportar error"
-        >
-          <span className="text-lg">📱</span>
-          <span>Reportar error</span>
-        </button>
-      </div>
-
-      {/* Tab-uri */}
-      <div className="mb-6">
-        <div className="flex gap-2 border-b border-gray-200">
-          <button
-            onClick={() => setActiveTab('cambios')}
-            className={`px-6 py-3 font-semibold text-sm transition-colors ${
-              activeTab === 'cambios'
-                ? 'text-red-600 border-b-2 border-red-600'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <span className="flex items-center gap-2">
-              <span>📝</span>
-              Cambios de Datos
-              {pendingCambios.length > 0 && (
-                <span className="bg-red-600 text-white text-xs px-2 py-0.5 rounded-full">
-                  {pendingCambios.length}
-                </span>
-              )}
-            </span>
+    <div className="app-page aprobaciones-page">
+      <PageHeader
+        title="Aprobaciones"
+        subtitle="Cambios de datos y regularizaciones de fichajes"
+        backTo="/inicio"
+        actions={(
+          <button type="button" onClick={handleReportError} className="solicitud-admin-btn" title="Reportar error">
+            <MessageCircleWarning className="w-4 h-4" aria-hidden />
+            <span className="hidden sm:inline">Reportar error</span>
           </button>
-          <button
-            onClick={() => setActiveTab('regularizaciones')}
-            className={`px-6 py-3 font-semibold text-sm transition-colors ${
-              activeTab === 'regularizaciones'
-                ? 'text-blue-600 border-b-2 border-blue-600'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <span className="flex items-center gap-2">
-              <span>⏰</span>
-              Regularizaciones de Fichajes
-              {pendingRegularizaciones.length > 0 && (
-                <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full">
-                  {pendingRegularizaciones.length}
-                </span>
-              )}
-            </span>
-          </button>
-        </div>
-      </div>
+        )}
+      />
 
-      {/* Conținut pentru Cambios de Datos */}
+      <SegmentedControl
+        value={activeTab}
+        onChange={setActiveTab}
+        className="solicitud-admin-tabs"
+        items={[
+          { id: 'cambios', label: `Cambios (${pendingCambios.length})`, shortLabel: `Datos (${pendingCambios.length})` },
+          { id: 'regularizaciones', label: `Fichajes (${pendingRegularizaciones.length})`, shortLabel: `Fich. (${pendingRegularizaciones.length})` },
+        ]}
+      />
+
       {activeTab === 'cambios' && (
-      <div>
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center text-white shadow">
-                📝
-              </div>
-              <div>
-                <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">Cambios de Datos Pendientes</h2>
-                <p className="text-gray-500 text-sm">Revisa y aprueba las propuestas de actualización</p>
-              </div>
+        <div className="app-card app-card--pad aprobaciones-section">
+          <div className="solicitud-admin-toolbar">
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100">Cambios de Datos Pendientes</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Revisa y aprueba las propuestas de actualización</p>
             </div>
-            {/* Buton Refresh 3D albastru */}
-            <button
-              onClick={fetchPendingCambios}
-              disabled={loadingCambios}
-              className={`group relative w-12 h-12 rounded-2xl transition-all duration-500 transform hover:scale-110 hover:-translate-y-1 shadow-xl hover:shadow-blue-500/50 overflow-hidden ${loadingCambios ? 'opacity-50 cursor-not-allowed' : ''}`}
-              style={{
-                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%)',
-                boxShadow: '0 10px 25px rgba(59, 130, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-              }}
-              title="Actualizează lista"
-            >
-              <div className="absolute inset-0 bg-blue-400 opacity-0 group-hover:opacity-40 blur-xl transition-all duration-500"></div>
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-              <div className="relative flex items-center justify-center h-full">
-                <span className={`text-2xl ${loadingCambios ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-500`}>🔄</span>
-              </div>
+            <button type="button" onClick={fetchPendingCambios} disabled={loadingCambios} className="solicitud-admin-btn" title="Actualizar lista">
+              <RefreshCw className={`w-4 h-4 ${loadingCambios ? 'animate-spin' : ''}`} aria-hidden />
+              <span className="hidden sm:inline">Actualizar</span>
             </button>
           </div>
-          
-          {errorCambios && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-              {errorCambios}
-            </div>
-          )}
+
+          {errorCambios && <AlertBanner variant="danger" className="mt-3">{errorCambios}</AlertBanner>}
 
           {loadingCambios ? (
-            <div className="text-center py-8">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto"></div>
-              <p className="mt-4 text-gray-600">Cargando cambios...</p>
-            </div>
+            <AlertBanner variant="loading" loading className="mt-3">Cargando cambios...</AlertBanner>
           ) : (pendingCambios || []).length === 0 ? (
-            <div className="text-center py-10">
-              <div className="mx-auto mb-3 w-14 h-14 rounded-2xl bg-green-50 border border-green-200 flex items-center justify-center text-2xl">✅</div>
-              <div className="text-gray-800 font-semibold">No hay solicitudes pendientes</div>
-              <div className="text-gray-500 text-sm">Cuando haya solicitudes de cambio, aparecerán aquí.</div>
-            </div>
+            <AlertBanner variant="success" title="No hay solicitudes pendientes" className="mt-3">
+              Cuando haya solicitudes de cambio, aparecerán aquí.
+            </AlertBanner>
           ) : (
-            <div className="space-y-3">
+            <div className="solicitud-admin-mobile-list mt-3">
               {pendingCambios.map((cambio, index) => (
-                <div key={index} className="group p-4 bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center text-red-600">
-                        {index + 1}
-                      </div>
-                      <div>
-                        <div className="font-semibold text-gray-900">{cambio.NOMBRE || cambio.nombre}</div>
-                        <div className="text-xs text-gray-500">{cambio.CORREO_ELECTRONICO || cambio.correo_electronico}</div>
-                        <div className="mt-1 text-sm text-gray-700">
-                          <span className="font-medium">{cambio.CAMPO_MODIFICADO || cambio.campo}:</span>
-                          <span className="ml-2 line-through text-gray-400">{cambio.VALOR_ANTERIOR || '—'}</span>
-                          <span className="ml-2 text-green-700 font-semibold">{cambio.VALOR_NUEVO || cambio.valoare_noua}</span>
-                        </div>
-                      </div>
+                <article key={cambio.id || cambio.ID || index} className="solicitud-admin-mobile-card">
+                  <div className="solicitud-admin-mobile-card__head">
+                    <div className="min-w-0">
+                      <h3 className="solicitud-admin-mobile-card__title">{cambio.NOMBRE || cambio.nombre || 'Sin nombre'}</h3>
+                      <p className="text-xs text-gray-500 truncate">{cambio.CORREO_ELECTRONICO || cambio.correo_electronico}</p>
                     </div>
-                    <div className="flex gap-2">
-                      <Button onClick={() => handleViewDetails(cambio)} variant="outline" size="sm">Detalles</Button>
-                      <Button onClick={() => handleApproveCambio(cambio)} disabled={processingAction} size="sm" className="bg-green-600 hover:bg-green-700">Aprobar</Button>
-                      <Button onClick={() => handleRejectCambio(cambio)} disabled={processingAction} variant="outline" size="sm" className="border-red-600 text-red-600 hover:bg-red-50">Rechazar</Button>
-                    </div>
+                    <span className="solicitud-status solicitud-status--pendiente">Pendiente</span>
                   </div>
-                </div>
+                  <p className="text-sm text-gray-700 dark:text-gray-300 mt-2">
+                    <span className="font-medium">{cambio.CAMPO_MODIFICADO || cambio.campo}:</span>
+                    <span className="ml-1 line-through text-gray-400">{cambio.VALOR_ANTERIOR || '—'}</span>
+                    <span className="ml-1 text-green-700 dark:text-green-400 font-semibold">{cambio.VALOR_NUEVO || cambio.valoare_noua}</span>
+                  </p>
+                  {cambio.FECHA_SOLICITUD && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Solicitud: {new Date(cambio.FECHA_SOLICITUD).toLocaleString('es-ES')}
+                    </p>
+                  )}
+                  {renderCambioActions(cambio)}
+                </article>
               ))}
             </div>
           )}
-        </Card>
-      </div>
+        </div>
       )}
 
-      {/* Conținut pentru Regularizaciones de Fichajes */}
       {activeTab === 'regularizaciones' && (
-      <div>
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white shadow">
-                ⏰
-              </div>
-              <div>
-                <h2 className="text-xl font-extrabold text-gray-900 tracking-tight">Regularizaciones de Fichajes</h2>
-                <p className="text-gray-500 text-sm">Gestiona las jornadas regularizadas</p>
-              </div>
+        <div className="app-card app-card--pad aprobaciones-section">
+          <div className="solicitud-admin-toolbar">
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100">Regularizaciones de Fichajes</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Gestiona las jornadas regularizadas</p>
             </div>
-            {/* Buton Refresh 3D albastru */}
             <button
+              type="button"
               onClick={() => {
-                if (activeRegularizacionSubtab === 'pending') {
-                  fetchPendingRegularizaciones();
-                } else {
-                  fetchConfirmedRegularizaciones();
-                }
+                if (activeRegularizacionSubtab === 'pending') fetchPendingRegularizaciones();
+                else fetchConfirmedRegularizaciones();
               }}
               disabled={activeRegularizacionSubtab === 'pending' ? loadingRegularizaciones : loadingConfirmedRegularizaciones}
-              className={`group relative w-12 h-12 rounded-2xl transition-all duration-500 transform hover:scale-110 hover:-translate-y-1 shadow-xl hover:shadow-blue-500/50 overflow-hidden ${(activeRegularizacionSubtab === 'pending' ? loadingRegularizaciones : loadingConfirmedRegularizaciones) ? 'opacity-50 cursor-not-allowed' : ''}`}
-              style={{
-                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%)',
-                boxShadow: '0 10px 25px rgba(59, 130, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-              }}
+              className="solicitud-admin-btn"
               title="Actualizar lista"
             >
-              <div className="absolute inset-0 bg-blue-400 opacity-0 group-hover:opacity-40 blur-xl transition-all duration-500"></div>
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-              <div className="relative flex items-center justify-center h-full">
-                <span className={`text-2xl ${(activeRegularizacionSubtab === 'pending' ? loadingRegularizaciones : loadingConfirmedRegularizaciones) ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-500`}>🔄</span>
-              </div>
+              <RefreshCw className={`w-4 h-4 ${(activeRegularizacionSubtab === 'pending' ? loadingRegularizaciones : loadingConfirmedRegularizaciones) ? 'animate-spin' : ''}`} aria-hidden />
+              <span className="hidden sm:inline">Actualizar</span>
             </button>
           </div>
 
-          {/* Subtab-uri */}
-          <div className="mb-6">
-            <div className="flex gap-2 border-b border-gray-200">
-              <button
-                onClick={() => setActiveRegularizacionSubtab('pending')}
-                className={`px-6 py-2 font-semibold text-sm transition-colors ${
-                  activeRegularizacionSubtab === 'pending'
-                    ? 'text-orange-600 border-b-2 border-orange-600'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <span>⏳</span>
-                  Pendientes
-                  {pendingRegularizaciones.length > 0 && (
-                    <span className="bg-orange-600 text-white text-xs px-2 py-0.5 rounded-full">
-                      {pendingRegularizaciones.length}
-                    </span>
-                  )}
-                </span>
-              </button>
-              <button
-                onClick={() => setActiveRegularizacionSubtab('confirmed')}
-                className={`px-6 py-2 font-semibold text-sm transition-colors ${
-                  activeRegularizacionSubtab === 'confirmed'
-                    ? 'text-green-600 border-b-2 border-green-600'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <span>✅</span>
-                  Confirmadas
-                  {confirmedRegularizaciones.length > 0 && (
-                    <span className="bg-green-600 text-white text-xs px-2 py-0.5 rounded-full">
-                      {confirmedRegularizaciones.length}
-                    </span>
-                  )}
-                </span>
-              </button>
-            </div>
-          </div>
-          
-          {/* Conținut pentru Pending */}
+          <SegmentedControl
+            value={activeRegularizacionSubtab}
+            onChange={setActiveRegularizacionSubtab}
+            className="solicitud-admin-subtabs mt-3"
+            items={[
+              { id: 'pending', label: `Pendientes (${pendingRegularizaciones.length})`, shortLabel: `Pend. (${pendingRegularizaciones.length})` },
+              { id: 'confirmed', label: `Confirmadas (${confirmedRegularizaciones.length})`, shortLabel: `OK (${confirmedRegularizaciones.length})` },
+            ]}
+          />
+
           {activeRegularizacionSubtab === 'pending' && (
             <>
-              {errorRegularizaciones && (
-                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-                  {errorRegularizaciones}
-                </div>
-              )}
-
+              {errorRegularizaciones && <AlertBanner variant="danger" className="mt-3">{errorRegularizaciones}</AlertBanner>}
               {loadingRegularizaciones ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 mx-auto"></div>
-                  <p className="mt-4 text-gray-600">Cargando regularizaciones pendientes...</p>
-                </div>
+                <AlertBanner variant="loading" loading className="mt-3">Cargando regularizaciones pendientes...</AlertBanner>
               ) : (pendingRegularizaciones || []).length === 0 ? (
-                <div className="text-center py-10">
-                  <div className="mx-auto mb-3 w-14 h-14 rounded-2xl bg-green-50 border border-green-200 flex items-center justify-center text-2xl">✅</div>
-                  <div className="text-gray-800 font-semibold">No hay regularizaciones pendientes</div>
-                  <div className="text-gray-500 text-sm">Cuando haya jornadas con horas extra declaradas, aparecerán aquí.</div>
-                </div>
+                <AlertBanner variant="success" title="No hay regularizaciones pendientes" className="mt-3">
+                  Cuando haya jornadas con horas extra declaradas, aparecerán aquí.
+                </AlertBanner>
               ) : (
-                <div className="space-y-3">
-                  {pendingRegularizaciones.map((regularizacion, index) => {
+                <div className="solicitud-admin-mobile-list mt-3">
+                  {pendingRegularizaciones.map((regularizacion) => {
                     const deltaMinutes = regularizacion.punched_minutes - regularizacion.scheduled_minutes;
                     const deltaFormatted = formatMinutesToHoursMinutes(Math.abs(deltaMinutes));
                     const isMore = deltaMinutes > 0;
-                    const punchedFormatted = formatMinutesToHoursMinutes(regularizacion.punched_minutes);
-                    const scheduledFormatted = formatMinutesToHoursMinutes(regularizacion.scheduled_minutes);
-                    const workdayDate = new Date(regularizacion.workday_date).toLocaleDateString('es-ES', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    });
-                    
+                    const workdayDate = new Date(regularizacion.workday_date).toLocaleDateString('es-ES', { year: 'numeric', month: 'short', day: 'numeric' });
                     return (
-                      <div key={regularizacion.id} className="group p-4 bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex items-start gap-3 flex-1">
-                            <div className="w-10 h-10 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-orange-600">
-                              {index + 1}
-                            </div>
-                            <div className="flex-1">
-                              <div className="font-semibold text-gray-900">
-                                Empleado: {regularizacion.employee_codigo}
-                                {getEmpleadoNombre(regularizacion.employee_codigo) && (
-                                  <span className="ml-2 text-gray-600 font-normal">- {getEmpleadoNombre(regularizacion.employee_codigo)}</span>
-                                )}
-                              </div>
-                              <div className="text-xs text-gray-500 mt-1">Fecha: {workdayDate}</div>
-                              <div className="mt-2 grid grid-cols-3 gap-4 text-sm">
-                                <div>
-                                  <span className="text-gray-500">Horas fichadas:</span>
-                                  <span className="ml-2 font-semibold text-blue-600">{punchedFormatted}</span>
-                                </div>
-                                <div>
-                                  <span className="text-gray-500">Horas previstas:</span>
-                                  <span className="ml-2 font-semibold text-green-600">{scheduledFormatted}</span>
-                                </div>
-                                <div>
-                                  <span className="text-gray-500">Diferencia:</span>
-                                  <span className={`ml-2 font-bold ${isMore ? 'text-orange-600' : 'text-red-600'}`}>
-                                    {isMore ? '+' : '-'}{deltaFormatted}
-                                  </span>
-                                </div>
-                              </div>
-                              {/* Afișează reason_code pentru a ști motivul regularizării */}
-                              {regularizacion.reason_code && (
-                                <div className="mt-2 text-xs bg-blue-50 border border-blue-200 p-2 rounded">
-                                  <span className="font-medium text-blue-800">Motivo:</span>
-                                  <span className="ml-2 text-blue-700 font-semibold">
-                                    {regularizacion.reason_code === 'employee_confirmed_no_extra' && '✅ Empleado confirmó: No trabajó de más'}
-                                    {regularizacion.reason_code === 'employee_confirmed_punch_error' && '✅ Empleado confirmó: Error de fichaje'}
-                                    {regularizacion.reason_code === 'employee_confirmed_worked_less' && '✅ Empleado confirmó: Trabajó de menos'}
-                                    {regularizacion.reason_code === 'employee_declares_extra' && '⚠️ Empleado declara: Trabajó de más'}
-                                    {regularizacion.reason_code === 'employee_declares_less' && '⚠️ Empleado declara: Trabajó de menos'}
-                                    {regularizacion.reason_code === 'AUSENCIA_INJUSTIFICADA' && '❌ Ausencia injustificada'}
-                                    {regularizacion.reason_code === 'OLVIDO_FICHAR' && '⚠️ Olvidó fichar'}
-                                    {regularizacion.reason_code === 'OTRO' && '📝 Otro motivo'}
-                                    {!['employee_confirmed_no_extra', 'employee_confirmed_punch_error', 'employee_confirmed_worked_less', 'employee_declares_extra', 'employee_declares_less', 'AUSENCIA_INJUSTIFICADA', 'OLVIDO_FICHAR', 'OTRO'].includes(regularizacion.reason_code) && regularizacion.reason_code}
-                                  </span>
-                                </div>
+                      <article key={regularizacion.id} className="solicitud-admin-mobile-card">
+                        <div className="solicitud-admin-mobile-card__head">
+                          <div className="min-w-0">
+                            <h3 className="solicitud-admin-mobile-card__title">
+                              {regularizacion.employee_codigo}
+                              {getEmpleadoNombre(regularizacion.employee_codigo) && (
+                                <span className="font-normal text-gray-600"> — {getEmpleadoNombre(regularizacion.employee_codigo)}</span>
                               )}
-                              {regularizacion.notes && (
-                                <div className="mt-2 text-xs text-gray-600 bg-gray-50 p-2 rounded">
-                                  <span className="font-medium">Notas:</span> {regularizacion.notes}
-                                </div>
-                              )}
-                            </div>
+                            </h3>
+                            <p className="text-xs text-gray-500">{workdayDate}</p>
                           </div>
-                          <div className="flex gap-2">
-                            <Button 
-                              onClick={() => handleApproveRegularizacion(regularizacion)} 
-                              disabled={processingAction} 
-                              size="sm" 
-                              className="bg-green-600 hover:bg-green-700"
-                            >
-                              Aprobar
-                            </Button>
-                            <Button 
-                              onClick={() => handleRejectRegularizacion(regularizacion)} 
-                              disabled={processingAction} 
-                              variant="outline" 
-                              size="sm" 
-                              className="border-red-600 text-red-600 hover:bg-red-50"
-                            >
-                              Rechazar
-                            </Button>
-                          </div>
+                          <span className="solicitud-status solicitud-status--pendiente">Pendiente</span>
                         </div>
-                      </div>
+                        <dl className="solicitud-admin-kv mt-2">
+                          <div><dt>Fichadas</dt><dd>{formatMinutesToHoursMinutes(regularizacion.punched_minutes)}</dd></div>
+                          <div><dt>Previstas</dt><dd>{formatMinutesToHoursMinutes(regularizacion.scheduled_minutes)}</dd></div>
+                          <div><dt>Diferencia</dt><dd className={isMore ? 'text-orange-600' : 'text-red-600'}>{isMore ? '+' : '-'}{deltaFormatted}</dd></div>
+                        </dl>
+                        {regularizacion.reason_code && (
+                          <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                            <span className="font-medium">Motivo:</span> {getRegularizacionReasonLabel(regularizacion.reason_code)}
+                          </p>
+                        )}
+                        {regularizacion.notes && (
+                          <p className="text-xs text-gray-500 mt-1"><span className="font-medium">Notas:</span> {regularizacion.notes}</p>
+                        )}
+                        {renderRegularizacionActions(regularizacion)}
+                      </article>
                     );
                   })}
                 </div>
@@ -1312,365 +1175,241 @@ export default function AprobacionesPage() {
             </>
           )}
 
-          {/* Conținut pentru Confirmed */}
           {activeRegularizacionSubtab === 'confirmed' && (
             <>
-              {errorConfirmedRegularizaciones && (
-                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-                  {errorConfirmedRegularizaciones}
-                </div>
-              )}
-
+              {errorConfirmedRegularizaciones && <AlertBanner variant="danger" className="mt-3">{errorConfirmedRegularizaciones}</AlertBanner>}
               {loadingConfirmedRegularizaciones ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
-                  <p className="mt-4 text-gray-600">Cargando regularizaciones confirmadas...</p>
-                </div>
+                <AlertBanner variant="loading" loading className="mt-3">Cargando regularizaciones confirmadas...</AlertBanner>
               ) : (confirmedRegularizaciones || []).length === 0 ? (
-                <div className="text-center py-10">
-                  <div className="mx-auto mb-3 w-14 h-14 rounded-2xl bg-gray-50 border border-gray-200 flex items-center justify-center text-2xl">📋</div>
-                  <div className="text-gray-800 font-semibold">No hay regularizaciones confirmadas</div>
-                  <div className="text-gray-500 text-sm">Las regularizaciones confirmadas aparecerán aquí.</div>
-                </div>
+                <AlertBanner variant="info" title="No hay regularizaciones confirmadas" className="mt-3">
+                  Las regularizaciones confirmadas aparecerán aquí.
+                </AlertBanner>
               ) : (
-                <div className="space-y-3">
-                  {confirmedRegularizaciones.map((regularizacion, index) => {
-                    const punchedFormatted = formatMinutesToHoursMinutes(regularizacion.punched_minutes);
-                    const scheduledFormatted = formatMinutesToHoursMinutes(regularizacion.scheduled_minutes);
-                    const effectiveFormatted = regularizacion.effective_minutes ? formatMinutesToHoursMinutes(regularizacion.effective_minutes) : 'N/A';
-                    const workdayDate = new Date(regularizacion.workday_date).toLocaleDateString('es-ES', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    });
-                    const confirmedDate = regularizacion.confirmed_at ? new Date(regularizacion.confirmed_at).toLocaleDateString('es-ES', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    }) : 'N/A';
-                    
+                <div className="solicitud-admin-mobile-list mt-3">
+                  {confirmedRegularizaciones.map((regularizacion) => {
+                    const workdayDate = new Date(regularizacion.workday_date).toLocaleDateString('es-ES', { year: 'numeric', month: 'short', day: 'numeric' });
+                    const confirmedDate = regularizacion.confirmed_at
+                      ? new Date(regularizacion.confirmed_at).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })
+                      : 'N/A';
                     return (
-                      <div key={regularizacion.id} className="group p-4 bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex items-start gap-3 flex-1">
-                            <div className="w-10 h-10 rounded-xl bg-green-50 border border-green-100 flex items-center justify-center text-green-600">
-                              {index + 1}
-                            </div>
-                            <div className="flex-1">
-                              <div className="font-semibold text-gray-900">
-                                Empleado: {regularizacion.employee_codigo}
-                                {getEmpleadoNombre(regularizacion.employee_codigo) && (
-                                  <span className="ml-2 text-gray-600 font-normal">- {getEmpleadoNombre(regularizacion.employee_codigo)}</span>
-                                )}
-                              </div>
-                              <div className="text-xs text-gray-500 mt-1">Fecha: {workdayDate}</div>
-                              <div className="text-xs text-gray-400 mt-1">Confirmada: {confirmedDate}</div>
-                              <div className="mt-2 grid grid-cols-3 gap-4 text-sm">
-                                <div>
-                                  <span className="text-gray-500">Horas fichadas:</span>
-                                  <span className="ml-2 font-semibold text-blue-600">{punchedFormatted}</span>
-                                </div>
-                                <div>
-                                  <span className="text-gray-500">Horas previstas:</span>
-                                  <span className="ml-2 font-semibold text-green-600">{scheduledFormatted}</span>
-                                </div>
-                                <div>
-                                  <span className="text-gray-500">Horas efectivas:</span>
-                                  <span className="ml-2 font-bold text-green-700">{effectiveFormatted}</span>
-                                </div>
-                              </div>
-                              {/* Afișează reason_code pentru regularizările confirmate */}
-                              {regularizacion.reason_code && (
-                                <div className="mt-2 text-xs bg-blue-50 border border-blue-200 p-2 rounded">
-                                  <span className="font-medium text-blue-800">Motivo:</span>
-                                  <span className="ml-2 text-blue-700 font-semibold">
-                                    {regularizacion.reason_code === 'employee_confirmed_no_extra' && '✅ Empleado confirmó: No trabajó de más'}
-                                    {regularizacion.reason_code === 'employee_confirmed_punch_error' && '✅ Empleado confirmó: Error de fichaje'}
-                                    {regularizacion.reason_code === 'employee_confirmed_worked_less' && '✅ Empleado confirmó: Trabajó de menos'}
-                                    {regularizacion.reason_code === 'employee_declares_extra' && '⚠️ Empleado declara: Trabajó de más'}
-                                    {regularizacion.reason_code === 'employee_declares_less' && '⚠️ Empleado declara: Trabajó de menos'}
-                                    {regularizacion.reason_code === 'AUSENCIA_INJUSTIFICADA' && '❌ Ausencia injustificada'}
-                                    {regularizacion.reason_code === 'OLVIDO_FICHAR' && '⚠️ Olvidó fichar'}
-                                    {regularizacion.reason_code === 'OTRO' && '📝 Otro motivo'}
-                                    {!['employee_confirmed_no_extra', 'employee_confirmed_punch_error', 'employee_confirmed_worked_less', 'employee_declares_extra', 'employee_declares_less', 'AUSENCIA_INJUSTIFICADA', 'OLVIDO_FICHAR', 'OTRO'].includes(regularizacion.reason_code) && regularizacion.reason_code}
-                                  </span>
-                                </div>
+                      <article key={regularizacion.id} className="solicitud-admin-mobile-card">
+                        <div className="solicitud-admin-mobile-card__head">
+                          <div className="min-w-0">
+                            <h3 className="solicitud-admin-mobile-card__title">
+                              {regularizacion.employee_codigo}
+                              {getEmpleadoNombre(regularizacion.employee_codigo) && (
+                                <span className="font-normal text-gray-600"> — {getEmpleadoNombre(regularizacion.employee_codigo)}</span>
                               )}
-                              {regularizacion.notes && (
-                                <div className="mt-2 text-xs text-gray-600 bg-gray-50 p-2 rounded">
-                                  <span className="font-medium">Notas:</span> {regularizacion.notes}
-                                </div>
-                              )}
-                            </div>
+                            </h3>
+                            <p className="text-xs text-gray-500">{workdayDate} · Confirmada {confirmedDate}</p>
                           </div>
-                          <div className="flex items-center">
-                            <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
-                              ✅ Confirmada
-                            </span>
-                          </div>
+                          <span className="solicitud-status solicitud-status--ok">Confirmada</span>
                         </div>
-                      </div>
+                        <dl className="solicitud-admin-kv mt-2">
+                          <div><dt>Fichadas</dt><dd>{formatMinutesToHoursMinutes(regularizacion.punched_minutes)}</dd></div>
+                          <div><dt>Previstas</dt><dd>{formatMinutesToHoursMinutes(regularizacion.scheduled_minutes)}</dd></div>
+                          <div><dt>Efectivas</dt><dd>{regularizacion.effective_minutes ? formatMinutesToHoursMinutes(regularizacion.effective_minutes) : 'N/A'}</dd></div>
+                        </dl>
+                        {regularizacion.reason_code && (
+                          <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                            <span className="font-medium">Motivo:</span> {getRegularizacionReasonLabel(regularizacion.reason_code)}
+                          </p>
+                        )}
+                        {regularizacion.notes && (
+                          <p className="text-xs text-gray-500 mt-1"><span className="font-medium">Notas:</span> {regularizacion.notes}</p>
+                        )}
+                      </article>
                     );
                   })}
                 </div>
               )}
             </>
           )}
-        </Card>
-      </div>
+        </div>
       )}
 
-      {/* Modal de detalles */}
+      {typeof document !== 'undefined' && createPortal(
       <Modal
         isOpen={showDetailsModal}
         onClose={() => setShowDetailsModal(false)}
         title="Detalles de modificación"
+        showCloseButton={false}
+        size="lg"
+        className="app-modal--form"
+        footer={selectedItem ? (
+          <div className="app-modal__actions">
+            <button type="button" onClick={() => setShowDetailsModal(false)} className="app-modal__btn">Cerrar</button>
+            <button type="button" onClick={() => handleRejectCambio(selectedItem)} disabled={processingAction} className="app-modal__btn">Rechazar</button>
+            <button type="button" onClick={() => handleApproveCambio(selectedItem)} disabled={processingAction} className="app-modal__btn app-modal__btn--ok">Aprobar</button>
+          </div>
+        ) : null}
       >
         {selectedItem && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Empleado</label>
-                <p className="text-gray-900">{selectedItem.NOMBRE || selectedItem.nombre || selectedItem.CORREO_ELECTRONICO || selectedItem.email || 'N/A'}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="app-modal__field">
+                <span className="app-modal__label">Empleado</span>
+                <p className="app-modal__meta">{selectedItem.NOMBRE || selectedItem.nombre || selectedItem.CORREO_ELECTRONICO || selectedItem.email || 'N/A'}</p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Campo modificado</label>
-                <p className="text-gray-900 font-bold">{selectedItem.CAMPO_MODIFICADO || selectedItem.campo}</p>
+              <div className="app-modal__field">
+                <span className="app-modal__label">Campo modificado</span>
+                <p className="app-modal__meta font-semibold">{selectedItem.CAMPO_MODIFICADO || selectedItem.campo}</p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Valor anterior</label>
-                <p className="text-gray-500">{selectedItem.VALOR_ANTERIOR || selectedItem.valor_anterior || '—'}</p>
+              <div className="app-modal__field">
+                <span className="app-modal__label">Valor anterior</span>
+                <p className="app-modal__meta line-through">{selectedItem.VALOR_ANTERIOR || selectedItem.valor_anterior || '—'}</p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Valor nuevo</label>
-                <p className="text-green-600 font-bold">{selectedItem.VALOR_NUEVO || selectedItem.valor_nuevo || selectedItem.valoare_noua}</p>
+              <div className="app-modal__field">
+                <span className="app-modal__label">Valor nuevo</span>
+                <p className="app-modal__meta text-green-700 dark:text-green-400 font-semibold">{selectedItem.VALOR_NUEVO || selectedItem.valor_nuevo || selectedItem.valoare_noua}</p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Motivo del cambio</label>
-                <p className="text-gray-900">{selectedItem.MOTIVO_CAMBIO || selectedItem.razon || selectedItem.RAZON || 'N/A'}</p>
+              <div className="app-modal__field sm:col-span-2">
+                <span className="app-modal__label">Motivo del cambio</span>
+                <p className="app-modal__meta">{selectedItem.MOTIVO_CAMBIO || selectedItem.razon || selectedItem.RAZON || 'N/A'}</p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Fecha solicitud</label>
-                <p className="text-gray-900">
+              <div className="app-modal__field">
+                <span className="app-modal__label">Fecha solicitud</span>
+                <p className="app-modal__meta">
                   {selectedItem.FECHA_SOLICITUD ? new Date(selectedItem.FECHA_SOLICITUD).toLocaleString() : '—'}
                 </p>
               </div>
             </div>
-
-            {/* Checkbox "Enviar a Gestoria" în modal */}
-            <div className="pt-4 border-t border-gray-200">
-              <label htmlFor="enviar-gestoria-checkbox" className="flex items-center gap-3 cursor-pointer">
-                <input
-                  id="enviar-gestoria-checkbox"
-                  name="enviar-gestoria"
-                  type="checkbox"
-                  checked={enviarAGestoriaMap[selectedItem.id || selectedItem.ID] || false}
-                  onChange={(e) => {
-                    const cambioId = selectedItem.id || selectedItem.ID;
-                    setEnviarAGestoriaMap(prev => ({
-                      ...prev,
-                      [cambioId]: e.target.checked
-                    }));
-                  }}
-                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                />
-                <span className="text-sm font-medium text-gray-700">
-                  📧 Enviar a Gestoria
-                </span>
-              </label>
-            </div>
-            
-            <div className="flex gap-3 pt-4">
-              <Button
-                onClick={() => handleApproveCambio(selectedItem)}
-                disabled={processingAction}
-                className="flex-1 bg-green-600 hover:bg-green-700"
-              >
-                Aprobar modificación
-              </Button>
-              <Button
-                onClick={() => handleRejectCambio(selectedItem)}
-                disabled={processingAction}
-                variant="outline"
-                className="flex-1 border-red-600 text-red-600 hover:bg-red-50"
-              >
-                Rechazar modificación
-              </Button>
-              <Button
-                onClick={() => setShowDetailsModal(false)}
-                variant="outline"
-                className="flex-1"
-              >
-                Cerrar
-              </Button>
-            </div>
+            <label htmlFor="enviar-gestoria-checkbox" className="flex items-center gap-3 cursor-pointer">
+              <input
+                id="enviar-gestoria-checkbox"
+                name="enviar-gestoria"
+                type="checkbox"
+                checked={enviarAGestoriaMap[selectedItem.id || selectedItem.ID] || false}
+                onChange={(e) => {
+                  const cambioId = selectedItem.id || selectedItem.ID;
+                  setEnviarAGestoriaMap(prev => ({ ...prev, [cambioId]: e.target.checked }));
+                }}
+                className="w-5 h-5"
+              />
+              <span className="app-modal__label mb-0">Enviar a Gestoria</span>
+            </label>
           </div>
         )}
-      </Modal>
+      </Modal>,
+      document.body
+      )}
 
-      {/* Modal de confirmare aprobare */}
+      {typeof document !== 'undefined' && createPortal(
       <Modal
         isOpen={showApproveModal}
-        onClose={() => {
-          setShowApproveModal(false);
-          setCambioToApprove(null);
-        }}
+        onClose={() => { setShowApproveModal(false); setCambioToApprove(null); }}
         title="Confirmar aprobación"
+        showCloseButton={false}
         size="lg"
+        className="app-modal--form"
+        footer={cambioToApprove ? (
+          <div className="app-modal__actions flex-col sm:flex-row gap-3">
+            <label htmlFor="enviar-gestoria-confirm-checkbox" className="flex items-center gap-3 cursor-pointer w-full sm:mr-auto">
+              <input
+                id="enviar-gestoria-confirm-checkbox"
+                name="enviar-gestoria-confirm"
+                type="checkbox"
+                checked={enviarAGestoriaMap[cambioToApprove.id || cambioToApprove.ID] || false}
+                onChange={(e) => {
+                  const cambioId = cambioToApprove.id || cambioToApprove.ID;
+                  setEnviarAGestoriaMap(prev => ({ ...prev, [cambioId]: e.target.checked }));
+                }}
+                className="w-5 h-5"
+              />
+              <span className="app-modal__label mb-0">Enviar a Gestoria</span>
+            </label>
+            <button type="button" onClick={() => { setShowApproveModal(false); setCambioToApprove(null); }} disabled={processingAction} className="app-modal__btn">Cancelar</button>
+            <button type="button" onClick={confirmApproveCambio} disabled={processingAction} className="app-modal__btn app-modal__btn--ok">
+              {processingAction ? 'Procesando...' : 'Sí, aprobar'}
+            </button>
+          </div>
+        ) : null}
       >
         {cambioToApprove && (
-          <div className="flex flex-col">
-            {/* Conținut scrollabil */}
-            <div className="max-h-[50vh] overflow-y-auto space-y-4 pr-2 -mr-2">
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <p className="text-sm text-yellow-800 font-medium mb-2">
-                  ⚠️ ¿Estás seguro que deseas aprobar esta modificación?
-                </p>
-                <p className="text-sm text-yellow-700">
-                  Esta acción actualizará los datos del empleado y no se puede deshacer.
-                </p>
+          <div className="space-y-4">
+            <AlertBanner variant="warning" title="¿Confirmar aprobación?">
+              Esta acción actualizará los datos del empleado y no se puede deshacer.
+            </AlertBanner>
+            <div className="space-y-3">
+              <div className="app-modal__field">
+                <span className="app-modal__label">Empleado</span>
+                <p className="app-modal__meta font-semibold">{cambioToApprove.NOMBRE || cambioToApprove.nombre || 'N/A'}</p>
               </div>
-              
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Empleado</label>
-                  <p className="text-gray-900 font-semibold">{cambioToApprove.NOMBRE || cambioToApprove.nombre || 'N/A'}</p>
+              <div className="app-modal__field">
+                <span className="app-modal__label">Campo modificado</span>
+                <p className="app-modal__meta font-semibold break-words">{formatCamposForDisplay(cambioToApprove.campo || cambioToApprove.CAMPO_MODIFICADO)}</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="app-modal__field">
+                  <span className="app-modal__label">Valor anterior</span>
+                  <p className="app-modal__meta line-through break-words">{cambioToApprove.VALOR_ANTERIOR || cambioToApprove.valor_anterior || '—'}</p>
                 </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Campo modificado</label>
-                  <p className="text-gray-900 font-semibold break-words">
-                    {formatCamposForDisplay(cambioToApprove.campo || cambioToApprove.CAMPO_MODIFICADO)}
-                  </p>
+                <div className="app-modal__field">
+                  <span className="app-modal__label">Valor nuevo</span>
+                  <p className="app-modal__meta text-green-700 font-semibold break-words">{cambioToApprove.VALOR_NUEVO || cambioToApprove.valoare_noua || '—'}</p>
                 </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Valor anterior</label>
-                    <p className="text-gray-500 line-through break-words text-sm">{cambioToApprove.VALOR_ANTERIOR || cambioToApprove.valor_anterior || '—'}</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Valor nuevo</label>
-                    <p className="text-green-600 font-bold break-words text-sm">{cambioToApprove.VALOR_NUEVO || cambioToApprove.valoare_noua || '—'}</p>
-                  </div>
+              </div>
+              {(cambioToApprove.MOTIVO_CAMBIO || cambioToApprove.razon || cambioToApprove.RAZON) && (
+                <div className="app-modal__field">
+                  <span className="app-modal__label">Motivo del cambio</span>
+                  <p className="app-modal__meta break-words">{cambioToApprove.MOTIVO_CAMBIO || cambioToApprove.razon || cambioToApprove.RAZON}</p>
                 </div>
-                
-                {cambioToApprove.MOTIVO_CAMBIO || cambioToApprove.razon || cambioToApprove.RAZON ? (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Motivo del cambio</label>
-                    <p className="text-gray-700 break-words text-sm">{cambioToApprove.MOTIVO_CAMBIO || cambioToApprove.razon || cambioToApprove.RAZON}</p>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-            
-            {/* Footer fixat cu checkbox și butoane - întotdeauna vizibil */}
-            <div className="flex-shrink-0 pt-4 mt-4 border-t border-gray-200 space-y-4 bg-white sticky bottom-0">
-              {/* Checkbox "Enviar a Gestoria" în modalul de confirmare */}
-              <div>
-                <label htmlFor="enviar-gestoria-confirm-checkbox" className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    id="enviar-gestoria-confirm-checkbox"
-                    name="enviar-gestoria-confirm"
-                    type="checkbox"
-                    checked={enviarAGestoriaMap[cambioToApprove.id || cambioToApprove.ID] || false}
-                    onChange={(e) => {
-                      const cambioId = cambioToApprove.id || cambioToApprove.ID;
-                      setEnviarAGestoriaMap(prev => ({
-                        ...prev,
-                        [cambioId]: e.target.checked
-                      }));
-                    }}
-                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                  />
-                  <span className="text-sm font-medium text-gray-700">
-                    📧 Enviar a Gestoria
-                  </span>
-                </label>
-              </div>
-              
-              <div className="flex gap-3 pb-2">
-                <Button
-                  onClick={confirmApproveCambio}
-                  disabled={processingAction}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
-                >
-                  {processingAction ? 'Procesando...' : '✅ Sí, aprobar'}
-                </Button>
-                <Button
-                  onClick={() => {
-                    setShowApproveModal(false);
-                    setCambioToApprove(null);
-                  }}
-                  variant="outline"
-                  className="flex-1"
-                  disabled={processingAction}
-                >
-                  Cancelar
-                </Button>
-              </div>
+              )}
             </div>
           </div>
         )}
-      </Modal>
+      </Modal>,
+      document.body
+      )}
 
-      {/* Modal para motivo de rechazo */}
+      {typeof document !== 'undefined' && createPortal(
       <Modal
         isOpen={showRejectModal}
-        onClose={() => {
-          setShowRejectModal(false);
-          setRejectReason('');
-          setCambioToReject(null);
-        }}
+        onClose={() => { setShowRejectModal(false); setRejectReason(''); setCambioToReject(null); }}
         title="Motivo del rechazo"
-      >
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Explica por qué rechazas esta solicitud:</label>
-            <textarea
-              value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
-              placeholder="Introduce el motivo del rechazo..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-              rows={4}
-              required
-            />
-          </div>
-          
-          <div className="flex gap-3 pt-4">
-            <Button
-              onClick={confirmRejectCambio}
-              disabled={processingAction || !rejectReason.trim()}
-              className="flex-1 bg-red-600 hover:bg-red-700"
-            >
+        showCloseButton={false}
+        className="app-modal--form"
+        footer={(
+          <div className="app-modal__actions">
+            <button type="button" onClick={() => { setShowRejectModal(false); setRejectReason(''); setCambioToReject(null); }} className="app-modal__btn">Cancelar</button>
+            <button type="button" onClick={confirmRejectCambio} disabled={processingAction || !rejectReason.trim()} className="app-modal__btn app-modal__btn--primary">
               {processingAction ? 'Procesando...' : 'Confirmar rechazo'}
-            </Button>
-            <Button
-              onClick={() => {
-                setShowRejectModal(false);
-                setRejectReason('');
-                setCambioToReject(null);
-              }}
-              variant="outline"
-              className="flex-1"
-            >
-              Cancelar
-            </Button>
+            </button>
           </div>
+        )}
+      >
+        <div className="app-modal__field">
+          <label htmlFor="reject-reason-cambio" className="app-modal__label">Explica por qué rechazas esta solicitud</label>
+          <textarea
+            id="reject-reason-cambio"
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="Introduce el motivo del rechazo..."
+            className="app-modal__input min-h-[6rem] resize-y"
+            rows={4}
+            required
+          />
         </div>
-      </Modal>
+      </Modal>,
+      document.body
+      )}
       
-      {/* Modal de confirmare aprobare regularizare */}
+      {typeof document !== 'undefined' && createPortal(
       <Modal
         isOpen={showApproveRegularizacionModal}
-        onClose={() => {
-          setShowApproveRegularizacionModal(false);
-          setRegularizacionToApprove(null);
-        }}
+        onClose={() => { setShowApproveRegularizacionModal(false); setRegularizacionToApprove(null); }}
         title="Confirmar aprobación de regularización"
+        showCloseButton={false}
         size="lg"
+        className="app-modal--form"
+        footer={regularizacionToApprove ? (
+          <div className="app-modal__actions">
+            <button type="button" onClick={() => { setShowApproveRegularizacionModal(false); setRegularizacionToApprove(null); }} disabled={processingAction} className="app-modal__btn">Cancelar</button>
+            <button type="button" onClick={confirmApproveRegularizacion} disabled={processingAction} className="app-modal__btn app-modal__btn--ok">
+              {processingAction ? 'Procesando...' : 'Sí, aprobar'}
+            </button>
+          </div>
+        ) : null}
       >
         {regularizacionToApprove && (() => {
           // Logica pentru effective_minutes la aprobare:
@@ -1757,28 +1496,23 @@ export default function AprobacionesPage() {
           
           return (
             <div className="space-y-4">
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <p className="text-sm text-yellow-800 font-medium mb-2">
-                  ⚠️ ¿Estás seguro que deseas aprobar esta regularización?
-                </p>
-                <p className="text-sm text-yellow-700">
-                  {willUseScheduledMinutes 
-                    ? `Se aprobarán las horas previstas (${formatMinutesToHoursMinutes(effectiveMinutes)}) como horas efectivas trabajadas.`
-                    : effectiveMinutes > 0
-                      ? `Se aprobarán las horas fichadas (${formatMinutesToHoursMinutes(effectiveMinutes)}) como horas efectivas trabajadas.`
-                      : `Se aprobarán 0 horas efectivas trabajadas.`}
-                </p>
-              </div>
+              <AlertBanner variant="warning" title="¿Confirmar aprobación de regularización?">
+                {willUseScheduledMinutes 
+                  ? `Se aprobarán las horas previstas (${formatMinutesToHoursMinutes(effectiveMinutes)}) como horas efectivas trabajadas.`
+                  : effectiveMinutes > 0
+                    ? `Se aprobarán las horas fichadas (${formatMinutesToHoursMinutes(effectiveMinutes)}) como horas efectivas trabajadas.`
+                    : 'Se aprobarán 0 horas efectivas trabajadas.'}
+              </AlertBanner>
             
             <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Empleado</label>
-                <p className="text-gray-900 font-semibold">{regularizacionToApprove.employee_codigo}</p>
+              <div className="app-modal__field">
+                <span className="app-modal__label">Empleado</span>
+                <p className="app-modal__meta font-semibold">{regularizacionToApprove.employee_codigo}</p>
               </div>
               
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Fecha</label>
-                <p className="text-gray-900">
+              <div className="app-modal__field">
+                <span className="app-modal__label">Fecha</span>
+                <p className="app-modal__meta">
                   {new Date(regularizacionToApprove.workday_date).toLocaleDateString('es-ES', {
                     year: 'numeric',
                     month: 'long',
@@ -1787,131 +1521,90 @@ export default function AprobacionesPage() {
                 </p>
               </div>
               
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Horas fichadas</label>
-                  <p className="text-blue-600 font-bold">{formatMinutesToHoursMinutes(regularizacionToApprove.punched_minutes)}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="app-modal__field">
+                  <span className="app-modal__label">Horas fichadas</span>
+                  <p className="app-modal__meta text-blue-700 font-semibold">{formatMinutesToHoursMinutes(regularizacionToApprove.punched_minutes)}</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Horas previstas</label>
-                  <p className="text-green-600 font-bold">{formatMinutesToHoursMinutes(regularizacionToApprove.scheduled_minutes)}</p>
+                <div className="app-modal__field">
+                  <span className="app-modal__label">Horas previstas</span>
+                  <p className="app-modal__meta text-green-700 font-semibold">{formatMinutesToHoursMinutes(regularizacionToApprove.scheduled_minutes)}</p>
                 </div>
               </div>
               
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Diferencia</label>
-                <p className={`font-bold ${regularizacionToApprove.punched_minutes > regularizacionToApprove.scheduled_minutes ? 'text-orange-600' : 'text-red-600'}`}>
+              <div className="app-modal__field">
+                <span className="app-modal__label">Diferencia</span>
+                <p className={`app-modal__meta font-semibold ${regularizacionToApprove.punched_minutes > regularizacionToApprove.scheduled_minutes ? 'text-orange-600' : 'text-red-600'}`}>
                   {regularizacionToApprove.punched_minutes > regularizacionToApprove.scheduled_minutes ? '+' : '-'}
                   {formatMinutesToHoursMinutes(Math.abs(regularizacionToApprove.punched_minutes - regularizacionToApprove.scheduled_minutes))}
                 </p>
               </div>
             </div>
-            
-            <div className="flex gap-3 pt-4">
-              <Button
-                onClick={confirmApproveRegularizacion}
-                disabled={processingAction}
-                className="flex-1 bg-green-600 hover:bg-green-700"
-              >
-                {processingAction ? 'Procesando...' : '✅ Sí, aprobar'}
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowApproveRegularizacionModal(false);
-                  setRegularizacionToApprove(null);
-                }}
-                variant="outline"
-                className="flex-1"
-                disabled={processingAction}
-              >
-                Cancelar
-              </Button>
-            </div>
           </div>
           );
         })()}
-      </Modal>
+      </Modal>,
+      document.body
+      )}
 
-      {/* Modal para motivo de rechazo de regularizacion */}
+      {typeof document !== 'undefined' && createPortal(
       <Modal
         isOpen={showRejectRegularizacionModal}
-        onClose={() => {
-          setShowRejectRegularizacionModal(false);
-          setRejectRegularizacionReason('');
-          setCreateAusenciaOnReject(false);
-          setRegularizacionToReject(null);
-        }}
+        onClose={() => { setShowRejectRegularizacionModal(false); setRejectRegularizacionReason(''); setCreateAusenciaOnReject(false); setRegularizacionToReject(null); }}
         title="Motivo del rechazo de regularización"
+        showCloseButton={false}
+        className="app-modal--form"
+        footer={(
+          <div className="app-modal__actions">
+            <button type="button" onClick={() => { setShowRejectRegularizacionModal(false); setRejectRegularizacionReason(''); setCreateAusenciaOnReject(false); setRegularizacionToReject(null); }} className="app-modal__btn">Cancelar</button>
+            <button type="button" onClick={confirmRejectRegularizacion} disabled={processingAction || !rejectRegularizacionReason.trim()} className="app-modal__btn app-modal__btn--primary">
+              {processingAction ? 'Procesando...' : 'Confirmar rechazo'}
+            </button>
+          </div>
+        )}
       >
         <div className="space-y-4">
           {regularizacionToReject && (
-            <div className="bg-gray-50 p-3 rounded-lg mb-4">
-              <p className="text-sm text-gray-700">
-                <span className="font-medium">Empleado:</span> {regularizacionToReject.employee_codigo}
-              </p>
-              <p className="text-sm text-gray-700">
-                <span className="font-medium">Fecha:</span> {new Date(regularizacionToReject.workday_date).toLocaleDateString('es-ES')}
-              </p>
-              <p className="text-sm text-gray-700">
-                <span className="font-medium">Horas fichadas:</span> {formatMinutesToHoursMinutes(regularizacionToReject.punched_minutes)}
-              </p>
-              <p className="text-sm text-gray-700">
-                <span className="font-medium">Horas previstas:</span> {formatMinutesToHoursMinutes(regularizacionToReject.scheduled_minutes)}
-              </p>
+            <div className="solicitud-admin-callout space-y-1">
+              <p className="app-modal__meta"><span className="font-medium">Empleado:</span> {regularizacionToReject.employee_codigo}</p>
+              <p className="app-modal__meta"><span className="font-medium">Fecha:</span> {new Date(regularizacionToReject.workday_date).toLocaleDateString('es-ES')}</p>
+              <p className="app-modal__meta"><span className="font-medium">Horas fichadas:</span> {formatMinutesToHoursMinutes(regularizacionToReject.punched_minutes)}</p>
+              <p className="app-modal__meta"><span className="font-medium">Horas previstas:</span> {formatMinutesToHoursMinutes(regularizacionToReject.scheduled_minutes)}</p>
             </div>
           )}
           
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Explica por qué rechazas esta regularización:</label>
+          <div className="app-modal__field">
+            <label htmlFor="reject-reason-regularizacion" className="app-modal__label">Explica por qué rechazas esta regularización</label>
             <textarea
+              id="reject-reason-regularizacion"
               value={rejectRegularizacionReason}
               onChange={(e) => setRejectRegularizacionReason(e.target.value)}
               placeholder="Introduce el motivo del rechazo..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              className="app-modal__input min-h-[6rem] resize-y"
               rows={4}
               required
             />
           </div>
           
-          {/* Checkbox pentru crearea ausencia injustificada */}
-          <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <label htmlFor="createAusenciaOnReject" className="flex items-start gap-3 cursor-pointer">
             <input
               type="checkbox"
               id="createAusenciaOnReject"
               checked={createAusenciaOnReject}
               onChange={(e) => setCreateAusenciaOnReject(e.target.checked)}
-              className="mt-1"
+              className="mt-1 w-5 h-5"
             />
-            <label htmlFor="createAusenciaOnReject" className="text-sm text-gray-700 cursor-pointer">
-              <span className="font-medium">Registrar como Ausencia Injustificada</span>
-              <p className="text-xs text-gray-600 mt-1">
+            <span>
+              <span className="app-modal__label mb-0 block">Registrar como Ausencia Injustificada</span>
+              <span className="app-modal__meta text-sm">
                 Si marcas esta opción, se creará automáticamente una ausencia injustificada para esta fecha.
-              </p>
-            </label>
-          </div>
-          
-          <div className="flex gap-3 pt-4">
-            <Button
-              onClick={confirmRejectRegularizacion}
-              disabled={processingAction || !rejectRegularizacionReason.trim()}
-              className="flex-1 bg-red-600 hover:bg-red-700"
-            >
-              {processingAction ? 'Procesando...' : 'Confirmar rechazo'}
-            </Button>
-            <Button
-              onClick={() => {
-                setShowRejectRegularizacionModal(false);
-                setRejectRegularizacionReason('');
-                setRegularizacionToReject(null);
-              }}
-              variant="outline"
-              className="flex-1"
-            >
-              Cancelar
-            </Button>
-          </div>
+              </span>
+            </span>
+          </label>
         </div>
-      </Modal>
+      </Modal>,
+      document.body
+      )}
 
       {/* Componenta de Notificări */}
       {notification && (

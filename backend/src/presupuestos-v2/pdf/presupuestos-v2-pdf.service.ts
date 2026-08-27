@@ -16,19 +16,24 @@ import { normalizeContenidoComercial } from '../config/config-catalog';
 import {
   digitalesFromBrandConfig,
   resolveAllDigitales,
-  normalizeServiciosDigitales,
 } from '../emit/digitales.util';
+import {
+  applyDescuentoFidelidadToTotales,
+  clampDescuentoFidelidadPct,
+} from '../emit/descuento-fidelidad.util';
 import { buildPresupuestoV2Pdf } from './pdf-v2.builder';
 import { PresupuestosV2StorageService } from './presupuestos-v2-storage.service';
 
 /** Stored in document metadata / audit only — never printed on client PDF. */
-const TEMPLATE_VERSION = 'v2-pdf-6';
+const TEMPLATE_VERSION = 'v2-pdf-7';
 /** Legacy presupuesto commercial validity (hardcoded 60 in Legacy PDF). */
 const DEFAULT_VALIDEZ_DIAS = 60;
 
 type AuthUser = { CODIGO?: string; codigo?: string };
 
-function resolveValidezDias(brandLike: Record<string, any> | null | undefined): number {
+function resolveValidezDias(
+  brandLike: Record<string, any> | null | undefined,
+): number {
   const cfg = (brandLike?.config || brandLike?.config_json || {}) as Record<
     string,
     unknown
@@ -54,8 +59,7 @@ export class PresupuestosV2PdfService {
   }
 
   private async attachLogoBuffer(payload: any): Promise<any> {
-    const ref =
-      payload?.brand?.logo_ref || payload?.company?.logo_ref || null;
+    const ref = payload?.brand?.logo_ref || payload?.company?.logo_ref || null;
     if (!ref || typeof ref !== 'string') return payload;
     // R2 keys from uploadBrandLogo use domain "v2-brands" or multi-segment paths.
     const looksLikeR2Key =
@@ -91,9 +95,7 @@ export class PresupuestosV2PdfService {
 
   private normalizeLineaPdf(l: any) {
     const opcionesSrc =
-      Array.isArray(l.opciones) && l.opciones.length > 0
-        ? l.opciones
-        : null;
+      Array.isArray(l.opciones) && l.opciones.length > 0 ? l.opciones : null;
     const opciones = opcionesSrc
       ? opcionesSrc.map((o: any) => ({
           etiqueta: o.etiqueta || 'Opción',
@@ -101,7 +103,10 @@ export class PresupuestosV2PdfService {
           descripcion_local: o.descripcion_local || null,
           jornada: o.jornada || o.jornada_json || null,
           inputs: o.inputs || o.inputs_json || {},
-          totales: o.resultado?.totales || o.totales || (o.resultado_json as any)?.totales,
+          totales:
+            o.resultado?.totales ||
+            o.totales ||
+            (o.resultado_json as any)?.totales,
           resultado: o.resultado || o.resultado_json,
         }))
       : [
@@ -111,7 +116,10 @@ export class PresupuestosV2PdfService {
             descripcion_local: null,
             jornada: null,
             inputs: l.inputs || l.inputs_json || {},
-            totales: l.resultado?.totales || l.totales || (l.resultado_json as any)?.totales,
+            totales:
+              l.resultado?.totales ||
+              l.totales ||
+              (l.resultado_json as any)?.totales,
             resultado: l.resultado || l.resultado_json,
           },
         ];
@@ -143,7 +151,7 @@ export class PresupuestosV2PdfService {
         })),
       );
     const totales =
-      (economico.totales_documento?.totales_sin_alternativas) ||
+      economico.totales_documento?.totales_sin_alternativas ||
       p.totales_emitidos_json ||
       economico.totales ||
       docTot.totales_sin_alternativas;
@@ -154,6 +162,31 @@ export class PresupuestosV2PdfService {
         economico.servicios_digitales ||
         [],
     );
+    const dtoPct = clampDescuentoFidelidadPct(
+      economico.descuento_fidelidad_pct ??
+        p.descuento_fidelidad_pct ??
+        (p.totales_emitidos_json as any)?.descuento_fidelidad_pct,
+    );
+    const brutoSnap =
+      economico.totales_brutos ||
+      economico.totales_documento?.totales_brutos_sin_alternativas ||
+      (p.totales_emitidos_json as any)?.totales_brutos ||
+      null;
+    // Snapshot stores neto in totales*; prefer bruto for re-derive, else trust snapshot neto.
+    let neto = totales as any;
+    let brutosShown = null as any;
+    if (dtoPct > 0 && brutoSnap) {
+      const applied = applyDescuentoFidelidadToTotales(brutoSnap, dtoPct);
+      neto = applied.neto;
+      brutosShown = applied.bruto;
+    } else if (dtoPct > 0 && !brutoSnap) {
+      // Old emit without bruto snapshot: do not double-apply if totales already neto.
+      // Treat stored totales as neto and skip footer bruto note.
+      neto = totales as any;
+      brutosShown = null;
+    } else {
+      neto = totales as any;
+    }
     return {
       mode: 'EMITIDO' as const,
       numero: p.numero,
@@ -163,7 +196,9 @@ export class PresupuestosV2PdfService {
       brand,
       cliente: (p.snapshot_cliente_json || null) as any,
       lineas,
-      totales,
+      totales: neto,
+      totalesBrutos: brutosShown,
+      descuentoFidelidadPct: dtoPct,
       totalesAmbiguo: Boolean(
         economico.totales_documento?.ambiguo ?? docTot.ambiguo,
       ),
@@ -221,6 +256,11 @@ export class PresupuestosV2PdfService {
       p.servicios_digitales_json ??
         digitalesFromBrandConfig(p.brand?.config_json),
     );
+    const dtoPct = clampDescuentoFidelidadPct(p.descuento_fidelidad_pct);
+    const applied = applyDescuentoFidelidadToTotales(
+      docTot.totales_sin_alternativas,
+      dtoPct,
+    );
     return {
       mode: 'BORRADOR' as const,
       numero: null,
@@ -241,7 +281,9 @@ export class PresupuestosV2PdfService {
       brand,
       cliente,
       lineas,
-      totales: docTot.totales_sin_alternativas,
+      totales: applied.neto,
+      totalesBrutos: dtoPct > 0 ? applied.bruto : null,
+      descuentoFidelidadPct: dtoPct,
       totalesAmbiguo: docTot.ambiguo,
       serviciosDigitales: digitales,
     };
@@ -387,7 +429,9 @@ export class PresupuestosV2PdfService {
 
     // Generate strictly from snapshots (never re-read live brand logo for stored docs;
     // logo_ref inside snapshot_brand_json is frozen; only fetch that key's bytes).
-    const payload = await this.attachLogoBuffer(this.buildPayloadFromEmitido(p));
+    const payload = await this.attachLogoBuffer(
+      this.buildPayloadFromEmitido(p),
+    );
     const buffer = await buildPresupuestoV2Pdf(payload);
     const sha = this.storage.sha256(buffer);
     const filename = `${p.numero || `emitido-${presupuestoId}`}.pdf`.replace(

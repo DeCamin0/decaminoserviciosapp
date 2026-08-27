@@ -1,15 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
-import { Card } from '../components/ui';
+import { Button, LoadingSpinner, PageHeader } from '../components/ui';
 import InspectionForm from '../components/inspections/InspectionForm';
-import InspectionList from '../components/inspections/InspectionList'; // Updated import
+import InspectionList from '../components/inspections/InspectionList';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 import { routes } from '../utils/routes';
 import { API_ENDPOINTS } from '../utils/constants';
-import Back3DButton from '../components/Back3DButton.jsx';
 import { usePolling } from '../hooks/usePolling';
 import { usePermissions } from '../hooks/usePermissions';
-import LoadingSpinner from '../components/ui/LoadingSpinner';
+import { InspectionTypeIcon } from '../components/inspections/inspectionUi';
+import { MessageCircle, RefreshCw } from 'lucide-react';
+import { Link } from 'react-router';
 
 export default function InspeccionesPage() {
   const { user: authUser } = useAuth();
@@ -106,18 +107,15 @@ export default function InspeccionesPage() {
 
   if (!canAccessPage) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center max-w-md mx-auto p-6">
-          <h1 className="text-2xl font-bold text-red-600 mb-4">
-            Acceso Restringido
-          </h1>
-          <p className="text-gray-600 mb-4">
-            No tienes permisos configurados para acceder a la página de Inspecciones.
+      <div className="inspecciones-page app-page flex items-center justify-center min-h-[50vh]">
+        <div className="app-card app-card--pad text-center max-w-md w-full">
+          <h1 className="text-lg font-bold mb-2">Acceso restringido</h1>
+          <p className="text-sm text-gray-600 mb-4">
+            No tienes permisos para acceder a Inspecciones. Contacta con tu supervisor.
           </p>
-          <p className="text-gray-600 mb-6">
-            Por favor, contacta con tu supervisor para que te asigne los permisos necesarios.
-          </p>
-          <Back3DButton to="/inicio" title="Volver al Inicio" />
+          <Link to="/inicio" className="app-page-header__back inline-flex items-center justify-center hit-44 px-4 rounded-[var(--app-radius-sm)] bg-primary-600 text-white text-sm font-medium">
+            Volver al inicio
+          </Link>
         </div>
       </div>
     );
@@ -125,523 +123,61 @@ export default function InspeccionesPage() {
 
   if (!selectedType) {
     return (
-      <div className="max-w-7xl mx-auto p-6">
-        {/* ULTRA MODERN Header con efectos 3D */}
-        <div className="mb-12 relative">
-          {/* Background glow effect */}
-          <div className="absolute inset-0 bg-gradient-to-r from-red-500/10 via-purple-500/10 to-blue-500/10 blur-3xl"></div>
-          
-          <div className="relative flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Back3DButton to="/inicio" title="Regresar al Dashboard" />
-              <div>
-                <h1 className="text-5xl font-black bg-gradient-to-r from-red-600 via-red-500 to-orange-500 bg-clip-text text-transparent mb-3 animate-pulse">
-                  Inspecciones
-                </h1>
-                <p className="text-gray-600 text-lg font-medium">
-                  Selecciona el tipo de inspección que deseas realizar
-                </p>
-              </div>
-            </div>
-            
-            {/* Buton Reportar error */}
-            <button
-              onClick={() => {
-                // Date relevante pentru pagina de inspecciones
-                const pageData = {
-                  additionalInfo: [
-                    selectedType ? `[TIPO SELECCIONADO] ${selectedType}` : null,
-                    centrosStats && Object.keys(centrosStats).length > 0 
-                      ? `[CENTROS] ${Object.keys(centrosStats).length} centros con inspecciones` 
-                      : null,
-                  ].filter(Boolean),
-                };
-                
-                const message = buildErrorReportMessage({
-                  authUser,
-                  pageName: "Inspecciones",
-                  pageData,
-                });
-                
-                openWhatsAppErrorReport(message);
-              }}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg"
-              title="Reportar error"
-            >
-              <span className="text-lg">📱</span>
-              <span>Reportar error</span>
-            </button>
-          </div>
+      <div className="inspecciones-page app-page">
+        <PageHeader title="Inspecciones" subtitle="Selecciona el tipo de inspeccion" backTo="/inicio"
+          actions={(<Button type="button" variant="secondary" size="sm" onClick={() => openWhatsAppErrorReport(buildErrorReportMessage({ authUser, pageName: 'Inspecciones', pageData: {} }))}><MessageCircle className="w-4 h-4" /> Reportar</Button>)} />
+        <div className="inspecciones-hub-grid">
+          <button type="button" className="inspecciones-hub-card" onClick={() => setSelectedType('limpieza')}>
+            <span className="inspecciones-hub-card__icon"><InspectionTypeIcon type="limpieza" className="w-5 h-5" /></span>
+            <span><span className="inspecciones-hub-card__title">Inspeccion de Limpieza</span><span className="inspecciones-hub-card__desc">17 zonas, evaluacion de calidad, firmas digitales.</span></span>
+          </button>
+          <button type="button" className="inspecciones-hub-card" onClick={() => setSelectedType('servicios')}>
+            <span className="inspecciones-hub-card__icon"><InspectionTypeIcon type="servicios" className="w-5 h-5" /></span>
+            <span><span className="inspecciones-hub-card__title">Servicios Auxiliares</span><span className="inspecciones-hub-card__desc">6 zonas de inspeccion.</span></span>
+          </button>
+          <button type="button" className="inspecciones-hub-card" onClick={() => setSelectedType('personalizada')}>
+            <span className="inspecciones-hub-card__icon"><InspectionTypeIcon type="personalizada" className="w-5 h-5" /></span>
+            <span><span className="inspecciones-hub-card__title">Inspeccion Personalizada</span><span className="inspecciones-hub-card__desc">Puntos personalizables.</span></span>
+          </button>
+          <button type="button" className="inspecciones-hub-card" onClick={() => setSelectedType('entrega-materiales')}>
+            <span className="inspecciones-hub-card__icon"><InspectionTypeIcon type="entrega-materiales" className="w-5 h-5" /></span>
+            <span><span className="inspecciones-hub-card__title">Entrega de Materiales</span><span className="inspecciones-hub-card__desc">Registro de materiales por centro.</span></span>
+          </button>
+          <button type="button" className="inspecciones-hub-card" onClick={() => setSelectedType('pdf-generator')}>
+            <span className="inspecciones-hub-card__icon"><InspectionTypeIcon type="pdf-generator" className="w-5 h-5" /></span>
+            <span><span className="inspecciones-hub-card__title">Lista de Inspecciones</span><span className="inspecciones-hub-card__desc">Consultar y descargar PDFs.</span></span>
+          </button>
+          <button type="button" className="inspecciones-hub-card" onClick={() => setSelectedType('solicitudes')}>
+            <span className="inspecciones-hub-card__icon"><InspectionTypeIcon type="solicitudes" className="w-5 h-5" /></span>
+            <span><span className="inspecciones-hub-card__title">Inspecciones Solicitadas</span><span className="inspecciones-hub-card__desc">Solicitudes pendientes.</span></span>
+          </button>
         </div>
-
-        {/* SUPER WOW 3D Selection Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-8 perspective-1000">
-          {/* Card 1 - Limpieza con efectos 3D ULTRA */}
-          <div
-            onClick={() => setSelectedType('limpieza')}
-            className="group relative cursor-pointer transform-gpu transition-all duration-700 hover:scale-110 hover:-translate-y-4 hover:rotate-y-12"
-            style={{ transformStyle: 'preserve-3d' }}
-          >
-            {/* Glow effect ultra potente */}
-            <div className="absolute -inset-4 bg-gradient-to-r from-red-500 via-pink-500 to-red-600 rounded-3xl opacity-0 group-hover:opacity-30 blur-2xl transition-all duration-700 group-hover:blur-3xl animate-pulse"></div>
-            
-            {/* Card principal con glassmorphism */}
-            <div className="relative bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-red-100 overflow-hidden transition-all duration-700 group-hover:border-red-300 group-hover:shadow-red-500/50"
-                 style={{
-                   background: 'linear-gradient(135deg, rgba(254, 202, 202, 0.4) 0%, rgba(252, 165, 165, 0.3) 50%, rgba(248, 113, 113, 0.2) 100%)',
-                   backdropFilter: 'blur(20px)',
-                   boxShadow: '0 20px 60px rgba(239, 68, 68, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.6)'
-                 }}>
-              
-              {/* Shimmer effect */}
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-              
-              {/* Icon 3D con múltiples capas */}
-              <div className="relative mx-auto mb-6 w-24 h-24 transform group-hover:scale-125 group-hover:rotate-12 transition-all duration-700"
-                   style={{ transformStyle: 'preserve-3d' }}>
-                <div className="absolute inset-0 bg-gradient-to-br from-red-400 to-red-600 rounded-full blur-xl opacity-50 animate-pulse"></div>
-                <div className="relative w-24 h-24 bg-gradient-to-br from-red-500 to-red-700 rounded-full flex items-center justify-center shadow-2xl"
-                     style={{
-                       boxShadow: '0 15px 35px rgba(239, 68, 68, 0.5), inset 0 -5px 15px rgba(0,0,0,0.2), inset 0 5px 15px rgba(255,255,255,0.3)'
-                     }}>
-                  <span className="text-5xl transform group-hover:scale-110 transition-transform duration-500">🧹</span>
-                </div>
-              </div>
-              
-              <h2 className="text-2xl font-black text-red-600 mb-3 group-hover:text-red-500 transition-colors">
-                Inspección de Limpieza
-              </h2>
-              <p className="text-gray-700 mb-4 font-medium">
-                Formulario para inspeccionar servicios de limpieza en edificios y espacios.
-              </p>
-              <div className="space-y-2 text-sm text-gray-600 font-medium">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-                  <span>17 zonas de inspección</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-                  <span>Evaluación de calidad</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-                  <span>Firmas digitales</span>
-                </div>
-              </div>
-            </div>
+        <section className="mt-4">
+          <h2 className="inspecciones-section-title mb-2">Estadisticas</h2>
+          <div className="solicitud-admin-stat-grid">
+            <div className="solicitud-admin-stat"><p className="solicitud-admin-stat__label">Centros</p><p className="solicitud-admin-stat__value">{centrosStats.totalCentros}</p></div>
+            <div className="solicitud-admin-stat"><p className="solicitud-admin-stat__label">Empleados</p><p className="solicitud-admin-stat__value">{centrosStats.totalEmpleados}</p></div>
+            <div className="solicitud-admin-stat"><p className="solicitud-admin-stat__label">Activos</p><p className="solicitud-admin-stat__value">{centrosStats.centrosActivos}</p></div>
           </div>
-
-          {/* Card 2 - Servicios Auxiliares ULTRA 3D */}
-          <div
-            onClick={() => setSelectedType('servicios')}
-            className="group relative cursor-pointer transform-gpu transition-all duration-700 hover:scale-110 hover:-translate-y-4 hover:rotate-y-12"
-            style={{ transformStyle: 'preserve-3d' }}
-          >
-            {/* Glow effect ultra potente */}
-            <div className="absolute -inset-4 bg-gradient-to-r from-blue-500 via-cyan-500 to-blue-600 rounded-3xl opacity-0 group-hover:opacity-30 blur-2xl transition-all duration-700 group-hover:blur-3xl animate-pulse"></div>
-            
-            {/* Card principal con glassmorphism */}
-            <div className="relative bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-blue-100 overflow-hidden transition-all duration-700 group-hover:border-blue-300 group-hover:shadow-blue-500/50"
-                 style={{
-                   background: 'linear-gradient(135deg, rgba(191, 219, 254, 0.4) 0%, rgba(147, 197, 253, 0.3) 50%, rgba(96, 165, 250, 0.2) 100%)',
-                   backdropFilter: 'blur(20px)',
-                   boxShadow: '0 20px 60px rgba(59, 130, 246, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.6)'
-                 }}>
-              
-              {/* Shimmer effect */}
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-              
-              {/* Icon 3D con múltiples capas */}
-              <div className="relative mx-auto mb-6 w-24 h-24 transform group-hover:scale-125 group-hover:rotate-12 transition-all duration-700"
-                   style={{ transformStyle: 'preserve-3d' }}>
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full blur-xl opacity-50 animate-pulse"></div>
-                <div className="relative w-24 h-24 bg-gradient-to-br from-blue-500 to-blue-700 rounded-full flex items-center justify-center shadow-2xl"
-                     style={{
-                       boxShadow: '0 15px 35px rgba(59, 130, 246, 0.5), inset 0 -5px 15px rgba(0,0,0,0.2), inset 0 5px 15px rgba(255,255,255,0.3)'
-                     }}>
-                  <span className="text-5xl transform group-hover:scale-110 transition-transform duration-500">🛡️</span>
-                </div>
-              </div>
-              
-              <h2 className="text-2xl font-black text-blue-600 mb-3 group-hover:text-blue-500 transition-colors">
-                Inspección de Servicios Auxiliares
-              </h2>
-              <p className="text-gray-700 mb-4 font-medium">
-                Formulario para inspeccionar servicios auxiliares como vigilancia y logística.
-              </p>
-              <div className="space-y-2 text-sm text-gray-600 font-medium">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                  <span>6 zonas de inspección</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                  <span>Evaluación de calidad</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                  <span>Firmas digitales</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 3 - Inspección Personalizada ULTRA 3D */}
-          <div
-            onClick={() => setSelectedType('personalizada')}
-            className="group relative cursor-pointer transform-gpu transition-all duration-700 hover:scale-110 hover:-translate-y-4 hover:rotate-y-12"
-            style={{ transformStyle: 'preserve-3d' }}
-          >
-            {/* Glow effect ultra potente */}
-            <div className="absolute -inset-4 bg-gradient-to-r from-purple-500 via-violet-500 to-purple-600 rounded-3xl opacity-0 group-hover:opacity-30 blur-2xl transition-all duration-700 group-hover:blur-3xl animate-pulse"></div>
-            
-            {/* Card principal con glassmorphism */}
-            <div className="relative bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-purple-100 overflow-hidden transition-all duration-700 group-hover:border-purple-300 group-hover:shadow-purple-500/50"
-                 style={{
-                   background: 'linear-gradient(135deg, rgba(196, 181, 253, 0.4) 0%, rgba(167, 139, 250, 0.3) 50%, rgba(139, 92, 246, 0.2) 100%)',
-                   backdropFilter: 'blur(20px)',
-                   boxShadow: '0 20px 60px rgba(139, 92, 246, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.6)'
-                 }}>
-              
-              {/* Shimmer effect */}
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-              
-              {/* Icon 3D con múltiples capas */}
-              <div className="relative mx-auto mb-6 w-24 h-24 transform group-hover:scale-125 group-hover:rotate-12 transition-all duration-700"
-                   style={{ transformStyle: 'preserve-3d' }}>
-                <div className="absolute inset-0 bg-gradient-to-br from-purple-400 to-purple-600 rounded-full blur-xl opacity-50 animate-pulse"></div>
-                <div className="relative w-24 h-24 bg-gradient-to-br from-purple-500 to-purple-700 rounded-full flex items-center justify-center shadow-2xl"
-                     style={{
-                       boxShadow: '0 15px 35px rgba(139, 92, 246, 0.5), inset 0 -5px 15px rgba(0,0,0,0.2), inset 0 5px 15px rgba(255,255,255,0.3)'
-                     }}>
-                  <span className="text-5xl transform group-hover:scale-110 transition-transform duration-500">⚙️</span>
-                </div>
-              </div>
-              
-              <h2 className="text-2xl font-black text-purple-600 mb-3 group-hover:text-purple-500 transition-colors">
-                Inspección Personalizada
-              </h2>
-              <p className="text-gray-700 mb-4 font-medium">
-                Crea inspecciones personalizadas con puntos de inspección a medida.
-              </p>
-              <div className="space-y-2 text-sm text-gray-600 font-medium">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
-                  <span>Puntos personalizables</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
-                  <span>Configuración flexible</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
-                  <span>Firmas digitales</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 4 - Entrega de Materiales ULTRA 3D */}
-          <div
-            onClick={() => setSelectedType('entrega-materiales')}
-            className="group relative cursor-pointer transform-gpu transition-all duration-700 hover:scale-110 hover:-translate-y-4 hover:rotate-y-12"
-            style={{ transformStyle: 'preserve-3d' }}
-          >
-            {/* Glow effect ultra potente */}
-            <div className="absolute -inset-4 bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 rounded-3xl opacity-0 group-hover:opacity-30 blur-2xl transition-all duration-700 group-hover:blur-3xl animate-pulse"></div>
-            
-            {/* Card principal con glassmorphism */}
-            <div className="relative bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-orange-100 overflow-hidden transition-all duration-700 group-hover:border-orange-300 group-hover:shadow-orange-500/50"
-                 style={{
-                   background: 'linear-gradient(135deg, rgba(254, 243, 199, 0.4) 0%, rgba(253, 230, 138, 0.3) 50%, rgba(251, 191, 36, 0.2) 100%)',
-                   backdropFilter: 'blur(20px)',
-                   boxShadow: '0 20px 60px rgba(251, 191, 36, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.6)'
-                 }}>
-              
-              {/* Shimmer effect */}
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-              
-              {/* Icon 3D con múltiples capas */}
-              <div className="relative mx-auto mb-6 w-24 h-24 transform group-hover:scale-125 group-hover:rotate-12 transition-all duration-700"
-                   style={{ transformStyle: 'preserve-3d' }}>
-                <div className="absolute inset-0 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full blur-xl opacity-50 animate-pulse"></div>
-                <div className="relative w-24 h-24 bg-gradient-to-br from-orange-500 to-orange-700 rounded-full flex items-center justify-center shadow-2xl"
-                     style={{
-                       boxShadow: '0 15px 35px rgba(251, 191, 36, 0.5), inset 0 -5px 15px rgba(0,0,0,0.2), inset 0 5px 15px rgba(255,255,255,0.3)'
-                     }}>
-                  <span className="text-5xl transform group-hover:scale-110 transition-transform duration-500">📦</span>
-                </div>
-              </div>
-              
-              <h2 className="text-2xl font-black text-orange-600 mb-3 group-hover:text-orange-500 transition-colors">
-                Entrega de Materiales
-              </h2>
-              <p className="text-gray-700 mb-4 font-medium">
-                Registra la entrega de materiales y suministros a los centros de trabajo.
-              </p>
-              <div className="space-y-2 text-sm text-gray-600 font-medium">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
-                  <span>Puntos personalizables</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
-                  <span>Configuración flexible</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
-                  <span>Firmas digitales</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 5 - Lista Inspecciones MEGA 3D */}
-          <div
-            onClick={() => setSelectedType('pdf-generator')}
-            className="group relative cursor-pointer transform-gpu transition-all duration-700 hover:scale-110 hover:-translate-y-4 hover:rotate-y-12"
-            style={{ transformStyle: 'preserve-3d' }}
-          >
-            {/* Glow effect ultra potente */}
-            <div className="absolute -inset-4 bg-gradient-to-r from-green-500 via-emerald-500 to-green-600 rounded-3xl opacity-0 group-hover:opacity-30 blur-2xl transition-all duration-700 group-hover:blur-3xl animate-pulse"></div>
-            
-            {/* Card principal con glassmorphism */}
-            <div className="relative bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-green-100 overflow-hidden transition-all duration-700 group-hover:border-green-300 group-hover:shadow-green-500/50"
-                 style={{
-                   background: 'linear-gradient(135deg, rgba(187, 247, 208, 0.4) 0%, rgba(134, 239, 172, 0.3) 50%, rgba(74, 222, 128, 0.2) 100%)',
-                   backdropFilter: 'blur(20px)',
-                   boxShadow: '0 20px 60px rgba(34, 197, 94, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.6)'
-                 }}>
-              
-              {/* Shimmer effect */}
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-              
-              {/* Icon 3D con múltiples capas */}
-              <div className="relative mx-auto mb-6 w-24 h-24 transform group-hover:scale-125 group-hover:rotate-12 transition-all duration-700"
-                   style={{ transformStyle: 'preserve-3d' }}>
-                <div className="absolute inset-0 bg-gradient-to-br from-green-400 to-green-600 rounded-full blur-xl opacity-50 animate-pulse"></div>
-                <div className="relative w-24 h-24 bg-gradient-to-br from-green-500 to-green-700 rounded-full flex items-center justify-center shadow-2xl"
-                     style={{
-                       boxShadow: '0 15px 35px rgba(34, 197, 94, 0.5), inset 0 -5px 15px rgba(0,0,0,0.2), inset 0 5px 15px rgba(255,255,255,0.3)'
-                     }}>
-                  <span className="text-5xl transform group-hover:scale-110 transition-transform duration-500">📄</span>
-                </div>
-              </div>
-              
-              <h2 className="text-2xl font-black text-green-600 mb-3 group-hover:text-green-500 transition-colors">
-                Lista de Inspecciones
-              </h2>
-              <p className="text-gray-700 mb-4 font-medium">
-                Ver todas las inspecciones existentes y descargar los PDF.
-              </p>
-              <div className="space-y-2 text-sm text-gray-600 font-medium">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                  <span>Lista completa de inspecciones</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                  <span>Descarga de PDF individual</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                  <span>Búsqueda y filtrado</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 6 - Lista Inspecciones Solicitadas MEGA 3D */}
-          <div
-            onClick={() => setSelectedType('solicitudes')}
-            className="group relative cursor-pointer transform-gpu transition-all duration-700 hover:scale-110 hover:-translate-y-4 hover:rotate-y-12"
-            style={{ transformStyle: 'preserve-3d' }}
-          >
-            {/* Glow effect ultra potente */}
-            <div className="absolute -inset-4 bg-gradient-to-r from-yellow-500 via-amber-500 to-orange-600 rounded-3xl opacity-0 group-hover:opacity-30 blur-2xl transition-all duration-700 group-hover:blur-3xl animate-pulse"></div>
-            
-            {/* Card principal con glassmorphism */}
-            <div className="relative bg-white/90 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-yellow-100 overflow-hidden transition-all duration-700 group-hover:border-yellow-300 group-hover:shadow-yellow-500/50"
-                 style={{
-                   background: 'linear-gradient(135deg, rgba(254, 243, 199, 0.4) 0%, rgba(253, 230, 138, 0.3) 50%, rgba(251, 191, 36, 0.2) 100%)',
-                   backdropFilter: 'blur(20px)',
-                   boxShadow: '0 20px 60px rgba(251, 191, 36, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.6)'
-                 }}>
-              
-              {/* Shimmer effect */}
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-              
-              {/* Icon 3D con múltiples capas */}
-              <div className="relative mx-auto mb-6 w-24 h-24 transform group-hover:scale-125 group-hover:rotate-12 transition-all duration-700"
-                   style={{ transformStyle: 'preserve-3d' }}>
-                <div className="absolute inset-0 bg-gradient-to-br from-yellow-400 to-orange-600 rounded-full blur-xl opacity-50 animate-pulse"></div>
-                <div className="relative w-24 h-24 bg-gradient-to-br from-yellow-500 to-orange-700 rounded-full flex items-center justify-center shadow-2xl"
-                     style={{
-                       boxShadow: '0 15px 35px rgba(251, 191, 36, 0.5), inset 0 -5px 15px rgba(0,0,0,0.2), inset 0 5px 15px rgba(255,255,255,0.3)'
-                     }}>
-                  <span className="text-5xl transform group-hover:scale-110 transition-transform duration-500">🔍</span>
-                </div>
-              </div>
-              
-              <h2 className="text-2xl font-black text-yellow-600 mb-3 group-hover:text-yellow-500 transition-colors">
-                Inspecciones Solicitadas
-              </h2>
-              <p className="text-gray-700 mb-4 font-medium">
-                Ver todas las solicitudes de inspección pendientes de completar.
-              </p>
-              <div className="space-y-2 text-sm text-gray-600 font-medium">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
-                  <span>Solo solicitudes pendientes</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
-                  <span>Sin PDF (aún no completadas)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
-                  <span>Búsqueda y filtrado</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ULTRA Statistics Glassmorphism */}
-        <div className="mt-16">
-          <h3 className="text-3xl font-black bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent mb-8">
-            Estadísticas del Sistema
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Card 1 - Centros */}
-            <div className="group relative overflow-hidden">
-              {/* Animated background glow */}
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-400 to-cyan-500 opacity-20 group-hover:opacity-30 blur-xl transition-all duration-500"></div>
-              
-              <div className="relative bg-gradient-to-br from-blue-50/80 to-cyan-50/80 backdrop-blur-xl border border-blue-200/50 rounded-2xl p-6 shadow-xl group-hover:shadow-2xl transition-all duration-500 group-hover:scale-105"
-                   style={{ backdropFilter: 'blur(20px)' }}>
-                <div className="flex items-center gap-4">
-                  <div className="relative">
-                    <div className="absolute inset-0 bg-blue-500 rounded-2xl blur-lg opacity-40 group-hover:opacity-60 transition-opacity"></div>
-                    <div className="relative w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-2xl flex items-center justify-center shadow-lg transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-500">
-                      <span className="text-3xl">🏢</span>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-blue-600 uppercase tracking-wide">Centros de Trabajo</p>
-                    <p className="text-4xl font-black text-blue-900 tabular-nums">{centrosStats.totalCentros}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* Card 2 - Empleados */}
-            <div className="group relative overflow-hidden">
-              {/* Animated background glow */}
-              <div className="absolute inset-0 bg-gradient-to-br from-green-400 to-emerald-500 opacity-20 group-hover:opacity-30 blur-xl transition-all duration-500"></div>
-              
-              <div className="relative bg-gradient-to-br from-green-50/80 to-emerald-50/80 backdrop-blur-xl border border-green-200/50 rounded-2xl p-6 shadow-xl group-hover:shadow-2xl transition-all duration-500 group-hover:scale-105"
-                   style={{ backdropFilter: 'blur(20px)' }}>
-                <div className="flex items-center gap-4">
-                  <div className="relative">
-                    <div className="absolute inset-0 bg-green-500 rounded-2xl blur-lg opacity-40 group-hover:opacity-60 transition-opacity"></div>
-                    <div className="relative w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-500">
-                      <span className="text-3xl">👥</span>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-green-600 uppercase tracking-wide">Total Empleados</p>
-                    <p className="text-4xl font-black text-green-900 tabular-nums">{centrosStats.totalEmpleados}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* Card 3 - Centros Activos */}
-            <div className="group relative overflow-hidden">
-              {/* Animated background glow */}
-              <div className="absolute inset-0 bg-gradient-to-br from-orange-400 to-amber-500 opacity-20 group-hover:opacity-30 blur-xl transition-all duration-500"></div>
-              
-              <div className="relative bg-gradient-to-br from-orange-50/80 to-amber-50/80 backdrop-blur-xl border border-orange-200/50 rounded-2xl p-6 shadow-xl group-hover:shadow-2xl transition-all duration-500 group-hover:scale-105"
-                   style={{ backdropFilter: 'blur(20px)' }}>
-                <div className="flex items-center gap-4">
-                  <div className="relative">
-                    <div className="absolute inset-0 bg-orange-500 rounded-2xl blur-lg opacity-40 group-hover:opacity-60 transition-opacity"></div>
-                    <div className="relative w-16 h-16 bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl flex items-center justify-center shadow-lg transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-500">
-                      <span className="text-3xl">✅</span>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-orange-600 uppercase tracking-wide">Centros Activos</p>
-                    <p className="text-4xl font-black text-orange-900 tabular-nums">{centrosStats.centrosActivos}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Recent Inspections */}
-        <div className="mt-8">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">
-            Inspecciones Recientes
-          </h3>
-          <RecentInspections />
-        </div>
+        </section>
+        <section className="mt-4"><RecentInspections /></section>
       </div>
     );
   }
 
-  return (
-    <div className="max-w-6xl mx-auto p-6">
-      {/* Header with back button - doar pentru formulare, nu pentru pdf-generator sau solicitudes */}
-      {selectedType && selectedType !== 'pdf-generator' && selectedType !== 'solicitudes' && (
-        <div className="mb-8">
-          <div className="flex items-center gap-4 mb-6">
-            <div onClick={() => setSelectedType(null)}>
-              <Back3DButton to="#" title="Volver a selección" onClick={(e) => { e.preventDefault(); setSelectedType(null); }} />
-            </div>
-            <div>
-              <h1 className="text-3xl sm:text-4xl font-black bg-gradient-to-r from-red-600 via-red-500 to-orange-500 bg-clip-text text-transparent">
-                {selectedType === 'limpieza' ? 'Inspección de Limpieza' : 
-                 selectedType === 'servicios' ? 'Inspección de Servicios Auxiliares' : 
-                 selectedType === 'personalizada' ? 'Inspección Personalizada' : 
-                 selectedType === 'entrega-materiales' ? 'Entrega de Materiales' : 'Inspección'}
-              </h1>
-              <p className="text-gray-600 text-sm sm:text-base font-medium">
-                Completa todos los campos y envía la inspección
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+  const formTitles = { limpieza: 'Inspeccion de Limpieza', servicios: 'Inspeccion de Servicios Auxiliares', personalizada: 'Inspeccion Personalizada', 'entrega-materiales': 'Entrega de Materiales' };
 
-      {/* Content based on selected type */}
+  return (
+    <div className="inspecciones-page app-page">
       {selectedType === 'pdf-generator' || selectedType === 'solicitudes' ? (
-        <InspectionList 
-          onBackToSelection={() => setSelectedType(null)} 
-          onlySolicitudes={selectedType === 'solicitudes'}
-          onStartInspection={(tipo, solicitudData) => {
-            // Navighează către formularul de inspecție cu datele pre-completate
-            setSolicitudData(solicitudData);
-            setSelectedType(tipo);
-          }}
-        />
-      ) : selectedType ? (
+        <InspectionList onBackToSelection={() => setSelectedType(null)} onlySolicitudes={selectedType === 'solicitudes'} onStartInspection={(tipo, data) => { setSolicitudData(data); setSelectedType(tipo); }} />
+      ) : (
         <>
-          <div onClick={() => {
-            setSelectedType(null);
-            setSolicitudData(null); // Resetează datele cererii când se închide formularul
-          }}>
-            <Back3DButton to="#" title="Volver a selección" onClick={(e) => { 
-              e.preventDefault(); 
-              setSelectedType(null);
-              setSolicitudData(null);
-            }} />
-          </div>
+          <PageHeader title={formTitles[selectedType] || 'Inspeccion'} subtitle="Completa todos los campos"
+            actions={(<Button type="button" variant="secondary" size="sm" onClick={() => { setSelectedType(null); setSolicitudData(null); }}>Volver</Button>)} />
           <InspectionForm type={selectedType} solicitudData={solicitudData} />
         </>
-      ) : null}
+      )}
     </div>
   );
 }
@@ -650,178 +186,35 @@ export default function InspeccionesPage() {
 function RecentInspections() {
   const [inspections, setInspections] = useState([]);
   const [loading, setLoading] = useState(false);
-
   const loadInspections = useCallback(async () => {
     setLoading(true);
     try {
-      console.log('🔍 Loading inspections from:', API_ENDPOINTS.GET_INSPECCIONES);
-      
-      // Obține token-ul JWT din localStorage
       const token = localStorage.getItem('auth_token');
-      const headers = { 
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      };
-      
-      // Adaugă token-ul JWT dacă există
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      
-      // Încearcă să încarci de la API - schimb la GET pentru a testa
-      const response = await fetch(API_ENDPOINTS.GET_INSPECCIONES, {
-        method: 'GET',
-        headers
-      });
-
-      console.log('📡 Response status:', response.status);
-      console.log('📡 Response ok:', response.ok);
-
-      if (response.ok) {
-        const apiInspections = await response.json();
-        console.log('✅ API Inspections received:', apiInspections);
-        
-        // Verificăm dacă este array sau un obiect cu status
-        if (!Array.isArray(apiInspections)) {
-          if (apiInspections.status === 'not-modified') {
-            console.log('📋 No changes in inspections (not-modified)');
-            // Nu actualizăm lista dacă nu sunt modificări
-            return;
-          }
-          console.warn('⚠️ Unexpected API response format:', apiInspections);
-          setInspections([]);
-          return;
-        }
-        
-        // Mapare date pentru noul endpoint
-        const mappedInspections = apiInspections.map(inspection => ({
-          id: inspection.id,
-          tipo: inspection.tipo_inspeccion,
-          inspector: inspection.nombre_empleado,
-          trabajador: inspection.nombre_empleado,
-          location: inspection.Locacion,
-          fecha: inspection.fecha_subida,
-          centro: inspection.Centro,
-          supervisor: inspection['Nombre Supervisor']
-        }));
-        
-        console.log('✅ Mapped inspections:', mappedInspections);
-        
-        // Filtrează inspecțiile care au date complete
-        const validInspections = mappedInspections.filter(inspection => 
-          inspection.id && 
-          inspection.tipo && 
-          inspection.trabajador && 
-          inspection.centro
-        );
-        
-        setInspections(validInspections.slice(-5).reverse());
-      } else {
-        console.log('❌ No inspections available from API. Status:', response.status);
-        setInspections([]);
-      }
-    } catch (error) {
-      console.error('Error loading inspections:', error);
-      setInspections([]);
-    } finally {
-      setLoading(false);
-    }
+      const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const response = await fetch(API_ENDPOINTS.GET_INSPECCIONES, { method: 'GET', headers });
+      if (!response.ok) { setInspections([]); return; }
+      const apiInspections = await response.json();
+      if (!Array.isArray(apiInspections)) { setInspections([]); return; }
+      const mapped = apiInspections.map((i) => ({ id: i.id, trabajador: i.nombre_empleado, centro: i.Centro }));
+      setInspections(mapped.filter((x) => x.id && x.trabajador && x.centro).slice(-5).reverse());
+    } catch { setInspections([]); } finally { setLoading(false); }
   }, []);
-
-  useEffect(() => {
-    loadInspections();
-  }, [loadInspections]);
-
-  // Polling cu pause/resume automat când tab-ul nu e activ + jitter
-  usePolling(loadInspections, 30000, true, 6000); // 30s base + max 6s jitter
-
-  if (loading) {
-    return (
-      <Card>
-        <div className="text-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto"></div>
-          <p className="text-gray-500 mt-2">Cargando inspecciones...</p>
-        </div>
-      </Card>
-    );
-  }
-
-  if (inspections.length === 0) {
-    return (
-      <Card>
-        <div className="text-center py-8 text-gray-500">
-          <span className="text-4xl mb-4 block">📋</span>
-          <p>No se encontraron inspecciones</p>
-          <p className="text-sm">Las inspecciones aparecerán aquí después de ser enviadas</p>
-        </div>
-      </Card>
-    );
-  }
-
+  useEffect(() => { loadInspections(); }, [loadInspections]);
+  usePolling(loadInspections, 30000, true, 6000);
+  if (loading) return <div className="app-card app-card--pad flex justify-center py-6"><LoadingSpinner text="Cargando..." /></div>;
+  if (!inspections.length) return <div className="app-card app-card--pad text-sm text-gray-500 text-center">No hay inspecciones recientes.</div>;
   return (
-    <div className="space-y-3">
-      <div className="flex justify-between items-center mb-4">
-        <h4 className="font-semibold text-gray-800">Inspecciones Recientes</h4>
-        
-        {/* SUPER 3D Refresh Button - SOLO ICONITA */}
-        <button
-          onClick={loadInspections}
-          disabled={loading}
-          className="group relative w-12 h-12 rounded-2xl transition-all duration-500 transform hover:scale-110 hover:-translate-y-1 shadow-xl hover:shadow-blue-500/50 overflow-hidden"
-          style={{
-            background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%)',
-            boxShadow: '0 10px 25px rgba(59, 130, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-          }}
-          title="Actualizar inspecciones"
-        >
-          {/* Glow effect */}
-          <div className="absolute inset-0 bg-blue-400 opacity-0 group-hover:opacity-40 blur-xl transition-all duration-500"></div>
-          
-          {/* Shimmer effect */}
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-          
-          {/* Icon con animație de rotire */}
-          <div className="relative flex items-center justify-center h-full">
-            <span className="text-2xl transform group-hover:rotate-180 transition-transform duration-500">🔄</span>
-          </div>
-        </button>
+    <div className="app-card app-card--pad space-y-2">
+      <div className="inspecciones-list-toolbar">
+        <h3 className="inspecciones-section-title">Inspecciones recientes</h3>
+        <button type="button" className="solicitud-admin-icon-btn" onClick={loadInspections} aria-label="Actualizar"><RefreshCw className="w-4 h-4" /></button>
       </div>
-      {inspections.map((inspection, index) => (
-        <Card key={index} className="p-4 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <h4 className="font-semibold text-gray-800">
-                  {inspection.type === 'limpieza' ? '🧹 Limpieza' : '🛡️ Servicios Auxiliares'}
-                </h4>
-                <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
-                  Completada
-                </span>
-              </div>
-              <p className="text-sm text-gray-600">
-                <strong>Centro:</strong> {inspection.centro}
-              </p>
-              <p className="text-sm text-gray-600">
-                <strong>Trabajador:</strong> {inspection.trabajador}
-              </p>
-              <p className="text-xs text-gray-500">
-                {inspection.fecha} • {inspection.hora} • Supervisor: {inspection.supervisor || 'N/A'}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {inspection.signatures?.trabajador && (
-                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                  ✓ Firma T
-                </span>
-              )}
-              {inspection.signatures?.cliente && (
-                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-                  ✓ Firma C
-                </span>
-              )}
-            </div>
-          </div>
-        </Card>
+      {inspections.map((i, idx) => (
+        <div key={i.id || idx} className="inspecciones-recent-row">
+          <div className="min-w-0"><p className="text-sm font-semibold truncate">{i.id}</p><p className="text-xs text-gray-500 truncate">{i.trabajador} · {i.centro}</p></div>
+          <span className="inspecciones-badge inspecciones-badge--done">Completada</span>
+        </div>
       ))}
     </div>
   );

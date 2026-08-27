@@ -47,6 +47,12 @@ export const motorPrecioMensual: MotorDefinition = {
   calculate: calculatePrecioMensual,
   inputSchema: [
     { key: 'concepto', label: 'Concepto', type: 'string', group: 'base' },
-    { key: 'precioSinIva', label: 'Precio mensual sin IVA (€)', type: 'number', group: 'base', required: true },
+    {
+      key: 'precioSinIva',
+      label: 'Precio mensual sin IVA (€)',
+      type: 'number',
+      group: 'base',
+      required: true,
+    },
   ],
 };

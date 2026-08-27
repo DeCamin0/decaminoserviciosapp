@@ -84,7 +84,7 @@ export class AvatarService {
         this.logger.warn(
           `R2 avatar fetch failed key=${key}: ${(err as Error)?.message}`,
         );
-        return null;
+        // Dual-read: dacă R2 pică, încearcă blob-ul din DB (dacă există)
       }
     }
     if (row.AVATAR_B64) return row.AVATAR_B64;

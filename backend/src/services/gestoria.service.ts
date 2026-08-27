@@ -2108,9 +2108,11 @@ export class GestoriaService {
           duplicateCheck,
         );
 
+      // Permitem mai multe foi pe același angajat/lună (ex. 2 contracte).
+      // Nu blocăm dacă există deja una — se adaugă încă una.
       if (duplicate.length > 0) {
-        throw new BadRequestException(
-          `Ya existe una nómina para ${nombreFinalConTipo} en ${mes}/${ano}`,
+        this.logger.log(
+          `ℹ️ Ya existe nómina para ${nombreFinalConTipo} en ${mes}/${ano}; se añadirá otra (multi-contrato).`,
         );
       }
 
@@ -2164,7 +2166,9 @@ export class GestoriaService {
           }
           fechaAltaDB = empleadoResult[0]?.['FECHA DE ALTA'] || null;
           fechaAntiguedadDB = empleadoResult[0]?.['Fecha Antigüedad'] || null;
-          fechaBajaDB = sanitizeFechaEmpleado(empleadoResult[0]?.['FECHA BAJA']);
+          fechaBajaDB = sanitizeFechaEmpleado(
+            empleadoResult[0]?.['FECHA BAJA'],
+          );
           segSocialDB = empleadoResult[0]?.['SEG. SOCIAL'] || null;
 
           // Dacă angajatul are FECHA BAJA setată, excludem nómina (doar pentru nóminas normale, nu finiquitos)
@@ -3080,7 +3084,9 @@ export class GestoriaService {
             (fr) => fr.pagina === i + 1 && fr.codigo === codigo,
           );
 
-          // Verificăm duplicate
+          // Verificăm dacă există deja o hoja în aceeași lună (NU blochează:
+          // un angajat poate avea mai multe foi/lună — ex. 2 contracte).
+          // forceReplace = UPDATE pe cea existentă; altfel INSERT încă una.
           const nombreNormalizedParaDuplicate = nombreFinal
             .trim()
             .toUpperCase();
@@ -3096,203 +3102,11 @@ export class GestoriaService {
             await this.prisma.$queryRawUnsafe<Array<{ id: number }>>(
               duplicateCheck,
             );
-
-          // Dacă este duplicate dar e marcat pentru înlocuire forțată, continuăm procesarea normală
-          if (duplicate.length > 0 && !shouldForceReplace) {
-            // Verificăm statusul actual al angajatului dacă este finiquito (pentru preview)
-            // Și extragem datele pentru toate nóminas (nu doar finiquitos)
-            let estadoActual: string | null = null;
-            let actualizaraEstado = false;
-            let fechaAltaDB: string | null = null;
-            let fechaAntiguedadDB: string | null = null;
-            let fechaBajaDB: string | null = null;
-            let fechaAltaExtraida: string | null = null;
-            let fechaBajaExtraida: string | null = null;
-            let fechaAntiguedadExtraida: string | null = null;
-            let tieneFiniquitoExistente = false;
-            let tieneFechaBajaEnDB = false;
-
-            // Obținem datele din DB pentru toate nóminas (nu doar finiquitos)
-            let segSocialDB: string | null = null;
-            if (codigo) {
-              const empleadoQuery = `
-                SELECT 
-                  \`ESTADO\`,
-                  \`FECHA DE ALTA\`,
-                  \`Fecha Antigüedad\`,
-                  \`FECHA BAJA\`,
-                  \`SEG. SOCIAL\`
-                FROM \`DatosEmpleados\`
-                WHERE \`CODIGO\` = ${this.escapeSql(codigo)}
-                LIMIT 1
-              `;
-              const empleadoResult = await this.prisma.$queryRawUnsafe<
-                Array<{
-                  ESTADO: string;
-                  'FECHA DE ALTA': string | null;
-                  'Fecha Antigüedad': string | null;
-                  'FECHA BAJA': string | null;
-                  'SEG. SOCIAL': string | null;
-                }>
-              >(empleadoQuery);
-
-              if (empleadoResult.length > 0) {
-                estadoActual =
-                  empleadoResult[0]?.ESTADO?.trim().toUpperCase() || null;
-                if (esFiniquito) {
-                  actualizaraEstado = estadoActual === 'ACTIVO';
-                }
-                fechaAltaDB = empleadoResult[0]?.['FECHA DE ALTA'] || null;
-                fechaAntiguedadDB =
-                  empleadoResult[0]?.['Fecha Antigüedad'] || null;
-                fechaBajaDB = sanitizeFechaEmpleado(empleadoResult[0]?.['FECHA BAJA']);
-                segSocialDB = empleadoResult[0]?.['SEG. SOCIAL'] || null;
-
-                // Dacă angajatul are FECHA BAJA setată, excludem nómina (doar pentru nóminas normale, nu finiquitos)
-                if (!esFiniquito && hasFechaBajaEstablecida(fechaBajaDB)) {
-                  tieneFechaBajaEnDB = true;
-                  this.logger.warn(
-                    `⚠️ Angajatul ${nombreCompleto} (CODIGO: ${codigo}) are deja FECHA BAJA setată (${fechaBajaDB}). Nómina va fi exclusă.`,
-                  );
-                }
-              }
-            }
-
-            // Dacă este o nómina normală (nu finiquito), verificăm dacă angajatul are deja un finiquito urcat
-            if (!esFiniquito && codigo && !tieneFechaBajaEnDB) {
-              const finiquitoCheck = `
-                SELECT \`id\`, \`nombre\`, \`Mes\`, \`Ano\`
-                FROM \`Nominas\`
-                WHERE TRIM(UPPER(\`nombre\`)) LIKE ${this.escapeSql(`%FINIQUITO%${nombreCompleto.toUpperCase()}%`)}
-                  OR TRIM(UPPER(\`nombre\`)) LIKE ${this.escapeSql(`%FINIQUITO - ${nombreCompleto.toUpperCase()}%`)}
-                LIMIT 1
-              `;
-              const finiquitoExistente = await this.prisma.$queryRawUnsafe<
-                Array<{
-                  id: number;
-                  nombre: string;
-                  Mes: string;
-                  Ano: string;
-                }>
-              >(finiquitoCheck);
-
-              if (finiquitoExistente.length > 0) {
-                tieneFiniquitoExistente = true;
-                this.logger.warn(
-                  `⚠️ Angajatul ${nombreCompleto} (CODIGO: ${codigo}) are deja un finiquito urcat: ${finiquitoExistente[0].nombre} (${finiquitoExistente[0].Mes}/${finiquitoExistente[0].Ano})`,
-                );
-              }
-            }
-
-            // Extragem datele din PDF (nu depinde de codigo)
-            if (textContent) {
-              this.logger.debug(
-                `🔍 Extragem datele din PDF pentru pagina ${i + 1}, codigo: ${codigo || 'null'}`,
-              );
-              // Pentru toate nóminas (inclusiv finiquitos), extragem Fecha Antigüedad
-              fechaAntiguedadExtraida =
-                this.extraerFechaAntiguedad(textContent);
-              this.logger.debug(
-                `📅 Fecha Antigüedad extrasă: ${fechaAntiguedadExtraida || 'null'}`,
-              );
-
-              // Pentru finiquitos, extragem și Fecha Baja
-              if (esFiniquito) {
-                fechaBajaExtraida = this.extraerFechaBaja(textContent);
-                this.logger.debug(
-                  `📅 Fecha Baja extrasă: ${fechaBajaExtraida || 'null'}`,
-                );
-              }
-
-              // Fecha Alta Extrasa = Fecha Antigüedad Extrasa (pentru toate nóminas)
-              if (fechaAntiguedadExtraida) {
-                fechaAltaExtraida = fechaAntiguedadExtraida;
-              }
-            } else {
-              this.logger.warn(
-                `⚠️ textContent este gol pentru pagina ${i + 1}`,
-              );
-            }
-
-            // SEG. SOCIAL este deja extras anterior (segSocialDetectado)
-            const segSocialExtraido = segSocialDetectado;
-            const actualizaraSegSocial =
-              (!segSocialDB || segSocialDB.trim() === '') && segSocialExtraido
-                ? true
-                : false;
-
-            // Dacă angajatul are FECHA BAJA setată și este o nómina normală, marchez ca eroare
-            if (tieneFechaBajaEnDB && !esFiniquito) {
-              detalle.push({
-                pagina: i + 1,
-                nombre_detectado: nombreDetectado,
-                mes_detectado: mesDetectado,
-                ano_detectado: anoDetectado,
-                empleado_encontrado: nombreCompleto,
-                codigo: codigo,
-                inserted: false,
-                error: `fecha_baja_establecida:${fechaBajaDB}`, // Format special pentru a putea extrage data
-                esFiniquito: esFiniquito,
-                actualizaraEstado: actualizaraEstado,
-                estadoActual: estadoActual,
-                fechaAltaDB: fechaAltaDB || undefined,
-                fechaAntiguedadDB: fechaAntiguedadDB || undefined,
-                fechaBajaDB: fechaBajaDB || undefined,
-                fechaAltaExtraida: fechaAltaExtraida || undefined,
-                fechaBajaExtraida: fechaBajaExtraida || undefined,
-                fechaAntiguedadExtraida: fechaAntiguedadExtraida || undefined,
-                actualizaraFechaAlta: false,
-                actualizaraFechaAntiguedad: false,
-                actualizaraFechaBaja: false,
-                tieneFiniquitoExistente,
-                segSocialDB: segSocialDB || undefined,
-                segSocialExtraido: segSocialDetectado || undefined,
-                actualizaraSegSocial:
-                  (!segSocialDB || segSocialDB.trim() === '') &&
-                  segSocialDetectado
-                    ? true
-                    : false,
-              } as any);
-              erori++;
-              continue;
-            }
-
-            // Calculăm ce se va actualiza dacă nu sunt setate în DB
-            const actualizaraFechaAlta =
-              !fechaAltaDB && fechaAltaExtraida ? true : false;
-            const actualizaraFechaAntiguedad =
-              !fechaAntiguedadDB && fechaAntiguedadExtraida ? true : false;
-            const actualizaraFechaBaja =
-              esFiniquito && fechaBajaExtraida ? true : false;
-
-            detalle.push({
-              pagina: i + 1,
-              nombre_detectado: nombreDetectado,
-              mes_detectado: mesDetectado,
-              ano_detectado: anoDetectado,
-              empleado_encontrado: nombreCompleto,
-              codigo: codigo,
-              inserted: false,
-              error: 'duplicate',
-              esFiniquito: esFiniquito,
-              actualizaraEstado: actualizaraEstado,
-              estadoActual: estadoActual,
-              fechaAltaDB: fechaAltaDB || undefined,
-              fechaAntiguedadDB: fechaAntiguedadDB || undefined,
-              fechaBajaDB: fechaBajaDB || undefined,
-              fechaAltaExtraida: fechaAltaExtraida || undefined,
-              fechaBajaExtraida: fechaBajaExtraida || undefined,
-              fechaAntiguedadExtraida: fechaAntiguedadExtraida || undefined,
-              actualizaraFechaAlta,
-              actualizaraFechaAntiguedad,
-              actualizaraFechaBaja,
-              tieneFiniquitoExistente,
-              segSocialDB: segSocialDB || undefined,
-              segSocialExtraido: segSocialExtraido || undefined,
-              actualizaraSegSocial: actualizaraSegSocial || false,
-            } as any);
-            erori++;
-            continue;
+          const yaExisteOtra = duplicate.length > 0 && !shouldForceReplace;
+          if (yaExisteOtra) {
+            this.logger.log(
+              `ℹ️ Page ${i + 1} - Ya existe nómina/hoja para ${nombreFinal} en ${mesFinal}/${anoFinal}; se añadirá otra (multi-contrato).`,
+            );
           }
 
           // Verificăm statusul actual al angajatului dacă este finiquito (pentru preview)
@@ -3341,7 +3155,9 @@ export class GestoriaService {
               fechaAltaDB = empleadoResult[0]?.['FECHA DE ALTA'] || null;
               fechaAntiguedadDB =
                 empleadoResult[0]?.['Fecha Antigüedad'] || null;
-              fechaBajaDB = sanitizeFechaEmpleado(empleadoResult[0]?.['FECHA BAJA']);
+              fechaBajaDB = sanitizeFechaEmpleado(
+                empleadoResult[0]?.['FECHA BAJA'],
+              );
               segSocialDB = empleadoResult[0]?.['SEG. SOCIAL'] || null;
 
               // Dacă angajatul are FECHA BAJA setată, excludem nómina (doar pentru nóminas normale, nu finiquitos)
@@ -3497,8 +3313,8 @@ export class GestoriaService {
                 `🔄 Nómina actualizată (forceReplace): ${nombreFinal} - ID: ${duplicate[0].id}, codigo: ${codigo || 'NULL'} (R2)`,
               );
               inserted = true;
-            } else if (!duplicate.length || shouldForceReplace) {
-              // INSERT normal (dacă nu e duplicate sau e marcat pentru înlocuire dar nu e duplicate - caz rar)
+            } else {
+              // INSERT: inclusiv când există deja altă foaie în aceeași lună (multi-contrato)
               const pageBuf = Buffer.from(pagePdfBytes);
               if (!this.nominasStorage.isWriteEnabled()) {
                 throw new BadRequestException(
@@ -3538,7 +3354,7 @@ export class GestoriaService {
               await this.prisma.$executeRawUnsafe(insertQuery);
               inserted = true;
               this.logger.log(
-                `✅ Nómina insertată: ${nombreFinal} - mes=${mesNombre}, ano=${anoFinal}, codigo: ${codigo || 'NULL'} (R2)`,
+                `✅ Nómina insertată${yaExisteOtra ? ' (adicional multi-contrato)' : ''}: ${nombreFinal} - mes=${mesNombre}, ano=${anoFinal}, codigo: ${codigo || 'NULL'} (R2)`,
               );
             }
 
@@ -3675,6 +3491,8 @@ export class GestoriaService {
             codigo: codigo,
             inserted: inserted,
             error: null,
+            ya_existe_otra: yaExisteOtra,
+            will_replace: shouldForceReplace && duplicate.length > 0,
             esFiniquito: esFiniquito,
             actualizaraEstado: actualizaraEstado,
             estadoActual: estadoActual,

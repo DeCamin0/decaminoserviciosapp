@@ -1,11 +1,11 @@
 /* Dashboard visual tokens – theme-driven */
 
 .dashboard-page {
-  --dash-radius: 0.85rem;
-  --dash-radius-sm: 0.65rem;
-  --dash-border: color-mix(in srgb, var(--primary-color) 14%, #e5e7eb);
-  --dash-shadow: 0 8px 24px color-mix(in srgb, #0f172a 6%, transparent);
-  --dash-gap: 1rem;
+  --dash-radius: var(--app-radius, 0.85rem);
+  --dash-radius-sm: var(--app-radius-sm, 0.65rem);
+  --dash-border: var(--app-border, color-mix(in srgb, var(--primary-color) 14%, #e5e7eb));
+  --dash-shadow: var(--app-shadow, 0 8px 24px color-mix(in srgb, #0f172a 6%, transparent));
+  --dash-gap: var(--app-space-page, 1rem);
   display: flex;
   flex-direction: column;
   gap: var(--dash-gap);

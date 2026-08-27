@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import {
+  FolderUp, RefreshCw, X, Eye, Save, CheckCircle2, AlertCircle, AlertTriangle,
+} from 'lucide-react';
 import { routes } from '../utils/routes';
-
-export default function FolderIngestionButton() {
+import { Modal, AlertBanner } from './ui';
+export default function FolderIngestionButton({ variant = 'toolbar' }) {
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -15,9 +18,18 @@ export default function FolderIngestionButton() {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 });
+  const [isMobile, setIsMobile] = useState(false);
   const dropdownRef = useRef(null);
   const buttonRef = useRef(null);
   const folderInputRef = useRef(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)');
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   // Calculate dropdown position when it opens
   useEffect(() => {
@@ -296,66 +308,63 @@ export default function FolderIngestionButton() {
     }
   };
 
+  const openPicker = () => {
+    setIsOpen(false);
+    setTimeout(() => folderInputRef.current?.click(), 50);
+  };
+
+  const folderHelp = (
+    <div className="text-sm text-gray-600 dark:text-gray-300 space-y-2">
+      <p>Selecciona una carpeta con subcarpetas por empleado.</p>
+      <p className="text-xs text-gray-500">Ejemplo: Personal DeCamino 2025 → Juan Pérez / María García</p>
+    </div>
+  );
+
   return (
-    <div className="relative" ref={dropdownRef}>
-      {/* Notification Toast */}
+    <div className={variant === 'toolbar' ? 'documentos-empleados-ingestion-trigger' : 'relative'} ref={dropdownRef}>
       {showNotification && result && (
-        <div className="fixed top-20 right-4 z-50 animate-slide-in-right">
-          <div
-            className={`p-4 rounded-xl shadow-2xl backdrop-blur-xl ${
-              result.success
-                ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white'
-                : 'bg-gradient-to-r from-red-500 to-rose-500 text-white'
-            }`}
-            style={{
-              minWidth: '300px',
-              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.3)',
-            }}
+        <div className="documentos-empleados-ingestion-toast">
+          <AlertBanner
+            variant={result.success ? 'success' : 'danger'}
+            title={result.success ? 'Procesamiento completado' : 'Error'}
+            className="documentos-empleados-ingestion-toast__banner"
           >
-            <div className="flex items-start gap-3">
-              <div className="text-2xl">
-                {result.success ? '✅' : '❌'}
+            {result.success ? (
+              <div className="space-y-0.5 text-sm">
+                <div>Guardados: {result.saved || 0}</div>
+                <div>Duplicados: {result.skipped || 0}</div>
+                {result.errors > 0 && <div>Errores: {result.errors}</div>}
               </div>
-              <div className="flex-1">
-                <div className="font-bold text-lg mb-1">
-                  {result.success ? 'Procesamiento completado' : 'Error'}
-                </div>
-                {result.success ? (
-                  <div className="text-sm opacity-90">
-                    <div>Guardados: {result.saved || 0}</div>
-                    <div>Duplicados: {result.skipped || 0}</div>
-                    {result.errors > 0 && <div>Errores: {result.errors}</div>}
-                  </div>
-                ) : (
-                  <div className="text-sm opacity-90">{result.error}</div>
-                )}
-              </div>
-              <button
-                onClick={() => setShowNotification(false)}
-                className="text-white/80 hover:text-white transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
+            ) : (
+              <p>{result.error}</p>
+            )}
+          </AlertBanner>
+          <button
+            type="button"
+            onClick={() => setShowNotification(false)}
+            className="documentos-empleados-ingestion-toast__close"
+            aria-label="Cerrar"
+          >
+            <X className="w-4 h-4" aria-hidden />
+          </button>
         </div>
       )}
-
-      {/* Button */}
       <button
         ref={buttonRef}
+        type="button"
         onClick={() => {
-          setIsOpen(!isOpen);
-          if (!isOpen && folderInputRef.current) {
-            // Small delay to ensure dropdown is visible
-            setTimeout(() => {
-              folderInputRef.current?.click();
-            }, 100);
+          if (variant === 'toolbar') {
+            setIsOpen(true);
+          } else {
+            setIsOpen(!isOpen);
+            if (!isOpen) openPicker();
           }
         }}
         disabled={loading}
-        className="relative group px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-        style={{
+        className={variant === 'toolbar'
+          ? 'solicitud-admin-btn w-full sm:w-auto disabled:opacity-50'
+          : 'relative group px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed'}
+        style={variant === 'toolbar' ? undefined : {
           background: loading
             ? 'linear-gradient(135deg, #9ca3af 0%, #6b7280 100%)'
             : 'linear-gradient(135deg, rgba(139, 92, 246, 0.95) 0%, rgba(124, 58, 237, 0.95) 100%)',
@@ -366,23 +375,15 @@ export default function FolderIngestionButton() {
         }}
       >
         {loading ? (
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-            <span>Procesando...</span>
-          </div>
+          <span className="inline-flex items-center gap-2">
+            <RefreshCw className="w-4 h-4 animate-spin" aria-hidden />
+            <span>Procesando…</span>
+          </span>
         ) : (
-          <div className="flex items-center gap-2">
-            <span className="text-lg">📁</span>
-            <span>Cargar Carpeta</span>
-            <svg
-              className={`w-4 h-4 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
+          <span className="inline-flex items-center gap-2">
+            <FolderUp className="w-4 h-4" aria-hidden />
+            <span>{variant === 'toolbar' ? 'Cargar carpeta' : 'Cargar Carpeta'}</span>
+          </span>
         )}
       </button>
 
@@ -397,8 +398,39 @@ export default function FolderIngestionButton() {
         accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.gif,.webp"
       />
 
-      {/* Dropdown - Using Portal to render directly in body to escape overflow:hidden containers */}
-      {isOpen && !loading && typeof document !== 'undefined' && createPortal(
+      {isOpen && !loading && variant === 'toolbar' && typeof document !== 'undefined' && (isMobile ? createPortal(
+        <Modal
+          isOpen={isOpen}
+          onClose={() => setIsOpen(false)}
+          title="Cargar carpeta"
+          size="md"
+          className="app-modal--form app-modal--bottom-sheet"
+          showCloseButton={false}
+          footer={(
+            <div className="flex flex-col gap-2 w-full">
+              <button type="button" onClick={() => setIsOpen(false)} className="solicitud-admin-btn w-full">Cancelar</button>
+              <button type="button" onClick={openPicker} className="solicitud-admin-btn solicitud-admin-btn--primary w-full">Seleccionar carpeta</button>
+            </div>
+          )}
+        >
+          {folderHelp}
+        </Modal>,
+        document.body
+      ) : createPortal(
+        <div
+          ref={dropdownRef}
+          className="documentos-empleados-ingestion-popover fixed w-72 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg z-[99999] p-4"
+          style={{ top: `${dropdownPosition.top}px`, right: `${dropdownPosition.right}px` }}
+        >
+          {folderHelp}
+          <button type="button" onClick={openPicker} className="solicitud-admin-btn solicitud-admin-btn--primary w-full mt-4">
+            Seleccionar carpeta
+          </button>
+        </div>,
+        document.body
+      ))}
+
+      {isOpen && !loading && variant !== 'toolbar' && typeof document !== 'undefined' && createPortal(
         <div
           ref={dropdownRef}
           className="fixed w-80 rounded-xl shadow-2xl backdrop-blur-xl overflow-hidden"
@@ -440,413 +472,226 @@ export default function FolderIngestionButton() {
         document.body
       )}
 
-      {/* Modal de preview cu documente */}
       {showPreviewModal && typeof document !== 'undefined' && createPortal(
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[99999] flex items-center justify-center p-4"
-          onClick={() => !saving && setShowPreviewModal(false)}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              boxShadow: '0 25px 50px rgba(0, 0, 0, 0.3)',
-            }}
-          >
-            <div className="sticky top-0 bg-gradient-to-r from-purple-500 to-purple-600 text-white p-6 rounded-t-2xl flex items-center justify-between z-10">
-              <div>
-                <h2 className="text-2xl font-bold mb-1">
-                  👁️ Preview Documentos
-                </h2>
-                <p className="text-purple-100 text-sm">
-                  Selecciona los documentos que deseas guardar ({selectedDocuments.size} de {previewDocuments.filter(d => !d.isDuplicate).length} seleccionados)
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
+        <Modal
+          isOpen={showPreviewModal}
+          onClose={() => !saving && setShowPreviewModal(false)}
+          title="Preview documentos"
+          size="xl"
+          className="app-modal--preview documentos-empleados-ingestion-preview"
+          closeOnBackdrop={!saving}
+          footer={(
+            <div className="documentos-empleados-ingestion-preview__footer">
+              <p className="documentos-empleados-ingestion-preview__count">
+                {selectedDocuments.size > 0
+                  ? `${selectedDocuments.size} documento${selectedDocuments.size !== 1 ? 's' : ''} seleccionado${selectedDocuments.size !== 1 ? 's' : ''}`
+                  : 'No hay documentos seleccionados'}
+              </p>
+              <div className="flex flex-wrap gap-2 justify-end">
+                <button type="button" onClick={() => setShowPreviewModal(false)} disabled={saving} className="solicitud-admin-btn">Cancelar</button>
                 <button
-                  onClick={handleSelectAll}
-                  disabled={saving}
-                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
-                >
-                  Seleccionar todos
-                </button>
-                <button
-                  onClick={handleDeselectAll}
-                  disabled={saving}
-                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
-                >
-                  Deseleccionar
-                </button>
-                <button
-                  onClick={() => !saving && setShowPreviewModal(false)}
-                  className="text-white/80 hover:text-white transition-colors text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/20"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6">
-              {previewDocuments.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  No se encontraron documentos
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {previewDocuments.map((doc) => (
-                    <div
-                      key={doc.id}
-                      className={`border-2 rounded-xl p-4 transition-all min-w-0 ${
-                        doc.isDuplicate
-                          ? 'bg-gray-100 border-gray-300 opacity-60'
-                          : selectedDocuments.has(doc.id)
-                          ? 'bg-purple-50 border-purple-400 shadow-lg'
-                          : 'bg-white border-gray-200 hover:border-purple-300'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3 mb-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedDocuments.has(doc.id)}
-                          onChange={() => handleToggleDocument(doc.id)}
-                          disabled={doc.isDuplicate || saving}
-                          className="mt-1 w-5 h-5 text-purple-600 focus:ring-purple-500 rounded"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-sm text-gray-800 truncate" title={doc.filename}>
-                            {doc.filename}
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {doc.size > 1024 * 1024 
-                              ? `${(doc.size / (1024 * 1024)).toFixed(2)} MB`
-                              : `${(doc.size / 1024).toFixed(2)} KB`}
-                            {' • '}
-                            {doc.contentType.split('/')[1]?.toUpperCase() || 'FILE'}
-                          </div>
-                          {doc.isDuplicate && (
-                            <div className="text-xs text-yellow-600 font-semibold mt-1">
-                              ⚠️ Ya existe en la base de datos
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Preview */}
-                      {doc.preview && (
-                        <div className="mt-3 border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-                          {doc.contentType.startsWith('image/') ? (
-                            <img
-                              src={doc.preview}
-                              alt={doc.filename}
-                              className="w-full h-32 object-contain"
-                              style={{ maxHeight: '200px' }}
-                            />
-                          ) : doc.contentType === 'application/pdf' ? (
-                            <div className="p-3 text-xs text-gray-600 max-h-32 overflow-y-auto">
-                              <div className="font-semibold mb-1">📄 Vista previa PDF:</div>
-                              <div className="whitespace-pre-wrap">{doc.preview}</div>
-                            </div>
-                          ) : null}
-                        </div>
-                      )}
-
-                      {/* Classification info */}
-                      <div className="mt-3 text-xs">
-                        {doc.classification.tipoDocumento && (
-                          <div className="text-gray-600">
-                            Tipo: <span className="font-semibold">{doc.classification.tipoDocumento}</span>
-                          </div>
-                        )}
-                        {doc.classification.empleadoId && (
-                          <div className="text-gray-600">
-                            <div>
-                              Código: <span className="font-semibold">{doc.classification.empleadoId}</span>
-                            </div>
-                            {doc.classification.empleadoNombre && (
-                              <div className="text-sm mt-1 text-gray-500">
-                                Nombre extraído: <span className="font-semibold">{doc.classification.empleadoNombre}</span>
-                              </div>
-                            )}
-                            {doc.classification.empleadoNombreFromDb && (
-                              <div className="text-sm mt-1 text-green-700">
-                                Nombre asociado: <span className="font-semibold">{doc.classification.empleadoNombreFromDb}</span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {!doc.classification.empleadoId && doc.classification.empleadoNombre && (
-                          <div className="text-gray-600">
-                            Nombre extraído: <span className="font-semibold">{doc.classification.empleadoNombre}</span>
-                          </div>
-                        )}
-                        {!doc.classification.empleadoId && doc.classification.empleadoNombre && (
-                          <div className="text-yellow-600 italic">
-                            ⚠️ Código no encontrado
-                          </div>
-                        )}
-                        {doc.classification.confidence > 0 && (
-                          <div className="text-gray-500">
-                            Confianza: {(doc.classification.confidence * 100).toFixed(0)}%
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Folder metadata */}
-                      {doc.folderMetadata && (
-                        <div className="mt-2 pt-2 border-t border-gray-200 text-xs text-gray-500">
-                          {doc.folderMetadata.employeeFolderName && (
-                            <div className="truncate" title={doc.folderMetadata.folderPath}>
-                              👤 Empleado: <span className="font-semibold text-blue-600">{doc.folderMetadata.employeeFolderName}</span>
-                            </div>
-                          )}
-                          {doc.folderMetadata.subfolderName && doc.folderMetadata.subfolderName !== doc.folderMetadata.folderName && (
-                            <div className="truncate" title={doc.folderMetadata.folderPath}>
-                              📁 Subcarpeta: <span className="font-semibold">{doc.folderMetadata.subfolderName}</span>
-                            </div>
-                          )}
-                          <div className="truncate" title={doc.folderMetadata.folderPath}>
-                            📂 Carpeta: {doc.folderMetadata.folderName || 'root'}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 p-4 flex items-center justify-between">
-              <div className="text-sm text-gray-600">
-                {selectedDocuments.size > 0 ? (
-                  <span className="font-semibold text-purple-600">
-                    {selectedDocuments.size} documento{selectedDocuments.size !== 1 ? 's' : ''} seleccionado{selectedDocuments.size !== 1 ? 's' : ''}
-                  </span>
-                ) : (
-                  <span>No hay documentos seleccionados</span>
-                )}
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowPreviewModal(false)}
-                  disabled={saving}
-                  className="px-6 py-2.5 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg font-semibold transition-colors disabled:opacity-50"
-                >
-                  Cancelar
-                </button>
-                <button
+                  type="button"
                   onClick={handleSaveSelected}
                   disabled={saving || selectedDocuments.size === 0}
-                  className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="solicitud-admin-btn solicitud-admin-btn--primary inline-flex items-center gap-2"
                 >
                   {saving ? (
                     <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                      Guardando...
+                      <RefreshCw className="w-4 h-4 animate-spin" aria-hidden />
+                      Guardando…
                     </>
                   ) : (
                     <>
-                      💾 Guardar Seleccionados ({selectedDocuments.size})
+                      <Save className="w-4 h-4" aria-hidden />
+                      Guardar ({selectedDocuments.size})
                     </>
                   )}
                 </button>
               </div>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Dialog de confirmare modern */}
-      {showConfirmDialog && typeof document !== 'undefined' && createPortal(
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4"
-          onClick={handleCancelUpload}
-          style={{ animation: 'fadeIn 0.2s ease-out' }}
+          )}
         >
-          <div
-            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full transform transition-all"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              animation: 'scaleIn 0.3s ease-out',
-              boxShadow: '0 25px 50px rgba(0, 0, 0, 0.4)',
-            }}
-          >
-            {/* Header gradient */}
-            <div className="bg-gradient-to-r from-purple-500 via-purple-600 to-purple-700 text-white p-6 rounded-t-2xl">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-                  <span className="text-2xl">📁</span>
-                </div>
-                <div className="flex-1">
-                  <h2 className="text-2xl font-bold mb-1">
-                    Confirmar Carga de Carpeta
-                  </h2>
-                  <p className="text-purple-100 text-sm">
-                    Se procesarán {pendingFiles.length} archivos
-                  </p>
-                </div>
-              </div>
+          <div className="documentos-empleados-ingestion-preview__toolbar">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Selecciona los documentos que deseas guardar ({selectedDocuments.size} de {previewDocuments.filter((d) => !d.isDuplicate).length})
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={handleSelectAll} disabled={saving} className="solicitud-admin-btn text-xs">Seleccionar todos</button>
+              <button type="button" onClick={handleDeselectAll} disabled={saving} className="solicitud-admin-btn text-xs">Deseleccionar</button>
             </div>
-
-            {/* Content */}
-            <div className="p-6">
-              <div className="mb-6">
-                <div className="flex items-start gap-4 p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl border border-purple-200">
-                  <div className="w-10 h-10 bg-purple-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <span className="text-white text-xl">ℹ️</span>
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-gray-800 font-medium mb-2">
-                      Información de la carpeta seleccionada:
-                    </p>
-                    <div className="space-y-2 text-sm text-gray-700">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold">📊 Total archivos:</span>
-                        <span className="bg-white px-2 py-1 rounded-md font-bold text-purple-600">
-                          {pendingFiles.length}
-                        </span>
+          </div>
+          {previewDocuments.length === 0 ? (
+            <div className="documentos-empleados-ingestion-preview__empty">
+              <Eye className="w-8 h-8 text-gray-400 mb-2" aria-hidden />
+              <p>No se encontraron documentos</p>
+            </div>
+          ) : (
+            <div className="documentos-empleados-ingestion-preview__grid">
+              {previewDocuments.map((doc) => (
+                <div
+                  key={doc.id}
+                  className={`documentos-empleados-ingestion-card${
+                    doc.isDuplicate
+                      ? ' documentos-empleados-ingestion-card--duplicate'
+                      : selectedDocuments.has(doc.id)
+                        ? ' documentos-empleados-ingestion-card--selected'
+                        : ''
+                  }`}
+                >
+                  <div className="flex items-start gap-3 mb-3">
+                    <input type="checkbox" checked={selectedDocuments.has(doc.id)} onChange={() => handleToggleDocument(doc.id)} disabled={doc.isDuplicate || saving} className="mt-1 w-4 h-4 rounded border-gray-300" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm text-gray-800 dark:text-gray-100 truncate" title={doc.filename}>{doc.filename}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {doc.size > 1024 * 1024 ? `${(doc.size / (1024 * 1024)).toFixed(2)} MB` : `${(doc.size / 1024).toFixed(2)} KB`}
+                        {' · '}
+                        {doc.contentType.split('/')[1]?.toUpperCase() || 'FILE'}
                       </div>
-                      {pendingFiles.length > 0 && (
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold">📂 Carpeta:</span>
-                          <span className="text-gray-600">
-                            {(() => {
-                              const firstPath = pendingFiles[0]?.webkitRelativePath || pendingFiles[0]?.name || '';
-                              const folderName = firstPath.split('/')[0] || 'root';
-                              return folderName;
-                            })()}
-                          </span>
-                        </div>
+                      {doc.isDuplicate && (
+                        <p className="text-xs text-amber-700 dark:text-amber-400 font-medium mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" aria-hidden />
+                          Ya existe en la base de datos
+                        </p>
                       )}
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold">💾 Tamaño aproximado:</span>
-                        <span className="text-gray-600">
-                          {(() => {
-                            const totalSize = pendingFiles.reduce((sum, file) => sum + (file.size || 0), 0);
-                            const sizeMB = (totalSize / (1024 * 1024)).toFixed(2);
-                            return `${sizeMB} MB`;
-                          })()}
-                        </span>
-                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
-
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
-                <div className="flex items-start gap-3">
-                  <span className="text-amber-600 text-xl">⚠️</span>
-                  <div className="flex-1">
-                    <p className="text-amber-800 font-medium text-sm mb-1">
-                      Advertencia
-                    </p>
-                    <p className="text-amber-700 text-sm">
-                      Se procesarán todos los archivos de la carpeta seleccionada. 
-                      Asegúrate de que confías en el origen de estos archivos.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Action buttons */}
-              <div className="flex gap-3">
-                <button
-                  onClick={handleCancelUpload}
-                  className="flex-1 px-4 py-3 rounded-xl font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98]"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleConfirmUpload}
-                  className="flex-1 px-4 py-3 rounded-xl font-semibold text-white transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98]"
-                  style={{
-                    background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                    boxShadow: '0 4px 15px rgba(139, 92, 246, 0.4)',
-                  }}
-                >
-                  Continuar
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Modal cu rezultate detaliate */}
-      {showModal && result && typeof document !== 'undefined' && createPortal(
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[99999] flex items-center justify-center p-4"
-          onClick={() => setShowModal(false)}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              boxShadow: '0 25px 50px rgba(0, 0, 0, 0.3)',
-            }}
-          >
-            <div className="sticky top-0 bg-gradient-to-r from-purple-500 to-purple-600 text-white p-6 rounded-t-2xl flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-bold mb-1">
-                  {result.success ? '✅ Procesamiento Completado' : '❌ Error'}
-                </h2>
-                <p className="text-purple-100 text-sm">
-                  {result.success ? 'Resultados de la carga de carpeta' : 'Ha ocurrido un error'}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowModal(false)}
-                className="text-white/80 hover:text-white transition-colors text-2xl font-bold w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/20"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="p-6">
-              {result.success ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <div className="bg-green-50 rounded-xl p-4 border border-green-200">
-                      <div className="text-2xl font-bold text-green-600">{result.saved || 0}</div>
-                      <div className="text-sm text-gray-600 mt-1">Guardados</div>
+                  {doc.preview && (
+                    <div className="documentos-empleados-ingestion-card__preview">
+                      {doc.contentType.startsWith('image/') ? (
+                        <img src={doc.preview} alt={doc.filename} className="w-full h-32 object-contain max-h-[200px]" />
+                      ) : doc.contentType === 'application/pdf' ? (
+                        <div className="p-3 text-xs text-gray-600 dark:text-gray-400 max-h-32 overflow-y-auto">
+                          <div className="font-semibold mb-1">Vista previa PDF</div>
+                          <div className="whitespace-pre-wrap">{doc.preview}</div>
+                        </div>
+                      ) : null}
                     </div>
-                    <div className="bg-yellow-50 rounded-xl p-4 border border-yellow-200">
-                      <div className="text-2xl font-bold text-yellow-600">{result.skipped || 0}</div>
-                      <div className="text-sm text-gray-600 mt-1">Duplicados</div>
-                    </div>
-                    {result.errors > 0 && (
-                      <div className="bg-red-50 rounded-xl p-4 border border-red-200">
-                        <div className="text-2xl font-bold text-red-600">{result.errors}</div>
-                        <div className="text-sm text-gray-600 mt-1">Errores</div>
+                  )}
+                  <div className="mt-3 text-xs space-y-0.5">
+                    {doc.classification.tipoDocumento && (
+                      <div className="text-gray-600 dark:text-gray-400">Tipo: <span className="font-semibold">{doc.classification.tipoDocumento}</span></div>
+                    )}
+                    {doc.classification.empleadoId && (
+                      <div className="text-gray-600 dark:text-gray-400">
+                        <div>Código: <span className="font-semibold">{doc.classification.empleadoId}</span></div>
+                        {doc.classification.empleadoNombre && <div className="mt-1">Nombre extraído: <span className="font-semibold">{doc.classification.empleadoNombre}</span></div>}
+                        {doc.classification.empleadoNombreFromDb && <div className="mt-1 text-green-700 dark:text-green-400">Nombre asociado: <span className="font-semibold">{doc.classification.empleadoNombreFromDb}</span></div>}
                       </div>
                     )}
+                    {!doc.classification.empleadoId && doc.classification.empleadoNombre && (
+                      <>
+                        <div className="text-gray-600 dark:text-gray-400">Nombre extraído: <span className="font-semibold">{doc.classification.empleadoNombre}</span></div>
+                        <div className="text-amber-700 dark:text-amber-400 italic">Código no encontrado</div>
+                      </>
+                    )}
+                    {doc.classification.confidence > 0 && <div className="text-gray-500">Confianza: {(doc.classification.confidence * 100).toFixed(0)}%</div>}
                   </div>
-
-                  <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                    <p className="text-sm text-green-800">
-                      ✅ Los documentos guardados están disponibles en la sección de revisión de documentos.
-                    </p>
-                  </div>
+                  {doc.folderMetadata && (
+                    <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+                      {doc.folderMetadata.employeeFolderName && (
+                        <div className="truncate" title={doc.folderMetadata.folderPath}>Empleado: <span className="font-semibold">{doc.folderMetadata.employeeFolderName}</span></div>
+                      )}
+                      {doc.folderMetadata.subfolderName && doc.folderMetadata.subfolderName !== doc.folderMetadata.folderName && (
+                        <div className="truncate" title={doc.folderMetadata.folderPath}>Subcarpeta: <span className="font-semibold">{doc.folderMetadata.subfolderName}</span></div>
+                      )}
+                      <div className="truncate" title={doc.folderMetadata.folderPath}>Carpeta: {doc.folderMetadata.folderName || 'root'}</div>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                  <p className="text-red-800 font-semibold mb-2">Error:</p>
-                  <p className="text-red-700">{result.error || 'Error desconocido'}</p>
-                </div>
-              )}
+              ))}
+            </div>
+          )}
+        </Modal>,
+        document.body
+      )}
 
-              <div className="mt-6 flex justify-end">
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors"
-                >
-                  Cerrar
-                </button>
+      {showConfirmDialog && typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={showConfirmDialog}
+          onClose={handleCancelUpload}
+          title="Confirmar carga de carpeta"
+          size="md"
+          className="app-modal--form"
+          footer={(
+            <div className="flex flex-col-reverse sm:flex-row gap-2 w-full sm:justify-end">
+              <button type="button" onClick={handleCancelUpload} className="solicitud-admin-btn w-full sm:w-auto">Cancelar</button>
+              <button type="button" onClick={handleConfirmUpload} className="solicitud-admin-btn solicitud-admin-btn--primary w-full sm:w-auto inline-flex items-center justify-center gap-2">
+                <FolderUp className="w-4 h-4" aria-hidden />
+                Continuar
+              </button>
+            </div>
+          )}
+        >
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Se procesarán <strong>{pendingFiles.length}</strong> archivos.
+          </p>
+          <div className="app-card app-card--pad mb-4 space-y-2 text-sm">
+            <div className="flex justify-between gap-2">
+              <span className="text-gray-600 dark:text-gray-400">Total archivos</span>
+              <span className="font-semibold">{pendingFiles.length}</span>
+            </div>
+            {pendingFiles.length > 0 && (
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-600 dark:text-gray-400">Carpeta</span>
+                <span className="font-medium truncate max-w-[60%] text-right">
+                  {(() => {
+                    const firstPath = pendingFiles[0]?.webkitRelativePath || pendingFiles[0]?.name || '';
+                    return firstPath.split('/')[0] || 'root';
+                  })()}
+                </span>
               </div>
+            )}
+            <div className="flex justify-between gap-2">
+              <span className="text-gray-600 dark:text-gray-400">Tamaño aprox.</span>
+              <span className="font-medium">
+                {((pendingFiles.reduce((sum, file) => sum + (file.size || 0), 0) / (1024 * 1024)).toFixed(2))} MB
+              </span>
             </div>
           </div>
-        </div>,
+          <AlertBanner variant="warning" icon={<AlertTriangle className="w-4 h-4" aria-hidden />} title="Advertencia">
+            Se procesarán todos los archivos de la carpeta seleccionada. Asegúrate de que confías en el origen de estos archivos.
+          </AlertBanner>
+        </Modal>,
+        document.body
+      )}
+
+      {showModal && result && typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={showModal}
+          onClose={() => setShowModal(false)}
+          title={result.success ? 'Procesamiento completado' : 'Error'}
+          size="md"
+          className="app-modal--form"
+          footer={(
+            <button type="button" onClick={() => setShowModal(false)} className="solicitud-admin-btn solicitud-admin-btn--primary w-full sm:w-auto">Cerrar</button>
+          )}
+        >
+          {result.success ? (
+            <div className="space-y-4">
+              <div className="documentos-empleados-ingestion-stats">
+                <div className="documentos-empleados-ingestion-stat">
+                  <div className="documentos-empleados-ingestion-stat__value">{result.saved || 0}</div>
+                  <div className="documentos-empleados-ingestion-stat__label">Guardados</div>
+                </div>
+                <div className="documentos-empleados-ingestion-stat">
+                  <div className="documentos-empleados-ingestion-stat__value">{result.skipped || 0}</div>
+                  <div className="documentos-empleados-ingestion-stat__label">Duplicados</div>
+                </div>
+                {result.errors > 0 && (
+                  <div className="documentos-empleados-ingestion-stat">
+                    <div className="documentos-empleados-ingestion-stat__value">{result.errors}</div>
+                    <div className="documentos-empleados-ingestion-stat__label">Errores</div>
+                  </div>
+                )}
+              </div>
+              <AlertBanner variant="success" icon={<CheckCircle2 className="w-4 h-4" aria-hidden />}>
+                Los documentos guardados están disponibles en la sección de revisión de documentos.
+              </AlertBanner>
+            </div>
+          ) : (
+            <AlertBanner variant="danger" title="Error">{result.error || 'Error desconocido'}</AlertBanner>
+          )}
+        </Modal>,
         document.body
       )}
     </div>

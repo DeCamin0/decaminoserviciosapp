@@ -1,21 +1,15 @@
-const Modal = ({ 
-  isOpen, 
-  onClose, 
-  title, 
-  children, 
+const Modal = ({
+  isOpen,
+  onClose,
+  title,
+  children,
   size = 'md',
   className = '',
   showCloseButton = true,
-  closeOnBackdrop = true
+  closeOnBackdrop = true,
+  footer = null,
 }) => {
   if (!isOpen) return null;
-
-  const sizes = {
-    sm: 'max-w-md',
-    md: 'max-w-2xl',
-    lg: 'max-w-4xl',
-    xl: 'max-w-6xl'
-  };
 
   const handleBackdropClick = (e) => {
     if (closeOnBackdrop && e.target === e.currentTarget) {
@@ -24,43 +18,45 @@ const Modal = ({
   };
 
   return (
-    <div 
-      className="fixed inset-0 bg-black bg-opacity-50 z-[9999] flex items-center justify-center p-4"
+    <div
+      className="app-modal-overlay"
       onClick={handleBackdropClick}
     >
-      <div 
-        className={`bg-white rounded-2xl shadow-2xl max-h-[90vh] flex flex-col w-full ${sizes[size]} ${className}`}
+      <div
+        className={`app-modal app-modal--${size}${className ? ` ${className}` : ''}`}
+        role="dialog"
+        aria-modal="true"
         onClick={(e) => e.stopPropagation()}
       >
-        {title && (
-          <div className="flex-shrink-0 flex items-center justify-between p-4 sm:p-6 border-b border-gray-200">
-            <h2 className="text-lg sm:text-xl font-bold text-gray-900 pr-2">{title}</h2>
+        {title ? (
+          <div className="app-modal__header">
+            <h2 className="app-modal__title">{title}</h2>
             <button
+              type="button"
               onClick={onClose}
-              className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-all active:scale-95"
+              className="app-modal__close"
               title="Cerrar"
               aria-label="Cerrar"
             >
-              <span className="text-3xl sm:text-4xl leading-none">×</span>
+              ×
             </button>
           </div>
-        )}
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 relative">
+        ) : null}
+        <div className="app-modal__body">
           {children}
         </div>
-        {showCloseButton && (
-          <div className="flex-shrink-0 p-4 sm:p-6 border-t border-gray-200">
-            <button
-              onClick={onClose}
-              className="w-full sm:w-auto px-6 py-3 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-colors active:scale-95 shadow-md"
-            >
+        {footer ? (
+          <div className="app-modal__footer">{footer}</div>
+        ) : showCloseButton ? (
+          <div className="app-modal__footer">
+            <button type="button" onClick={onClose} className="app-modal__btn">
               Cerrar
             </button>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
 };
 
-export default Modal; 
+export default Modal;

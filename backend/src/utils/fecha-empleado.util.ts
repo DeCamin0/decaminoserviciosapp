@@ -14,21 +14,19 @@ export function isGarbageFechaEmpleado(raw: unknown): boolean {
     lower.includes('invalid') ||
     lower === 'nan' ||
     /^\/+$/.test(s) ||
-    /^[\/\-\s.]+$/.test(s)
+    /^[/\s.-]+$/.test(s)
   ) {
     return true;
   }
-  if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(s)) return false;
-  if (/^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(s)) return false;
+  if (/^\d{1,2}[/-]\d{1,2}[/-]\d{4}$/.test(s)) return false;
+  if (/^\d{4}[/-]\d{1,2}[/-]\d{1,2}$/.test(s)) return false;
   // Sin año de 4 dígitos → basura
   if (!/\d{4}/.test(s)) return true;
   return false;
 }
 
 /** null si vacío o basura; string trim si parece fecha válida. */
-export function sanitizeFechaEmpleado(
-  raw: unknown,
-): string | null {
+export function sanitizeFechaEmpleado(raw: unknown): string | null {
   if (raw == null) return null;
   const s = String(raw).trim();
   if (!s) return null;

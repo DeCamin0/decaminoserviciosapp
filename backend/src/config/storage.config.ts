@@ -20,6 +20,7 @@ export default registerAs('storage', (): StorageConfig => {
     (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : '');
   const region = trim(process.env.R2_REGION) || 'auto';
   const publicBaseUrl = trim(process.env.R2_PUBLIC_BASE_URL);
+  const connectViaEdgeIps = trim(process.env.R2_CONNECT_VIA_EDGE_IP);
 
   return {
     enabled,
@@ -30,5 +31,6 @@ export default registerAs('storage', (): StorageConfig => {
     endpoint,
     region,
     publicBaseUrl,
+    connectViaEdgeIps,
   };
 });

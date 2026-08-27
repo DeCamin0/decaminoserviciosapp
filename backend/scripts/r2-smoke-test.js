@@ -20,6 +20,71 @@ const {
   DeleteObjectCommand,
 } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const { NodeHttpHandler } = require('@smithy/node-http-handler');
+const dns = require('dns');
+const https = require('https');
+
+const R2_DEFAULT_EDGE_FALLBACK_IPS = [
+  '172.64.148.235',
+  '172.64.155.209',
+  '104.16.132.229',
+  '104.19.192.174',
+];
+
+function parseEdgeFallbackIps(raw) {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return [];
+  if (['false', 'off', '0', 'no'].includes(trimmed.toLowerCase())) return [];
+  return trimmed
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function resolveEdgeFallbackIps(explicit) {
+  const parsed = parseEdgeFallbackIps(explicit);
+  if (parsed.length) return parsed;
+  if (process.env.NODE_ENV === 'production') return [];
+  return [...R2_DEFAULT_EDGE_FALLBACK_IPS];
+}
+
+function createR2RequestHandler(endpoint, fallbackIps) {
+  if (!fallbackIps.length) return undefined;
+  let endpointHost = '';
+  try {
+    endpointHost = new URL(endpoint).hostname;
+  } catch {
+    return undefined;
+  }
+
+  const httpsAgent = new https.Agent({
+    keepAlive: true,
+    lookup: (hostname, options, callback) => {
+      const isR2 =
+        hostname === endpointHost ||
+        String(hostname).endsWith('.r2.cloudflarestorage.com');
+      if (!isR2) {
+        dns.lookup(hostname, options, callback);
+        return;
+      }
+      const addresses = fallbackIps.map((address) => ({
+        address,
+        family: 4,
+      }));
+      if (options.all) {
+        callback(null, addresses);
+        return;
+      }
+      callback(null, addresses[0].address, 4);
+    },
+  });
+
+  return new NodeHttpHandler({
+    httpsAgent,
+    connectionTimeout: 30_000,
+    requestTimeout: 120_000,
+  });
+}
 
 const backendDir = path.join(__dirname, '..');
 const envRel = process.argv[2] || process.env.ENV_FILE || '.env.decamino.local';
@@ -96,11 +161,18 @@ async function main() {
   console.log('[r2-smoke] endpoint host:', redactHost(endpoint));
   console.log('[r2-smoke] region:', region);
 
+  const edgeIps = resolveEdgeFallbackIps(env.R2_CONNECT_VIA_EDGE_IP);
+  if (edgeIps.length) {
+    console.log('[r2-smoke] edge fallback IPs:', edgeIps.join(', '));
+  }
+
+  const requestHandler = createR2RequestHandler(endpoint, edgeIps);
   const client = new S3Client({
     region,
     endpoint,
     credentials: { accessKeyId, secretAccessKey },
     forcePathStyle: true,
+    ...(requestHandler ? { requestHandler } : {}),
   });
 
   const key = buildSmokeKey();

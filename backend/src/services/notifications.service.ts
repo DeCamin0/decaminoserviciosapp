@@ -269,12 +269,32 @@ export class NotificationsService {
     limit: number = 50,
     offset: number = 0,
   ) {
-    return this.prisma.notification.findMany({
+    const rows = await this.prisma.notification.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
       take: limit,
       skip: offset,
     });
+    return rows.map((n) => ({
+      ...n,
+      data: this.parseNotificationData(n.data),
+    }));
+  }
+
+  private parseNotificationData(raw: unknown): Record<string, unknown> | null {
+    if (raw == null) return null;
+    if (typeof raw === 'object' && !Array.isArray(raw)) {
+      return raw as Record<string, unknown>;
+    }
+    if (typeof raw !== 'string') return null;
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? parsed
+        : null;
+    } catch {
+      return null;
+    }
   }
 
   /**

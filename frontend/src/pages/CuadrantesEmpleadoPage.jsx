@@ -1,19 +1,13 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+﻿import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 
 import { useAuth } from '../contexts/AuthContextBase';
 import { useLocation } from '../contexts/LocationContextBase';
 
-import { Button, Modal, Input } from '../components/ui';
-
-import Back3DButton from '../components/Back3DButton.jsx';
-
-import CalendarDayCell from '../components/CalendarDayCell.jsx';
-
-import DeclararNoPunchModal from '../components/DeclararNoPunchModal.jsx';
+import { PageHeader, AlertBanner } from '../components/ui';
+import CuadrantesEmpleadoShell from './cuadrantes-empleado/CuadrantesEmpleadoShell.jsx';
 
 import { routes } from '../utils/routes.js';
 import { config } from '../config/env';
-import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 import activityLogger from '../utils/activityLogger';
 import { isCuadranteRowVisible } from '../utils/cuadranteVisible';
 import {
@@ -23,7 +17,7 @@ import {
 
 // Helper functions
 
-/** Pentru CalendarDayCell / turno compartido: "HH:MM-HH:MM / …" din in/out horario */
+/** Pentru CalendarDayCell / turno compartido: "HH:MM-HH:MM / â€¦" din in/out horario */
 function ziRawFromHorarioIntervals(intervals) {
   if (!intervals || intervals.length === 0) return null;
   return intervals
@@ -138,7 +132,7 @@ function normalizeDateInput(value) {
 
   }
 
-  // Format D/M/YYYY sau D-M-YYYY (cu 1-2 cifre pentru zi și lună) - ex: "8/2/2026"
+  // Format D/M/YYYY sau D-M-YYYY (cu 1-2 cifre pentru zi È™i lunÄƒ) - ex: "8/2/2026"
   if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}/.test(str)) {
 
     const [day, month, year] = str.split(/[-/]/);
@@ -223,7 +217,7 @@ function toDateObject(dateStr) {
 
 
 
-// Funcție pentru a converti formatul numeric al lunilor în numele lunilor
+// FuncÈ›ie pentru a converti formatul numeric al lunilor Ã®n numele lunilor
 
 function formatMonthName(monthString) {
 
@@ -239,15 +233,6 @@ function formatMonthName(monthString) {
 
   return monthNames[month - 1];
 
-}
-
-// Función para obtener el día actual con formato "DD MMM"
-function getCurrentDayFormatted() {
-  const now = new Date();
-  const day = now.getDate();
-  const monthNames = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
-  const month = monthNames[now.getMonth()];
-  return `${day} ${month}`;
 }
 
 
@@ -274,9 +259,9 @@ export default function CuadrantesEmpleadoPage() {
   // State pentru orarul asignat
   const [horarioAsignado, setHorarioAsignado] = useState(null);
   
-  // State pentru horario_multicentro asignat (toate înregistrările pentru luna selectată)
+  // State pentru horario_multicentro asignat (toate Ã®nregistrÄƒrile pentru luna selectatÄƒ)
   const [horarioMulticentroAsignado, setHorarioMulticentroAsignado] = useState(null);
-  const [horariosMulticentroLista, setHorariosMulticentroLista] = useState([]); // Toate horarios_multicentro pentru luna selectată
+  const [horariosMulticentroLista, setHorariosMulticentroLista] = useState([]); // Toate horarios_multicentro pentru luna selectatÄƒ
   const [loadingHorarioMulticentro, setLoadingHorarioMulticentro] = useState(false);
   const lastHorarioMulticentroFetchRef = useRef({ codigo: null, month: null });
   
@@ -297,7 +282,7 @@ export default function CuadrantesEmpleadoPage() {
     [userData?.['NOMBRE / APELLIDOS'], nombreEmpleado]
   );
 
-  // Funcție pentru încărcarea datelor complete ale utilizatorului
+  // FuncÈ›ie pentru Ã®ncÄƒrcarea datelor complete ale utilizatorului
   const fetchUserData = useCallback(async () => {
     try {
       const email = authUser?.email;
@@ -327,17 +312,17 @@ export default function CuadrantesEmpleadoPage() {
         found = users.find(u => (u[8] || '').trim().toLowerCase() === normEmail);
       }
       
-      // Mapeo robusto de campos - verificamos múltiples variaciones
+      // Mapeo robusto de campos - verificamos mÃºltiples variaciones
       if (found) {
         const mappedUser = {
           'CODIGO': found['CODIGO'] || found.codigo || found.CODIGO || '',
           'NOMBRE / APELLIDOS': found['NOMBRE / APELLIDOS'] || found.nombre || found.NOMBRE || '',
-          'CORREO ELECTRONICO': found['CORREO ELECTRONICO'] || found.email || found.EMAIL || found['CORREO ELECTRÓNICO'] || '',
+          'CORREO ELECTRONICO': found['CORREO ELECTRONICO'] || found.email || found.EMAIL || found['CORREO ELECTRÃ“NICO'] || '',
           'NACIONALIDAD': found['NACIONALIDAD'] || found.nacionalidad || '',
-          'DIRECCION': found['DIRECCION'] || found.direccion || found['DIRECCIÓN'] || '',
+          'DIRECCION': found['DIRECCION'] || found.direccion || found['DIRECCIÃ“N'] || '',
           'D.N.I. / NIE': found['D.N.I. / NIE'] || found.dni || found.DNI || found.nie || found.NIE || '',
           'SEG. SOCIAL': found['SEG. SOCIAL'] || found['SEGURIDAD SOCIAL'] || found.seguridad_social || found.seg_social || '',
-          'Nº Cuenta': found['Nº Cuenta'] || found.cuenta || found.CUENTA || found.numero_cuenta || '',
+          'NÂº Cuenta': found['NÂº Cuenta'] || found.cuenta || found.CUENTA || found.numero_cuenta || '',
           'TELEFONO': found['TELEFONO'] || found.telefono || found.TELEFONO || found.phone || '',
           'FECHA NACIMIENTO': found['FECHA NACIMIENTO'] || found.fecha_nacimiento || found.fechaNacimiento || found['FECHA DE NACIMIENTO'] || '',
           'FECHA DE ALTA': found['FECHA DE ALTA'] || found['FECHA_DE_ALTA'] || found.fecha_alta || found.fechaAlta || found.fecha_de_alta || '',
@@ -349,8 +334,8 @@ export default function CuadrantesEmpleadoPage() {
           'GRUPO': found['GRUPO'] || found.grupo || found.GRUPO || '',
           'ESTADO': found['ESTADO'] || found.estado || found.ESTADO || '',
           'FECHA BAJA': found['FECHA BAJA'] || found.fecha_baja || found.fechaBaja || found['FECHA_BAJA'] || '',
-          'Fecha Antigüedad': found['Fecha Antigüedad'] || found.fecha_antiguedad || found.fechaAntiguedad || '',
-          'Antigüedad': found['Antigüedad'] || found.antiguedad || '',
+          'Fecha AntigÃ¼edad': found['Fecha AntigÃ¼edad'] || found.fecha_antiguedad || found.fechaAntiguedad || '',
+          'AntigÃ¼edad': found['AntigÃ¼edad'] || found.antiguedad || '',
         };
         setUserData(mappedUser);
       } else {
@@ -393,7 +378,7 @@ export default function CuadrantesEmpleadoPage() {
 
   // State pentru aviso horarios
   const [showAvisoModal, setShowAvisoModal] = useState(false);
-  // bannerDismissed și bannerStatusLoading - setter-urile sunt folosite dar state-urile nu (pentru viitor folosire)
+  // bannerDismissed È™i bannerStatusLoading - setter-urile sunt folosite dar state-urile nu (pentru viitor folosire)
   // eslint-disable-next-line no-unused-vars
   const [bannerDismissed, setBannerDismissed] = useState(false);
   // eslint-disable-next-line no-unused-vars
@@ -421,10 +406,10 @@ export default function CuadrantesEmpleadoPage() {
   const [showNoPunchModal, setShowNoPunchModal] = useState(false);
   const [selectedDayForNoPunch, setSelectedDayForNoPunch] = useState(null);
 
-  // State pentru regularizări confirmate (din MonthlyAlerts)
+  // State pentru regularizÄƒri confirmate (din MonthlyAlerts)
   const [regularizacionesConfirmadas, setRegularizacionesConfirmadas] = useState(new Map());
   const [planFuenteMap, setPlanFuenteMap] = useState(new Map()); // Map pentru plan_fuente (fiesta, etc.)
-  const [detaliiZilnice, setDetaliiZilnice] = useState([]); // Stocăm detalii_zilnice pentru a le folosi direct în calendarCells
+  const [detaliiZilnice, setDetaliiZilnice] = useState([]); // StocÄƒm detalii_zilnice pentru a le folosi direct Ã®n calendarCells
 
   
 
@@ -448,13 +433,13 @@ export default function CuadrantesEmpleadoPage() {
 
         CODIGO: 'ADM001',
 
-        NOMBRE: 'Carlos Antonio Rodríguez',
+        NOMBRE: 'Carlos Antonio RodrÃ­guez',
 
-        '1': 'Mañana',
+        '1': 'MaÃ±ana',
 
-        '2': 'Mañana',
+        '2': 'MaÃ±ana',
 
-        '3': 'Mañana',
+        '3': 'MaÃ±ana',
 
         '4': 'Tarde',
 
@@ -464,11 +449,11 @@ export default function CuadrantesEmpleadoPage() {
 
         '7': 'Libre',
 
-        '8': 'Mañana',
+        '8': 'MaÃ±ana',
 
-        '9': 'Mañana',
+        '9': 'MaÃ±ana',
 
-        '10': 'Mañana',
+        '10': 'MaÃ±ana',
 
         '11': 'Tarde',
 
@@ -480,11 +465,11 @@ export default function CuadrantesEmpleadoPage() {
 
         '15': 'Libre',
 
-        '16': 'Mañana',
+        '16': 'MaÃ±ana',
 
-        '17': 'Mañana',
+        '17': 'MaÃ±ana',
 
-        '18': 'Mañana',
+        '18': 'MaÃ±ana',
 
         '19': 'Tarde',
 
@@ -496,11 +481,11 @@ export default function CuadrantesEmpleadoPage() {
 
         '23': 'Libre',
 
-        '24': 'Mañana',
+        '24': 'MaÃ±ana',
 
-        '25': 'Mañana',
+        '25': 'MaÃ±ana',
 
-        '26': 'Mañana',
+        '26': 'MaÃ±ana',
 
         '27': 'Tarde',
 
@@ -558,7 +543,7 @@ export default function CuadrantesEmpleadoPage() {
 
         codigo: 'ADM001',
 
-        nombre: 'Carlos Antonio Rodríguez',
+        nombre: 'Carlos Antonio RodrÃ­guez',
 
         ubicacion: 'Madrid Centro'
 
@@ -576,7 +561,7 @@ export default function CuadrantesEmpleadoPage() {
 
         codigo: 'ADM001',
 
-        nombre: 'Carlos Antonio Rodríguez',
+        nombre: 'Carlos Antonio RodrÃ­guez',
 
         ubicacion: 'Madrid Centro'
 
@@ -594,7 +579,7 @@ export default function CuadrantesEmpleadoPage() {
 
         codigo: 'ADM001',
 
-        nombre: 'Carlos Antonio Rodríguez',
+        nombre: 'Carlos Antonio RodrÃ­guez',
 
         ubicacion: 'Madrid Centro'
 
@@ -612,7 +597,7 @@ export default function CuadrantesEmpleadoPage() {
 
         codigo: 'ADM001',
 
-        nombre: 'Carlos Antonio Rodríguez',
+        nombre: 'Carlos Antonio RodrÃ­guez',
 
         ubicacion: 'Madrid Centro'
 
@@ -652,7 +637,7 @@ export default function CuadrantesEmpleadoPage() {
 
         FECHA_FIN: `${currentYear}-10-25`,
 
-        motivo: 'Vacaciones de otoño',
+        motivo: 'Vacaciones de otoÃ±o',
 
         duracion: '08:00:00'
 
@@ -672,7 +657,7 @@ export default function CuadrantesEmpleadoPage() {
 
         FECHA_FIN: `${currentYear}-10-10`,
 
-        motivo: 'Cita médica',
+        motivo: 'Cita mÃ©dica',
 
         duracion: '04:00:00'
 
@@ -722,7 +707,7 @@ export default function CuadrantesEmpleadoPage() {
 
 
 
-  // OPTIMIZARE: Fetch cuadrantes și userData în paralel pentru performanță mai bună
+  // OPTIMIZARE: Fetch cuadrantes È™i userData Ã®n paralel pentru performanÈ›Äƒ mai bunÄƒ
   useEffect(() => {
     // Skip real data fetch in DEMO mode
     if (authUser?.isDemo) {
@@ -737,7 +722,7 @@ export default function CuadrantesEmpleadoPage() {
     setLoading(true);
     setError('');
 
-    // Paralelizăm request-urile critice
+    // ParalelizÄƒm request-urile critice
     const token = localStorage.getItem('auth_token');
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
@@ -753,7 +738,7 @@ export default function CuadrantesEmpleadoPage() {
       const lista = Array.isArray(data) ? data : [data];
       setCuadrantesUser(lista);
       
-      // Detectez luna curentă și o setez imediat
+      // Detectez luna curentÄƒ È™i o setez imediat
       const currentDate = new Date();
       const currentYear = currentDate.getFullYear();
       const currentMonth = currentDate.getMonth() + 1;
@@ -769,14 +754,14 @@ export default function CuadrantesEmpleadoPage() {
     // Request 2: UserData (critic pentru alte date)
     const fetchUserDataPromise = authUser?.email ? fetchUserData().catch(() => null) : Promise.resolve(null);
 
-    // Așteptăm ambele request-uri să se termine, apoi setăm loading false
+    // AÈ™teptÄƒm ambele request-uri sÄƒ se termine, apoi setÄƒm loading false
     Promise.all([fetchCuadrantesPromise, fetchUserDataPromise]).finally(() => {
       setLoading(false);
     });
   }, [codigoEmpleado, authUser?.email, authUser?.isDemo, fetchUserData]);
 
-  // Funcție pentru a încărca orarul asignat
-  // Memoizăm și optimizăm pentru a preveni apeluri repetate
+  // FuncÈ›ie pentru a Ã®ncÄƒrca orarul asignat
+  // MemoizÄƒm È™i optimizÄƒm pentru a preveni apeluri repetate
   const centroUsuario = useMemo(() => 
     userData?.['CENTRO TRABAJO'] || authUser?.['CENTRO TRABAJO'] || authUser?.centroTrabajo || authUser?.['CENTRO'] || authUser?.centro || authUser?.role || '',
     [userData?.['CENTRO TRABAJO'], authUser?.['CENTRO TRABAJO'], authUser?.centroTrabajo, authUser?.['CENTRO'], authUser?.centro, authUser?.role]
@@ -806,16 +791,16 @@ export default function CuadrantesEmpleadoPage() {
         );
         
         if (horarioMatch) {
-          // Verificăm dacă horarioAsignado s-a schimbat înainte de a-l seta
+          // VerificÄƒm dacÄƒ horarioAsignado s-a schimbat Ã®nainte de a-l seta
           setHorarioAsignado(prev => {
-            if (prev?.id === horarioMatch.id) return prev; // Nu schimbăm dacă este același
+            if (prev?.id === horarioMatch.id) return prev; // Nu schimbÄƒm dacÄƒ este acelaÈ™i
             return horarioMatch;
           });
         }
       }
     } catch {
       // Error loading assigned schedule
-      horarioFetchedRef.current = false; // Resetăm flag-ul în caz de eroare
+      horarioFetchedRef.current = false; // ResetÄƒm flag-ul Ã®n caz de eroare
     }
   }, [centroUsuario, grupoUsuario]);
 
@@ -825,7 +810,7 @@ export default function CuadrantesEmpleadoPage() {
     }
   }, [authUser?.isDemo, centroUsuario, grupoUsuario, fetchHorarioAsignado]);
 
-  // Funcție pentru a încărca horario_multicentro asignat
+  // FuncÈ›ie pentru a Ã®ncÄƒrca horario_multicentro asignat
   const fetchHorarioMulticentroAsignado = useCallback(async () => {
     if (authUser?.isDemo) {
       setHorarioMulticentroAsignado(null);
@@ -835,13 +820,13 @@ export default function CuadrantesEmpleadoPage() {
     const codigoParaHorario = authUser?.CODIGO || authUser?.codigo || userData?.['CODIGO'] || '';
     const emailParaHorario = authUser?.email || authUser?.EMAIL || authUser?.['CORREO ELECTRONICO'] || userData?.['CORREO ELECTRONICO'] || emailLogat || '';
     
-    // Dacă nu avem nici codigo, nici email, nu putem căuta
+    // DacÄƒ nu avem nici codigo, nici email, nu putem cÄƒuta
     if (!codigoParaHorario && !emailParaHorario) {
       setHorarioMulticentroAsignado(null);
       return;
     }
 
-    // Găsește horario_multicentro pentru luna selectată
+    // GÄƒseÈ™te horario_multicentro pentru luna selectatÄƒ
     const selectedLunaNorm = typeof selectedLuna === 'number' 
       ? excelDateToYYYYMM(selectedLuna)
       : (typeof selectedLuna === 'string' 
@@ -854,7 +839,7 @@ export default function CuadrantesEmpleadoPage() {
             return `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
           })());
     
-    // Previne re-apelurile inutile dacă codigo/email și luna nu s-au schimbat
+    // Previne re-apelurile inutile dacÄƒ codigo/email È™i luna nu s-au schimbat
     const identificatorActual = codigoParaHorario || emailParaHorario;
     if (lastHorarioMulticentroFetchRef.current.codigo === identificatorActual && 
         lastHorarioMulticentroFetchRef.current.month === selectedLunaNorm &&
@@ -867,7 +852,7 @@ export default function CuadrantesEmpleadoPage() {
     setLoadingHorarioMulticentro(true);
     try {
       const token = localStorage.getItem('auth_token');
-      // Construiește URL-ul cu codigo sau email
+      // ConstruieÈ™te URL-ul cu codigo sau email
       let url = `${routes.baseUrl}/api/horarios/multicentro?mes=${selectedLunaNorm}`;
       if (codigoParaHorario) {
         url += `&codigo=${encodeURIComponent(codigoParaHorario)}`;
@@ -900,7 +885,7 @@ export default function CuadrantesEmpleadoPage() {
       const lista = Array.isArray(data.horarios) ? data.horarios : [];
       
       if (lista.length > 0) {
-        // Filtrează toate horarios_multicentro pentru luna selectată
+        // FiltreazÄƒ toate horarios_multicentro pentru luna selectatÄƒ
         const horariosForMonth = lista.filter(horario => {
           const horarioLuna = horario.LUNA || horario.luna;
           const horarioLunaNorm = typeof horarioLuna === 'number' 
@@ -915,10 +900,10 @@ export default function CuadrantesEmpleadoPage() {
         });
         
         if (horariosForMonth.length > 0) {
-          // Stochează toate horarios_multicentro pentru luna selectată
+          // StocheazÄƒ toate horarios_multicentro pentru luna selectatÄƒ
           setHorariosMulticentroLista(horariosForMonth);
           
-          // Găsește horario_multicentro care are orar pentru ziua curentă (dacă este luna curentă)
+          // GÄƒseÈ™te horario_multicentro care are orar pentru ziua curentÄƒ (dacÄƒ este luna curentÄƒ)
           const currentDate = new Date();
           const currentYear = currentDate.getFullYear();
           const currentMonth = currentDate.getMonth() + 1;
@@ -929,7 +914,7 @@ export default function CuadrantesEmpleadoPage() {
             const today = new Date().getDate();
             const dayKey = `ZI_${today}`;
             
-            // Găsește primul horario_multicentro care are orar pentru ziua curentă (nu LIBRE)
+            // GÄƒseÈ™te primul horario_multicentro care are orar pentru ziua curentÄƒ (nu LIBRE)
             horarioForCurrentDay = horariosForMonth.find(horario => {
               const daySchedule = horario[dayKey] || horario[dayKey.toLowerCase()] || horario[dayKey.toUpperCase()];
               if (daySchedule) {
@@ -940,7 +925,7 @@ export default function CuadrantesEmpleadoPage() {
             });
           }
           
-          // Folosește horario-ul pentru ziua curentă dacă există, altfel folosește primul din listă
+          // FoloseÈ™te horario-ul pentru ziua curentÄƒ dacÄƒ existÄƒ, altfel foloseÈ™te primul din listÄƒ
           setHorarioMulticentroAsignado(horarioForCurrentDay || horariosForMonth[0]);
         } else {
           setHorariosMulticentroLista([]);
@@ -951,21 +936,21 @@ export default function CuadrantesEmpleadoPage() {
         setHorarioMulticentroAsignado(null);
       }
     } catch (error) {
-      console.error('Eroare la încărcarea horario_multicentro asignat:', error);
+      console.error('Eroare la Ã®ncÄƒrcarea horario_multicentro asignat:', error);
       setHorarioMulticentroAsignado(null);
     } finally {
       setLoadingHorarioMulticentro(false);
     }
   }, [authUser, userData, selectedLuna, loadingHorarioMulticentro]);
 
-  // Încarcă horario_multicentro când se schimbă utilizatorul sau luna selectată
+  // ÃŽncarcÄƒ horario_multicentro cÃ¢nd se schimbÄƒ utilizatorul sau luna selectatÄƒ
   useEffect(() => {
     if (authUser?.isDemo) return;
     
     const codigoParaHorario = authUser?.CODIGO || authUser?.codigo || userData?.['CODIGO'] || '';
     const emailParaHorario = authUser?.email || authUser?.EMAIL || authUser?.['CORREO ELECTRONICO'] || userData?.['CORREO ELECTRONICO'] || emailLogat || '';
     
-    // Dacă avem codigo sau email și luna selectată, încărcăm horario_multicentro
+    // DacÄƒ avem codigo sau email È™i luna selectatÄƒ, Ã®ncÄƒrcÄƒm horario_multicentro
     if (authUser && selectedLuna && (codigoParaHorario || emailParaHorario)) {
       fetchHorarioMulticentroAsignado();
     }
@@ -1000,7 +985,7 @@ export default function CuadrantesEmpleadoPage() {
 
         
 
-        // Normalizez luna selectată pentru a o trimite la backend
+        // Normalizez luna selectatÄƒ pentru a o trimite la backend
 
         let selectedLunaNorm = selectedLuna;
 
@@ -1010,7 +995,7 @@ export default function CuadrantesEmpleadoPage() {
 
         } else if (typeof selectedLuna === 'string') {
 
-          // Asigur că luna are formatul corect YYYY-MM
+          // Asigur cÄƒ luna are formatul corect YYYY-MM
 
           const [year, month] = selectedLuna.split('-');
 
@@ -1027,7 +1012,7 @@ export default function CuadrantesEmpleadoPage() {
 
         // Folosim backend-ul nou pentru registros/fichajes (nu n8n)
         const fichajesEndpoint = routes.getRegistros;
-        // Backend-ul folosește CODIGO și MES (cu majuscule)
+        // Backend-ul foloseÈ™te CODIGO È™i MES (cu majuscule)
         const separator = fichajesEndpoint.includes('?') ? '&' : '?';
         const fichajesUrl = `${fichajesEndpoint}${separator}CODIGO=${encodeURIComponent(codigoParaFichajes)}&MES=${encodeURIComponent(selectedLunaNorm)}`;
         
@@ -1043,10 +1028,10 @@ export default function CuadrantesEmpleadoPage() {
 
         const data = await res.json();
 
-        // Asigură că data este întotdeauna un array
+        // AsigurÄƒ cÄƒ data este Ã®ntotdeauna un array
         const fichajesUser = Array.isArray(data) ? data : (data ? [data] : []);
 
-        // Nu mai trebuie să filtrăm în frontend, backend-ul returnează deja doar luna selectată
+        // Nu mai trebuie sÄƒ filtrÄƒm Ã®n frontend, backend-ul returneazÄƒ deja doar luna selectatÄƒ
 
         setFichajes(fichajesUser);
 
@@ -1070,13 +1055,13 @@ export default function CuadrantesEmpleadoPage() {
 
 
 
-  // OPTIMIZARE: Lazy load regularizaciones - se încarcă după ce calendarul e afișat
+  // OPTIMIZARE: Lazy load regularizaciones - se Ã®ncarcÄƒ dupÄƒ ce calendarul e afiÈ™at
   useEffect(() => {
     if (authUser?.isDemo) {
       return;
     }
 
-    // Lazy load: așteptăm ca pagina principală să fie încărcată
+    // Lazy load: aÈ™teptÄƒm ca pagina principalÄƒ sÄƒ fie Ã®ncÄƒrcatÄƒ
     if (loading) {
       return;
     }
@@ -1087,7 +1072,7 @@ export default function CuadrantesEmpleadoPage() {
       setLoadingRegularizaciones(true);
       // Fetch regularizaciones
 
-      // Normalizez luna selectată (la fel ca în codul principal)
+      // Normalizez luna selectatÄƒ (la fel ca Ã®n codul principal)
       let selectedLunaNorm = selectedLuna;
       if (typeof selectedLuna === 'number') {
         selectedLunaNorm = excelDateToYYYYMM(selectedLuna);
@@ -1119,7 +1104,7 @@ export default function CuadrantesEmpleadoPage() {
           return;
         }
 
-        // Găsim empleado-ul curent
+        // GÄƒsim empleado-ul curent
         const empleado = data.find(emp => {
           const codigo = emp.CODIGO || emp.codigo || emp.empleadoId || emp.id;
           return `${codigo}` === `${codigoEmpleado}`;
@@ -1144,15 +1129,15 @@ export default function CuadrantesEmpleadoPage() {
           detalii = [];
         }
 
-        // Creează un Map cu zilele care au regularizare confirmată
+        // CreeazÄƒ un Map cu zilele care au regularizare confirmatÄƒ
         const regularizacionesMap = new Map();
-        // Creează un Map cu plan_fuente pentru fiecare zi (pentru fiesta, etc.)
+        // CreeazÄƒ un Map cu plan_fuente pentru fiecare zi (pentru fiesta, etc.)
         const planFuenteMapLocal = new Map();
         detalii.forEach(d => {
           if (d?.fecha) {
             const fechaStr = typeof d.fecha === 'string' ? d.fecha.split('T')[0] : d.fecha;
             
-            // Verifică regularizare confirmată
+            // VerificÄƒ regularizare confirmatÄƒ
             if (d?.has_regularizacion_confirmada === 1 || 
                 d?.has_regularizacion_confirmada === true || 
                 d?.has_regularizacion_confirmada === '1') {
@@ -1168,7 +1153,7 @@ export default function CuadrantesEmpleadoPage() {
 
         setRegularizacionesConfirmadas(regularizacionesMap);
         setPlanFuenteMap(planFuenteMapLocal);
-        setDetaliiZilnice(detalii); // Stocăm detalii_zilnice pentru a le folosi direct în calendarCells
+        setDetaliiZilnice(detalii); // StocÄƒm detalii_zilnice pentru a le folosi direct Ã®n calendarCells
       } catch {
         setRegularizacionesConfirmadas(new Map());
       } finally {
@@ -1184,9 +1169,9 @@ export default function CuadrantesEmpleadoPage() {
     return () => clearTimeout(timeoutId);
   }, [codigoEmpleado, selectedLuna, authUser?.isDemo, loading]);
 
-  // OPTIMIZARE: Banner check după ce pagina e afișată (lazy load)
+  // OPTIMIZARE: Banner check dupÄƒ ce pagina e afiÈ™atÄƒ (lazy load)
   useEffect(() => {
-    // Lazy load: așteptăm ca pagina principală să fie încărcată
+    // Lazy load: aÈ™teptÄƒm ca pagina principalÄƒ sÄƒ fie Ã®ncÄƒrcatÄƒ
     if (loading) {
       return;
     }
@@ -1222,7 +1207,7 @@ export default function CuadrantesEmpleadoPage() {
         if (response.ok) {
           const data = await response.json();
           setBannerDismissed(data.dismissed || false);
-          // Dacă nu a fost dismissat, arată modal-ul
+          // DacÄƒ nu a fost dismissat, aratÄƒ modal-ul
           if (!data.dismissed) {
             setShowAvisoModal(true);
           }
@@ -1255,10 +1240,10 @@ export default function CuadrantesEmpleadoPage() {
     return () => clearTimeout(timeoutId);
   }, [authUser?.email, authUser?.CORREO_ELECTRONICO, authUser?.CODIGO, authUser?.codigo, loading]);
 
-  // Handler pentru închidere modal fără salvare (X button)
+  // Handler pentru Ã®nchidere modal fÄƒrÄƒ salvare (X button)
   const handleCerrarAviso = () => {
     setShowAvisoModal(false);
-    // Nu salvează - modal-ul va apărea din nou la următoarea intrare
+    // Nu salveazÄƒ - modal-ul va apÄƒrea din nou la urmÄƒtoarea intrare
   };
 
   // Handler pentru acceptare aviso (buton Aceptar)
@@ -1269,7 +1254,7 @@ export default function CuadrantesEmpleadoPage() {
     // Fallback la localStorage
     localStorage.setItem('avisoHorariosAceptado', 'true');
     
-    // Log acțiunea în BD
+    // Log acÈ›iunea Ã®n BD
     if (authUser) {
       try {
         await activityLogger.logBannerHorariosDismissed(authUser);
@@ -1279,21 +1264,21 @@ export default function CuadrantesEmpleadoPage() {
     }
   };
 
-  // OPTIMIZARE: Lazy load ausencias - se încarcă după ce calendarul e afișat (loading = false)
+  // OPTIMIZARE: Lazy load ausencias - se Ã®ncarcÄƒ dupÄƒ ce calendarul e afiÈ™at (loading = false)
   useEffect(() => {
     // Skip real data fetch in DEMO mode
     if (authUser?.isDemo) {
       return;
     }
 
-    // Lazy load: așteptăm ca pagina principală să fie încărcată
+    // Lazy load: aÈ™teptÄƒm ca pagina principalÄƒ sÄƒ fie Ã®ncÄƒrcatÄƒ
     if (loading) {
       return;
     }
 
     async function fetchAusencias() {
       try {
-        // Folosim userData în loc de authUser pentru a avea acces la CODIGO
+        // Folosim userData Ã®n loc de authUser pentru a avea acces la CODIGO
         const userCode = userData?.['CODIGO'] || authUser?.['CODIGO'] || authUser?.codigo || '';
         
         if (!userCode) {
@@ -1337,7 +1322,7 @@ export default function CuadrantesEmpleadoPage() {
 
 
 
-  // OPTIMIZARE: Lazy load bajas médicas - se încarcă după ce calendarul e afișat
+  // OPTIMIZARE: Lazy load bajas mÃ©dicas - se Ã®ncarcÄƒ dupÄƒ ce calendarul e afiÈ™at
   useEffect(() => {
     if (authUser?.isDemo) {
       setBajasMedicas([]);
@@ -1345,7 +1330,7 @@ export default function CuadrantesEmpleadoPage() {
       return;
     }
 
-    // Lazy load: așteptăm ca pagina principală să fie încărcată
+    // Lazy load: aÈ™teptÄƒm ca pagina principalÄƒ sÄƒ fie Ã®ncÄƒrcatÄƒ
     if (loading) {
       return;
     }
@@ -1370,7 +1355,7 @@ export default function CuadrantesEmpleadoPage() {
 
       try {
 
-        // Backend-ul folosește GET cu query param codigo (nu POST cu accion=get)
+        // Backend-ul foloseÈ™te GET cu query param codigo (nu POST cu accion=get)
         const separator = endpoint.includes('?') ? '&' : '?';
         const url = `${endpoint}${separator}codigo=${encodeURIComponent(empleadoCodigo)}`;
 
@@ -1404,7 +1389,7 @@ export default function CuadrantesEmpleadoPage() {
 
         const result = await response.json();
 
-        // Backend-ul returnează direct array (nu {data: [...]})
+        // Backend-ul returneazÄƒ direct array (nu {data: [...]})
         const lista = Array.isArray(result)
           ? result
           : (result?.data && Array.isArray(result.data))
@@ -1432,7 +1417,7 @@ export default function CuadrantesEmpleadoPage() {
 
             item?.codigoEmpleado ||
 
-            item?.['Código Empleado'] ||
+            item?.['CÃ³digo Empleado'] ||
 
             item?.codigo ||
 
@@ -1499,7 +1484,7 @@ export default function CuadrantesEmpleadoPage() {
 
 
 
-  // Normalizez luna selectată pentru afișare
+  // Normalizez luna selectatÄƒ pentru afiÈ™are
 
   let selectedLunaNorm = selectedLuna;
 
@@ -1509,7 +1494,7 @@ export default function CuadrantesEmpleadoPage() {
 
   } else if (typeof selectedLuna === 'string') {
 
-    // Asigur că luna are formatul corect YYYY-MM
+    // Asigur cÄƒ luna are formatul corect YYYY-MM
 
     const [year, month] = selectedLuna.split('-');
 
@@ -1523,8 +1508,8 @@ export default function CuadrantesEmpleadoPage() {
 
 
 
-  // Găsesc cuadrantele pentru luna selectată și utilizatorul curent
-  // IMPORTANT: Filtrează doar cuadrantele vizibile (visible === true)
+  // GÄƒsesc cuadrantele pentru luna selectatÄƒ È™i utilizatorul curent
+  // IMPORTANT: FiltreazÄƒ doar cuadrantele vizibile (visible === true)
 
   const cuadrant = cuadrantesUser.find(c => {
 
@@ -1532,10 +1517,10 @@ export default function CuadrantesEmpleadoPage() {
 
     if (typeof luna === 'number') luna = excelDateToYYYYMM(luna);
     
-    // Verifică dacă luna se potrivește
+    // VerificÄƒ dacÄƒ luna se potriveÈ™te
     const lunaMatch = luna === selectedLunaNorm;
     
-    // Verifică dacă cuadrantul este pentru utilizatorul curent
+    // VerificÄƒ dacÄƒ cuadrantul este pentru utilizatorul curent
     const emailMatch = (c.EMAIL || '').trim().toLowerCase() === emailLogat.toLowerCase();
     const codigoMatch = (c.CODIGO || '').trim() === codigoEmpleado.trim();
     const nombreMatch = (c.NOMBRE || '').trim() === nombreEmpleado.trim();
@@ -1543,7 +1528,7 @@ export default function CuadrantesEmpleadoPage() {
     const isVisible = isCuadranteRowVisible(c);
 
     if (lunaMatch && (emailMatch || codigoMatch || nombreMatch)) {
-      console.log('🔍 Cuadrante found for user:', {
+      console.log('ðŸ” Cuadrante found for user:', {
         CODIGO: c.CODIGO,
         LUNA: luna,
         EMAIL: c.EMAIL,
@@ -1558,8 +1543,8 @@ export default function CuadrantesEmpleadoPage() {
         willMatch: lunaMatch && (emailMatch || codigoMatch || nombreMatch) && isVisible,
         finalResult:
           lunaMatch && (emailMatch || codigoMatch || nombreMatch) && isVisible
-            ? '✅ MATCH'
-            : '❌ NO MATCH',
+            ? 'âœ… MATCH'
+            : 'âŒ NO MATCH',
       });
     }
 
@@ -1567,7 +1552,7 @@ export default function CuadrantesEmpleadoPage() {
 
   });
 
-  // Verifică dacă luna selectată este în viitor (după luna curentă)
+  // VerificÄƒ dacÄƒ luna selectatÄƒ este Ã®n viitor (dupÄƒ luna curentÄƒ)
   const isFutureMonth = useMemo(() => {
     if (!selectedLunaNorm || typeof selectedLunaNorm !== 'string' || !selectedLunaNorm.includes('-')) return false;
     
@@ -1576,17 +1561,17 @@ export default function CuadrantesEmpleadoPage() {
     const currentMonth = currentDate.getMonth() + 1; // 1-12
     const currentMonthFormatted = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
     
-    // Compară luna selectată cu luna curentă
+    // ComparÄƒ luna selectatÄƒ cu luna curentÄƒ
     return selectedLunaNorm > currentMonthFormatted;
   }, [selectedLunaNorm]);
 
-  // Verifică dacă există date pentru luna selectată (cuadrante, horario_multicentro sau horario normal)
-  // IMPORTANT: Pentru lunile viitoare, afișăm cuadrantul dacă este vizibil (visible === true)
-  // Dacă nu există cuadrante vizibil pentru luna viitoare, afișăm mesajul "pendiente de generación"
+  // VerificÄƒ dacÄƒ existÄƒ date pentru luna selectatÄƒ (cuadrante, horario_multicentro sau horario normal)
+  // IMPORTANT: Pentru lunile viitoare, afiÈ™Äƒm cuadrantul dacÄƒ este vizibil (visible === true)
+  // DacÄƒ nu existÄƒ cuadrante vizibil pentru luna viitoare, afiÈ™Äƒm mesajul "pendiente de generaciÃ³n"
   const hasDataForMonth = cuadrant || 
                           (horariosMulticentroLista && horariosMulticentroLista.length > 0) || 
                           horarioAsignado ||
-                          // Pentru lunile viitoare, dacă există cuadrante vizibil, îl afișăm
+                          // Pentru lunile viitoare, dacÄƒ existÄƒ cuadrante vizibil, Ã®l afiÈ™Äƒm
                           (isFutureMonth && cuadrant);
 
 
@@ -1601,7 +1586,7 @@ export default function CuadrantesEmpleadoPage() {
 
     if (typeof luna === 'string') {
 
-      // Asigur că luna are formatul corect YYYY-MM
+      // Asigur cÄƒ luna are formatul corect YYYY-MM
 
       const [year, month] = luna.split('-');
 
@@ -1645,7 +1630,7 @@ export default function CuadrantesEmpleadoPage() {
 
   
 
-  // Adaug toate lunile din anul curent (enero = 1 până la decembrie = 12)
+  // Adaug toate lunile din anul curent (enero = 1 pÃ¢nÄƒ la decembrie = 12)
 
   for (let month = 1; month <= 12; month++) {
 
@@ -1657,15 +1642,15 @@ export default function CuadrantesEmpleadoPage() {
 
   
 
-  // Combin luniile din cuadrantes cu cele curente și elimin duplicatele
+  // Combin luniile din cuadrantes cu cele curente È™i elimin duplicatele
 
   const luniDisponibileRaw = [...new Set([...luniDinCuadrantes, ...luniCurente])];
 
-  // Găsește horario_multicentro pentru ziua curentă și calculează orarul
+  // GÄƒseÈ™te horario_multicentro pentru ziua curentÄƒ È™i calculeazÄƒ orarul
   const currentDayHorarioMulticentro = useMemo(() => {
     if (!horariosMulticentroLista || horariosMulticentroLista.length === 0) return null;
     
-    // Verifică dacă este luna curentă
+    // VerificÄƒ dacÄƒ este luna curentÄƒ
     const currentDate = new Date();
     const currentYear = currentDate.getFullYear();
     const currentMonth = currentDate.getMonth() + 1;
@@ -1678,7 +1663,7 @@ export default function CuadrantesEmpleadoPage() {
     const today = new Date().getDate();
     const dayKey = `ZI_${today}`;
     
-    // Găsește horario_multicentro care are orar pentru ziua curentă
+    // GÄƒseÈ™te horario_multicentro care are orar pentru ziua curentÄƒ
     const horarioForToday = horariosMulticentroLista.find(horario => {
       const daySchedule = horario[dayKey] || horario[dayKey.toLowerCase()] || horario[dayKey.toUpperCase()];
       if (daySchedule) {
@@ -1691,7 +1676,7 @@ export default function CuadrantesEmpleadoPage() {
     return horarioForToday || null;
   }, [horariosMulticentroLista, selectedLunaNorm]);
   
-  // Calculează orarul zilei curente din horario_multicentro pentru ziua curentă
+  // CalculeazÄƒ orarul zilei curente din horario_multicentro pentru ziua curentÄƒ
   const currentDayScheduleFromHorarioMulticentro = useMemo(() => {
     if (!currentDayHorarioMulticentro) return null;
     
@@ -1705,18 +1690,18 @@ export default function CuadrantesEmpleadoPage() {
     
     const dayScheduleStr = String(daySchedule).trim();
     
-    // Verifică dacă este LIBRE sau goală
+    // VerificÄƒ dacÄƒ este LIBRE sau goalÄƒ
     if (dayScheduleStr === '' || dayScheduleStr.toUpperCase() === 'LIBRE' || dayScheduleStr === '0' || dayScheduleStr === '0h') {
       return null;
     }
     
-    // Verifică dacă este un format cu timp (ex: "08:00-17:00" sau "T1 08:00-17:00")
+    // VerificÄƒ dacÄƒ este un format cu timp (ex: "08:00-17:00" sau "T1 08:00-17:00")
     if (dayScheduleStr.includes('-') && dayScheduleStr.match(/\d{1,2}:\d{2}/)) {
       const match = dayScheduleStr.match(/(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})/);
       if (match) {
         return `${match[1]}:${match[2]} - ${match[3]}:${match[4]}`;
       }
-      // Dacă nu găsește match complet, returnează valoarea originală fără prefix T1/T2/T3
+      // DacÄƒ nu gÄƒseÈ™te match complet, returneazÄƒ valoarea originalÄƒ fÄƒrÄƒ prefix T1/T2/T3
       const cleaned = dayScheduleStr.replace(/^T[123]\s*/, '').trim();
       if (cleaned && cleaned !== dayScheduleStr) {
         return cleaned;
@@ -1724,16 +1709,16 @@ export default function CuadrantesEmpleadoPage() {
       return dayScheduleStr;
     }
     
-    // Verifică dacă este un număr (ore)
+    // VerificÄƒ dacÄƒ este un numÄƒr (ore)
     if (!isNaN(parseFloat(dayScheduleStr))) {
       const hours = parseFloat(dayScheduleStr);
       return `${hours}h`;
     }
     
-    // Pentru orice alt format (ex: "TURNO DIA", "T1", etc.), returnează ca atare
-    // dar doar dacă nu este "LIBRE" sau goală
+    // Pentru orice alt format (ex: "TURNO DIA", "T1", etc.), returneazÄƒ ca atare
+    // dar doar dacÄƒ nu este "LIBRE" sau goalÄƒ
     if (dayScheduleStr && dayScheduleStr.length > 0) {
-      // Dacă începe cu T1/T2/T3, returnează fără prefix
+      // DacÄƒ Ã®ncepe cu T1/T2/T3, returneazÄƒ fÄƒrÄƒ prefix
       const cleaned = dayScheduleStr.replace(/^T[123]\s*/, '').trim();
       return cleaned || dayScheduleStr;
     }
@@ -1745,7 +1730,7 @@ export default function CuadrantesEmpleadoPage() {
 
   // Filtrez doar luniile relevante: ultimele 3 luni din anul anterior + toate lunile din anul curent
 
-  // Și le sortez cronologic
+  // È˜i le sortez cronologic
 
   const luniDisponibile = luniDisponibileRaw.filter(luna => {
 
@@ -1764,7 +1749,7 @@ export default function CuadrantesEmpleadoPage() {
 
     
 
-    // Sortăm cronologic (an, apoi lună)
+    // SortÄƒm cronologic (an, apoi lunÄƒ)
 
     if (yearA !== yearB) return yearA - yearB;
 
@@ -1775,12 +1760,6 @@ export default function CuadrantesEmpleadoPage() {
   
 
   const isLunaValida = typeof selectedLunaNorm === 'string' && selectedLunaNorm.includes('-');
-
-  
-
-  // Definim zilele săptămânii
-
-  const weekDays = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
 
 
@@ -1848,7 +1827,7 @@ const getFirstValue = (record, keys) => {
 
         'fechaFin',
 
-        // MutuaCasos / MySQL: coloana reală este «Fecha de alta», nu «Fecha alta»
+        // MutuaCasos / MySQL: coloana realÄƒ este Â«Fecha de altaÂ», nu Â«Fecha altaÂ»
         'Fecha de alta',
 
         'Fecha De Alta',
@@ -1961,7 +1940,7 @@ const getFirstValue = (record, keys) => {
 
       const situacion =
 
-        baja?.['Situación'] ||
+        baja?.['SituaciÃ³n'] ||
 
         baja?.Situacion ||
 
@@ -1981,7 +1960,7 @@ const getFirstValue = (record, keys) => {
 
         baja?.['Motivo'] ||
 
-        'Baja médica';
+        'Baja mÃ©dica';
 
 
 
@@ -2010,7 +1989,7 @@ const getFirstValue = (record, keys) => {
 
 
   // Generez celulele pentru calendar
-  // Folosim useMemo pentru a preveni recalculări inutile și re-render-uri în cascadă
+  // Folosim useMemo pentru a preveni recalculÄƒri inutile È™i re-render-uri Ã®n cascadÄƒ
   const calendarCells = useMemo(() => {
     const cells = [];
     
@@ -2022,7 +2001,7 @@ const getFirstValue = (record, keys) => {
 
     
 
-    // Găsesc prima zi a lunii (0 = duminică, 1 = luni, etc.)
+    // GÄƒsesc prima zi a lunii (0 = duminicÄƒ, 1 = luni, etc.)
 
     const firstDayOfMonth = new Date(year, month - 1, 1).getDay();
 
@@ -2030,7 +2009,7 @@ const getFirstValue = (record, keys) => {
 
     
 
-    // Adaug celule goale pentru zilele din luna anterioară
+    // Adaug celule goale pentru zilele din luna anterioarÄƒ
 
     for (let i = 0; i < startDay; i++) {
 
@@ -2049,14 +2028,14 @@ const getFirstValue = (record, keys) => {
       const dataZi = formatDateYMD(year, month, day);
 
       if (day === 3) {
-        // Calculare celulă pentru day 3
+        // Calculare celulÄƒ pentru day 3
       }
 
       const fechaZi = new Date(year, month - 1, day);
 
       
 
-      // Verifică absențe și solicitări pentru această zi (prioritate)
+      // VerificÄƒ absenÈ›e È™i solicitÄƒri pentru aceastÄƒ zi (prioritate)
 
       let tip = 'LIBRE';
 
@@ -2066,9 +2045,9 @@ const getFirstValue = (record, keys) => {
 
       let bajaCalendar = null;
       
-      // Pentru horario_multicentro, adăugăm informația despre orele programate (ZI_X) pentru această zi
+      // Pentru horario_multicentro, adÄƒugÄƒm informaÈ›ia despre orele programate (ZI_X) pentru aceastÄƒ zi
       let horarioMulticentroHours = null;
-      /** Valoarea brută ZI (cuadrante / horario) pentru parsare turno compartido în CalendarDayCell */
+      /** Valoarea brutÄƒ ZI (cuadrante / horario) pentru parsare turno compartido Ã®n CalendarDayCell */
       let ziRaw = null;
 
 
@@ -2087,8 +2066,8 @@ const getFirstValue = (record, keys) => {
 
       
 
-      // Caută în ausencias (prioritate 1) - suportă și intervale de date
-      // Sortăm lista pentru a priorita înregistrările cu intervale mai mici (mai specifice)
+      // CautÄƒ Ã®n ausencias (prioritate 1) - suportÄƒ È™i intervale de date
+      // SortÄƒm lista pentru a priorita Ã®nregistrÄƒrile cu intervale mai mici (mai specifice)
       const ausenciasSorted = [...ausencias].sort((a, b) => {
         const aInicio = a.fecha_inicio || a.fechaInicio || a.FECHA_INICIO;
         const aFin = a.fecha_fin || a.fechaFin || a.FECHA_FIN;
@@ -2100,11 +2079,11 @@ const getFirstValue = (record, keys) => {
         const bInicioDate = parseFlexibleDate(bInicio);
         const bFinDate = parseFlexibleDate(bFin);
         
-        // Calculează durata intervalului
+        // CalculeazÄƒ durata intervalului
         const aDuration = aInicioDate && aFinDate ? aFinDate - aInicioDate : Infinity;
         const bDuration = bInicioDate && bFinDate ? bFinDate - bInicioDate : Infinity;
         
-        // Prioritizează intervalele mai mici (mai specifice)
+        // PrioritizeazÄƒ intervalele mai mici (mai specifice)
         return aDuration - bDuration;
       });
 
@@ -2130,7 +2109,7 @@ const getFirstValue = (record, keys) => {
 
         
 
-        // Verifică data exactă (pentru zile individuale)
+        // VerificÄƒ data exactÄƒ (pentru zile individuale)
 
         if (ausenciaFecha && ausenciaFecha.startsWith(dataZi)) {
 
@@ -2141,8 +2120,8 @@ const getFirstValue = (record, keys) => {
 
         
 
-        // Verifică interval de date (pentru perioade)
-        // Încearcă mai întâi fecha_inicio/fecha_fin, apoi extrage din FECHA
+        // VerificÄƒ interval de date (pentru perioade)
+        // ÃŽncearcÄƒ mai Ã®ntÃ¢i fecha_inicio/fecha_fin, apoi extrage din FECHA
         let inicio, fin;
         
         if (fechaInicio && fechaFin) {
@@ -2156,9 +2135,9 @@ const getFirstValue = (record, keys) => {
         }
 
         if (inicio && fin) {
-          // Normalizează ambele date la începutul zilei (00:00:00) pentru comparare corectă
+          // NormalizeazÄƒ ambele date la Ã®nceputul zilei (00:00:00) pentru comparare corectÄƒ
           const inicioNormalizat = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate());
-          // Setează fin la sfârșitul zilei (23:59:59.999) pentru a include ziua de sfârșit
+          // SeteazÄƒ fin la sfÃ¢rÈ™itul zilei (23:59:59.999) pentru a include ziua de sfÃ¢rÈ™it
           const finNormalizat = new Date(fin.getFullYear(), fin.getMonth(), fin.getDate(), 23, 59, 59, 999);
           const fechaZiNormalizat = new Date(fechaZi.getFullYear(), fechaZi.getMonth(), fechaZi.getDate());
           
@@ -2189,13 +2168,13 @@ const getFirstValue = (record, keys) => {
 
       
 
-      // Eliminată verificarea separată — vacanțele și asuntos propio sunt tratate în ausencias
+      // EliminatÄƒ verificarea separatÄƒ â€” vacanÈ›ele È™i asuntos propio sunt tratate Ã®n ausencias
 
       
 
-      // Determină tipul zilei
-      // Verifică plan_fuente din backend pentru fiesta (prioritate după bajaCalendar și ausenciaZi)
-      // Folosim detaliiZilnice direct dacă planFuenteMap este încă gol (pentru a evita flickering)
+      // DeterminÄƒ tipul zilei
+      // VerificÄƒ plan_fuente din backend pentru fiesta (prioritate dupÄƒ bajaCalendar È™i ausenciaZi)
+      // Folosim detaliiZilnice direct dacÄƒ planFuenteMap este Ã®ncÄƒ gol (pentru a evita flickering)
       let planFuente = planFuenteMap.get(dataZi);
       if (!planFuente && Array.isArray(detaliiZilnice) && detaliiZilnice.length > 0) {
         const detalleZi = detaliiZilnice.find(d => {
@@ -2209,7 +2188,7 @@ const getFirstValue = (record, keys) => {
       
       // LOG pentru ziua 1
       if (day === 1) {
-        console.log('🔍 [DAY 1] Calcul calendarCells:', {
+        console.log('ðŸ” [DAY 1] Calcul calendarCells:', {
           dataZi,
           planFuenteFromMap: planFuenteMap.get(dataZi),
           planFuente,
@@ -2224,30 +2203,30 @@ const getFirstValue = (record, keys) => {
 
       if (bajaCalendar) {
 
-        tip = 'Baja Médica';
+        tip = 'Baja MÃ©dica';
 
-        motivoAusencia = bajaCalendar.motivo || 'Baja médica';
+        motivoAusencia = bajaCalendar.motivo || 'Baja mÃ©dica';
 
       } else if (ausenciaZi) {
 
-        // Încearcă mai întâi TIPO, apoi tipo, apoi fallback la 'AUSENCIA'
+        // ÃŽncearcÄƒ mai Ã®ntÃ¢i TIPO, apoi tipo, apoi fallback la 'AUSENCIA'
         tip = ausenciaZi.TIPO || ausenciaZi.tipo || 'AUSENCIA';
 
-        // Încearcă mai întâi MOTIVO, apoi motivo
+        // ÃŽncearcÄƒ mai Ã®ntÃ¢i MOTIVO, apoi motivo
         motivoAusencia = ausenciaZi.MOTIVO || ausenciaZi.motivo || '';
 
       } else if (planFuente === 'fiesta') {
-        // Dacă plan_fuente este 'fiesta', setăm tip = 'Fiesta' (prioritate după bajaCalendar și ausenciaZi)
-        // Asta previne flickering-ul când datele se încarcă
+        // DacÄƒ plan_fuente este 'fiesta', setÄƒm tip = 'Fiesta' (prioritate dupÄƒ bajaCalendar È™i ausenciaZi)
+        // Asta previne flickering-ul cÃ¢nd datele se Ã®ncarcÄƒ
         tip = 'Fiesta';
         orar = '';
         
         // LOG pentru ziua 1
         if (day === 1) {
-          console.log('✅ [DAY 1] Setat tip = Fiesta (din planFuente === fiesta)');
+          console.log('âœ… [DAY 1] Setat tip = Fiesta (din planFuente === fiesta)');
         }
         
-        // Continuăm cu push-ul celulei, fără să mai verificăm cuadrant/horario
+        // ContinuÄƒm cu push-ul celulei, fÄƒrÄƒ sÄƒ mai verificÄƒm cuadrant/horario
         cells.push({
           day,
           tip,
@@ -2257,13 +2236,13 @@ const getFirstValue = (record, keys) => {
           motivoAusencia,
           ausenciaZi,
           bajaCalendar,
-          planFuente // Adăugăm planFuente în cell pentru a-l folosi în CalendarDayCell
+          planFuente // AdÄƒugÄƒm planFuente Ã®n cell pentru a-l folosi Ã®n CalendarDayCell
         });
         day++;
-        continue; // Sărim peste restul logicii pentru această zi
+        continue; // SÄƒrim peste restul logicii pentru aceastÄƒ zi
       } else if (cuadrant) {
 
-        // Folosește cuadrante dacă nu există absențe - PRIORITATE ABSOLUTĂ
+        // FoloseÈ™te cuadrante dacÄƒ nu existÄƒ absenÈ›e - PRIORITATE ABSOLUTÄ‚
 
         const ziKey = `ZI_${day}`;
 
@@ -2272,27 +2251,27 @@ const getFirstValue = (record, keys) => {
         if (tipZi) {
           const tipZiStr = String(tipZi).trim();
           
-          // Verifică dacă este LIBRE sau goală
+          // VerificÄƒ dacÄƒ este LIBRE sau goalÄƒ
           if (tipZiStr === '' || tipZiStr.toUpperCase() === 'LIBRE' || tipZiStr.toUpperCase() === 'LIB') {
             tip = 'LIBRE';
             orar = '';
           }
-          // Verifică formatele T1, T2, T3 (ex: "T1 08:00-17:00" sau "T2 14:00-22:00")
+          // VerificÄƒ formatele T1, T2, T3 (ex: "T1 08:00-17:00" sau "T2 14:00-22:00")
           else if (tipZiStr.startsWith('T1') || tipZiStr.startsWith('T2') || tipZiStr.startsWith('T3')) {
-            // Verifică din nou plan_fuente înainte de a seta tip = 'T1'/'T2'/'T3'
-            // Dacă datele se încarcă încă și nu știm încă plan_fuente, nu setăm tip definitiv
+            // VerificÄƒ din nou plan_fuente Ã®nainte de a seta tip = 'T1'/'T2'/'T3'
+            // DacÄƒ datele se Ã®ncarcÄƒ Ã®ncÄƒ È™i nu È™tim Ã®ncÄƒ plan_fuente, nu setÄƒm tip definitiv
             if (planFuente === 'fiesta') {
               tip = 'Fiesta';
               orar = '';
               if (day === 1) {
-                console.log('✅ [DAY 1] Setat tip = Fiesta (din cuadrant, planFuente === fiesta)');
+                console.log('âœ… [DAY 1] Setat tip = Fiesta (din cuadrant, planFuente === fiesta)');
               }
             } else if (loadingRegularizaciones && !planFuente) {
-              // Dacă datele se încarcă încă, rămâne LIBRE până când datele se încarcă
+              // DacÄƒ datele se Ã®ncarcÄƒ Ã®ncÄƒ, rÄƒmÃ¢ne LIBRE pÃ¢nÄƒ cÃ¢nd datele se Ã®ncarcÄƒ
               tip = 'LIBRE';
               orar = '';
               if (day === 1) {
-                console.log('⏳ [DAY 1] Setat tip = LIBRE (loadingRegularizaciones && !planFuente)');
+                console.log('â³ [DAY 1] Setat tip = LIBRE (loadingRegularizaciones && !planFuente)');
               }
             } else {
               ziRaw = tipZiStr;
@@ -2311,13 +2290,13 @@ const getFirstValue = (record, keys) => {
                 orar = tipZiStr.replace(/^T[123]\s*/, '');
               }
               if (day === 1) {
-                console.log('⚠️ [DAY 1] Setat tip =', tip, '(din cuadrant, fără planFuente)');
+                console.log('âš ï¸ [DAY 1] Setat tip =', tip, '(din cuadrant, fÄƒrÄƒ planFuente)');
               }
             }
           }
-          // Verifică dacă este un orar direct (ex: "08:00-17:00" sau "09:00-15:00 / 16:00-20:00")
+          // VerificÄƒ dacÄƒ este un orar direct (ex: "08:00-17:00" sau "09:00-15:00 / 16:00-20:00")
           else if (tipZiStr.match(/^\d{1,2}:\d{2}/)) {
-            // Verifică din nou plan_fuente înainte de a seta tip = 'T1'
+            // VerificÄƒ din nou plan_fuente Ã®nainte de a seta tip = 'T1'
             if (planFuente === 'fiesta') {
               tip = 'Fiesta';
               orar = '';
@@ -2332,7 +2311,7 @@ const getFirstValue = (record, keys) => {
               }
             }
           }
-          // Altfel, setează ca LIBRE sau Fiesta
+          // Altfel, seteazÄƒ ca LIBRE sau Fiesta
           else {
             if (planFuente === 'fiesta') {
               tip = 'Fiesta';
@@ -2343,57 +2322,57 @@ const getFirstValue = (record, keys) => {
             }
           }
         } else {
-          // Dacă cuadrant există dar nu are valoare pentru această zi, rămâne LIBRE (valoarea default)
+          // DacÄƒ cuadrant existÄƒ dar nu are valoare pentru aceastÄƒ zi, rÄƒmÃ¢ne LIBRE (valoarea default)
           tip = 'LIBRE';
           orar = '';
         }
 
       } else if (horariosMulticentroLista && horariosMulticentroLista.length > 0) {
-        // Folosește horario_multicentro DOAR dacă nu există cuadrant pentru luna respectivă
-        // Pentru fiecare zi, verifică toate horario_multicentro pentru acea zi specifică
+        // FoloseÈ™te horario_multicentro DOAR dacÄƒ nu existÄƒ cuadrant pentru luna respectivÄƒ
+        // Pentru fiecare zi, verificÄƒ toate horario_multicentro pentru acea zi specificÄƒ
         const ziKey = `ZI_${day}`;
         
-        // Pentru horario_multicentro, verificăm dacă există VREUN horario în listă pentru luna respectivă
-        // Dacă există horariosMulticentroLista, înseamnă că angajatul are horario_multicentro pentru luna respectivă
-        // Pentru fiecare zi, trebuie să verificăm ce valoare are în horario_multicentro
+        // Pentru horario_multicentro, verificÄƒm dacÄƒ existÄƒ VREUN horario Ã®n listÄƒ pentru luna respectivÄƒ
+        // DacÄƒ existÄƒ horariosMulticentroLista, Ã®nseamnÄƒ cÄƒ angajatul are horario_multicentro pentru luna respectivÄƒ
+        // Pentru fiecare zi, trebuie sÄƒ verificÄƒm ce valoare are Ã®n horario_multicentro
         
-        // Găsește toate horario_multicentro care au o valoare (chiar și null/undefined/LIBRE) pentru această zi
-        // IMPORTANT: Pentru horario_multicentro, dacă există orice horario în listă, verificăm valoarea pentru acea zi
+        // GÄƒseÈ™te toate horario_multicentro care au o valoare (chiar È™i null/undefined/LIBRE) pentru aceastÄƒ zi
+        // IMPORTANT: Pentru horario_multicentro, dacÄƒ existÄƒ orice horario Ã®n listÄƒ, verificÄƒm valoarea pentru acea zi
         let horarioForDay = null;
-        let hasHorarioMulticentroForDay = false; // Flag pentru a ști dacă există vreun horario_multicentro care acoperă această zi
+        let hasHorarioMulticentroForDay = false; // Flag pentru a È™ti dacÄƒ existÄƒ vreun horario_multicentro care acoperÄƒ aceastÄƒ zi
         
         for (const horario of horariosMulticentroLista) {
-          // Verifică toate variantele de caz (uppercase, lowercase, mixed)
+          // VerificÄƒ toate variantele de caz (uppercase, lowercase, mixed)
           const daySchedule = horario[ziKey] ?? horario[ziKey.toLowerCase()] ?? horario[ziKey.toUpperCase()] ?? null;
           
-          // IMPORTANT: Dacă horario_multicentro există pentru luna respectivă, înseamnă că acoperă TOATE zilele lunii
-          // Chiar dacă pentru o zi specifică, ZI_X este null/undefined/LIBRE/gol/0/0h, înseamnă că acea zi este LIBRE din horario_multicentro
-          // Setăm hasHorarioMulticentroForDay = true pentru TOATE zilele, pentru că horario_multicentro acoperă întreaga lună
+          // IMPORTANT: DacÄƒ horario_multicentro existÄƒ pentru luna respectivÄƒ, Ã®nseamnÄƒ cÄƒ acoperÄƒ TOATE zilele lunii
+          // Chiar dacÄƒ pentru o zi specificÄƒ, ZI_X este null/undefined/LIBRE/gol/0/0h, Ã®nseamnÄƒ cÄƒ acea zi este LIBRE din horario_multicentro
+          // SetÄƒm hasHorarioMulticentroForDay = true pentru TOATE zilele, pentru cÄƒ horario_multicentro acoperÄƒ Ã®ntreaga lunÄƒ
           hasHorarioMulticentroForDay = true;
           
-          // Găsește primul horario care are o valoare REALĂ (nu LIBRE/gol/0/0h/null) pentru această zi
+          // GÄƒseÈ™te primul horario care are o valoare REALÄ‚ (nu LIBRE/gol/0/0h/null) pentru aceastÄƒ zi
           if (daySchedule !== null && daySchedule !== undefined) {
             const dayScheduleStr = String(daySchedule).trim();
             if (dayScheduleStr !== '' && dayScheduleStr.toUpperCase() !== 'LIBRE' && dayScheduleStr !== '0' && dayScheduleStr !== '0h') {
               horarioForDay = horario;
-              break; // Folosim primul horario găsit care nu este LIBRE
+              break; // Folosim primul horario gÄƒsit care nu este LIBRE
             }
           }
         }
         
-        // Dacă există cel puțin un horario_multicentro care acoperă această zi
+        // DacÄƒ existÄƒ cel puÈ›in un horario_multicentro care acoperÄƒ aceastÄƒ zi
         if (hasHorarioMulticentroForDay) {
-          // Dacă găsim un horario cu orar real (nu LIBRE)
+          // DacÄƒ gÄƒsim un horario cu orar real (nu LIBRE)
           if (horarioForDay) {
             const daySchedule = horarioForDay[ziKey] || horarioForDay[ziKey.toLowerCase()] || horarioForDay[ziKey.toUpperCase()];
             const dayScheduleStr = String(daySchedule || '').trim();
             
-            // Calculăm orele programate pentru horarioMulticentroHours (folosit mai târziu în CalendarDayCell)
+            // CalculÄƒm orele programate pentru horarioMulticentroHours (folosit mai tÃ¢rziu Ã®n CalendarDayCell)
             if (!isNaN(parseFloat(dayScheduleStr)) && isFinite(dayScheduleStr)) {
               horarioMulticentroHours = parseFloat(dayScheduleStr);
             }
             
-            // Verifică formatele T1, T2, T3 (ex: "T1 08:00-17:00" sau "T2 14:00-22:00")
+            // VerificÄƒ formatele T1, T2, T3 (ex: "T1 08:00-17:00" sau "T2 14:00-22:00")
             if (dayScheduleStr.startsWith('T1') || dayScheduleStr.startsWith('T2') || dayScheduleStr.startsWith('T3')) {
               if (planFuente === 'fiesta') {
                 tip = 'Fiesta';
@@ -2416,7 +2395,7 @@ const getFirstValue = (record, keys) => {
                 }
               }
             }
-            // Verifică dacă este un orar direct (ex: "08:00-17:00" sau "09:00-15:00 / 16:00-20:00")
+            // VerificÄƒ dacÄƒ este un orar direct (ex: "08:00-17:00" sau "09:00-15:00 / 16:00-20:00")
             else if (dayScheduleStr.match(/^\d{1,2}:\d{2}/)) {
               if (planFuente === 'fiesta') {
                 tip = 'Fiesta';
@@ -2432,7 +2411,7 @@ const getFirstValue = (record, keys) => {
                 }
               }
             }
-            // Dacă este un număr (ore), afișăm doar numărul de ore (ex: "8h")
+            // DacÄƒ este un numÄƒr (ore), afiÈ™Äƒm doar numÄƒrul de ore (ex: "8h")
             else if (!isNaN(parseFloat(dayScheduleStr)) && isFinite(dayScheduleStr)) {
               if (planFuente === 'fiesta') {
                 tip = 'Fiesta';
@@ -2441,7 +2420,7 @@ const getFirstValue = (record, keys) => {
                 const hours = parseFloat(dayScheduleStr);
                 if (hours > 0) {
                   tip = 'T1';
-                  // Pentru horario_multicentro, afișăm doar numărul de ore (ex: "8h" sau "12h")
+                  // Pentru horario_multicentro, afiÈ™Äƒm doar numÄƒrul de ore (ex: "8h" sau "12h")
                   orar = `${hours}h`;
                 } else {
                   tip = 'LIBRE';
@@ -2449,7 +2428,7 @@ const getFirstValue = (record, keys) => {
                 }
               }
             }
-            // Altfel, setează ca LIBRE sau Fiesta
+            // Altfel, seteazÄƒ ca LIBRE sau Fiesta
             else {
               if (planFuente === 'fiesta') {
                 tip = 'Fiesta';
@@ -2460,9 +2439,9 @@ const getFirstValue = (record, keys) => {
               }
             }
           } else {
-            // Nu s-a găsit un horario cu orar real pentru această zi, dar există horario_multicentro care acoperă această zi
-            // Înseamnă că toate horario_multicentro pentru această zi sunt LIBRE/gol/0/0h/null
-            // Setăm explicit LIBRE (nu verificăm horarioAsignado!)
+            // Nu s-a gÄƒsit un horario cu orar real pentru aceastÄƒ zi, dar existÄƒ horario_multicentro care acoperÄƒ aceastÄƒ zi
+            // ÃŽnseamnÄƒ cÄƒ toate horario_multicentro pentru aceastÄƒ zi sunt LIBRE/gol/0/0h/null
+            // SetÄƒm explicit LIBRE (nu verificÄƒm horarioAsignado!)
             if (planFuente === 'fiesta') {
               tip = 'Fiesta';
               orar = '';
@@ -2472,7 +2451,7 @@ const getFirstValue = (record, keys) => {
             }
           }
         } else {
-          // Dacă nu există horario_multicentro pentru această zi, verifică horario normal
+          // DacÄƒ nu existÄƒ horario_multicentro pentru aceastÄƒ zi, verificÄƒ horario normal
           if (horarioAsignado) {
             const dayOfWeek = new Date(year, month - 1, day).getDay();
             const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][dayOfWeek];
@@ -2507,7 +2486,7 @@ const getFirstValue = (record, keys) => {
               orar = '';
             }
           } else {
-            // Default pentru lunile fără cuadrante și fără horario_multicentro: Luni-Vineri = T1, Sâmbătă-Duminică = LIBRE
+            // Default pentru lunile fÄƒrÄƒ cuadrante È™i fÄƒrÄƒ horario_multicentro: Luni-Vineri = T1, SÃ¢mbÄƒtÄƒ-DuminicÄƒ = LIBRE
             if (planFuente === 'fiesta') {
               tip = 'Fiesta';
               orar = '';
@@ -2526,36 +2505,36 @@ const getFirstValue = (record, keys) => {
 
       } else {
 
-        // Folosește orarul asignat dacă există, altfel default
+        // FoloseÈ™te orarul asignat dacÄƒ existÄƒ, altfel default
         if (horarioAsignado) {
-          const dayOfWeek = new Date(year, month - 1, day).getDay(); // 0 = Duminică, 1 = Luni, etc.
-          const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][dayOfWeek]; // Duminică = D, Luni = L, etc.
+          const dayOfWeek = new Date(year, month - 1, day).getDay(); // 0 = DuminicÄƒ, 1 = Luni, etc.
+          const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][dayOfWeek]; // DuminicÄƒ = D, Luni = L, etc.
           
-          // Verifică dacă există interval pentru această zi în orarul asignat
+          // VerificÄƒ dacÄƒ existÄƒ interval pentru aceastÄƒ zi Ã®n orarul asignat
           const daySchedule = horarioAsignado.days?.[dayKey];
           
           if (daySchedule) {
             // Extrage intervalele din structura backend (in1/out1, in2/out2, in3/out3)
             const intervals = [];
             
-            // Verifică primul interval
+            // VerificÄƒ primul interval
             if (daySchedule.in1 && daySchedule.out1) {
               intervals.push({in: daySchedule.in1, out: daySchedule.out1});
             }
             
-            // Verifică al doilea interval
+            // VerificÄƒ al doilea interval
             if (daySchedule.in2 && daySchedule.out2) {
               intervals.push({in: daySchedule.in2, out: daySchedule.out2});
             }
             
-            // Verifică al treilea interval
+            // VerificÄƒ al treilea interval
             if (daySchedule.in3 && daySchedule.out3) {
               intervals.push({in: daySchedule.in3, out: daySchedule.out3});
             }
             
             if (intervals.length > 0) {
-              // Verifică din nou plan_fuente înainte de a seta tip = 'T1'
-              // Dacă plan_fuente este 'fiesta', nu setăm tip = 'T1'
+              // VerificÄƒ din nou plan_fuente Ã®nainte de a seta tip = 'T1'
+              // DacÄƒ plan_fuente este 'fiesta', nu setÄƒm tip = 'T1'
               if (planFuente !== 'fiesta') {
                 ziRaw = ziRawFromHorarioIntervals(intervals);
                 if (intervals.length > 1) {
@@ -2573,8 +2552,8 @@ const getFirstValue = (record, keys) => {
               tip = 'LIBRE';
             }
           } else {
-            // Nu există interval pentru această zi
-            // Verifică din nou plan_fuente înainte de a seta tip = 'LIBRE'
+            // Nu existÄƒ interval pentru aceastÄƒ zi
+            // VerificÄƒ din nou plan_fuente Ã®nainte de a seta tip = 'LIBRE'
             if (planFuente === 'fiesta') {
               tip = 'Fiesta';
               orar = '';
@@ -2588,19 +2567,19 @@ const getFirstValue = (record, keys) => {
             // DEBUG Ziua
           }
         } else {
-          // Default pentru lunile fără cuadrante: Luni-Vineri = T1, Sâmbătă-Duminică = LIBRE
-          // Verifică din nou plan_fuente înainte de a seta tip
+          // Default pentru lunile fÄƒrÄƒ cuadrante: Luni-Vineri = T1, SÃ¢mbÄƒtÄƒ-DuminicÄƒ = LIBRE
+          // VerificÄƒ din nou plan_fuente Ã®nainte de a seta tip
           if (planFuente === 'fiesta') {
             tip = 'Fiesta';
             orar = '';
           } else {
-            const dayOfWeek = new Date(year, month - 1, day).getDay(); // 0 = Duminică, 1 = Luni, etc.
+            const dayOfWeek = new Date(year, month - 1, day).getDay(); // 0 = DuminicÄƒ, 1 = Luni, etc.
             
-            if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Luni până Vineri
+            if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Luni pÃ¢nÄƒ Vineri
               tip = 'T1';
               orar = '08:00-17:00'; // Program standard
               ziRaw = '08:00-17:00';
-            } else { // Sâmbătă și Duminică
+            } else { // SÃ¢mbÄƒtÄƒ È™i DuminicÄƒ
               tip = 'LIBRE';
             }
           }
@@ -2612,11 +2591,11 @@ const getFirstValue = (record, keys) => {
 
       
 
-      // Logica pentru alertaFichaj și durataMunca s-a mutat în CalendarDayCell
+      // Logica pentru alertaFichaj È™i durataMunca s-a mutat Ã®n CalendarDayCell
 
       // LOG pentru ziua 1 - final
       if (day === 1) {
-        console.log('📝 [DAY 1] Final push cell:', {
+        console.log('ðŸ“ [DAY 1] Final push cell:', {
           day,
           tip,
           orar,
@@ -2633,9 +2612,9 @@ const getFirstValue = (record, keys) => {
 
         orar,
 
-        // alertaFichaj și durataMunca se calculează în CalendarDayCell
-        alertaFichaj: false, // placeholder, se calculează în componentă
-        durataMunca: '', // placeholder, se calculează în componentă
+        // alertaFichaj È™i durataMunca se calculeazÄƒ Ã®n CalendarDayCell
+        alertaFichaj: false, // placeholder, se calculeazÄƒ Ã®n componentÄƒ
+        durataMunca: '', // placeholder, se calculeazÄƒ Ã®n componentÄƒ
 
         motivoAusencia,
 
@@ -2643,9 +2622,9 @@ const getFirstValue = (record, keys) => {
 
         bajaCalendar,
 
-        planFuente, // Adăugăm planFuente în cell pentru a-l folosi în CalendarDayCell
+        planFuente, // AdÄƒugÄƒm planFuente Ã®n cell pentru a-l folosi Ã®n CalendarDayCell
         
-        // Adăugăm informația despre orele programate din horario_multicentro pentru această zi
+        // AdÄƒugÄƒm informaÈ›ia despre orele programate din horario_multicentro pentru aceastÄƒ zi
         horarioMulticentroHours,
 
         ...(ziRaw ? { ziRaw } : {})
@@ -2679,8 +2658,8 @@ const getFirstValue = (record, keys) => {
 
   useEffect(() => {
     
-    // Calculează totalul de ore indiferent dacă există sau nu un cuadrant asignat.
-    // Este suficient să avem fișaje (fichajes) pentru luna selectată.
+    // CalculeazÄƒ totalul de ore indiferent dacÄƒ existÄƒ sau nu un cuadrant asignat.
+    // Este suficient sÄƒ avem fiÈ™aje (fichajes) pentru luna selectatÄƒ.
     if (!fichajes || !fichajes.length || !selectedLunaNorm) return;
 
 
@@ -2689,15 +2668,15 @@ const getFirstValue = (record, keys) => {
     let totalMinute = 0;
     let totalSeconds = 0;
 
-    // Filtrez fichajes pentru luna selectată
+    // Filtrez fichajes pentru luna selectatÄƒ
     const fichajesLunaSelectata = fichajes.filter(f => {
       const fecha = f["FECHA"] || '';
-      // Verific dacă data începe cu YYYY-MM corespunzător lunii selectate
+      // Verific dacÄƒ data Ã®ncepe cu YYYY-MM corespunzÄƒtor lunii selectate
       const fechaPrefix = `${year}-${String(month).padStart(2, '0')}`;
       return fecha.startsWith(fechaPrefix);
     });
 
-    // Calculează orele: dacă există regularizare, folosește regularizarea, altfel folosește DURACION
+    // CalculeazÄƒ orele: dacÄƒ existÄƒ regularizare, foloseÈ™te regularizarea, altfel foloseÈ™te DURACION
     const parseHHMMSS = (s) => {
       if (!s || typeof s !== 'string') return 0;
       const parts = s.split(':').map(Number);
@@ -2712,13 +2691,13 @@ const getFirstValue = (record, keys) => {
       return 0;
     };
 
-    // Pentru fiecare Salida, folosește regularizarea dacă există, altfel DURACION
-    // Pentru turele nocturne, regularizarea este pe workday_date (ziua de început)
-    // Dar DURACION este în Salida de pe ziua de sfârșit, deci trebuie să procesăm corect
+    // Pentru fiecare Salida, foloseÈ™te regularizarea dacÄƒ existÄƒ, altfel DURACION
+    // Pentru turele nocturne, regularizarea este pe workday_date (ziua de Ã®nceput)
+    // Dar DURACION este Ã®n Salida de pe ziua de sfÃ¢rÈ™it, deci trebuie sÄƒ procesÄƒm corect
     fichajesLunaSelectata
       .filter(f => f["TIPO"] === 'Salida')
       .forEach(f => {
-        // Prioritate 1: effective_minutes (regularizare confirmată)
+        // Prioritate 1: effective_minutes (regularizare confirmatÄƒ)
         if (f["effective_minutes"] !== null && f["effective_minutes"] !== undefined) {
           const effectiveMinutes = Number(f["effective_minutes"]);
           if (!isNaN(effectiveMinutes) && effectiveMinutes > 0) {
@@ -2726,7 +2705,7 @@ const getFirstValue = (record, keys) => {
             totalSeconds += effectiveMinutes * 60;
           }
         } 
-        // Prioritate 2: effective_duration (regularizare confirmată)
+        // Prioritate 2: effective_duration (regularizare confirmatÄƒ)
         else if (f["effective_duration"] && f["effective_duration"].trim() !== '') {
           const durationStr = f["effective_duration"].trim();
           const secFromDuration = parseHHMMSS(durationStr);
@@ -2735,7 +2714,7 @@ const getFirstValue = (record, keys) => {
             totalMinute += Math.floor(secFromDuration / 60);
           }
         }
-        // Prioritate 3: DURACION (când nu există regularizare)
+        // Prioritate 3: DURACION (cÃ¢nd nu existÄƒ regularizare)
         else if (f["DURACION"] && f["DURACION"].trim() !== '' && f["DURACION"] !== '00:00:00') {
           const durationStr = f["DURACION"].trim();
           const secFromDuration = parseHHMMSS(durationStr);
@@ -2762,7 +2741,7 @@ const getFirstValue = (record, keys) => {
 
 
 
-  // Registrele pentru ziua selectată
+  // Registrele pentru ziua selectatÄƒ
 
   let registreZi = [];
 
@@ -2782,7 +2761,7 @@ const getFirstValue = (record, keys) => {
 
   const erori = [];
 
-  // IMPORTANT: Nu afișăm alerta dacă fichajes sau regularizările sunt încă în proces de încărcare
+  // IMPORTANT: Nu afiÈ™Äƒm alerta dacÄƒ fichajes sau regularizÄƒrile sunt Ã®ncÄƒ Ã®n proces de Ã®ncÄƒrcare
   if (!loading && !loadingFichajes && !loadingRegularizaciones && cuadrant) {
 
     const zileCuAlerta = calendarCells.filter(
@@ -2791,7 +2770,7 @@ const getFirstValue = (record, keys) => {
     );
 
     if (zileCuAlerta.length > 0) {
-      erori.push(`Tienes ${zileCuAlerta.length} día${zileCuAlerta.length === 1 ? '' : 's'} laborable${zileCuAlerta.length === 1 ? '' : 's'} con turnos incompletos (falta Entrada o Salida) en el mes seleccionado!`);
+      erori.push(`Tienes ${zileCuAlerta.length} dÃ­a${zileCuAlerta.length === 1 ? '' : 's'} laborable${zileCuAlerta.length === 1 ? '' : 's'} con turnos incompletos (falta Entrada o Salida) en el mes seleccionado!`);
     }
   }
 
@@ -2799,39 +2778,39 @@ const getFirstValue = (record, keys) => {
 
 
 
-  // Funcție pentru obținerea locației automate folosind contextul global
-  // Mutată aici pentru a fi disponibilă în handleResolveAlert
+  // FuncÈ›ie pentru obÈ›inerea locaÈ›iei automate folosind contextul global
+  // MutatÄƒ aici pentru a fi disponibilÄƒ Ã®n handleResolveAlert
   const handleGetCurrentLocation = useCallback(async () => {
     try {
-      // Folosim contextul global pentru locație
+      // Folosim contextul global pentru locaÈ›ie
       const coords = await getCurrentLocation();
       const { latitude, longitude } = coords;
 
-      // Obține adresa folosind funcția din context
+      // ObÈ›ine adresa folosind funcÈ›ia din context
       const address = await getAddressFromCoords(latitude, longitude);
 
       if (address) {
         setFichajeAddress(address);
-        alert('¡La ubicación se ha obtenido automáticamente!');
+        alert('Â¡La ubicaciÃ³n se ha obtenido automÃ¡ticamente!');
       } else {
         // Fallback la coordonatele GPS
         setFichajeAddress(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
-        alert('No se pudo obtener la dirección para la ubicación actual.');
+        alert('No se pudo obtener la direcciÃ³n para la ubicaciÃ³n actual.');
       }
 
     } catch (error) {
 
       if (error.code === 1) {
 
-        alert('El acceso a la ubicación fue denegado. Por favor permite el acceso en la configuración del navegador.');
+        alert('El acceso a la ubicaciÃ³n fue denegado. Por favor permite el acceso en la configuraciÃ³n del navegador.');
 
       } else if (error.code === 2) {
 
-        alert('No se pudo obtener la ubicación. Por favor verifica tu conexión a internet.');
+        alert('No se pudo obtener la ubicaciÃ³n. Por favor verifica tu conexiÃ³n a internet.');
 
       } else {
 
-        alert('Error al obtener la ubicación. Por favor intenta de nuevo.');
+        alert('Error al obtener la ubicaciÃ³n. Por favor intenta de nuevo.');
 
       }
 
@@ -2839,14 +2818,14 @@ const getFirstValue = (record, keys) => {
 
   }, [getCurrentLocation, getAddressFromCoords]);
 
-  // Funcții pentru rezolvarea alertelor
-  // Memoizăm pentru a preveni re-render-uri inutile ale CalendarDayCell
+  // FuncÈ›ii pentru rezolvarea alertelor
+  // MemoizÄƒm pentru a preveni re-render-uri inutile ale CalendarDayCell
 
   const handleResolveAlert = useCallback((cell) => {
 
     if (cell.alertaFichaj) {
 
-      // Verifică dacă ziua este ziua curentă
+      // VerificÄƒ dacÄƒ ziua este ziua curentÄƒ
 
       const currentDate = new Date();
 
@@ -2862,7 +2841,7 @@ const getFirstValue = (record, keys) => {
 
       
 
-      // Verifică dacă este ziua curentă
+      // VerificÄƒ dacÄƒ este ziua curentÄƒ
 
       const isCurrentDay = selectedYear === currentYear && 
 
@@ -2874,7 +2853,7 @@ const getFirstValue = (record, keys) => {
 
       if (!isCurrentDay) {
 
-        alert('¡Solo puedes modificar el día actual! No puedes añadir fichajes para días anteriores o futuros.');
+        alert('Â¡Solo puedes modificar el dÃ­a actual! No puedes aÃ±adir fichajes para dÃ­as anteriores o futuros.');
 
         return;
 
@@ -2894,7 +2873,7 @@ const getFirstValue = (record, keys) => {
 
       
 
-      // Încearcă să obțină locația automată când se deschide modalul
+      // ÃŽncearcÄƒ sÄƒ obÈ›inÄƒ locaÈ›ia automatÄƒ cÃ¢nd se deschide modalul
 
       setTimeout(() => {
 
@@ -2912,12 +2891,12 @@ const getFirstValue = (record, keys) => {
 
 
 
-  // Funcție pentru "Indicar motivo" (zile trecute fără fichajes)
+  // FuncÈ›ie pentru "Indicar motivo" (zile trecute fÄƒrÄƒ fichajes)
   const handleIndicarMotivo = useCallback((cell) => {
     const [year, month] = selectedLunaNorm.split('-').map(Number);
     const dataZi = formatDateYMD(year, month, cell.day);
     
-    // Obține orarul planificat din cell (dacă există)
+    // ObÈ›ine orarul planificat din cell (dacÄƒ existÄƒ)
     const scheduled_hours = cell.orar || null;
     
     setSelectedDayForNoPunch({
@@ -2934,7 +2913,7 @@ const getFirstValue = (record, keys) => {
 
     if (!fichajeTime) {
 
-      alert('¡Por favor completa la hora!');
+      alert('Â¡Por favor completa la hora!');
 
       return;
 
@@ -2960,11 +2939,11 @@ const getFirstValue = (record, keys) => {
 
         TIPO: fichajeType,
 
-        DIRECCION: fichajeAddress || 'Ubicación automática',
+        DIRECCION: fichajeAddress || 'UbicaciÃ³n automÃ¡tica',
 
         CORREO_ELECTRONICO: emailLogat,
 
-        ESTADO: 'PENDIENTE', // În așteptare de aprobare
+        ESTADO: 'PENDIENTE', // ÃŽn aÈ™teptare de aprobare
 
         MODIFICADO_POR: authUser?.['NOMBRE / APELLIDOS'] || emailLogat,
 
@@ -2974,15 +2953,15 @@ const getFirstValue = (record, keys) => {
 
 
 
-      // Adaug la lista de pontaje în așteptare
+      // Adaug la lista de pontaje Ã®n aÈ™teptare
 
       setPendingFichajes(prev => [...prev, newFichaje]);
 
       
 
-      // Salvez în baza de date (în așteptare)
+      // Salvez Ã®n baza de date (Ã®n aÈ™teptare)
 
-      // Folosim backend-ul nou pentru fichajes (addFichaje poate gestiona și fichajes pendiente)
+      // Folosim backend-ul nou pentru fichajes (addFichaje poate gestiona È™i fichajes pendiente)
       const token = localStorage.getItem('auth_token');
       const headers = { 'Content-Type': 'application/json' };
       if (token) {
@@ -3003,23 +2982,23 @@ const getFirstValue = (record, keys) => {
 
       if (response.ok) {
 
-        alert(`¡Fichaje ${fichajeType} registrado con éxito! Pendiente de aprobación.`);
+        alert(`Â¡Fichaje ${fichajeType} registrado con Ã©xito! Pendiente de aprobaciÃ³n.`);
 
         setShowFichajeModal(false);
 
-        // Reîncarc pontaje pentru a actualiza lista
+        // ReÃ®ncarc pontaje pentru a actualiza lista
 
         // fetchFichajes();
 
       } else {
 
-        alert('¡Error al guardar el fichaje!');
+        alert('Â¡Error al guardar el fichaje!');
 
       }
 
     } catch {
 
-      alert('¡Error al guardar el fichaje!');
+      alert('Â¡Error al guardar el fichaje!');
 
     } finally {
 
@@ -3033,7 +3012,7 @@ const getFirstValue = (record, keys) => {
 
   const handleAddAnotherFichaje = () => {
 
-    // Schimb tipul pentru următorul pontaj
+    // Schimb tipul pentru urmÄƒtorul pontaj
 
     setFichajeType(fichajeType === 'Entrada' ? 'Salida' : 'Entrada');
 
@@ -3046,1900 +3025,133 @@ const getFirstValue = (record, keys) => {
 
 
 
+  const isCurrentMonthSelected = useMemo(() => {
+    const now = new Date();
+    const [y, m] = selectedLunaNorm.split('-').map(Number);
+    return y === now.getFullYear() && m === now.getMonth() + 1;
+  }, [selectedLunaNorm]);
+
+  const todayCell = useMemo(() => {
+    if (!isCurrentMonthSelected) return null;
+    const now = new Date();
+    return calendarCells.find((c) => c && c.day === now.getDate()) || null;
+  }, [calendarCells, isCurrentMonthSelected]);
+
+  const currentBaja = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return bajasCalendar.find((baja) => {
+      if (!baja?.start || !baja?.end) return false;
+      const situacion = (baja.situacion || '').toUpperCase();
+      if (situacion === 'ALTA' || situacion === 'ALTA MÃ‰DICA' || situacion === 'ALTA MEDICA') {
+        return false;
+      }
+      if (baja.raw) {
+        const fechaAltaRaw =
+          baja.raw['Fecha de alta'] ||
+          baja.raw['Fecha De Alta'] ||
+          baja.raw['Fecha alta'] ||
+          baja.raw['Fecha Alta'] ||
+          baja.raw.fecha_de_alta ||
+          baja.raw.fecha_alta ||
+          baja.raw.fechaAlta ||
+          baja.raw.FECHA_ALTA ||
+          baja.raw['FECHA ALTA'] ||
+          '';
+        if (fechaAltaRaw) {
+          const fechaAltaDate = new Date(fechaAltaRaw);
+          if (!Number.isNaN(fechaAltaDate.getTime())) {
+            fechaAltaDate.setHours(0, 0, 0, 0);
+            if (fechaAltaDate < today) return false;
+          }
+        }
+      }
+      if (baja.endDate) {
+        const endDateObj = new Date(baja.endDate);
+        if (!Number.isNaN(endDateObj.getTime())) {
+          endDateObj.setHours(0, 0, 0, 0);
+          if (endDateObj < today) return false;
+        }
+      }
+      return today >= baja.start && today <= baja.end;
+    }) || null;
+  }, [bajasCalendar]);
+
+
   if (loading) {
-
     return (
-
-      <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-50 flex items-center justify-center">
-
-        <div className="text-center">
-
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-red-600 mx-auto mb-4"></div>
-
-          <div className="text-red-600 font-bold text-xl">Cargando...</div>
-
-        </div>
-
+      <div className="app-page mi-horario-page">
+        <PageHeader title="Mi Horario" backTo="/inicio" />
+        <AlertBanner variant="loading" loading>Cargando horario...</AlertBanner>
       </div>
-
     );
-
   }
-
-
 
   if (error) {
-
     return (
-
-      <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-50 flex items-center justify-center p-4">
-
-        <div 
-
-          className="relative text-center max-w-md w-full"
-
-          style={{
-
-            background: 'linear-gradient(135deg, rgba(254, 226, 226, 0.8) 0%, rgba(254, 202, 202, 0.8) 100%)',
-
-            backdropFilter: 'blur(10px)',
-
-            borderRadius: '1.5rem',
-
-            border: '2px solid rgba(239, 68, 68, 0.3)',
-
-            boxShadow: '0 15px 40px rgba(239, 68, 68, 0.3)',
-
-            padding: '3rem'
-
-          }}
-
-        >
-
-          {/* Glow animado */}
-
-          <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-red-400 to-pink-400 opacity-20 blur-xl"></div>
-
-          
-
-          <div className="relative">
-
-            {/* Icono animado */}
-
-            <div className="relative inline-block mb-6">
-
-              <div className="absolute inset-0 bg-red-400 rounded-full blur-lg opacity-60 animate-pulse"></div>
-
-              <div 
-
-                className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-2xl"
-
-                style={{
-
-                  background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-
-                  boxShadow: '0 20px 40px rgba(239, 68, 68, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.3)'
-
-                }}
-
-              >
-
-                <span className="text-5xl animate-pulse">⚠️</span>
-
-              </div>
-
-            </div>
-
-            
-
-            <h2 className="text-2xl font-black text-red-800 mb-4">Error</h2>
-
-            <p className="text-gray-700 mb-8 font-medium">{error}</p>
-
-            
-
-            <Back3DButton to="/inicio" title="Regresar al Dashboard" />
-
-          </div>
-
-        </div>
-
+      <div className="app-page mi-horario-page">
+        <PageHeader title="Mi Horario" backTo="/inicio" />
+        <AlertBanner variant="danger" title="Error">{error}</AlertBanner>
       </div>
-
     );
-
   }
 
-
-
   return (
-
-    <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-50">
-
-      {/* Header ULTRA WOW 3D modern */}
-
-      <div className="relative overflow-hidden bg-white shadow-lg border-b border-gray-100">
-
-        {/* Glow background animado */}
-
-        <div className="absolute inset-0 bg-gradient-to-r from-red-400 via-pink-400 to-purple-400 opacity-10 blur-3xl"></div>
-
-        
-
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-
-          <div className="flex items-center justify-between py-6">
-
-            {/* Buton 3D Back */}
-
-            <Back3DButton to="/inicio" title="Regresar al Dashboard" />
-
-            
-
-            <div className="flex items-center space-x-4">
-
-              {/* Icono 3D con animación - Desktop: emoji, Mobile: data actual */}
-
-              <div 
-
-                className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-xl transform hover:scale-110 hover:rotate-6 transition-all duration-300"
-
-                style={{
-
-                  background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 50%, #991b1b 100%)',
-
-                  boxShadow: '0 12px 30px rgba(239, 68, 68, 0.4), inset 0 2px 0 rgba(255, 255, 255, 0.3)'
-
-                }}
-
-              >
-
-                {/* Desktop: emoji cu animatie */}
-                <span className="text-3xl animate-bounce hidden md:block">📅</span>
-
-                {/* Mobile: data curenta dinamica */}
-                <span className="text-lg font-black text-white md:hidden">
-                  {getCurrentDayFormatted()}
-                </span>
-
-              </div>
-
-              
-
-              <div>
-
-                <h1 
-
-                  className="text-3xl sm:text-4xl font-black bg-gradient-to-r from-red-600 via-pink-600 to-purple-600 bg-clip-text text-transparent"
-
-                  style={{
-
-                    textShadow: '0 2px 20px rgba(239, 68, 68, 0.2)'
-
-                  }}
-
-                >
-
-                  Mi Horario
-
-                </h1>
-
-                {identidadDisplay && (
-
-                  <p className="text-gray-600 text-sm font-medium">
-
-                    <span className="text-gray-500">📧</span> {identidadDisplay}
-
-                  </p>
-
-                )}
-
-                {/* Afișează informațiile despre ce s-a găsit - cuadrant, horario_multicentro sau horario normal */}
-                {cuadrant ? (
-                  <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
-                    <p className="text-green-800 text-sm font-medium">
-                      <span className="text-green-600">📋</span> Cuadrante asignado: {selectedLunaNorm}
-                    </p>
-                    <p className="text-green-700 text-xs mt-1">
-                      Empleado: {cuadrant.NOMBRE || cuadrant.NOMBRE_APELLIDOS || 'N/A'}
-                    </p>
-                    <p className="text-green-700 text-xs mt-1">
-                      Centro: {cuadrant.CENTRO || 'N/A'} | Cuadrante personalizado
-                    </p>
-                    <p className="text-green-600 text-xs mt-1">
-                      Fuente: Cuadrante generado
-                    </p>
-                  </div>
-                ) : horarioMulticentroAsignado ? (
-                  <div className="mt-2 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                    <p className="text-purple-800 text-sm font-medium">
-                      <span className="text-purple-600">🏢</span> Horario Multicentro asignado: {selectedLunaNorm}
-                    </p>
-                    {(() => {
-                      // Verifică dacă horario_multicentro este pentru luna curentă
-                      const currentDate = new Date();
-                      const currentYear = currentDate.getFullYear();
-                      const currentMonth = currentDate.getMonth() + 1;
-                      const currentMonthFormatted = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-                      
-                      const isCurrentMonth = selectedLunaNorm === currentMonthFormatted;
-                      
-                      // Dacă este luna curentă, verifică dacă există orar pentru ziua curentă
-                      if (isCurrentMonth) {
-                        // Dacă există horario pentru ziua curentă, afișează informațiile pentru acel horario
-                        if (currentDayHorarioMulticentro) {
-                          return (
-                            <>
-                              <p className="text-purple-700 text-xs mt-1">
-                                Cliente: <strong>{currentDayHorarioMulticentro.CLIENTE || 'N/A'}</strong>
-                              </p>
-                              <p className="text-purple-700 text-xs mt-1">
-                                Horario: <strong>{currentDayHorarioMulticentro.HORARIO || 'N/A'}</strong> | Servicio: {currentDayHorarioMulticentro.SERVICIO || 'N/A'}
-                              </p>
-                              {currentDayScheduleFromHorarioMulticentro ? (
-                                <div className="mt-2 pt-2 border-t border-purple-300">
-                                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-white text-purple-800 rounded-md">
-                                    <span className="text-xs">📅 Hoy:</span>
-                                    <span className="text-xs font-semibold">{currentDayScheduleFromHorarioMulticentro}</span>
-                                  </div>
-                                </div>
-                              ) : null}
-                            </>
-                          );
-                        } 
-                        // Dacă nu există orar pentru ziua curentă, afișează mesajul de avertisment la CLIENTE și HORARIO
-                        else {
-                          return (
-                            <>
-                              <p className="text-purple-700 text-xs mt-1">
-                                Cliente: <span className="text-yellow-700 font-semibold">⚠️ No tienes horario asignado para hoy</span>
-                              </p>
-                              <p className="text-purple-700 text-xs mt-1">
-                                Horario: <span className="text-yellow-700 font-semibold">⚠️ No tienes horario asignado para hoy</span>
-                              </p>
-                            </>
-                          );
-                        }
-                      }
-                      // Dacă nu este luna curentă, afișează primul horario din listă
-                      else {
-                        return (
-                          <>
-                            <p className="text-purple-700 text-xs mt-1">
-                              Cliente: {horarioMulticentroAsignado.CLIENTE || 'N/A'}
-                            </p>
-                            <p className="text-purple-700 text-xs mt-1">
-                              Horario: {horarioMulticentroAsignado.HORARIO || 'N/A'} | Servicio: {horarioMulticentroAsignado.SERVICIO || 'N/A'}
-                            </p>
-                          </>
-                        );
-                      }
-                    })()}
-                    <p className="text-purple-600 text-xs mt-1">
-                      Fuente: Horario Multicentro
-                    </p>
-                  </div>
-                ) : horarioAsignado ? (
-                  <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-blue-800 text-sm font-medium">
-                      <span className="text-blue-600">📅</span> Horario asignado: {horarioAsignado.nombre}
-                    </p>
-                    <p className="text-blue-700 text-xs mt-1">
-                      Centro: {horarioAsignado.centroNombre} | Grupo: {horarioAsignado.grupoNombre}
-                    </p>
-                    {horarioAsignado.vigenteDesde && horarioAsignado.vigenteHasta && (
-                      <p className="text-blue-600 text-xs mt-1">
-                        Vigente: {horarioAsignado.vigenteDesde} - {horarioAsignado.vigenteHasta}
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                    <p className="text-gray-800 text-sm font-medium">
-                      <span className="text-gray-600">⚠️</span> Sin horario asignado
-                    </p>
-                    <p className="text-gray-700 text-xs mt-1">
-                      No se encontró cuadrante ni horario para este mes
-                    </p>
-                  </div>
-                )}
-
-                {/* Avertisment pentru Baja Médica */}
-                {(() => {
-                  const today = new Date();
-                  today.setHours(0, 0, 0, 0);
-                  const currentBaja = bajasCalendar.find((baja) => {
-                    if (!baja?.start || !baja?.end) return false;
-                    
-                    // Dacă situacion este "Alta" sau similar, nu afișăm mesajul de baja activă
-                    const situacion = (baja.situacion || '').toUpperCase();
-                    if (situacion === 'ALTA' || situacion === 'ALTA MÉDICA' || situacion === 'ALTA MEDICA') {
-                      return false; // Nu afișăm mesajul dacă este deja "Alta"
-                    }
-                    
-                    // Verifică dacă există fecha_alta reală în trecut (din raw data)
-                    // pentru a evita problemele când end este setat la data de astăzi din cauza logicii de fallback
-                    if (baja.raw) {
-                      const fechaAltaRaw =
-                        baja.raw['Fecha de alta'] ||
-                        baja.raw['Fecha De Alta'] ||
-                        baja.raw['Fecha alta'] ||
-                        baja.raw['Fecha Alta'] ||
-                        baja.raw.fecha_de_alta ||
-                        baja.raw.fecha_alta ||
-                        baja.raw.fechaAlta ||
-                        baja.raw.FECHA_ALTA ||
-                        baja.raw['FECHA ALTA'] ||
-                        '';
-                      if (fechaAltaRaw) {
-                        const fechaAltaDate = new Date(fechaAltaRaw);
-                        if (!isNaN(fechaAltaDate.getTime())) {
-                          fechaAltaDate.setHours(0, 0, 0, 0);
-                          if (fechaAltaDate < today) {
-                            return false; // Nu afișăm mesajul dacă data de alta este în trecut
-                          }
-                        }
-                      }
-                    }
-                    
-                    // Verifică dacă endDate (fecha_alta) este în trecut - folosim endDate string, nu end object
-                    if (baja.endDate) {
-                      const endDateObj = new Date(baja.endDate);
-                      if (!isNaN(endDateObj.getTime())) {
-                        endDateObj.setHours(0, 0, 0, 0);
-                        if (endDateObj < today) {
-                          return false; // Nu afișăm mesajul dacă data de alta este în trecut
-                        }
-                      }
-                    }
-                    
-                    // Verifică dacă ziua curentă este în intervalul de baja
-                    const isInRange = today >= baja.start && today <= baja.end;
-                    if (!isInRange) return false;
-                    
-                    return true;
-                  });
-                  
-                  if (currentBaja) {
-                    const startDate = currentBaja.startDate || '';
-                    const endDate = currentBaja.endDate || '';
-                    const situacion = currentBaja.situacion || '';
-                    
-                    return (
-                      <div className="mt-3 p-4 bg-gradient-to-r from-rose-50 to-pink-50 border-2 border-rose-300 rounded-xl shadow-lg">
-                        <div className="flex items-start gap-3">
-                          <div className="flex-shrink-0">
-                            <div className="w-10 h-10 bg-gradient-to-br from-rose-500 to-pink-600 rounded-lg flex items-center justify-center shadow-md">
-                              <span className="text-white text-xl">🏥</span>
-                            </div>
-                          </div>
-                          <div className="flex-1">
-                            <h3 className="text-base font-bold text-rose-800 mb-1">
-                              ⚠️ Estás en Baja Médica
-                            </h3>
-                            <p className="text-rose-700 text-sm mb-2">
-                              Actualmente estás de baja médica. Por favor, consulta con tu médico y sigue las indicaciones.
-                            </p>
-                            {startDate && endDate && (
-                              <p className="text-rose-600 text-xs">
-                                <strong>Período:</strong> {startDate} - {endDate}
-                              </p>
-                            )}
-                            {situacion && (
-                              <p className="text-rose-600 text-xs mt-1">
-                                <strong>Situación:</strong> {situacion}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
-
-              </div>
-
-            </div>
-
-            
-
-            {/* Spațiu pentru echilibrare vizuală */}
-
-            <div className="w-[100px]"></div>
-
-          </div>
-
-        </div>
-
-      </div>
-
-
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-
-        {/* Botón Reportar Error */}
-        <div className="flex justify-end mb-4">
-          <button 
-            onClick={() => {
-              // Date relevante pentru pagina de cuadrantes
-              const cuadranteActual = cuadrantesUser?.find(c => c.LUNA === selectedLuna) || cuadrantesUser?.[0];
-              const horarioInfo = horarioAsignado?.nombre || horarioMulticentroAsignado?.nombre || null;
-              
-              const pageData = {
-                additionalInfo: [
-                  selectedLuna ? `[MES] ${selectedLuna}` : null,
-                  cuadrantesUser?.length > 0 ? `[CUADRANTES] ${cuadrantesUser.length} cuadrantes disponibles` : null,
-                  cuadranteActual ? `[CUADRANTE ACTUAL] ${cuadranteActual.LUNA || 'N/A'}` : null,
-                  horarioInfo ? `[HORARIO] ${horarioInfo}` : null,
-                ].filter(Boolean),
-              };
-              
-              const message = buildErrorReportMessage({
-                authUser,
-                userData,
-                pageName: "Cuadrantes Empleado",
-                pageData,
-              });
-              
-              openWhatsAppErrorReport(message);
-            }}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
-          >
-            <span className="text-base">📱</span>
-            Reportar error
-          </button>
-        </div>
-
-        
-
-        {/* Alerta ULTRA WOW 3D modernizada */}
-
-        {erori.length > 0 && (
-
-          <div 
-
-            className="relative group overflow-hidden mb-8"
-
-            style={{
-
-              background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(245, 158, 11, 0.1) 100%)',
-
-              backdropFilter: 'blur(10px)',
-
-              borderRadius: '1.5rem',
-
-              border: '2px solid rgba(251, 191, 36, 0.3)',
-
-              boxShadow: '0 15px 40px rgba(251, 191, 36, 0.25)',
-
-              padding: '1.5rem'
-
-            }}
-
-          >
-
-            {/* Glow animado en hover */}
-
-            <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-yellow-400 to-orange-400 opacity-20 blur-xl animate-pulse"></div>
-
-            
-
-            <div className="relative flex items-start gap-4">
-
-              {/* Icono 3D animado */}
-
-              <div className="flex-shrink-0">
-
-                <div className="relative inline-block">
-
-                  <div className="absolute inset-0 bg-yellow-400 rounded-full blur-md opacity-60 animate-pulse"></div>
-
-                  <div 
-
-                    className="relative w-14 h-14 rounded-full flex items-center justify-center shadow-xl transform group-hover:scale-110 group-hover:rotate-12 transition-all duration-300"
-
-                    style={{
-
-                      background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
-
-                      boxShadow: '0 12px 30px rgba(251, 191, 36, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.3)'
-
-                    }}
-
-                  >
-
-                    <span className="text-3xl animate-bounce">⚠️</span>
-
-                  </div>
-
-                </div>
-
-              </div>
-
-              
-
-              {/* Contenido */}
-
-              <div className="flex-1 min-w-0">
-
-                <h3 
-
-                  className="text-xl font-black mb-2 bg-gradient-to-r from-yellow-700 via-orange-600 to-red-600 bg-clip-text text-transparent"
-
-                  style={{
-
-                    textShadow: '0 2px 10px rgba(251, 191, 36, 0.2)'
-
-                  }}
-
-                >
-
-                  ¡Atención!
-
-                </h3>
-
-                <p className="text-yellow-800 font-semibold text-base leading-relaxed">
-
-                  Tienes <span className="text-orange-600 font-black text-lg">{erori[0].match(/\d+/)[0]}</span> días laborables con turnos incompletos (falta Entrada o Salida) en el mes seleccionado!
-
-                </p>
-
-              </div>
-
-            </div>
-
-            
-
-            {/* Shimmer effect */}
-
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000"></div>
-
-          </div>
-
-        )}
-
-
-
-        {/* Selector de mes ULTRA WOW 3D modernizado */}
-
-        <div 
-
-          className="relative group overflow-hidden mb-8"
-
-          style={{
-
-            background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(249, 250, 251, 0.95) 100%)',
-
-            backdropFilter: 'blur(10px)',
-
-            borderRadius: '1.5rem',
-
-            border: '1px solid rgba(229, 231, 235, 0.5)',
-
-            boxShadow: '0 15px 40px rgba(0, 0, 0, 0.08)',
-
-            padding: '2rem'
-
-          }}
-
-        >
-
-          {/* Glow animado en hover */}
-
-          <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-red-400 to-pink-400 opacity-0 group-hover:opacity-10 blur-xl transition-opacity duration-500"></div>
-
-          
-
-          <div className="relative">
-
-            {/* Header con icono 3D */}
-
-            <div className="flex items-center justify-between mb-6">
-
-              <div className="flex items-center gap-4">
-
-                <div 
-
-                  className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
-
-                  style={{
-
-                    background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-
-                    boxShadow: '0 8px 20px rgba(99, 102, 241, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-
-                  }}
-
-                >
-
-                  <span className="text-2xl">📅</span>
-
-                </div>
-
-                <h2 
-
-                  className="text-2xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent"
-
-                  style={{
-
-                    textShadow: '0 2px 10px rgba(99, 102, 241, 0.2)'
-
-                  }}
-
-                >
-
-                  Selecciona el mes
-
-                </h2>
-
-              </div>
-
-              
-
-              {totalOreMunca && (
-
-                <div 
-
-                  className="relative group/badge"
-
-                  style={{
-
-                    background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(22, 163, 74, 0.15) 100%)',
-
-                    backdropFilter: 'blur(8px)',
-
-                    borderRadius: '1rem',
-
-                    border: '2px solid rgba(34, 197, 94, 0.3)',
-
-                    boxShadow: '0 4px 15px rgba(34, 197, 94, 0.2)',
-
-                    padding: '0.5rem 1rem'
-
-                  }}
-
-                >
-
-                  <div className="absolute inset-0 rounded-2xl bg-green-400 opacity-0 group-hover/badge:opacity-20 blur-md transition-opacity duration-300"></div>
-
-                  <span className="relative text-green-800 font-black text-sm flex items-center gap-2">
-
-                    <span className="text-lg">⏱️</span>
-
-                    {totalOreMunca}
-
-                  </span>
-
-                </div>
-
-              )}
-
-            </div>
-
-            
-
-            {/* Dropdown de meses modernizado */}
-
-            <div className="relative group/dropdown">
-
-              <select
-
-                id="selected-luna"
-                name="selected-luna"
-                value={selectedLunaNorm}
-
-                onChange={(e) => setSelectedLuna(e.target.value)}
-
-                className="w-full px-6 py-4 rounded-2xl font-bold text-gray-800 bg-gradient-to-r from-white to-gray-50 border-2 border-gray-300 focus:outline-none focus:ring-4 focus:ring-red-500/20 focus:border-red-500 transition-all duration-300 shadow-lg hover:shadow-xl cursor-pointer appearance-none"
-
-                style={{
-
-                  backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-
-                  backgroundPosition: 'right 1rem center',
-
-                  backgroundRepeat: 'no-repeat',
-
-                  backgroundSize: '1.5rem',
-
-                  paddingRight: '3rem'
-
-                }}
-
-              >
-
-                {luniDisponibile.map(l => (
-
-                  <option key={l} value={l}>
-
-                    {formatMonthName(l)}
-
-                  </option>
-
-                ))}
-
-              </select>
-
-              
-
-              {/* Glow effect en hover */}
-
-              <div className="absolute inset-0 rounded-2xl bg-red-400 opacity-0 group-hover/dropdown:opacity-10 blur-xl transition-opacity duration-300 pointer-events-none"></div>
-
-              
-
-              {/* Shimmer effect */}
-
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover/dropdown:translate-x-[200%] transition-transform duration-1000 pointer-events-none"></div>
-
-            </div>
-
-          </div>
-
-        </div>
-
-        {/* Modal Aviso Horarios */}
-        <Modal
-          isOpen={showAvisoModal}
-          onClose={handleCerrarAviso}
-          title="Aviso importante"
-        >
-          <div className="p-6 space-y-4">
-            <p className="text-gray-700">
-              Los horarios de trabajo y turnos asignados pueden estar sujetos a ajustes puntuales por necesidades organizativas o del servicio.
-            </p>
-            <p className="text-gray-700">
-              Cualquier modificación será comunicada con antelación, siempre que sea posible, a través de los canales oficiales de la empresa (correo electrónico, WhatsApp u otros medios habituales).
-            </p>
-            <p className="text-gray-700 font-semibold">
-              Gracias por vuestra comprensión y colaboración.
-            </p>
-            <div className="flex justify-end pt-4">
-              <Button onClick={handleAceptarAviso}>
-                Aceptar
-              </Button>
-            </div>
-          </div>
-        </Modal>
-
-        {/* Aviso permanente */}
-        <div className="mb-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-lg shadow-sm">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">⚠️</span>
-            <div className="flex-1">
-              <p className="text-sm text-gray-700">
-                <span className="font-semibold">Aviso:</span> Los horarios y turnos pueden sufrir modificaciones puntuales. Las actualizaciones se comunicarán por los canales oficiales.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Calendar MEGA WOW 3D modernizado */}
-
-        <div 
-
-          className="relative group overflow-hidden mb-8"
-
-          style={{
-
-            background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(249, 250, 251, 0.95) 100%)',
-
-            backdropFilter: 'blur(10px)',
-
-            borderRadius: '1.5rem',
-
-            border: '1px solid rgba(229, 231, 235, 0.5)',
-
-            boxShadow: '0 15px 40px rgba(0, 0, 0, 0.08)',
-
-            padding: '2rem'
-
-          }}
-
-        >
-
-          {/* Glow animado en hover */}
-
-          <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-blue-400 to-purple-400 opacity-0 group-hover:opacity-10 blur-xl transition-opacity duration-500"></div>
-
-          
-
-          <div className="relative">
-
-            {/* Header con icono 3D */}
-
-            <div className="flex items-center gap-4 mb-6">
-
-              <div 
-
-                className="w-14 h-14 rounded-xl flex items-center justify-center shadow-lg transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
-
-                style={{
-
-                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-
-                  boxShadow: '0 8px 20px rgba(59, 130, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-
-                }}
-
-              >
-
-                <span className="text-3xl">📅</span>
-
-              </div>
-
-              <div>
-
-                <h3 
-
-                  className="text-2xl sm:text-3xl font-black bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent"
-
-                  style={{
-
-                    textShadow: '0 2px 10px rgba(59, 130, 246, 0.2)'
-
-                  }}
-
-                >
-
-                  Horario para {selectedLunaNorm}
-
-                </h3>
-
-                <p className="text-gray-600 text-sm font-medium mt-1">
-
-                  Consulta tus turnos y fichajes
-
-                </p>
-
-              </div>
-
-            </div>
-
-            
-
-            {/* Legend ULTRA WOW modernizada */}
-
-            <div className="grid grid-cols-2 md:grid-cols-7 gap-3 mb-6">
-
-              {/* Día laborable */}
-
-              <div 
-
-                className="relative group/legend overflow-hidden"
-
-                style={{
-
-                  background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(22, 163, 74, 0.1) 100%)',
-
-                  backdropFilter: 'blur(8px)',
-
-                  borderRadius: '0.75rem',
-
-                  border: '2px solid rgba(34, 197, 94, 0.3)',
-
-                  boxShadow: '0 4px 12px rgba(34, 197, 94, 0.15)',
-
-                  padding: '0.75rem'
-
-                }}
-
-              >
-
-                <div className="absolute inset-0 rounded-xl bg-green-400 opacity-0 group-hover/legend:opacity-20 blur-md transition-opacity duration-300"></div>
-
-                <div className="relative flex items-center gap-3">
-
-                  <div 
-
-                    className="w-4 h-4 rounded-full shadow-md"
-
-                    style={{
-
-                      background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-
-                      boxShadow: '0 2px 8px rgba(34, 197, 94, 0.5)'
-
-                    }}
-
-                  ></div>
-
-                  <span className="text-green-800 font-bold text-sm">Día laborable</span>
-
-                </div>
-
-              </div>
-
-
-
-              {/* Día libre */}
-
-              <div 
-
-                className="relative group/legend overflow-hidden"
-
-                style={{
-
-                  background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.1) 100%)',
-
-                  backdropFilter: 'blur(8px)',
-
-                  borderRadius: '0.75rem',
-
-                  border: '2px solid rgba(239, 68, 68, 0.3)',
-
-                  boxShadow: '0 4px 12px rgba(239, 68, 68, 0.15)',
-
-                  padding: '0.75rem'
-
-                }}
-
-              >
-
-                <div className="absolute inset-0 rounded-xl bg-red-400 opacity-0 group-hover/legend:opacity-20 blur-md transition-opacity duration-300"></div>
-
-                <div className="relative flex items-center gap-3">
-
-                  <div 
-
-                    className="w-4 h-4 rounded-full shadow-md"
-
-                    style={{
-
-                      background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-
-                      boxShadow: '0 2px 8px rgba(239, 68, 68, 0.5)'
-
-                    }}
-
-                  ></div>
-
-                  <span className="text-red-800 font-bold text-sm">Día libre</span>
-
-                </div>
-
-              </div>
-
-
-
-              {/* Sin fichar */}
-
-              <div 
-
-                className="relative group/legend overflow-hidden"
-
-                style={{
-
-                  background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(245, 158, 11, 0.1) 100%)',
-
-                  backdropFilter: 'blur(8px)',
-
-                  borderRadius: '0.75rem',
-
-                  border: '2px solid rgba(251, 191, 36, 0.3)',
-
-                  boxShadow: '0 4px 12px rgba(251, 191, 36, 0.15)',
-
-                  padding: '0.75rem'
-
-                }}
-
-              >
-
-                <div className="absolute inset-0 rounded-xl bg-yellow-400 opacity-0 group-hover/legend:opacity-20 blur-md transition-opacity duration-300"></div>
-
-                <div className="relative flex items-center gap-3">
-
-                  <div 
-
-                    className="w-4 h-4 rounded-full shadow-md"
-
-                    style={{
-
-                      background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
-
-                      boxShadow: '0 2px 8px rgba(251, 191, 36, 0.5)'
-
-                    }}
-
-                  ></div>
-
-                  <span className="text-yellow-800 font-bold text-sm">Sin fichar</span>
-
-                </div>
-
-              </div>
-
-
-
-              {/* Día actual */}
-
-              <div 
-
-                className="relative group/legend overflow-hidden"
-
-                style={{
-
-                  background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.1) 100%)',
-
-                  backdropFilter: 'blur(8px)',
-
-                  borderRadius: '0.75rem',
-
-                  border: '2px solid rgba(59, 130, 246, 0.3)',
-
-                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.15)',
-
-                  padding: '0.75rem'
-
-                }}
-
-              >
-
-                <div className="absolute inset-0 rounded-xl bg-blue-400 opacity-0 group-hover/legend:opacity-20 blur-md transition-opacity duration-300"></div>
-
-                <div className="relative flex items-center gap-3">
-
-                  <div 
-
-                    className="w-4 h-4 rounded-full shadow-md animate-pulse"
-
-                    style={{
-
-                      background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-
-                      boxShadow: '0 2px 8px rgba(59, 130, 246, 0.5)'
-
-                    }}
-
-                  ></div>
-
-                  <span className="text-blue-800 font-bold text-sm">Día actual</span>
-
-                </div>
-
-              </div>
-
-
-
-              {/* Vacaciones */}
-
-              <div 
-
-                className="relative group/legend overflow-hidden"
-
-                style={{
-
-                  background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.1) 0%, rgba(14, 165, 233, 0.1) 100%)',
-
-                  backdropFilter: 'blur(8px)',
-
-                  borderRadius: '0.75rem',
-
-                  border: '2px solid rgba(14, 165, 233, 0.3)',
-
-                  boxShadow: '0 4px 12px rgba(14, 165, 233, 0.15)',
-
-                  padding: '0.75rem'
-
-                }}
-
-              >
-
-                <div className="absolute inset-0 rounded-xl bg-sky-400 opacity-0 group-hover/legend:opacity-20 blur-md transition-opacity duration-300"></div>
-
-                <div className="relative flex items-center gap-3">
-
-                  <div 
-
-                    className="w-4 h-4 rounded-full shadow-md"
-
-                    style={{
-
-                      background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
-
-                      boxShadow: '0 2px 8px rgba(14, 165, 233, 0.5)'
-
-                    }}
-
-                  ></div>
-
-                  <span className="text-sky-800 font-bold text-sm">Vacaciones</span>
-
-                </div>
-
-              </div>
-
-
-
-              {/* Asunto Propio */}
-
-              <div 
-
-                className="relative group/legend overflow-hidden"
-
-                style={{
-
-                  background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(147, 51, 234, 0.1) 100%)',
-
-                  backdropFilter: 'blur(8px)',
-
-                  borderRadius: '0.75rem',
-
-                  border: '2px solid rgba(168, 85, 247, 0.3)',
-
-                  boxShadow: '0 4px 12px rgba(168, 85, 247, 0.15)',
-
-                  padding: '0.75rem'
-
-                }}
-
-              >
-
-                <div className="absolute inset-0 rounded-xl bg-purple-400 opacity-0 group-hover/legend:opacity-20 blur-md transition-opacity duration-300"></div>
-
-                <div className="relative flex items-center gap-3">
-
-                  <div 
-
-                    className="w-4 h-4 rounded-full shadow-md"
-
-                    style={{
-
-                      background: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)',
-
-                      boxShadow: '0 2px 8px rgba(168, 85, 247, 0.5)'
-
-                    }}
-
-                  ></div>
-
-                  <span className="text-purple-800 font-bold text-sm">Asunto Propio</span>
-
-                </div>
-
-              </div>
-
-
-
-              {/* Baja Médica */}
-
-              <div 
-
-                className="relative group/legend overflow-hidden"
-
-                style={{
-
-                  background: 'linear-gradient(135deg, rgba(244, 114, 182, 0.15) 0%, rgba(236, 72, 153, 0.15) 100%)',
-
-                  backdropFilter: 'blur(8px)',
-
-                  borderRadius: '0.75rem',
-
-                  border: '2px solid rgba(219, 39, 119, 0.35)',
-
-                  boxShadow: '0 4px 12px rgba(219, 39, 119, 0.18)',
-
-                  padding: '0.75rem'
-
-                }}
-
-              >
-
-                <div className="absolute inset-0 rounded-xl bg-rose-400 opacity-0 group-hover/legend:opacity-20 blur-md transition-opacity duration-300"></div>
-
-                <div className="relative flex items-center gap-3">
-
-                  <div 
-
-                    className="w-4 h-4 rounded-full shadow-md"
-
-                    style={{
-
-                      background: 'linear-gradient(135deg, #f472b6 0%, #db2777 100%)',
-
-                      boxShadow: '0 2px 8px rgba(219, 39, 119, 0.5)'
-
-                    }}
-
-                  ></div>
-
-                  <span className="text-rose-800 font-bold text-sm">Baja Médica</span>
-
-                </div>
-
-              </div>
-
-            </div>
-
-
-
-            {/* Week days header ULTRA WOW */}
-
-            <div className="grid grid-cols-7 gap-3 mb-4">
-
-              {weekDays.map((wd) => (
-
-                <div 
-
-                  key={wd}
-
-                  className="relative group/day overflow-hidden"
-
-                  style={{
-
-                    background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(79, 70, 229, 0.1) 100%)',
-
-                    backdropFilter: 'blur(8px)',
-
-                    borderRadius: '0.75rem',
-
-                    border: '1px solid rgba(99, 102, 241, 0.2)',
-
-                    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.1)',
-
-                    padding: '0.75rem'
-
-                  }}
-
-                >
-
-                  <div className="absolute inset-0 rounded-xl bg-indigo-400 opacity-0 group-hover/day:opacity-15 blur-md transition-opacity duration-300"></div>
-
-                  <div className="relative text-center font-black text-sm text-indigo-800">
-
-                    {wd}
-
-                  </div>
-
-                </div>
-
-              ))}
-
-            </div>
-
-
-
-          {/* Calendar grid ULTRA WOW 3D */}
-
-          <div className="grid grid-cols-7 gap-3">
-
-            {/* Mesaj profesional când nu există date pentru luna selectată */}
-            {!hasDataForMonth && !loading && !loadingHorarioMulticentro && (
-              <div className="col-span-7 text-center py-16">
-                <div className="relative inline-block mb-6">
-                  <div className="absolute inset-0 bg-amber-400 rounded-full blur-lg opacity-20 animate-pulse"></div>
-                  <div 
-                    className="relative w-24 h-24 rounded-full flex items-center justify-center shadow-2xl"
-                    style={{
-                      background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                      boxShadow: '0 15px 30px rgba(245, 158, 11, 0.4)'
-                    }}
-                  >
-                    <span className="text-5xl">⏳</span>
-                  </div>
-                </div>
-                <h3 className="text-2xl font-bold text-gray-800 mb-3">
-                  Horario pendiente de generación
-                </h3>
-                <p className="text-gray-600 text-lg max-w-2xl mx-auto leading-relaxed">
-                  Tu horario para este mes está en proceso de generación.
-                  <br />
-                  Por favor, contacta con tu supervisor o el departamento de recursos humanos 
-                  si necesitas información sobre tu horario.
-                </p>
-                <p className="text-gray-500 text-sm mt-4">
-                  Te notificaremos cuando esté disponible.
-                </p>
-              </div>
-            )}
-
-            {/* Calendar normal când există date */}
-            {hasDataForMonth && calendarCells.length === 0 && (
-
-              <div className="col-span-7 text-center py-12">
-
-                <div 
-
-                  className="relative inline-block mb-6"
-
-                >
-
-                  <div className="absolute inset-0 bg-gray-400 rounded-full blur-lg opacity-30 animate-pulse"></div>
-
-                  <div 
-
-                    className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-2xl"
-
-                    style={{
-
-                      background: 'linear-gradient(135deg, #9ca3af 0%, #6b7280 100%)',
-
-                      boxShadow: '0 15px 30px rgba(156, 163, 175, 0.4)'
-
-                    }}
-
-                  >
-
-                    <span className="text-5xl">📅</span>
-
-                  </div>
-
-                </div>
-
-                <p className="text-gray-700 font-bold text-lg">No hay datos para este mes</p>
-
-              </div>
-
-            )}
-
-            {hasDataForMonth && calendarCells.length > 0 && (
-
-              calendarCells.map((cell, idx) => {
-
-                if (!cell) {
-
-                  return <div key={idx} className="min-h-[100px]"></div>;
-
-                }
-
-                
-
-                return (
-
-                  <CalendarDayCell
-
-                    key={idx}
-
-                    cell={cell}
-
-                    selectedLunaNorm={selectedLunaNorm}
-
-                    ziSelectata={ziSelectata}
-
-                    handleResolveAlert={handleResolveAlert}
-
-                    handleIndicarMotivo={handleIndicarMotivo}
-
-                    regularizacionesConfirmadas={regularizacionesConfirmadas}
-
-                    loadingFichajes={loadingFichajes}
-
-                    loadingRegularizaciones={loadingRegularizaciones}
-
-                    fichajes={fichajes}
-
-                    horariosMulticentroLista={horariosMulticentroLista}
-
-                  />
-
-                );
-
-              })
-
-            )}
-
-          </div>
-
-          
-
-          {/* Nota informativa ULTRA WOW modernizada */}
-
-          <div 
-
-            className="relative group/note overflow-hidden mt-6"
-
-            style={{
-
-              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.1) 100%)',
-
-              backdropFilter: 'blur(10px)',
-
-              borderRadius: '1rem',
-
-              border: '2px solid rgba(59, 130, 246, 0.3)',
-
-              boxShadow: '0 6px 18px rgba(59, 130, 246, 0.15)',
-
-              padding: '1rem'
-
-            }}
-
-          >
-
-            {/* Glow animado en hover */}
-
-            <div className="absolute inset-0 rounded-2xl bg-blue-400 opacity-0 group-hover/note:opacity-15 blur-lg transition-opacity duration-300"></div>
-
-            
-
-            <div className="relative flex items-start gap-3">
-
-              <div 
-
-                className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center shadow-md"
-
-                style={{
-
-                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-
-                  boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
-
-                }}
-
-              >
-
-                <span className="text-white text-xl">ℹ️</span>
-
-              </div>
-
-              <div className="flex-1">
-
-                <div className="text-sm text-blue-900 font-semibold leading-relaxed">
-
-                  <span className="font-black text-blue-700">Nota:</span> Los días con <span className="inline-block animate-bounce">⚠️</span> necesitan fichajes completos. Solo puedes modificar el <span className="font-black text-blue-700">día actual</span>.
-
-                </div>
-
-              </div>
-
-            </div>
-
-          </div>
-
-          </div>
-
-        </div>
-
-
-
-        {/* Detalii registre moderne */}
-
-        {ziSelectata && ziSelectata.day && (
-
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 mb-8">
-
-            <div className="flex items-center gap-4 mb-6">
-
-              <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
-
-                <span className="text-white text-xl">📊</span>
-
-              </div>
-
-              <div>
-
-                <h4 className="text-2xl font-bold text-gray-800">
-
-                  Registros para el día {ziSelectata.day}
-
-                </h4>
-
-                <p className="text-gray-500">
-
-                  {ziSelectata.tip || '—'} • {registreZi.length} fichajes
-
-                </p>
-
-              </div>
-
-            </div>
-
-            
-
-            {registreZi.length === 0 ? (
-
-              <div className="text-center py-8">
-
-                <div className="text-gray-400 text-6xl mb-4">📝</div>
-
-                <p className="text-gray-600 font-medium">No hay fichajes para este día</p>
-
-              </div>
-
-            ) : (
-
-              <div className="space-y-3">
-
-                {registreZi.map((r, i) => (
-
-                  <div key={i} className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-
-                    <div className="flex items-center justify-between">
-
-                      <div className="flex items-center gap-4">
-
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-
-                          r["TIPO"] === 'Entrada' 
-
-                            ? 'bg-green-100 text-green-600' 
-
-                            : 'bg-red-100 text-red-600'
-
-                        }`}>
-
-                          <span className="text-lg">
-
-                            {r["TIPO"] === 'Entrada' ? '⬇️' : '⬆️'}
-
-                          </span>
-
-                        </div>
-
-                        <div>
-
-                          <div className="font-bold text-gray-800">
-
-                            {r["TIPO"]} • {r["HORA"]}
-
-                          </div>
-
-                          <div className="text-sm text-gray-600">
-
-                            {r["DIRECCION"]}
-
-                          </div>
-
-                        </div>
-
-                      </div>
-
-                      <div className="text-right">
-
-                        <div className="text-xs text-gray-500 mb-1">
-
-                          {r["MODIFICADO_POR"]}
-
-                        </div>
-
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-
-                          r["ESTADO"] === 'PENDIENTE' 
-
-                            ? 'bg-yellow-100 text-yellow-800' 
-
-                            : 'bg-green-100 text-green-800'
-
-                        }`}>
-
-                          {r["ESTADO"] === 'PENDIENTE' ? 'Pendiente' : 'Aprobado'}
-
-                        </span>
-
-                      </div>
-
-                    </div>
-
-                  </div>
-
-                ))}
-
-              </div>
-
-            )}
-
-          </div>
-
-        )}
-
-
-
-        {/* Fichaje în așteptare moderne */}
-
-        {pendingFichajes.length > 0 && (
-
-          <div className="bg-gradient-to-r from-yellow-400 to-orange-400 rounded-2xl p-8 mb-8 shadow-lg">
-
-            <div className="flex items-center gap-4 mb-6">
-
-              <div className="w-12 h-12 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-
-                <span className="text-white text-xl">⏳</span>
-
-              </div>
-
-              <div>
-
-                <h4 className="text-2xl font-bold text-white">
-
-                  Fichajes pendientes
-
-                </h4>
-
-                <p className="text-white text-opacity-90">
-
-                  {pendingFichajes.length} fichajes pendientes de aprobación
-
-                </p>
-
-              </div>
-
-            </div>
-
-            
-
-            <div className="space-y-3">
-
-              {pendingFichajes.map((f, i) => (
-
-                <div key={i} className="bg-white bg-opacity-20 rounded-xl p-4 border border-white border-opacity-30">
-
-                  <div className="flex items-center justify-between">
-
-                    <div className="flex items-center gap-4">
-
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-
-                        f.TIPO === 'Entrada' 
-
-                          ? 'bg-green-100 text-green-600' 
-
-                          : 'bg-red-100 text-red-600'
-
-                      }`}>
-
-                        <span className="text-lg">
-
-                          {f.TIPO === 'Entrada' ? '⬇️' : '⬆️'}
-
-                        </span>
-
-                      </div>
-
-                      <div>
-
-                        <div className="font-bold text-white">
-
-                          {f.TIPO} • {f.HORA} • {f.FECHA}
-
-                        </div>
-
-                        <div className="text-white text-opacity-80 text-sm">
-
-                          {f.DIRECCION}
-
-                        </div>
-
-                      </div>
-
-                    </div>
-
-                    <div className="text-right">
-
-                      <div className="text-white text-opacity-80 text-xs mb-1">
-
-                        {f.MODIFICADO_POR}
-
-                      </div>
-
-                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-white bg-opacity-20 text-white">
-
-                        Pendiente
-
-                      </span>
-
-                    </div>
-
-                  </div>
-
-                </div>
-
-              ))}
-
-            </div>
-
-          </div>
-
-        )}
-
-      </div>
-
-
-
-      {/* Modal pentru rezolvarea alertelor */}
-
-      <Modal
-
-        isOpen={showFichajeModal}
-
-        onClose={() => setShowFichajeModal(false)}
-
-        title={`Resolver alerta para el día ${selectedDayForFichaje?.day}`}
-
-      >
-
-        <div className="space-y-4">
-
-          <div>
-
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-
-              Tipo de fichaje
-
-            </label>
-
-            <select
-
-              value={fichajeType}
-
-              onChange={(e) => setFichajeType(e.target.value)}
-
-              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-
-            >
-
-              <option value="Entrada">Entrada</option>
-
-              <option value="Salida">Salida</option>
-
-            </select>
-
-          </div>
-
-
-
-          <div>
-
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-
-              Hora
-
-            </label>
-
-            <Input
-
-              id="fichaje-time"
-              name="fichaje-time"
-              type="time"
-
-              value={fichajeTime}
-
-              onChange={(e) => setFichajeTime(e.target.value)}
-
-              placeholder="HH:MM"
-
-              required
-
-            />
-
-          </div>
-
-
-
-          <div>
-
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-
-              Dirección
-
-            </label>
-
-            <div className="flex gap-2">
-
-              <Input
-
-                id="fichaje-address"
-                name="fichaje-address"
-                type="text"
-
-                value={fichajeAddress}
-
-                onChange={(e) => setFichajeAddress(e.target.value)}
-
-                placeholder="Introduce la dirección o usa la ubicación automática"
-
-                className="flex-1"
-
-              />
-
-              <Button
-
-                onClick={getCurrentLocation}
-
-                variant="outline"
-
-                className="px-4 py-2"
-
-                title="Obtener ubicación automática"
-
-              >
-
-                📍
-
-              </Button>
-
-            </div>
-
-          </div>
-
-
-
-          <div className="flex gap-3 pt-4">
-
-            <Button
-
-              onClick={handleSubmitFichaje}
-
-              disabled={submittingFichaje || !fichajeTime}
-
-              className="flex-1"
-
-            >
-
-              {submittingFichaje ? 'Guardando...' : 'Guardar fichaje'}
-
-            </Button>
-
-            
-
-            <Button
-
-              onClick={handleAddAnotherFichaje}
-
-              variant="outline"
-
-              className="flex-1"
-
-            >
-
-              Añadir otro fichaje
-
-            </Button>
-
-            
-
-            <Button
-
-              onClick={() => setShowFichajeModal(false)}
-
-              variant="outline"
-
-              className="flex-1"
-
-            >
-
-              Cancelar
-
-            </Button>
-
-          </div>
-
-
-
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-
-            <p className="text-yellow-800 text-sm">
-
-              <strong>Nota:</strong> Los fichajes registrados estarán pendientes de aprobación por el manager/supervisor.
-
-            </p>
-
-          </div>
-
-        </div>
-
-      </Modal>
-
-      {/* Modal pentru "Indicar motivo" (zile trecute fără fichajes) */}
-      <DeclararNoPunchModal
-        isOpen={showNoPunchModal}
-        onClose={() => {
-          setShowNoPunchModal(false);
-          setSelectedDayForNoPunch(null);
-        }}
-        onConfirm={async () => {
-          setShowNoPunchModal(false);
-          setSelectedDayForNoPunch(null);
-          // Reîncarcă fichajes pentru a actualiza UI-ul
-          // Poți adăuga un callback onRefresh dacă este necesar
-        }}
-        data={selectedDayForNoPunch || {}}
-      />
-
-    </div>
-
+    <CuadrantesEmpleadoShell
+      identidadDisplay={identidadDisplay}
+      authUser={authUser}
+      userData={userData}
+      cuadrantesUser={cuadrantesUser}
+      cuadrant={cuadrant}
+      horarioMulticentroAsignado={horarioMulticentroAsignado}
+      horarioAsignado={horarioAsignado}
+      selectedLunaNorm={selectedLunaNorm}
+      selectedLuna={selectedLuna}
+      setSelectedLuna={setSelectedLuna}
+      luniDisponibile={luniDisponibile}
+      formatMonthName={formatMonthName}
+      currentDayHorarioMulticentro={currentDayHorarioMulticentro}
+      currentDayScheduleFromHorarioMulticentro={currentDayScheduleFromHorarioMulticentro}
+      currentBaja={currentBaja}
+      erori={erori}
+      totalOreMunca={totalOreMunca}
+      showAvisoModal={showAvisoModal}
+      handleCerrarAviso={handleCerrarAviso}
+      handleAceptarAviso={handleAceptarAviso}
+      hasDataForMonth={hasDataForMonth}
+      loading={loading}
+      loadingHorarioMulticentro={loadingHorarioMulticentro}
+      calendarCells={calendarCells}
+      ziSelectata={ziSelectata}
+      registreZi={registreZi}
+      pendingFichajes={pendingFichajes}
+      handleResolveAlert={handleResolveAlert}
+      handleIndicarMotivo={handleIndicarMotivo}
+      regularizacionesConfirmadas={regularizacionesConfirmadas}
+      loadingFichajes={loadingFichajes}
+      loadingRegularizaciones={loadingRegularizaciones}
+      fichajes={fichajes}
+      horariosMulticentroLista={horariosMulticentroLista}
+      todayCell={todayCell}
+      isCurrentMonthSelected={isCurrentMonthSelected}
+      showFichajeModal={showFichajeModal}
+      setShowFichajeModal={setShowFichajeModal}
+      selectedDayForFichaje={selectedDayForFichaje}
+      fichajeType={fichajeType}
+      setFichajeType={setFichajeType}
+      fichajeTime={fichajeTime}
+      setFichajeTime={setFichajeTime}
+      fichajeAddress={fichajeAddress}
+      setFichajeAddress={setFichajeAddress}
+      submittingFichaje={submittingFichaje}
+      handleSubmitFichaje={handleSubmitFichaje}
+      handleAddAnotherFichaje={handleAddAnotherFichaje}
+      getCurrentLocation={getCurrentLocation}
+      showNoPunchModal={showNoPunchModal}
+      setShowNoPunchModal={setShowNoPunchModal}
+      selectedDayForNoPunch={selectedDayForNoPunch}
+      setSelectedDayForNoPunch={setSelectedDayForNoPunch}
+    />
   );
 
-} 
+}

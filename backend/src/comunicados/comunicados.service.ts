@@ -317,15 +317,10 @@ export class ComunicadosService {
         const put = await this.comunicadosStorage.putArchivo(
           data.archivo,
           id,
-          data.nombre_archivo ||
-            existing.nombre_archivo ||
-            `comunicado_${id}`,
+          data.nombre_archivo || existing.nombre_archivo || `comunicado_${id}`,
           data.mime_hint,
         );
-        if (
-          existing.storage_key &&
-          existing.storage_key !== put.storage_key
-        ) {
+        if (existing.storage_key && existing.storage_key !== put.storage_key) {
           oldStorageKeyToDelete = existing.storage_key;
         }
         updateData.storage_key = put.storage_key;

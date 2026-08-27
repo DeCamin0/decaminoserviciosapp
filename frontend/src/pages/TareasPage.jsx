@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { routes } from '../utils/routes';
-import Back3DButton from '../components/Back3DButton.jsx';
-import { Button, Modal } from '../components/ui';
+import { PageHeader, AlertBanner, Modal } from '../components/ui';
+import { RefreshCw, Eye, XCircle, RotateCcw } from 'lucide-react';
 import activityLogger from '../utils/activityLogger';
 import { useAuth } from '../contexts/AuthContextBase';
 
@@ -44,27 +45,27 @@ const PRIORIDAD_LABEL = {
   urgente: 'Urgente',
 };
 
-function estadoClass(estado) {
+function estadoStatusClass(estado) {
   switch (estado) {
     case 'hecha':
-      return 'bg-emerald-100 text-emerald-800';
+      return 'solicitud-status--ok';
     case 'en_curso':
-      return 'bg-sky-100 text-sky-800';
+      return 'solicitud-status--neutral';
     case 'cancelada':
-      return 'bg-gray-200 text-gray-600';
+      return 'solicitud-status--anulada';
     default:
-      return 'bg-amber-100 text-amber-900';
+      return 'solicitud-status--pendiente';
   }
 }
 
-function prioridadClass(p) {
+function prioridadTextClass(p) {
   switch (p) {
     case 'urgente':
-      return 'bg-red-100 text-red-800';
+      return 'tareas-priority--urgente';
     case 'alta':
-      return 'bg-orange-100 text-orange-800';
+      return 'tareas-priority--alta';
     default:
-      return 'bg-slate-100 text-slate-700';
+      return '';
   }
 }
 
@@ -136,214 +137,222 @@ export default function TareasPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white pb-24">
-      <div className="max-w-4xl mx-auto px-4 pt-4">
-        <div className="flex items-center gap-3 mb-6">
-          <Back3DButton />
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Tareas</h1>
-            <p className="text-sm text-slate-600">
-              Seguimiento de solicitudes asignadas al equipo
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-3 mb-4">
-          <input
-            type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar título, centro, empleado…"
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[var(--primary-color)]"
-          />
-          <select
-            value={estadoFilter}
-            onChange={(e) => setEstadoFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          >
-            <option value="">Todos los estados</option>
-            <option value="pendiente">Pendiente</option>
-            <option value="en_curso">En curso</option>
-            <option value="hecha">Hecha</option>
-            <option value="cancelada">Cancelada</option>
-          </select>
-          <Button variant="secondary" onClick={load} disabled={loading}>
-            Actualizar
-          </Button>
-        </div>
-
-        {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-            {error}
-          </div>
+    <div className="app-page tareas-page">
+      <PageHeader
+        title="Tareas"
+        subtitle="Seguimiento de solicitudes asignadas al equipo"
+        backTo="/inicio"
+        actions={(
+          <button type="button" onClick={load} disabled={loading} className="solicitud-admin-btn" title="Actualizar">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} aria-hidden />
+            <span className="hidden sm:inline">Actualizar</span>
+          </button>
         )}
+      />
 
-        {loading ? (
-          <div className="py-16 text-center text-slate-500">Cargando…</div>
-        ) : tareas.length === 0 ? (
-          <p className="text-center text-slate-500 py-12">No hay tareas con estos filtros.</p>
-        ) : (
-          <ul className="space-y-3">
-            {tareas.map((t) => (
-              <li
-                key={t.id}
-                className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+      <div className="tareas-filter-bar app-card app-card--pad">
+        <input
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Buscar título, centro, empleado…"
+          aria-label="Buscar tareas"
+        />
+        <select value={estadoFilter} onChange={(e) => setEstadoFilter(e.target.value)} aria-label="Filtrar por estado">
+          <option value="">Todos los estados</option>
+          <option value="pendiente">Pendiente</option>
+          <option value="en_curso">En curso</option>
+          <option value="hecha">Hecha</option>
+          <option value="cancelada">Cancelada</option>
+        </select>
+      </div>
+
+      {error && <AlertBanner variant="danger">{error}</AlertBanner>}
+
+      {loading ? (
+        <AlertBanner variant="loading" loading>Cargando tareas...</AlertBanner>
+      ) : tareas.length === 0 ? (
+        <AlertBanner variant="info" title="No hay tareas">No hay tareas con estos filtros.</AlertBanner>
+      ) : (
+        <div className="solicitud-admin-mobile-list">
+          {tareas.map((t) => (
+            <article key={t.id} className="solicitud-admin-mobile-card">
+              <div className="solicitud-admin-mobile-card__head">
+                <div className="min-w-0 flex-1">
                   <button
                     type="button"
-                    className="text-left font-semibold text-slate-900 hover:underline"
+                    className="solicitud-admin-mobile-card__title text-left hover:underline"
                     onClick={() => setDetail(t)}
                   >
                     {t.titulo}
                   </button>
-                  <div className="flex gap-2">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${estadoClass(t.estado)}`}>
-                      {ESTADO_LABEL[t.estado] || t.estado}
-                    </span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${prioridadClass(t.prioridad)}`}>
-                      {PRIORIDAD_LABEL[t.prioridad] || t.prioridad}
-                    </span>
-                  </div>
-                </div>
-                <div className="text-sm text-slate-600 mb-2">
-                  <span className="font-medium">{t.nombre_asignado || t.codigo_asignado}</span>
-                  {(t.centro || t.zona) && (
-                    <span className="text-slate-400"> · {[t.centro, t.zona].filter(Boolean).join(' · ')}</span>
+                  <p className="text-xs text-gray-500 mt-1">
+                    <span className="font-medium">{t.nombre_asignado || t.codigo_asignado}</span>
+                    {(t.centro || t.zona) && (
+                      <span> · {[t.centro, t.zona].filter(Boolean).join(' · ')}</span>
+                    )}
+                  </p>
+                  {t.descripcion && (
+                    <p className="text-xs text-gray-500 line-clamp-2 mt-1">{t.descripcion}</p>
                   )}
                 </div>
-                {t.descripcion && (
-                  <p className="text-sm text-slate-500 line-clamp-2 mb-3">{t.descripcion}</p>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className={`solicitud-status ${estadoStatusClass(t.estado)}`}>
+                    {ESTADO_LABEL[t.estado] || t.estado}
+                  </span>
+                  {t.prioridad && t.prioridad !== 'normal' && (
+                    <span className={`text-xs ${prioridadTextClass(t.prioridad)}`}>
+                      {PRIORIDAD_LABEL[t.prioridad]}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="solicitud-admin-toolbar documentos-actions mt-2 flex-wrap">
+                {t.estado !== 'hecha' && t.estado !== 'cancelada' && (
+                  <button
+                    type="button"
+                    onClick={() => patchEstado(t.id, 'cancelada')}
+                    disabled={busyId === t.id}
+                    className="solicitud-admin-btn"
+                  >
+                    <XCircle className="w-4 h-4" aria-hidden />
+                    <span>Cancelar</span>
+                  </button>
                 )}
-                <div className="flex flex-wrap gap-2">
-                  {t.estado !== 'hecha' && t.estado !== 'cancelada' && (
-                    <Button
-                      variant="secondary"
-                      onClick={() => patchEstado(t.id, 'cancelada')}
-                      disabled={busyId === t.id}
-                      loading={busyId === t.id}
-                    >
-                      Cancelar
-                    </Button>
-                  )}
-                  {t.estado === 'cancelada' && (
-                    <Button
-                      variant="secondary"
-                      onClick={() => patchEstado(t.id, 'pendiente')}
-                      disabled={busyId === t.id}
-                    >
-                      Reabrir
-                    </Button>
-                  )}
-                  <Button variant="primary" onClick={() => setDetail(t)}>
-                    Ver detalle
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+                {t.estado === 'cancelada' && (
+                  <button
+                    type="button"
+                    onClick={() => patchEstado(t.id, 'pendiente')}
+                    disabled={busyId === t.id}
+                    className="solicitud-admin-btn"
+                  >
+                    <RotateCcw className="w-4 h-4" aria-hidden />
+                    <span>Reabrir</span>
+                  </button>
+                )}
+                <button type="button" onClick={() => setDetail(t)} className="solicitud-admin-btn solicitud-admin-btn--primary">
+                  <Eye className="w-4 h-4" aria-hidden />
+                  <span>Detalle</span>
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
 
-      <Modal
-        isOpen={Boolean(detail)}
-        onClose={() => setDetail(null)}
-        title="Detalle de tarea"
-        size="lg"
-      >
-        {detail && (
-          <div className="space-y-3 text-sm">
-            <h3 className="text-lg font-semibold text-slate-900">{detail.titulo}</h3>
-            <div className="flex flex-wrap gap-2">
-              <span className={`text-xs px-2 py-0.5 rounded-full ${estadoClass(detail.estado)}`}>
-                {ESTADO_LABEL[detail.estado] || detail.estado}
-              </span>
-              <span className={`text-xs px-2 py-0.5 rounded-full ${prioridadClass(detail.prioridad)}`}>
-                {PRIORIDAD_LABEL[detail.prioridad] || detail.prioridad}
-              </span>
-            </div>
-            {detail.descripcion && (
-              <p className="text-slate-700 whitespace-pre-wrap">{detail.descripcion}</p>
-            )}
-            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-600">
-              <div>
-                <dt className="text-xs uppercase text-slate-400">Asignado</dt>
-                <dd>{detail.nombre_asignado || detail.codigo_asignado}</dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase text-slate-400">Creado por</dt>
-                <dd>{detail.nombre_creador || detail.codigo_creador}</dd>
-              </div>
-              {(detail.centro || detail.zona) && (
-                <div>
-                  <dt className="text-xs uppercase text-slate-400">Ubicación</dt>
-                  <dd>{[detail.centro, detail.zona].filter(Boolean).join(' · ')}</dd>
-                </div>
-              )}
-              {detail.fecha_limite && (
-                <div>
-                  <dt className="text-xs uppercase text-slate-400">Límite</dt>
-                  <dd>{new Date(detail.fecha_limite).toLocaleString()}</dd>
-                </div>
-              )}
-              {detail.completado_at && (
-                <div>
-                  <dt className="text-xs uppercase text-slate-400">Completado</dt>
-                  <dd>{new Date(detail.completado_at).toLocaleString()}</dd>
-                </div>
-              )}
-            </dl>
-            {detail.nota_completado && (
-              <div>
-                <p className="text-xs uppercase text-slate-400">Nota de cierre</p>
-                <p className="text-slate-700">{detail.nota_completado}</p>
-              </div>
-            )}
-            {detail.fotos?.length > 0 && (
-              <div>
-                <p className="text-xs uppercase text-slate-400 mb-2">Fotos</p>
-                <div className="flex flex-wrap gap-2">
-                  {detail.fotos.map((f) => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      onClick={() => openFoto(detail.id, f.id)}
-                      className="text-xs px-2 py-1 rounded bg-slate-50 border border-slate-200 text-sky-700 hover:bg-sky-50"
-                    >
-                      {f.nombre_original || `Foto ${f.id}`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="flex justify-end gap-2 pt-2">
+      {typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={Boolean(detail)}
+          onClose={() => setDetail(null)}
+          title="Detalle de tarea"
+          showCloseButton={false}
+          size="lg"
+          className="app-modal--form"
+          footer={detail ? (
+            <div className="app-modal__actions flex-wrap">
               {detail.estado !== 'cancelada' && detail.estado !== 'hecha' && (
-                <Button
-                  variant="secondary"
+                <button
+                  type="button"
                   onClick={() => patchEstado(detail.id, 'cancelada')}
                   disabled={busyId === detail.id}
+                  className="app-modal__btn"
                 >
                   Cancelar tarea
-                </Button>
+                </button>
               )}
-              <Button variant="primary" onClick={() => setDetail(null)}>
+              <button type="button" onClick={() => setDetail(null)} className="app-modal__btn app-modal__btn--ok">
                 Cerrar
-              </Button>
+              </button>
             </div>
-          </div>
-        )}
-      </Modal>
+          ) : null}
+        >
+          {detail && (
+            <div className="space-y-4">
+              <h3 className="text-base font-semibold text-gray-900 dark:text-white">{detail.titulo}</h3>
+              <div className="flex flex-wrap gap-2">
+                <span className={`solicitud-status ${estadoStatusClass(detail.estado)}`}>
+                  {ESTADO_LABEL[detail.estado] || detail.estado}
+                </span>
+                {detail.prioridad && (
+                  <span className={`text-xs ${prioridadTextClass(detail.prioridad)}`}>
+                    {PRIORIDAD_LABEL[detail.prioridad]}
+                  </span>
+                )}
+              </div>
+              {detail.descripcion && (
+                <p className="app-modal__meta whitespace-pre-wrap">{detail.descripcion}</p>
+              )}
+              <dl className="solicitud-admin-kv">
+                <div>
+                  <dt>Asignado</dt>
+                  <dd>{detail.nombre_asignado || detail.codigo_asignado}</dd>
+                </div>
+                <div>
+                  <dt>Creado por</dt>
+                  <dd>{detail.nombre_creador || detail.codigo_creador}</dd>
+                </div>
+                {(detail.centro || detail.zona) && (
+                  <div>
+                    <dt>Ubicación</dt>
+                    <dd>{[detail.centro, detail.zona].filter(Boolean).join(' · ')}</dd>
+                  </div>
+                )}
+                {detail.fecha_limite && (
+                  <div>
+                    <dt>Límite</dt>
+                    <dd>{new Date(detail.fecha_limite).toLocaleString()}</dd>
+                  </div>
+                )}
+                {detail.completado_at && (
+                  <div>
+                    <dt>Completado</dt>
+                    <dd>{new Date(detail.completado_at).toLocaleString()}</dd>
+                  </div>
+                )}
+              </dl>
+              {detail.nota_completado && (
+                <div className="app-modal__field">
+                  <span className="app-modal__label">Nota de cierre</span>
+                  <p className="app-modal__meta">{detail.nota_completado}</p>
+                </div>
+              )}
+              {detail.fotos?.length > 0 && (
+                <div>
+                  <p className="app-modal__label">Fotos</p>
+                  <div className="solicitud-admin-toolbar flex-wrap mt-1">
+                    {detail.fotos.map((f) => (
+                      <button key={f.id} type="button" onClick={() => openFoto(detail.id, f.id)} className="solicitud-admin-btn">
+                        <Eye className="w-4 h-4" aria-hidden />
+                        <span className="truncate max-w-[8rem]">{f.nombre_original || `Foto ${f.id}`}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </Modal>,
+        document.body
+      )}
 
-      <Modal
-        isOpen={Boolean(previewUrl)}
-        onClose={() => setPreviewUrl(null)}
-        title="Foto"
-        size="lg"
-      >
-        {previewUrl && (
-          <img src={previewUrl} alt="Evidencia" className="max-h-[70vh] w-full object-contain rounded-lg" />
-        )}
-      </Modal>
+      {typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={Boolean(previewUrl)}
+          onClose={() => setPreviewUrl(null)}
+          title="Foto"
+          showCloseButton={false}
+          size="lg"
+          className="app-modal--preview"
+          footer={(
+            <button type="button" onClick={() => setPreviewUrl(null)} className="app-modal__btn">Cerrar</button>
+          )}
+        >
+          {previewUrl && (
+            <img src={previewUrl} alt="Evidencia" className="max-h-[70vh] w-full object-contain rounded-lg" />
+          )}
+        </Modal>,
+        document.body
+      )}
     </div>
   );
 }

@@ -160,10 +160,7 @@ export class AuthController {
    */
   @Post('impersonate/:codigo')
   @UseGuards(JwtAuthGuard)
-  async impersonate(
-    @CurrentUser() user: any,
-    @Param('codigo') codigo: string,
-  ) {
+  async impersonate(@CurrentUser() user: any, @Param('codigo') codigo: string) {
     try {
       if (!codigo) {
         throw new HttpException(
@@ -176,7 +173,8 @@ export class AuthController {
         throw new HttpException(
           {
             success: false,
-            message: 'Ya estás en una sesión de impersonación. Vuelve a tu cuenta primero.',
+            message:
+              'Ya estás en una sesión de impersonación. Vuelve a tu cuenta primero.',
           },
           HttpStatus.FORBIDDEN,
         );
@@ -193,9 +191,7 @@ export class AuthController {
         grupo === 'Supervisor' ||
         grupo === 'Developer' ||
         grupo === 'Admin';
-      const isDeveloper =
-        role === 'DEVELOPER' ||
-        grupo === 'Developer';
+      const isDeveloper = role === 'DEVELOPER' || grupo === 'Developer';
 
       const actorCodigo = user?.userId || user?.CODIGO;
       if (!actorCodigo) {
@@ -258,9 +254,7 @@ export class AuthController {
         );
       }
 
-      this.logger.log(
-        `🔐 Impersonation started: ${actorCodigo} → ${codigo}`,
-      );
+      this.logger.log(`🔐 Impersonation started: ${actorCodigo} → ${codigo}`);
 
       return {
         success: true,

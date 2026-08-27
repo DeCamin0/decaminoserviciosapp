@@ -8,6 +8,10 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  createR2RequestHandler,
+  resolveEdgeFallbackIps,
+} from './r2-connect.util';
 import type { StorageProvider } from './storage-provider';
 import type {
   GetObjectResult,
@@ -38,6 +42,13 @@ export class R2Provider implements StorageProvider {
         'R2 client cannot be created: missing R2_ENDPOINT / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY',
       );
     }
+    const edgeIps = resolveEdgeFallbackIps(cfg.connectViaEdgeIps);
+    const requestHandler = createR2RequestHandler(cfg.endpoint, edgeIps);
+    if (edgeIps.length) {
+      this.logger.log(
+        `R2 connect via Cloudflare edge fallback (${edgeIps.join(', ')})`,
+      );
+    }
     this.client = new S3Client({
       region: cfg.region || 'auto',
       endpoint: cfg.endpoint,
@@ -46,6 +57,7 @@ export class R2Provider implements StorageProvider {
         secretAccessKey: cfg.secretAccessKey,
       },
       forcePathStyle: true,
+      ...(requestHandler ? { requestHandler } : {}),
     });
     return this.client;
   }

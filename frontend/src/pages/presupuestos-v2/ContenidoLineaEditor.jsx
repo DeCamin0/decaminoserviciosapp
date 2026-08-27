@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 function emptyContenido() {
   return {
@@ -195,14 +195,16 @@ export function ContenidoLineaEditor({
   onSave,
   onRestore,
 }) {
+  const valueKey = JSON.stringify(value ?? {});
   const [local, setLocal] = useState(() => ({
     ...emptyContenido(),
     ...(value || {}),
   }));
-
-  useEffect(() => {
+  const [syncKey, setSyncKey] = useState(valueKey);
+  if (valueKey !== syncKey) {
+    setSyncKey(valueKey);
     setLocal({ ...emptyContenido(), ...(value || {}) });
-  }, [value]);
+  }
 
   const set = (patch) => setLocal((prev) => ({ ...prev, ...patch }));
 

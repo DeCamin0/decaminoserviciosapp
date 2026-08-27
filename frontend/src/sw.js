@@ -131,30 +131,50 @@ self.addEventListener('push', (event) => {
 // Gestionează click-ul pe notificare
 self.addEventListener('notificationclick', (event) => {
   console.log('[SW] Notification clicked:', event);
-  
+
   event.notification.close();
 
-  // Deschide aplicația
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+    (async () => {
       const basePath = self.location.pathname.replace(/\/sw\.js$/, '') || '/';
-      
-      // Dacă există deja o fereastră deschisă, o focusează
+      const normalizedBase = basePath.endsWith('/') ? basePath : `${basePath}/`;
+      const urlFromData =
+        event.notification.data?.url ||
+        event.notification.data?.data?.url ||
+        '/';
+      const path = String(urlFromData).startsWith('/')
+        ? String(urlFromData)
+        : `/${urlFromData}`;
+      const urlToOpen = `${self.location.origin}${normalizedBase.replace(/\/$/, '')}${path}`;
+
+      const clientList = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      });
+
       for (const client of clientList) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
-          return client.focus();
+          await client.focus();
+          if (typeof client.navigate === 'function') {
+            try {
+              await client.navigate(urlToOpen);
+              return;
+            } catch {
+              // fall through to postMessage
+            }
+          }
+          client.postMessage({
+            type: 'NOTIFICATION_NAVIGATE',
+            url: path,
+          });
+          return;
         }
       }
-      
-      // Dacă nu există, deschide o fereastră nouă
-      // Verifică URL din data sau din notification direct
-      const urlFromData = event.notification.data?.url;
-      const urlToOpen = urlFromData
-        ? `${self.location.origin}${basePath}${urlFromData.replace(/^\//, '')}`
-        : `${self.location.origin}${basePath}`;
-      
-      return self.clients.openWindow(urlToOpen);
-    })
+
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(urlToOpen);
+      }
+    })(),
   );
 });
 

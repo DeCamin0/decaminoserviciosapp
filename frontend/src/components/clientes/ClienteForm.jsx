@@ -143,9 +143,9 @@ export default function ClienteForm({ cliente = null, onSubmit, onCancel, tipo =
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Información básica */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <form onSubmit={handleSubmit} className="clientes-form">
+      <div className="clientes-form__section-title">Información básica</div>
+      <div className="clientes-form__grid">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Tipo
@@ -207,10 +207,8 @@ export default function ClienteForm({ cliente = null, onSubmit, onCancel, tipo =
         </div>
       </div>
 
-      {/* Contacto */}
-      <div className="border-t border-gray-200 pt-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Información de contacto</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="clientes-form__section-title">Información de contacto</div>
+      <div className="clientes-form__grid">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Teléfono
@@ -298,12 +296,9 @@ export default function ClienteForm({ cliente = null, onSubmit, onCancel, tipo =
             />
           </div>
         </div>
-      </div>
 
-      {/* Dirección */}
-      <div className="border-t border-gray-200 pt-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Dirección</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="clientes-form__section-title">Dirección</div>
+      <div className="clientes-form__grid">
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Dirección completa
@@ -409,12 +404,9 @@ export default function ClienteForm({ cliente = null, onSubmit, onCancel, tipo =
             />
           </div>
         </div>
-      </div>
 
-      {/* Otra información */}
-      <div className="border-t border-gray-200 pt-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Otra información</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="clientes-form__section-title">Otra información</div>
+      <div className="clientes-form__grid">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Estado
@@ -495,12 +487,12 @@ export default function ClienteForm({ cliente = null, onSubmit, onCancel, tipo =
             )}
             {formData.servicio_entrega === 'Servicio 24 horas' && (
               <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
-                ✓ Servicio 24 horas seleccionado
+                Servicio 24 horas seleccionado
               </div>
             )}
             {formData.servicio_entrega === 'Servicio 12 horas' && (
               <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-700">
-                ✓ Servicio 12 horas seleccionado
+                Servicio 12 horas seleccionado
               </div>
             )}
             <p className="text-xs text-gray-500 mt-1">Se usará en Excel para el campo SERVICIO</p>
@@ -529,10 +521,8 @@ export default function ClienteForm({ cliente = null, onSubmit, onCancel, tipo =
             />
           </div>
         </div>
-      </div>
 
-      {/* Botones */}
-      <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
+      <div className="clientes-form__footer">
         <Button
           type="button"
           onClick={onCancel}
@@ -543,7 +533,7 @@ export default function ClienteForm({ cliente = null, onSubmit, onCancel, tipo =
         <Button
           type="submit"
           disabled={submitting}
-          className="bg-red-600 hover:bg-red-700 text-white"
+          variant="primary"
         >
           {submitting ? 'Guardando...' : (cliente ? 'Actualizar' : 'Añadir')}
         </Button>

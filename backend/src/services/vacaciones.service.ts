@@ -491,9 +491,7 @@ export class VacacionesService {
           : convenio?.dias_vacaciones_anuales || 0;
 
       const diasAsuntosPropiosAnuales =
-        asuntosPersonalizados !== null
-          ? asuntosPersonalizados
-          : diasApEmpresa;
+        asuntosPersonalizados !== null ? asuntosPersonalizados : diasApEmpresa;
 
       if (!convenio && vacacionesPersonalizadas === null) {
         // Sin convenio: vacaciones 0; AP sigue la config global (o personalizado)

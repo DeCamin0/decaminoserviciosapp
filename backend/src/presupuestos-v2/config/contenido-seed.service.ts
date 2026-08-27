@@ -135,7 +135,11 @@ export class ContenidoSeedService {
           );
         }
       }
-      if (codigo === 'auxiliares' && tareas.length < 6 && !tareas_auxiliares.length) {
+      if (
+        codigo === 'auxiliares' &&
+        tareas.length < 6 &&
+        !tareas_auxiliares.length
+      ) {
         tareas = (auxOp?.body as any)?.items || [];
       }
 

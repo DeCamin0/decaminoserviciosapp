@@ -46,7 +46,8 @@ function resolveFetchTimeoutMs(url, options = {}) {
 async function fetchWithTimeout(url, options = {}, timeoutMs = API_FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  const { timeoutMs: _timeoutMs, signal: outerSignal, ...fetchOptions } = options;
+  const { signal: outerSignal, ...fetchOptions } = options;
+  delete fetchOptions.timeoutMs;
   if (outerSignal) {
     if (outerSignal.aborted) controller.abort();
     else outerSignal.addEventListener('abort', () => controller.abort(), { once: true });

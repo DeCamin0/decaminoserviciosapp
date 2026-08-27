@@ -1931,9 +1931,9 @@ const HorasTrabajadas: React.FC<HorasTrabajadasProps> = ({ empleadoId, soloEmple
   };
 
   return (
-    <div style={{ padding: isMobile ? '8px' : '24px', display: 'flex', flexDirection: 'column', gap: isMobile ? '8px' : '16px' }}>
+    <div className="fichaje-panel">
       {/* Header */}
-      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: isMobile ? '12px' : '24px', gap: isMobile ? '12px' : '0' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: isMobile ? '8px' : '12px', gap: isMobile ? '12px' : '0' }}>
         <div>
           <Title level={2} style={{ margin: 0, fontSize: isMobile ? '1rem' : '1.5rem', fontWeight: 600 }}>
             Horas Trabajadas

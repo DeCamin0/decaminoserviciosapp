@@ -35,6 +35,10 @@ import {
   sumDigitalesCobrables,
   digitalesFromBrandConfig,
 } from './digitales.util';
+import {
+  applyDescuentoFidelidadToTotales,
+  clampDescuentoFidelidadPct,
+} from './descuento-fidelidad.util';
 
 type AuthUser = {
   grupo?: string;
@@ -137,10 +141,7 @@ export class EmitirV2Service {
     }
   }
 
-  async refreshClienteDesdeFicha(
-    user: AuthUser,
-    presupuestoId: number,
-  ) {
+  async refreshClienteDesdeFicha(user: AuthUser, presupuestoId: number) {
     const p = await this.prisma.v2Presupuesto.findUnique({
       where: { id: presupuestoId },
     });
@@ -164,7 +165,10 @@ export class EmitirV2Service {
     await this.audit(
       presupuestoId,
       'cliente_refreshed',
-      { previous_fingerprint: prev?.ficha_fingerprint, next_fingerprint: next.ficha_fingerprint },
+      {
+        previous_fingerprint: prev?.ficha_fingerprint,
+        next_fingerprint: next.ficha_fingerprint,
+      },
       this.codigoOf(user),
     );
     return next;
@@ -288,7 +292,8 @@ export class EmitirV2Service {
               codigo_motor: svc.codigo_motor,
               version_motor: line.version_motor,
               inputs_json: (line.inputs_json as Prisma.InputJsonValue) ?? {},
-              resultado_json: (line.resultado_json as Prisma.InputJsonValue) ?? undefined,
+              resultado_json:
+                (line.resultado_json as Prisma.InputJsonValue) ?? undefined,
               params_usados_json:
                 (line.params_usados_json as Prisma.InputJsonValue) ?? undefined,
               calculated_at: line.calculated_at,
@@ -586,17 +591,22 @@ export class EmitirV2Service {
       );
       const digitalesResolved = resolveAllDigitales(digitalesSnap);
       const digCob = sumDigitalesCobrables(digitalesSnap);
+      const dtoPct = clampDescuentoFidelidadPct(
+        (pre as any).descuento_fidelidad_pct,
+      );
+      const fidelidad = applyDescuentoFidelidadToTotales(freshTotales, dtoPct);
       // Digitals with 100% discount do not enter economic totals.
+      // Fidelidad applies to service offer totals only (not digitales).
       const totalesConDigitales = {
-        ...freshTotales,
+        ...fidelidad.neto,
         mensualidad_sin_iva:
           Math.round(
-            (freshTotales.mensualidad_sin_iva + digCob.mensualidad_sin_iva) *
+            (fidelidad.neto.mensualidad_sin_iva + digCob.mensualidad_sin_iva) *
               100,
           ) / 100,
         anualidad_sin_iva:
           Math.round(
-            (freshTotales.anualidad_sin_iva + digCob.anualidad_sin_iva) * 100,
+            (fidelidad.neto.anualidad_sin_iva + digCob.anualidad_sin_iva) * 100,
           ) / 100,
       };
 
@@ -627,13 +637,18 @@ export class EmitirV2Service {
           resultado: l.resultado,
           params_usados: l.resultado?.params_usados,
         })),
-        totales: freshTotales,
+        descuento_fidelidad_pct: dtoPct,
+        totales: fidelidad.neto,
+        totales_brutos: fidelidad.bruto,
+        descuento_fidelidad: fidelidad.descuento,
         totales_con_digitales_cobrables: totalesConDigitales,
         totales_documento: {
           ambiguo: totalesDocumento.ambiguo,
-          totales_sin_alternativas: totalesDocumento.totales_sin_alternativas,
+          totales_sin_alternativas: fidelidad.neto,
+          totales_brutos_sin_alternativas: fidelidad.bruto,
           alternativas: totalesDocumento.alternativas,
           digitales_cobrables: digCob,
+          descuento_fidelidad_pct: dtoPct,
         },
         servicios_digitales: digitalesResolved,
         calculated_at_emit: new Date().toISOString(),
@@ -683,17 +698,21 @@ export class EmitirV2Service {
             (snapshotCliente as Prisma.InputJsonValue) ?? Prisma.JsonNull,
           snapshot_company_json: snapshotCompany as Prisma.InputJsonValue,
           snapshot_brand_json: snapshotBrand as Prisma.InputJsonValue,
-          snapshot_serie_json: allocated.snapshot as unknown as Prisma.InputJsonValue,
+          snapshot_serie_json:
+            allocated.snapshot as unknown as Prisma.InputJsonValue,
           snapshot_economico_json:
             snapshotEconomico as unknown as Prisma.InputJsonValue,
           snapshot_servicios_digitales_json:
             digitalesResolved as unknown as Prisma.InputJsonValue,
           totales_emitidos_json: {
-            ...freshTotales,
+            ...fidelidad.neto,
             ambiguo: totalesDocumento.ambiguo,
             alternativas: totalesDocumento.alternativas,
             digitales_cobrables: digCob,
             con_digitales_cobrables: totalesConDigitales,
+            descuento_fidelidad_pct: dtoPct,
+            totales_brutos: fidelidad.bruto,
+            descuento_fidelidad: fidelidad.descuento,
           } as unknown as Prisma.InputJsonValue,
           emitted_at: now,
           emitted_by: actor,
@@ -731,10 +750,7 @@ export class EmitirV2Service {
           brand_id: snapshotBrand.brand_id,
           totales: freshTotales,
           ambiguo: totalesDocumento.ambiguo,
-          opciones_count: lineasCalc.reduce(
-            (n, l) => n + l.opciones.length,
-            0,
-          ),
+          opciones_count: lineasCalc.reduce((n, l) => n + l.opciones.length, 0),
         },
         actor,
         tx,

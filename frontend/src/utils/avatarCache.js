@@ -207,3 +207,46 @@ export const fetchAvatarOnce = async ({ codigo, nombre, endpoint, version }) => 
 // Fallback avatar (SVG data URL) – not cached when fetch fails
 export const DEFAULT_AVATAR =
   'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80"><rect fill="%23e5e7eb" width="80" height="80"/><circle cx="40" cy="30" r="18" fill="%239ca3af"/><path d="M16 72c0-14 10-24 24-24s24 10 24 24" fill="%239ca3af"/></svg>';
+
+export const isRealAvatarUrl = (url) => Boolean(url && url !== DEFAULT_AVATAR);
+
+const resolveAvatarUrlFromItem = (item) => {
+  if (!item) return null;
+  const avatarB64 = item.AVATAR_B64 || item.avatar_b64 || item.avatarBase64;
+  const avatarUrlField = item.AVATAR || item.avatar || item.url || item.imageUrl || item.imagen;
+  if (avatarB64) {
+    return `data:image/jpeg;base64,${String(avatarB64).replace(/\n/g, '')}`;
+  }
+  if (avatarUrlField) return avatarUrlField;
+  return null;
+};
+
+/**
+ * Mapează răspunsul bulk /api/avatar/bulk fără a bloca fetch-ul individual cu placeholder.
+ * Folosește cache local când API nu returnează imagine (ex. R2 indisponibil temporar).
+ */
+export const mapBulkAvatarsResponse = (data) => {
+  const avatarsMap = {};
+  if (!Array.isArray(data)) return avatarsMap;
+
+  data.forEach((item) => {
+    const codigo = item?.CODIGO || item?.codigo || item?.codEmpleado || item?.employeeCode;
+    if (!codigo) return;
+
+    let avatarUrl = resolveAvatarUrlFromItem(item);
+    if (!isRealAvatarUrl(avatarUrl)) {
+      const cached = getCachedAvatar(codigo);
+      const cachedUrl = cached?.url || cached || null;
+      if (isRealAvatarUrl(cachedUrl)) {
+        avatarUrl = cachedUrl;
+      }
+    }
+
+    if (isRealAvatarUrl(avatarUrl)) {
+      avatarsMap[codigo] = avatarUrl;
+      setCachedAvatar(codigo, avatarUrl);
+    }
+  });
+
+  return avatarsMap;
+};

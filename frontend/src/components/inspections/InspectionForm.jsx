@@ -1,7 +1,13 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContextBase';
 import { useLocation } from '../../contexts/LocationContextBase';
-import { Button, Card, Modal } from '../ui';
+import { Button, Modal, AlertBanner } from '../ui';
+import { FormSection, FormFieldLabel, SignatureActionCard } from './InspectionFormChrome';
+import {
+  Hash, Calendar, Building2, User, Search, MapPin, CheckCircle2,
+  FileText, Plus, Trash2, Package, Loader2, Download, Send, X,
+  AlertTriangle, Info, Euro, Lightbulb,
+} from 'lucide-react';
 import SignaturePadComponent from '../../shared/components/SignaturePad';
 import PDFViewerAndroid from '../PDFViewerAndroid';
 import { routes } from '../../utils/routes';
@@ -1788,118 +1794,46 @@ const InspectionForm = ({ type, solicitudData }) => {
 
   if (success) {
     return (
-      <Card className="p-8 text-center">
-        <div className="text-green-600 text-6xl mb-4">✅</div>
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">
-          ¡Inspección Enviada!
-        </h2>
-        <p className="text-gray-600 mb-6">
-          La inspección ha sido enviada al backend con FormData și fișierele atașate.
-        </p>
-        <Button
-          onClick={() => setSuccess(false)}
-          className="bg-red-600 hover:bg-red-700"
-        >
-          Noua Inspección
-        </Button>
-      </Card>
+      <div className="inspecciones-form max-w-lg mx-auto">
+        <section className="app-card app-card--pad text-center inspecciones-form-success">
+          <CheckCircle2 className="w-12 h-12 mx-auto text-green-600 mb-3" aria-hidden />
+          <h2 className="text-lg font-bold text-gray-900 mb-1">¡Inspección Enviada!</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            La inspección ha sido enviada al backend con FormData y los archivos adjuntos.
+          </p>
+          <Button type="button" variant="primary" onClick={() => setSuccess(false)}>
+            Nueva Inspección
+          </Button>
+        </section>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto px-2 sm:px-4 lg:px-6">
-      {/* Error Toast Notification */}
-      {errorNotification && (
-        <div className="fixed top-20 right-4 z-50 animate-slide-in-right">
-          <div
-            className="p-4 rounded-xl shadow-2xl backdrop-blur-xl bg-gradient-to-r from-red-500 to-rose-500 text-white"
-            style={{
-              minWidth: '350px',
-              maxWidth: '500px',
-              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.3)',
-            }}
-          >
-            <div className="flex items-start gap-3">
-              <div className="text-2xl flex-shrink-0">
-                {errorNotification.type === 'duplicate' ? '⚠️' : 
-                 errorNotification.type === 'auth' ? '🔒' :
-                 errorNotification.type === 'size' ? '📦' :
-                 errorNotification.type === 'timeout' ? '⏱️' :
-                 errorNotification.type === 'network' ? '🌐' : '❌'}
-              </div>
-              <div className="flex-1">
-                <div className="font-bold text-lg mb-1">
-                  {errorNotification.title}
-                </div>
-                <div className="text-sm opacity-90 whitespace-pre-line">
-                  {errorNotification.message}
-                </div>
-                {errorNotification.details && (
-                  <div className="text-xs opacity-75 mt-2 pt-2 border-t border-white/20">
-                    Detalles técnicos: {errorNotification.details}
-                  </div>
-                )}
-              </div>
-              <button
-                onClick={() => setErrorNotification(null)}
-                className="text-white/80 hover:text-white transition-colors flex-shrink-0"
-                title="Cerrar"
-              >
-                ✕
-              </button>
-            </div>
+    <div className="inspecciones-form space-y-6 max-w-7xl mx-auto px-2 sm:px-4 lg:px-6">
+      {errorNotification ? (
+        <AlertBanner
+          variant={errorNotification.type === 'duplicate' ? 'warning' : 'danger'}
+          title={errorNotification.title}
+        >
+          {errorNotification.message}
+          {errorNotification.details ? (
+            <p className="text-xs mt-2 opacity-80">Detalles: {errorNotification.details}</p>
+          ) : null}
+          <div className="mt-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setErrorNotification(null)}>Cerrar</Button>
           </div>
-        </div>
-      )}
+        </AlertBanner>
+      ) : null}
 
-      {/* Header ULTRA MODERN con Glassmorphism */}
-      <div className="relative group">
-        {/* Glow effect */}
-        <div className={`absolute -inset-1 rounded-3xl opacity-20 group-hover:opacity-30 blur-xl transition-all duration-500 ${
-          type === 'limpieza' 
-            ? 'bg-gradient-to-r from-red-500 via-pink-500 to-red-600'
-            : type === 'servicios'
-            ? 'bg-gradient-to-r from-blue-500 via-cyan-500 to-blue-600'
-            : 'bg-gradient-to-r from-purple-500 via-violet-500 to-purple-600'
-        }`}></div>
-        
-        <Card className="relative bg-white/95 backdrop-blur-xl shadow-2xl border-2 border-gray-200/50 rounded-3xl p-4 sm:p-6"
-              style={{ backdropFilter: 'blur(20px)' }}>
-          {/* Header con icon 3D */}
-          <div className="flex items-center gap-3 sm:gap-4 mb-6">
-            <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center shadow-lg transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-500 ${
-              type === 'limpieza'
-                ? 'bg-gradient-to-br from-red-500 to-red-700'
-                : type === 'servicios'
-                ? 'bg-gradient-to-br from-blue-500 to-blue-700'
-                : 'bg-gradient-to-br from-purple-500 to-purple-700'
-            }`}
-                 style={{
-                   boxShadow: type === 'limpieza'
-                     ? '0 10px 25px rgba(239, 68, 68, 0.4)'
-                     : type === 'servicios'
-                     ? '0 10px 25px rgba(59, 130, 246, 0.4)'
-                     : '0 10px 25px rgba(139, 92, 246, 0.4)'
-                 }}>
-              <span className="text-2xl sm:text-3xl">{type === 'limpieza' ? '🧹' : type === 'servicios' ? '🛡️' : '⚙️'}</span>
-            </div>
-            <div>
-              <h2 className="text-xl sm:text-2xl font-black text-gray-900">
-                Datos de la Inspección
-        </h2>
-              <p className="text-sm sm:text-base text-gray-600 font-medium">
-                Completa todos los campos obligatorios
-              </p>
-            </div>
-          </div>
-          
+      <FormSection
+        title="Datos de la Inspección"
+        subtitle="Completa todos los campos obligatorios"
+      >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
           {/* Número de Inspección */}
           <div>
-            <label className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
-              <span className="text-base">🆔</span>
-              <span>Número de Inspección *</span>
-            </label>
+            <FormFieldLabel icon={Hash}>Número de Inspección *</FormFieldLabel>
             <input
               type="text"
             value={formData.nr}
@@ -1911,10 +1845,7 @@ const InspectionForm = ({ type, solicitudData }) => {
           
           {/* Data */}
           <div>
-            <label className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
-              <span className="text-base">📅</span>
-              <span>Fecha *</span>
-            </label>
+            <FormFieldLabel icon={Calendar}>Fecha *</FormFieldLabel>
             <input
             type="date"
             value={formData.data}
@@ -1930,10 +1861,7 @@ const InspectionForm = ({ type, solicitudData }) => {
           
           {/* Centro de Trabajo */}
           <div>
-            <label className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
-              <span className="text-base">🏢</span>
-              <span>Centro de Trabajo *</span>
-            </label>
+            <FormFieldLabel icon={Building2}>Centro de Trabajo *</FormFieldLabel>
             <div className="relative">
               <input
                 type="text"
@@ -1957,7 +1885,7 @@ const InspectionForm = ({ type, solicitudData }) => {
                 }`}
               />
               <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
-                <span className="text-gray-400 text-lg">🔍</span>
+                <Search className="w-4 h-4 text-gray-400" aria-hidden />
               </div>
               
               {/* Dropdown de sugerencias */}
@@ -1992,7 +1920,7 @@ const InspectionForm = ({ type, solicitudData }) => {
             </div>
             {loadingCentros && (
               <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-                <span className="animate-spin">⏳</span>
+                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" aria-hidden />
                 <span>Cargando centros...</span>
               </p>
             )}
@@ -2001,10 +1929,7 @@ const InspectionForm = ({ type, solicitudData }) => {
           
           {/* Trabajador */}
           <div>
-            <label className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
-              <span className="text-base">👷</span>
-              <span>{isEntregaOtraPersona ? 'Receptor *' : 'Trabajador *'}</span>
-            </label>
+            <FormFieldLabel icon={User}>{isEntregaOtraPersona ? 'Receptor *' : 'Trabajador *'}</FormFieldLabel>
 
             {type === 'entrega-materiales' && (
               <label className="flex items-center gap-2 mb-3 cursor-pointer select-none">
@@ -2061,12 +1986,12 @@ const InspectionForm = ({ type, solicitudData }) => {
                     <div className="flex items-center gap-2 text-sm mt-1">
                       {dniNieOtraPersonaStatus === true ? (
                         <>
-                          <span className="text-green-600">✅</span>
+                          <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" aria-hidden />
                           <span className="text-green-600 font-medium">DNI/NIE español válido</span>
                         </>
                       ) : dniNieOtraPersonaStatus === false ? (
                         <>
-                          <span className="text-red-600">❌</span>
+                          <X className="w-4 h-4 text-red-600 shrink-0" aria-hidden />
                           <span className="text-red-600 font-medium">DNI/NIE español inválido</span>
                         </>
                       ) : null}
@@ -2077,7 +2002,7 @@ const InspectionForm = ({ type, solicitudData }) => {
                   )}
                 </div>
                 <p className="text-xs text-gray-500 flex items-center gap-1">
-                  <span>ℹ️</span>
+                  <Info className="w-3.5 h-3.5 shrink-0" aria-hidden />
                   <span>Persona externa que recibe los materiales en el centro indicado.</span>
                 </p>
               </div>
@@ -2127,19 +2052,19 @@ const InspectionForm = ({ type, solicitudData }) => {
             </select>
             {formData.centro && empleadosFiltrados.length === 0 && type === 'entrega-materiales' && (
               <p className="text-xs text-orange-600 mt-1 flex items-center gap-1 font-medium">
-                <span>💡</span>
+                <Lightbulb className="w-3.5 h-3.5 shrink-0" aria-hidden />
                 <span>No hay empleados en este centro. Marca &quot;Otra persona&quot; para entregar a alguien externo.</span>
               </p>
             )}
             {formData.centro && empleadosFiltrados.length === 0 && type !== 'entrega-materiales' && (
               <p className="text-xs text-orange-600 mt-1 flex items-center gap-1 font-medium">
-                <span>⚠️</span>
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden />
                 <span>No hay empleados en este centro</span>
               </p>
             )}
             {formData.trabajador.codigo && (
               <p className="text-xs text-green-600 mt-1 font-medium flex items-center gap-1">
-                <span>✅</span>
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" aria-hidden />
                 <span>Código: {formData.trabajador.codigo}</span>
               </p>
             )}
@@ -2159,10 +2084,7 @@ const InspectionForm = ({ type, solicitudData }) => {
             if (!tieneCentro) {
               return (
                 <div>
-                  <label className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
-                    <span className="text-base">🏢</span>
-                    <span>Centro para esta inspección (opcional)</span>
-                  </label>
+                  <FormFieldLabel icon={Building2}>Centro para esta inspección (opcional)</FormFieldLabel>
                   <div className="relative">
                     <input
                       type="text"
@@ -2229,48 +2151,44 @@ const InspectionForm = ({ type, solicitudData }) => {
           
           {/* Ubicación con GPS - Full width en mobile */}
           <div className="md:col-span-2">
-            <label className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
-              <span className="text-base">📍</span>
-              <span>Ubicación *</span>
-            </label>
+            <FormFieldLabel icon={MapPin}>Ubicación *</FormFieldLabel>
             <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="text"
                 value={formData.locatie}
                 onChange={(e) => handleInputChange('locatie', e.target.value)}
                 placeholder="Ubicación de la inspección..."
-                className={`flex-1 px-4 py-3 border-2 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-300 shadow-md focus:shadow-xl font-medium ${
+                className={`inspecciones-input flex-1 ${
                   errors.locatie 
                     ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
-                    : 'border-gray-300 focus:ring-purple-500 focus:border-purple-500 hover:border-purple-300 focus:shadow-purple-500/20'
+                    : ''
                 }`}
               />
-              <button
+              <Button
+                type="button"
+                variant="secondary"
+                className="min-h-[44px] w-full sm:w-auto shrink-0"
                 onClick={handleGetCurrentLocation}
                 disabled={locationLoading}
-                className="group relative px-4 sm:px-6 py-3 rounded-xl font-bold text-white transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden w-full sm:w-auto"
-                style={{
-                  background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                  boxShadow: '0 8px 20px rgba(139, 92, 246, 0.3)'
-                }}
                 title="Obtener ubicación GPS actual"
               >
-                <div className="absolute inset-0 bg-purple-400 opacity-0 group-hover:opacity-30 transition-opacity"></div>
-                <div className="relative flex items-center justify-center gap-2">
-                  <span className={`text-lg ${locationLoading ? 'animate-pulse' : ''}`}>📍</span>
-                  <span className="text-sm">Obtener GPS</span>
-                </div>
-              </button>
+                {locationLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
+                ) : (
+                  <MapPin className="w-4 h-4" aria-hidden />
+                )}
+                Obtener GPS
+              </Button>
             </div>
             {locationLoading && (
-              <p className="text-xs text-blue-600 mt-1 flex items-center gap-1 font-medium">
-                <span className="animate-spin">⏳</span>
+              <p className="inspecciones-form-hint mt-1 flex items-center gap-1">
+                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" aria-hidden />
                 <span>Obteniendo ubicación GPS...</span>
               </p>
             )}
             {locationError && (
-              <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
-                <span>❌</span>
+              <p className="inspecciones-form-error mt-1 flex items-center gap-1">
+                <X className="w-3.5 h-3.5 shrink-0" aria-hidden />
                 <span>{locationError}</span>
               </p>
             )}
@@ -2279,10 +2197,7 @@ const InspectionForm = ({ type, solicitudData }) => {
           
           {/* Inspector */}
           <div className="md:col-span-2">
-            <label className="block text-sm font-black text-gray-800 mb-2 flex items-center gap-2">
-              <span className="text-base">👨‍💼</span>
-              <span>Inspector *</span>
-            </label>
+            <FormFieldLabel icon={User}>Inspector *</FormFieldLabel>
             <input
               type="text"
             value={formData.inspector.nume}
@@ -2297,570 +2212,359 @@ const InspectionForm = ({ type, solicitudData }) => {
             {errors.inspectorName && <p className="text-xs text-red-600 mt-1">{errors.inspectorName}</p>}
           </div>
         </div>
-      </Card>
-      </div>
+      </FormSection>
 
-      {/* Puncte de inspecție ULTRA MODERN */}
-      <div className="relative group">
-        {/* Glow effect */}
-        <div className={`absolute -inset-1 rounded-3xl opacity-15 group-hover:opacity-25 blur-xl transition-all duration-500 ${
-          type === 'limpieza' 
-            ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-red-500'
+      {/* Puntos / Materiales */}
+      <FormSection
+        title={type === 'entrega-materiales' ? 'Materiales' : 'Puntos de Inspección'}
+        subtitle={
+          type === 'limpieza'
+            ? `Limpieza — ${formData.puncte.length} zonas`
             : type === 'servicios'
-            ? 'bg-gradient-to-r from-teal-500 via-cyan-500 to-blue-500'
-            : 'bg-gradient-to-r from-purple-500 via-violet-500 to-purple-600'
-        }`}></div>
-        
-        <Card className="relative bg-white/95 backdrop-blur-xl shadow-2xl border-2 border-gray-200/50 rounded-3xl p-4 sm:p-6"
-              style={{ backdropFilter: 'blur(20px)' }}>
-          {/* Header con icon */}
-          <div className="flex items-center gap-3 mb-6">
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg ${
-              type === 'limpieza'
-                ? 'bg-gradient-to-br from-amber-500 to-orange-600'
-                : type === 'servicios'
-                ? 'bg-gradient-to-br from-teal-500 to-cyan-600'
-                : type === 'entrega-materiales'
-                ? 'bg-gradient-to-br from-orange-500 to-amber-600'
-                : 'bg-gradient-to-br from-purple-500 to-purple-600'
-            }`}>
-              <span className="text-2xl">{type === 'entrega-materiales' ? '📦' : '✅'}</span>
-            </div>
-            <div>
-              <h2 className="text-lg sm:text-xl font-black text-gray-900">
-                {type === 'entrega-materiales' ? 'Materiales' : 'Puntos de Inspección'}
-        </h2>
-              <p className="text-xs sm:text-sm text-gray-600 font-medium">
-                {type === 'limpieza' ? 'Limpieza' : 
-                 type === 'servicios' ? 'Servicios Auxiliares' : 
-                 type === 'entrega-materiales' ? `${formData.puncte.length} material${formData.puncte.length !== 1 ? 'es' : ''}` :
-                 'Personalizada'} - {type !== 'entrega-materiales' ? `${formData.puncte.length} zonas` : ''}
-              </p>
-            </div>
+              ? `Servicios Auxiliares — ${formData.puncte.length} zonas`
+              : type === 'entrega-materiales'
+                ? `${formData.puncte.length} material${formData.puncte.length !== 1 ? 'es' : ''}`
+                : `Personalizada — ${formData.puncte.length} zonas`
+        }
+      >
+        {(type === 'personalizada' || type === 'entrega-materiales') && (
+          <div className="mb-4">
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full min-h-[44px]"
+              onClick={() => setShowAddPointModal(true)}
+            >
+              <Plus className="w-4 h-4" aria-hidden />
+              {type === 'entrega-materiales' ? 'Añadir Material' : 'Añadir Punto de Inspección'}
+            </Button>
           </div>
-          
-          {/* Add Point/Material Button for Personalizada and Entrega de Materiales */}
-          {(type === 'personalizada' || type === 'entrega-materiales') && (
-            <div className="mb-6">
-              <button
-                onClick={() => setShowAddPointModal(true)}
-                className="group relative w-full px-6 py-4 rounded-2xl font-bold text-white transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl overflow-hidden"
-                style={{
-                  background: type === 'entrega-materiales' 
-                    ? 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)'
-                    : 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                  boxShadow: type === 'entrega-materiales'
-                    ? '0 8px 20px rgba(249, 115, 22, 0.3)'
-                    : '0 8px 20px rgba(139, 92, 246, 0.3)'
-                }}
-              >
-                <div className={`absolute inset-0 opacity-0 group-hover:opacity-30 transition-opacity ${
-                  type === 'entrega-materiales' ? 'bg-orange-400' : 'bg-purple-400'
-                }`}></div>
-                <div className="relative flex items-center justify-center gap-3">
-                  <span className="text-2xl">➕</span>
-                  <span className="text-lg">
-                    {type === 'entrega-materiales' ? 'Añadir Material' : 'Añadir Punto de Inspección'}
-                  </span>
-                </div>
-              </button>
-            </div>
-          )}
-          
-          <div className="space-y-3 sm:space-y-4">
+        )}
+
+        <div className="space-y-3">
           {formData.puncte.map((point, index) => (
-              <div key={point.id}               className={`group/point relative border-2 rounded-2xl p-3 sm:p-4 transition-all duration-300 hover:shadow-lg ${
-                type === 'limpieza'
-                  ? 'border-red-200 bg-gradient-to-br from-red-50/50 to-orange-50/30 hover:border-red-300'
-                  : type === 'servicios'
-                  ? 'border-blue-200 bg-gradient-to-br from-blue-50/50 to-cyan-50/30 hover:border-blue-300'
-                  : type === 'entrega-materiales'
-                  ? 'border-orange-200 bg-gradient-to-br from-orange-50/50 to-amber-50/30 hover:border-orange-300'
-                  : 'border-purple-200 bg-gradient-to-br from-purple-50/50 to-violet-50/30 hover:border-purple-300'
-              }`}>
-                {/* Número de zona/material destacado */}
-                <div className={`absolute -top-3 left-4 px-3 py-1 rounded-full text-xs font-black shadow-md ${
-                  type === 'limpieza'
-                    ? 'bg-gradient-to-r from-red-500 to-orange-500 text-white'
-                    : type === 'servicios'
-                    ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white'
-                    : type === 'entrega-materiales'
-                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white'
-                    : 'bg-gradient-to-r from-purple-500 to-violet-500 text-white'
-                }`}>
-                    {type === 'entrega-materiales' ? `Material ${index + 1}` : `Zona ${index + 1}`}
+            <div key={point.id} className="inspecciones-check-row">
+              <span className="inspecciones-check-row__badge">
+                {type === 'entrega-materiales' ? `Material ${index + 1}` : `Zona ${index + 1}`}
+              </span>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-gray-900">{point.descriere}</p>
+                      {type === 'entrega-materiales' && (
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                          {point.cantitate ? (
+                            <span className="inspecciones-meta-chip">
+                              <Package className="w-3.5 h-3.5" aria-hidden />
+                              Cantidad: {point.cantitate}
+                            </span>
+                          ) : null}
+                          {point.precio ? (
+                            <span className="inspecciones-meta-chip inspecciones-meta-chip--muted">
+                              <Euro className="w-3.5 h-3.5" aria-hidden />
+                              {parseFloat(point.precio).toFixed(2)} €
+                            </span>
+                          ) : null}
+                          {point.documento ? (
+                            <span className="inspecciones-meta-chip inspecciones-meta-chip--muted">
+                              <FileText className="w-3.5 h-3.5" aria-hidden />
+                              {point.documento.name || 'Documento adjunto'}
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
+                      {point.tip && type !== 'entrega-materiales' ? (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Tipo: {point.tip === 'obligatoriu' ? 'Obligatorio' : 'Opcional'}
+                        </p>
+                      ) : null}
+                    </div>
+                    {(type === 'personalizada' || type === 'entrega-materiales') && point.isCustom ? (
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePoint(point.id)}
+                        className="inspecciones-icon-btn inspecciones-icon-btn--danger"
+                        title={type === 'entrega-materiales' ? 'Eliminar material' : 'Eliminar punto'}
+                        aria-label={type === 'entrega-materiales' ? 'Eliminar material' : 'Eliminar punto'}
+                      >
+                        <Trash2 className="w-4 h-4" aria-hidden />
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mt-2">
-                  {/* Descripción */}
-                  <div className="sm:col-span-2 lg:col-span-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <p className="text-sm sm:text-base font-bold text-gray-900">{point.descriere}</p>
-                        {/* Afișează cantitatea, prețul și documentul pentru materiale */}
-                        {type === 'entrega-materiales' && (
-                          <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-2">
-                            {point.cantitate && (
-                              <span className="text-xs sm:text-sm text-orange-700 font-semibold bg-orange-100 px-2 py-1 rounded-lg">
-                                📦 Cantidad: {point.cantitate}
-                              </span>
-                            )}
-                            {point.precio && (
-                              <span className="text-xs sm:text-sm text-green-700 font-semibold bg-green-100 px-2 py-1 rounded-lg">
-                                💰 Precio: {parseFloat(point.precio).toFixed(2)} €
-                              </span>
-                            )}
-                            {point.documento && (
-                              <span className="text-xs sm:text-sm text-blue-700 font-semibold bg-blue-100 px-2 py-1 rounded-lg flex items-center gap-1">
-                                📄 {point.documento.name || 'Documento adjunto'}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      {(type === 'personalizada' || type === 'entrega-materiales') && point.isCustom && (
-                        <button
-                          onClick={() => handleRemovePoint(point.id)}
-                          className="ml-2 p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-full transition-colors"
-                          title={type === 'entrega-materiales' ? 'Eliminar material' : 'Eliminar punto'}
-                        >
-                          <span className="text-lg">🗑️</span>
-                        </button>
-                      )}
-                    </div>
-                    {point.tip && type !== 'entrega-materiales' && (
-                      <p className="text-xs text-purple-600 font-medium mt-1">
-                        Tipo: {point.tip === 'obligatoriu' ? 'Obligatorio' : 'Opcional'}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Rango */}
                 <div>
-                    <label className="block text-xs sm:text-sm font-black text-gray-800 mb-2">
-                    Rango
-                  </label>
-                    <select
+                  <label className="inspecciones-form-label inspecciones-form-label--sm">Rango</label>
+                  <select
                     value={point.rango}
                     onChange={(e) => handlePointChange(point.id, 'rango', parseInt(e.target.value))}
-                      className="w-full px-3 py-2 sm:px-4 sm:py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-gradient-to-br from-white to-amber-50/30 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all duration-300 hover:border-amber-300 shadow-md focus:shadow-xl focus:shadow-amber-500/20 font-medium text-sm cursor-pointer"
-                    >
-                      {RANGO_OPTIONS.map(opt => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
+                    className="inspecciones-input w-full"
+                  >
+                    {RANGO_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
                 </div>
 
-                  {/* Calidad */}
                 <div>
-                    <label className="block text-xs sm:text-sm font-black text-gray-800 mb-2">
-                      Calidad
-                  </label>
-                    <select
+                  <label className="inspecciones-form-label inspecciones-form-label--sm">Calidad</label>
+                  <select
                     value={point.calidad}
                     onChange={(e) => handlePointChange(point.id, 'calidad', parseInt(e.target.value))}
-                      className="w-full px-3 py-2 sm:px-4 sm:py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-gradient-to-br from-white to-green-50/30 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-300 hover:border-green-300 shadow-md focus:shadow-xl focus:shadow-green-500/20 font-medium text-sm cursor-pointer"
-                    >
-                      {RANGO_OPTIONS.map(opt => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-              </div>
+                    className="inspecciones-input w-full"
+                  >
+                    {RANGO_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
 
-                  {/* Observaciones */}
-                  <div className="sm:col-span-2 lg:col-span-1">
-                    <label className="block text-xs sm:text-sm font-black text-gray-800 mb-2">
-                      Observaciones
-                </label>
-                    <input
-                      type="text"
-                  value={point.observatii}
-                  onChange={(e) => handlePointChange(point.id, 'observatii', e.target.value)}
-                      placeholder="Observaciones opcionales..."
-                      className="w-full px-3 py-2 sm:px-4 sm:py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-all duration-300 hover:border-gray-400 shadow-md focus:shadow-lg font-medium text-sm"
-                />
-                  </div>
+                <div className="sm:col-span-2 lg:col-span-1">
+                  <label className="inspecciones-form-label inspecciones-form-label--sm">Observaciones</label>
+                  <input
+                    type="text"
+                    value={point.observatii}
+                    onChange={(e) => handlePointChange(point.id, 'observatii', e.target.value)}
+                    placeholder="Observaciones opcionales..."
+                    className="inspecciones-input w-full"
+                  />
+                </div>
               </div>
             </div>
           ))}
         </div>
-        {errors.puncte && (
-            <p className="text-xs text-red-600 mt-4 flex items-center gap-1">
-              <span>⚠️</span>
-              <span>{errors.puncte}</span>
-            </p>
-        )}
-      </Card>
-      </div>
 
-      {/* Firmas Digitales ULTRA MODERN */}
-      <div className="relative group">
-        {/* Glow effect */}
-        <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-3xl opacity-15 group-hover:opacity-25 blur-xl transition-all duration-500"></div>
-        
-        <Card className="relative bg-white/95 backdrop-blur-xl shadow-2xl border-2 border-gray-200/50 rounded-3xl p-4 sm:p-6"
-              style={{ backdropFilter: 'blur(20px)' }}>
-          {/* Header con icon */}
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-              <span className="text-2xl">✍️</span>
-            </div>
-          <div>
-              <h2 className="text-lg sm:text-xl font-black text-gray-900">
-                Firmas Digitales
-              </h2>
-              <p className="text-xs sm:text-sm text-gray-600 font-medium">
-                Firma del inspector y trabajador
-              </p>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-            {/* Firma Inspector */}
-            <div className="group/sign relative">
-              <h3 className="text-sm sm:text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
-                <span className="text-lg">👨‍💼</span>
-                <span>Firma del Inspector</span>
-            </h3>
-              <button
-              onClick={() => openSignatureModal('inspector')}
-                className={`group/btn relative w-full px-4 sm:px-6 py-4 sm:py-5 rounded-2xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl overflow-hidden ${
-                  formData.inspector.semnaturaPng 
-                    ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white'
-                    : 'bg-gradient-to-r from-indigo-100 to-purple-100 text-indigo-800 hover:from-indigo-200 hover:to-purple-200'
-                }`}
-                style={{
-                  boxShadow: formData.inspector.semnaturaPng 
-                    ? '0 10px 25px rgba(34, 197, 94, 0.3)'
-                    : '0 8px 20px rgba(99, 102, 241, 0.2)'
-                }}
-              >
-                <div className={`absolute inset-0 opacity-0 group-hover/btn:opacity-30 transition-opacity ${
-                  formData.inspector.semnaturaPng ? 'bg-green-400' : 'bg-indigo-400'
-                }`}></div>
-                <div className="relative flex items-center justify-center gap-2">
-                  <span className="text-xl sm:text-2xl">{formData.inspector.semnaturaPng ? '✅' : '✍️'}</span>
-                  <span className="text-sm sm:text-base">
-                    {formData.inspector.semnaturaPng ? 'Firma Agregada' : 'Agregar Firma'}
-                  </span>
-                </div>
-              </button>
-            {errors.inspectorSignature && (
-                <p className="text-xs text-yellow-600 mt-2 flex items-center gap-1">
-                  <span>⚠️</span>
-                  <span>{errors.inspectorSignature}</span>
-                </p>
-            )}
-          </div>
-          
-            {/* Firma Trabajador / Receptor */}
-            <div className="group/sign relative">
-              <h3 className="text-sm sm:text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
-                <span className="text-lg">👷</span>
-                <span>{isEntregaOtraPersona ? 'Firma del Receptor' : 'Firma del Trabajador'}</span>
-            </h3>
-              <button
-              onClick={() => openSignatureModal('trabajador')}
-              disabled={!formData.trabajador.nume || (isEntregaOtraPersona && dniNieOtraPersonaStatus !== true)}
-                className={`group/btn relative w-full px-4 sm:px-6 py-4 sm:py-5 rounded-2xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none ${
-                  formData.trabajador.semnaturaPng 
-                    ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white'
-                    : 'bg-gradient-to-r from-blue-100 to-cyan-100 text-blue-800 hover:from-blue-200 hover:to-cyan-200'
-                }`}
-                style={{
-                  boxShadow: formData.trabajador.semnaturaPng 
-                    ? '0 10px 25px rgba(34, 197, 94, 0.3)'
-                    : '0 8px 20px rgba(59, 130, 246, 0.2)'
-                }}
-              >
-                <div className={`absolute inset-0 opacity-0 group-hover/btn:opacity-30 transition-opacity ${
-                  formData.trabajador.semnaturaPng ? 'bg-green-400' : 'bg-blue-400'
-                }`}></div>
-                <div className="relative flex items-center justify-center gap-2">
-                  <span className="text-xl sm:text-2xl">{formData.trabajador.semnaturaPng ? '✅' : '✍️'}</span>
-                  <span className="text-sm sm:text-base">
-                    {formData.trabajador.semnaturaPng ? 'Firma Agregada' : 'Agregar Firma'}
-                  </span>
-                </div>
-              </button>
-            {!formData.trabajador.nume && (
-                <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
-                  <span>ℹ️</span>
-                  <span>{isEntregaOtraPersona ? 'Primero indica el nombre y DNI/NIE del receptor' : 'Primero selecciona un trabajador'}</span>
-                </p>
-            )}
-            {errors.trabajadorSignature && (
-                <p className="text-xs text-yellow-600 mt-2 flex items-center gap-1">
-                  <span>⚠️</span>
-                  <span>{errors.trabajadorSignature}</span>
-                </p>
-            )}
-          </div>
+        {errors.puncte ? (
+          <p className="inspecciones-form-error mt-3 flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden />
+            <span>{errors.puncte}</span>
+          </p>
+        ) : null}
+      </FormSection>
+
+      {/* Firmas Digitales */}
+      <FormSection
+        title="Firmas Digitales"
+        subtitle="Firma del inspector y trabajador"
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <SignatureActionCard
+            label="Firma del Inspector"
+            signed={!!formData.inspector.semnaturaPng}
+            onClick={() => openSignatureModal('inspector')}
+            error={errors.inspectorSignature}
+          />
+          <SignatureActionCard
+            label={isEntregaOtraPersona ? 'Firma del Receptor' : 'Firma del Trabajador'}
+            signed={!!formData.trabajador.semnaturaPng}
+            onClick={() => openSignatureModal('trabajador')}
+            disabled={!formData.trabajador.nume || (isEntregaOtraPersona && dniNieOtraPersonaStatus !== true)}
+            hint={
+              !formData.trabajador.nume
+                ? (isEntregaOtraPersona
+                  ? 'Primero indica el nombre y DNI/NIE del receptor'
+                  : 'Primero selecciona un trabajador')
+                : undefined
+            }
+            error={errors.trabajadorSignature}
+          />
         </div>
-        
-        {/* Afișează erorile generale pentru semnături */}
-        {(errors.inspectorSignature || errors.trabajadorSignature) && (
-            <div className="mt-6 p-4 bg-yellow-50 border-2 border-yellow-300 rounded-2xl">
-              <p className="text-sm text-yellow-800 font-medium flex items-center gap-2">
-                <span className="text-lg">⚠️</span>
-                <span><strong>Nota:</strong> Las firmas son opcionales pero recomendadas para generar un PDF completo.</span>
-            </p>
-          </div>
-        )}
-      </Card>
-      </div>
 
-      {/* Observaciones Generales ULTRA MODERN */}
-      <div className="relative group">
-        {/* Glow effect */}
-        <div className="absolute -inset-1 bg-gradient-to-r from-gray-400 via-gray-500 to-gray-600 rounded-3xl opacity-10 group-hover:opacity-20 blur-xl transition-all duration-500"></div>
-        
-        <Card className="relative bg-white/95 backdrop-blur-xl shadow-2xl border-2 border-gray-200/50 rounded-3xl p-4 sm:p-6"
-              style={{ backdropFilter: 'blur(20px)' }}>
-          {/* Header con icon */}
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-gray-500 to-gray-700 rounded-xl flex items-center justify-center shadow-lg">
-              <span className="text-2xl">📝</span>
-            </div>
-            <div>
-              <h2 className="text-lg sm:text-xl font-black text-gray-900">
-                Observaciones Generales
-        </h2>
-              <p className="text-xs sm:text-sm text-gray-600 font-medium">
-                Comentarios adicionales (opcional)
-              </p>
-            </div>
-          </div>
-          
-          <textarea
+        {(errors.inspectorSignature || errors.trabajadorSignature) ? (
+          <AlertBanner variant="warning" className="mt-4">
+            Las firmas son opcionales pero recomendadas para generar un PDF completo.
+          </AlertBanner>
+        ) : null}
+      </FormSection>
+
+      {/* Observaciones Generales */}
+      <FormSection
+        title="Observaciones Generales"
+        subtitle="Comentarios adicionales (opcional)"
+      >
+        <textarea
           value={formData.observaciones}
           onChange={(e) => handleInputChange('observaciones', e.target.value)}
-            placeholder="Escribe observaciones generales sobre la inspección..."
+          placeholder="Escribe observaciones generales sobre la inspección..."
           rows={4}
-            className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-gray-500 transition-all duration-300 hover:border-gray-400 shadow-md focus:shadow-xl focus:shadow-gray-500/20 font-medium resize-none"
+          className="inspecciones-input w-full resize-y min-h-[120px]"
         />
-      </Card>
-      </div>
+      </FormSection>
 
-      {/* Botón Submit MEGA WOW */}
-      <div className="flex flex-col sm:flex-row justify-end gap-3 sm:gap-4 sticky bottom-4 sm:bottom-6 z-10">
-        <button
+      {/* Footer CTA */}
+      <div className="inspecciones-form-footer">
+        <Button
+          type="button"
+          variant="primary"
+          className="w-full sm:w-auto min-h-[44px]"
           onClick={handleSubmit}
           disabled={loading}
-          className="group relative px-6 sm:px-8 py-4 sm:py-5 rounded-2xl font-black text-white transition-all duration-700 transform hover:scale-110 hover:-translate-y-2 shadow-2xl hover:shadow-red-500/50 overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none w-full sm:w-auto"
-          style={{
-            background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 30%, #b91c1c 60%, #991b1b 100%)',
-            boxShadow: '0 20px 50px rgba(239, 68, 68, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -1px 0 rgba(0, 0, 0, 0.2)'
-          }}
         >
-          {/* Animated glow ultra potente */}
-          <div className="absolute -inset-1 bg-gradient-to-r from-red-400 via-rose-500 to-red-600 opacity-60 group-hover:opacity-90 blur-2xl transition-all duration-700 animate-pulse"></div>
-          
-          {/* Shimmer mega effect */}
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/60 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-          
-          {/* Particles effect */}
-          {!loading && (
-            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700">
-              <div className="absolute top-2 left-6 w-2 h-2 bg-white rounded-full animate-ping"></div>
-              <div className="absolute bottom-3 right-8 w-1.5 h-1.5 bg-white rounded-full animate-ping" style={{ animationDelay: '0.2s' }}></div>
-              <div className="absolute top-4 right-12 w-1 h-1 bg-white rounded-full animate-ping" style={{ animationDelay: '0.4s' }}></div>
-            </div>
+          {loading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
+              Generando PDF…
+            </>
+          ) : (
+            <>
+              <FileText className="w-4 h-4" aria-hidden />
+              Generar y previsualizar PDF
+            </>
           )}
-          
-          {/* Content */}
-          <div className="relative flex items-center justify-center gap-3">
-            {loading ? (
-              <>
-                <div className="w-6 h-6 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
-                <span className="text-base sm:text-lg">Generando PDF...</span>
-              </>
-            ) : (
-              <>
-                <span className="text-2xl sm:text-3xl transform group-hover:scale-125 group-hover:rotate-12 transition-all duration-500">📄</span>
-                <div className="flex flex-col items-start">
-                  <span className="text-base sm:text-lg tracking-wide">GENERAR</span>
-                  <span className="text-xs opacity-90">y Previsualizar PDF</span>
-                </div>
-              </>
-            )}
-          </div>
-          
-          {/* Borde brillante animado */}
-          <div className="absolute inset-0 rounded-2xl border-2 border-white/30 group-hover:border-white/60 transition-all duration-700"></div>
-        </button>
+        </Button>
       </div>
 
-      {/* Modal pentru semnături */}
+      {/* Modal semnătură */}
       <Modal
         isOpen={showSignatureModal}
         onClose={() => setShowSignatureModal(false)}
-        title={t('inspections.addSignature')}
-      >
-        <div className="flex flex-col gap-6">
-          <SignaturePadComponent
-            value={signatureDraft}
-            onChange={handleSignatureChange}
-          />
-          <div className="flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => setShowSignatureModal(false)}
-              className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl transition-colors"
-            >
+        title={
+          signatureType === 'inspector'
+            ? 'Firma del inspector'
+            : isEntregaOtraPersona
+              ? 'Firma del receptor'
+              : 'Firma del trabajador'
+        }
+        size="lg"
+        showCloseButton={false}
+        className="app-modal--form inspecciones-signature-modal"
+        footer={(
+          <div className="app-modal__actions">
+            <Button type="button" variant="secondary" size="sm" onClick={() => setShowSignatureModal(false)}>
               Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={handleSignatureSave}
-              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl transition-colors"
-            >
+            </Button>
+            <Button type="button" variant="primary" size="sm" onClick={handleSignatureSave}>
               Guardar firma
-            </button>
+            </Button>
           </div>
-        </div>
+        )}
+      >
+        <SignaturePadComponent
+          value={signatureDraft}
+          onChange={handleSignatureChange}
+        />
       </Modal>
 
-      {/* Modal pentru adăugarea punctelor personalizate/materialelor */}
+      {/* Modal add point / material */}
       <Modal
         isOpen={showAddPointModal}
         onClose={() => setShowAddPointModal(false)}
         title={type === 'entrega-materiales' ? 'Añadir Material' : 'Añadir Punto de Inspección'}
+        size="md"
+        showCloseButton={false}
+        className="app-modal--form inspecciones-add-point-modal"
+        footer={(
+          <div className="app-modal__actions">
+            <Button type="button" variant="secondary" size="sm" onClick={() => setShowAddPointModal(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" variant="primary" size="sm" onClick={handleAddCustomPoint}>
+              {type === 'entrega-materiales' ? 'Añadir Material' : 'Añadir Punto'}
+            </Button>
+          </div>
+        )}
       >
-        <div className="p-4 space-y-4">
+        <div className="space-y-4">
           <div>
-            <label className="block text-sm font-bold text-gray-800 mb-2">
+            <FormFieldLabel>
               {type === 'entrega-materiales' ? 'Descripción del Material *' : 'Descripción del Punto *'}
-            </label>
+            </FormFieldLabel>
             <input
               type="text"
               value={newPointData.descriere}
-              onChange={(e) => setNewPointData(prev => ({ ...prev, descriere: e.target.value }))}
-              placeholder={type === 'entrega-materiales' 
-                ? 'Ej: Material de limpieza, Suministros de oficina, Herramientas...'
-                : 'Ej: Estado de las puertas, Limpieza de ventanas...'}
-              className={`w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-300 shadow-md focus:shadow-xl font-medium ${
+              onChange={(e) => setNewPointData((prev) => ({ ...prev, descriere: e.target.value }))}
+              placeholder={
                 type === 'entrega-materiales'
-                  ? 'focus:ring-orange-500 focus:border-orange-500 hover:border-orange-300 focus:shadow-orange-500/20'
-                  : 'focus:ring-purple-500 focus:border-purple-500 hover:border-purple-300 focus:shadow-purple-500/20'
-              }`}
+                  ? 'Ej: Material de limpieza, Suministros de oficina, Herramientas...'
+                  : 'Ej: Estado de las puertas, Limpieza de ventanas...'
+              }
+              className="app-modal__input w-full"
             />
           </div>
-          
-          {/* Câmpuri specifice pentru materiale */}
-          {type === 'entrega-materiales' && (
+
+          {type === 'entrega-materiales' ? (
             <>
               <div>
-                <label className="block text-sm font-bold text-gray-800 mb-2">
-                  Cantidad *
-                </label>
+                <FormFieldLabel>Cantidad *</FormFieldLabel>
                 <input
                   type="text"
                   value={newPointData.cantitate}
-                  onChange={(e) => setNewPointData(prev => ({ ...prev, cantitate: e.target.value }))}
+                  onChange={(e) => setNewPointData((prev) => ({ ...prev, cantitate: e.target.value }))}
                   placeholder="Ej: 3, 5 unidades, 10 kg..."
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-300 hover:border-orange-300 shadow-md focus:shadow-xl focus:shadow-orange-500/20 font-medium"
+                  className="app-modal__input w-full"
                 />
               </div>
-              
               <div>
-                <label className="block text-sm font-bold text-gray-800 mb-2">
-                  Precio (€)
-                </label>
+                <FormFieldLabel>Precio (€)</FormFieldLabel>
                 <input
                   type="number"
                   step="0.01"
                   min="0"
                   value={newPointData.precio}
-                  onChange={(e) => setNewPointData(prev => ({ ...prev, precio: e.target.value }))}
+                  onChange={(e) => setNewPointData((prev) => ({ ...prev, precio: e.target.value }))}
                   placeholder="Ej: 25.50, 100.00..."
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-300 hover:border-orange-300 shadow-md focus:shadow-xl focus:shadow-orange-500/20 font-medium"
+                  className="app-modal__input w-full"
                 />
               </div>
-              
               <div>
-                <label className="block text-sm font-bold text-gray-800 mb-2">
-                  Factura/Albarán (Opcional)
-                </label>
+                <FormFieldLabel>Factura/Albarán (Opcional)</FormFieldLabel>
                 <input
                   type="file"
                   accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
                   onChange={(e) => {
                     const file = e.target.files?.[0] || null;
-                    setNewPointData(prev => ({ ...prev, documento: file }));
+                    setNewPointData((prev) => ({ ...prev, documento: file }));
                   }}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-300 hover:border-orange-300 shadow-md focus:shadow-xl focus:shadow-orange-500/20 font-medium text-sm cursor-pointer file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"
+                  className="app-modal__input w-full inspecciones-file-input"
                 />
-                {newPointData.documento && (
-                  <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
-                    <span>✅</span>
-                    <span>Archivo seleccionado: {newPointData.documento.name}</span>
-                    <button
-                      onClick={() => setNewPointData(prev => ({ ...prev, documento: null }))}
-                      className="ml-2 text-red-500 hover:text-red-700"
-                      title="Eliminar archivo"
-                    >
-                      ✕
-                    </button>
-                  </p>
-                )}
+                {newPointData.documento ? (
+                  <AlertBanner variant="success" className="mt-2">
+                    <span className="flex items-center justify-between gap-2 w-full">
+                      <span className="truncate">Archivo: {newPointData.documento.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setNewPointData((prev) => ({ ...prev, documento: null }))}
+                        className="inspecciones-icon-btn shrink-0"
+                        aria-label="Eliminar archivo"
+                      >
+                        <X className="w-4 h-4" aria-hidden />
+                      </button>
+                    </span>
+                  </AlertBanner>
+                ) : null}
               </div>
             </>
-          )}
-          
-          {/* Tipo de Punto - doar pentru inspecții personalizate (nu pentru materiale) */}
-          {type !== 'entrega-materiales' && (
+          ) : null}
+
+          {type !== 'entrega-materiales' ? (
             <div>
-              <label className="block text-sm font-bold text-gray-800 mb-2">
-                Tipo de Punto
-              </label>
+              <FormFieldLabel>Tipo de Punto</FormFieldLabel>
               <select
                 value={newPointData.tip}
-                onChange={(e) => setNewPointData(prev => ({ ...prev, tip: e.target.value }))}
-                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-300 hover:border-purple-300 shadow-md focus:shadow-xl focus:shadow-purple-500/20 font-medium cursor-pointer"
+                onChange={(e) => setNewPointData((prev) => ({ ...prev, tip: e.target.value }))}
+                className="app-modal__input w-full"
               >
                 <option value="obligatoriu">Obligatorio</option>
                 <option value="opcional">Opcional</option>
               </select>
             </div>
-          )}
-          
+          ) : null}
+
           <div>
-            <label className="block text-sm font-bold text-gray-800 mb-2">
-              Observaciones Iniciales (Opcional)
-            </label>
+            <FormFieldLabel>Observaciones Iniciales (Opcional)</FormFieldLabel>
             <textarea
               value={newPointData.observatii}
-              onChange={(e) => setNewPointData(prev => ({ ...prev, observatii: e.target.value }))}
-              placeholder={type === 'entrega-materiales'
-                ? 'Observaciones iniciales para este material...'
-                : 'Observaciones iniciales para este punto...'}
+              onChange={(e) => setNewPointData((prev) => ({ ...prev, observatii: e.target.value }))}
+              placeholder={
+                type === 'entrega-materiales'
+                  ? 'Observaciones iniciales para este material...'
+                  : 'Observaciones iniciales para este punto...'
+              }
               rows={3}
-              className={`w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 transition-all duration-300 shadow-md focus:shadow-xl font-medium resize-none ${
-                type === 'entrega-materiales'
-                  ? 'focus:ring-orange-500 focus:border-orange-500 hover:border-orange-300 focus:shadow-orange-500/20'
-                  : 'focus:ring-purple-500 focus:border-purple-500 hover:border-purple-300 focus:shadow-purple-500/20'
-              }`}
+              className="app-modal__input w-full resize-y min-h-[96px]"
             />
-          </div>
-          
-          <div className="flex justify-end gap-3 pt-4">
-            <button
-              onClick={() => setShowAddPointModal(false)}
-              className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleAddCustomPoint}
-              className={`px-6 py-3 text-white font-bold rounded-xl transition-colors ${
-                type === 'entrega-materiales'
-                  ? 'bg-orange-600 hover:bg-orange-700'
-                  : 'bg-purple-600 hover:bg-purple-700'
-              }`}
-            >
-              {type === 'entrega-materiales' ? 'Añadir Material' : 'Añadir Punto'}
-            </button>
           </div>
         </div>
       </Modal>
@@ -2870,102 +2574,78 @@ const InspectionForm = ({ type, solicitudData }) => {
         isOpen={showPdfPreview}
         onClose={() => setShowPdfPreview(false)}
         title="Previsualización del PDF"
-      >
-        <div className="p-4">
-          <div className="mb-4">
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">
-              PDF Generado: {formData.nr}
-            </h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Revisa el contenido del PDF antes de enviar. Puedes descargar el PDF o enviar la inspección.
-            </p>
-          </div>
-          
-          <div className="mb-4">
-            {/* Android: PDF.js rendering | iOS: <object> | Desktop: <iframe> */}
-            { isAndroid ? (
-              <PDFViewerAndroid 
-                pdfUrl={pdfPreviewUrl} 
-                className="w-full border border-gray-200 rounded-lg"
-                style={{ height: '75vh' }}
-              />
-            ) : isIOS ? (
-              <object
-                data={pdfPreviewUrl}
-                type="application/pdf"
-                className="w-full border border-gray-200 rounded-lg"
-                style={{ height: '75vh' }}
-              >
-                <div className="p-4 text-center text-gray-600">
-                  <p className="mb-3">No se puede mostrar el PDF en este visor.</p>
-                  <a
-                    href={pdfPreviewUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl"
-                  >
-                    Abrir el PDF en una nueva pestaña
-                  </a>
-                </div>
-              </object>
-            ) : (
-              <iframe
-                src={pdfPreviewUrl}
-                title="PDF Preview"
-                className="w-full border border-gray-200 rounded-lg"
-                style={{ height: '75vh' }}
-              />
-            )}
-          </div>
-          
-          <div className="flex justify-between items-center">
-            <div className="flex gap-2">
-              <Button
-                onClick={() => {
-                  const link = document.createElement('a');
-                  link.href = pdfPreviewUrl;
-                  link.download = `inspeccion-${formData.nr}.pdf`;
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-                }}
-                variant="outline"
-                className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-              >
-                📥 Descargar PDF
-              </Button>
-              
-              <Button
-                onClick={() => setShowPdfPreview(false)}
-                variant="outline"
-                className="bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200"
-              >
-                ❌ Cancelar
-              </Button>
-            </div>
-            
+        size="xl"
+        showCloseButton={false}
+        className="app-modal--preview app-modal--form inspecciones-pdf-modal__panel"
+        footer={(
+          <div className="app-modal__actions inspecciones-pdf-form-actions">
             <Button
-              onClick={handleSendInspection}
-              disabled={loading}
-              className="bg-green-600 hover:bg-green-700 text-white"
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                const link = document.createElement('a');
+                link.href = pdfPreviewUrl;
+                link.download = `inspeccion-${formData.nr}.pdf`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
             >
+              <Download className="w-4 h-4" aria-hidden />
+              Descargar PDF
+            </Button>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setShowPdfPreview(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" variant="primary" size="sm" onClick={handleSendInspection} disabled={loading}>
               {loading ? (
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  Enviando...
-                </div>
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
+                  Enviando…
+                </>
               ) : (
-                '✅ Enviar Inspección'
+                <>
+                  <Send className="w-4 h-4" aria-hidden />
+                  Enviar Inspección
+                </>
               )}
             </Button>
           </div>
-          
-          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-sm text-blue-800">
-              <strong>Información:</strong> El PDF contiene todos los datos de la inspección y se enviará en formato Base64 al backend.
-            </p>
-          </div>
+        )}
+      >
+        <div className="inspecciones-pdf-modal__intro">
+          <p className="text-sm font-semibold text-gray-800">PDF Generado: {formData.nr}</p>
+          <p className="text-xs text-gray-600 mt-1">
+            Revisa el contenido del PDF antes de enviar. Puedes descargar el PDF o enviar la inspección.
+          </p>
         </div>
+
+        <div className="inspecciones-pdf-modal__frame inspecciones-pdf-modal__frame--form">
+          {isAndroid ? (
+            <PDFViewerAndroid pdfUrl={pdfPreviewUrl} className="w-full h-full" />
+          ) : isIOS ? (
+            <object data={pdfPreviewUrl} type="application/pdf" className="inspecciones-pdf-modal__iframe">
+              <div className="inspecciones-pdf-modal__state">
+                <p className="mb-3 text-sm">No se puede mostrar el PDF en este visor.</p>
+                <a
+                  href={pdfPreviewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="solicitud-admin-btn solicitud-admin-btn--secondary min-h-[44px]"
+                >
+                  Abrir el PDF en una nueva pestaña
+                </a>
+              </div>
+            </object>
+          ) : (
+            <iframe src={pdfPreviewUrl} title="PDF Preview" className="inspecciones-pdf-modal__iframe" />
+          )}
+        </div>
+
+        <AlertBanner variant="info" className="mt-3">
+          El PDF contiene todos los datos de la inspección y se enviará en formato Base64 al backend.
+        </AlertBanner>
       </Modal>
     </div>
   );

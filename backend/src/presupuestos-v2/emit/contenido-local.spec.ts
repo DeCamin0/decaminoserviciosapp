@@ -48,9 +48,7 @@ describe('contenido local (5.4)', () => {
     const fromSnap = resolveContenidoEfectivo({
       snapshot: {
         titulo_comercial: 'Desde snapshot',
-        servicios_periodicos: [
-          { nombre: 'Garaje', periodicidad: 'anual' },
-        ],
+        servicios_periodicos: [{ nombre: 'Garaje', periodicidad: 'anual' }],
       },
       plantilla,
       nombre: 'Aux',

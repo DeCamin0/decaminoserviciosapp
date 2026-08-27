@@ -294,7 +294,8 @@ export class AuthService {
         return { success: false, error: 'User not found' };
       }
 
-      const isImpersonation = !!decoded.impersonation && !!decoded.impersonatedBy;
+      const isImpersonation =
+        !!decoded.impersonation && !!decoded.impersonatedBy;
       const estadoRaw = (found.ESTADO || '').toString().trim().toUpperCase();
       // Impersonation may target INACTIVO for support review — allow refresh then.
       if (!isImpersonation && estadoRaw && estadoRaw !== 'ACTIVO') {

@@ -139,9 +139,9 @@ describe('FichajeScheduleResolverService', () => {
       expect(
         resolver.isReminderDueForInterval(23 * 60, night, 'Salida', 15),
       ).toBe(false);
-      expect(
-        resolver.isReminderDueForInterval(0, night, 'Salida', 15),
-      ).toBe(false);
+      expect(resolver.isReminderDueForInterval(0, night, 'Salida', 15)).toBe(
+        false,
+      );
       expect(
         resolver.isReminderDueForInterval(7 * 60 + 15, night, 'Salida', 15),
       ).toBe(false);

@@ -714,9 +714,9 @@ export default function CostePersonalTab() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-indigo-50 to-indigo-100 p-4 rounded-xl border border-indigo-200">
-        <h2 className="text-xl font-bold text-gray-900">💰 Coste Personal</h2>
-        <p className="text-sm text-gray-600 mt-1">
+      <div className="app-card app-card--pad">
+        <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Coste personal</h2>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
           Gestiona los costes de personal por mes y año. Puedes editar directamente las celdas.
         </p>
       </div>

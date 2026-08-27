@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { routes } from '../utils/routes';
-import Back3DButton from '../components/Back3DButton.jsx';
-import { Button, Modal } from '../components/ui';
+import { PageHeader, AlertBanner, SegmentedControl, Modal } from '../components/ui';
+import { RefreshCw, Play, CheckCircle, Camera, Image as ImageIcon } from 'lucide-react';
 import activityLogger from '../utils/activityLogger';
 import { useAuth } from '../contexts/AuthContextBase';
 
@@ -44,27 +45,27 @@ const PRIORIDAD_LABEL = {
   urgente: 'Urgente',
 };
 
-function estadoClass(estado) {
+function estadoStatusClass(estado) {
   switch (estado) {
     case 'hecha':
-      return 'bg-emerald-100 text-emerald-800';
+      return 'solicitud-status--ok';
     case 'en_curso':
-      return 'bg-sky-100 text-sky-800';
+      return 'solicitud-status--neutral';
     case 'cancelada':
-      return 'bg-gray-200 text-gray-600';
+      return 'solicitud-status--anulada';
     default:
-      return 'bg-amber-100 text-amber-900';
+      return 'solicitud-status--pendiente';
   }
 }
 
-function prioridadClass(p) {
+function prioridadTextClass(p) {
   switch (p) {
     case 'urgente':
-      return 'bg-red-100 text-red-800';
+      return 'tareas-priority--urgente';
     case 'alta':
-      return 'bg-orange-100 text-orange-800';
+      return 'tareas-priority--alta';
     default:
-      return 'bg-slate-100 text-slate-700';
+      return '';
   }
 }
 
@@ -73,6 +74,7 @@ export default function MisTareasPage() {
   const [tareas, setTareas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [activeSection, setActiveSection] = useState('pendientes');
   const [completing, setCompleting] = useState(null);
   const [nota, setNota] = useState('');
   const [files, setFiles] = useState([]);
@@ -128,7 +130,6 @@ export default function MisTareasPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  /** Sube el lote actual y deja el modal abierto para más fotos. */
   const submitUploadFotos = async () => {
     if (!completing || files.length === 0) return;
     setUploadingFotos(true);
@@ -154,7 +155,6 @@ export default function MisTareasPage() {
   const submitCompletar = async () => {
     if (!completing) return;
     if (completing.estado === 'hecha') {
-      // Ya hecha: solo cerrar (fotos se añaden con "Subir fotos")
       setCompleting(null);
       return;
     }
@@ -194,246 +194,210 @@ export default function MisTareasPage() {
   const historial = tareas.filter((t) => t.estado === 'hecha' || t.estado === 'cancelada');
   const fotosSubidas = completing?.fotos?.length || 0;
   const yaHecha = completing?.estado === 'hecha';
+  const visibleList = activeSection === 'pendientes' ? activas : historial;
 
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white pb-24">
-      <div className="max-w-3xl mx-auto px-4 pt-4">
-        <div className="flex items-center gap-3 mb-6">
-          <Back3DButton />
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Mis tareas</h1>
-            <p className="text-sm text-slate-600">Confirma y documenta el trabajo asignado</p>
-          </div>
+  const renderTarea = (t, isHistorial = false) => (
+    <article key={t.id} className="solicitud-admin-mobile-card">
+      <div className="solicitud-admin-mobile-card__head">
+        <div className="min-w-0 flex-1">
+          <h3 className="solicitud-admin-mobile-card__title">{t.titulo}</h3>
+          {t.descripcion && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mt-1">{t.descripcion}</p>
+          )}
         </div>
-
-        {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-            {error}
-          </div>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <span className={`solicitud-status ${estadoStatusClass(t.estado)}`}>
+            {ESTADO_LABEL[t.estado] || t.estado}
+          </span>
+          {t.prioridad && t.prioridad !== 'normal' && (
+            <span className={`text-xs ${prioridadTextClass(t.prioridad)}`}>
+              {PRIORIDAD_LABEL[t.prioridad]}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="text-xs text-gray-500 dark:text-gray-400 space-y-0.5 mt-2">
+        {(t.centro || t.zona) && <p>{[t.centro, t.zona].filter(Boolean).join(' · ')}</p>}
+        {t.fecha_limite && <p>Límite: {new Date(t.fecha_limite).toLocaleString()}</p>}
+        {t.nombre_creador && <p>Asignada por: {t.nombre_creador}</p>}
+        {t.nota_completado && isHistorial && <p className="italic">{t.nota_completado}</p>}
+        {t.fotos?.length > 0 && <p>{t.fotos.length} foto(s)</p>}
+      </div>
+      {t.fotos?.length > 0 && isHistorial && (
+        <div className="solicitud-admin-toolbar documentos-actions mt-2 flex-wrap">
+          {t.fotos.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => openFoto(t.id, f.id)}
+              className="solicitud-admin-btn"
+            >
+              <ImageIcon className="w-4 h-4" aria-hidden />
+              <span className="truncate max-w-[8rem]">{f.nombre_original || `Foto ${f.id}`}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="solicitud-admin-toolbar documentos-actions mt-2 flex-wrap">
+        {!isHistorial && t.estado === 'pendiente' && (
+          <button
+            type="button"
+            onClick={() => markEnCurso(t.id)}
+            disabled={busyId === t.id}
+            className="solicitud-admin-btn"
+          >
+            <Play className="w-4 h-4" aria-hidden />
+            <span>{busyId === t.id ? '…' : 'Empezar'}</span>
+          </button>
         )}
-
-        {loading ? (
-          <div className="py-16 text-center text-slate-500">Cargando tareas…</div>
-        ) : (
-          <>
-            <section className="mb-8">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3">
-                Pendientes ({activas.length})
-              </h2>
-              {activas.length === 0 ? (
-                <p className="text-slate-500 text-sm py-6 text-center">No tienes tareas pendientes.</p>
-              ) : (
-                <ul className="space-y-3">
-                  {activas.map((t) => (
-                    <li
-                      key={t.id}
-                      className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
-                        <h3 className="font-semibold text-slate-900">{t.titulo}</h3>
-                        <div className="flex gap-2">
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${estadoClass(t.estado)}`}>
-                            {ESTADO_LABEL[t.estado] || t.estado}
-                          </span>
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${prioridadClass(t.prioridad)}`}>
-                            {PRIORIDAD_LABEL[t.prioridad] || t.prioridad}
-                          </span>
-                        </div>
-                      </div>
-                      {t.descripcion && (
-                        <p className="text-sm text-slate-600 whitespace-pre-wrap mb-2">{t.descripcion}</p>
-                      )}
-                      <div className="text-xs text-slate-500 space-y-0.5 mb-3">
-                        {(t.centro || t.zona) && (
-                          <p>
-                            {[t.centro, t.zona].filter(Boolean).join(' · ')}
-                          </p>
-                        )}
-                        {t.fecha_limite && (
-                          <p>Límite: {new Date(t.fecha_limite).toLocaleString()}</p>
-                        )}
-                        {t.nombre_creador && <p>Asignada por: {t.nombre_creador}</p>}
-                        {t.fotos?.length > 0 && (
-                          <p className="text-emerald-700">{t.fotos.length} foto(s) ya subida(s)</p>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {t.estado === 'pendiente' && (
-                          <Button
-                            variant="secondary"
-                            onClick={() => markEnCurso(t.id)}
-                            disabled={busyId === t.id}
-                            loading={busyId === t.id}
-                          >
-                            Empezar
-                          </Button>
-                        )}
-                        <Button variant="primary" onClick={() => openCompletar(t)}>
-                          Completar con fotos
-                        </Button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section>
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3">
-                Historial ({historial.length})
-              </h2>
-              {historial.length === 0 ? (
-                <p className="text-slate-500 text-sm py-4 text-center">Sin historial aún.</p>
-              ) : (
-                <ul className="space-y-3">
-                  {historial.map((t) => (
-                    <li
-                      key={t.id}
-                      className="rounded-xl border border-slate-100 bg-slate-50/80 p-4"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
-                        <h3 className="font-medium text-slate-800">{t.titulo}</h3>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${estadoClass(t.estado)}`}>
-                          {ESTADO_LABEL[t.estado] || t.estado}
-                        </span>
-                      </div>
-                      {t.nota_completado && (
-                        <p className="text-sm text-slate-600 mt-1">{t.nota_completado}</p>
-                      )}
-                      {t.fotos?.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {t.fotos.map((f) => (
-                            <button
-                              key={f.id}
-                              type="button"
-                              onClick={() => openFoto(t.id, f.id)}
-                              className="text-xs px-2 py-1 rounded bg-white border border-slate-200 text-sky-700 hover:bg-sky-50"
-                            >
-                              Ver foto {f.id}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      {t.estado === 'hecha' && (
-                        <div className="mt-3">
-                          <Button variant="secondary" onClick={() => openCompletar(t)}>
-                            Añadir más fotos
-                          </Button>
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          </>
+        {!isHistorial && (
+          <button type="button" onClick={() => openCompletar(t)} className="solicitud-admin-btn solicitud-admin-btn--primary">
+            <CheckCircle className="w-4 h-4" aria-hidden />
+            <span>Completar</span>
+          </button>
+        )}
+        {isHistorial && t.estado === 'hecha' && (
+          <button type="button" onClick={() => openCompletar(t)} className="solicitud-admin-btn">
+            <Camera className="w-4 h-4" aria-hidden />
+            <span>Añadir fotos</span>
+          </button>
         )}
       </div>
+    </article>
+  );
 
-      <Modal
-        isOpen={Boolean(completing)}
-        onClose={() => !submitting && !uploadingFotos && setCompleting(null)}
-        title={yaHecha ? 'Añadir fotos' : 'Completar tarea'}
-        size="md"
-      >
-        {completing && (
-          <div className="space-y-4">
-            <p className="text-sm font-medium text-slate-800">{completing.titulo}</p>
-            <p className="text-xs text-slate-500">
-              Puedes subir fotos varias veces. Selecciona un lote, pulsa «Subir fotos», y repite si olvidaste alguna.
-            </p>
+  return (
+    <div className="app-page tareas-page">
+      <PageHeader
+        title="Mis tareas"
+        subtitle="Confirma y documenta el trabajo asignado"
+        backTo="/inicio"
+        actions={(
+          <button type="button" onClick={load} disabled={loading} className="solicitud-admin-btn" title="Actualizar">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} aria-hidden />
+            <span className="hidden sm:inline">Actualizar</span>
+          </button>
+        )}
+      />
 
-            {!yaHecha && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nota (opcional)</label>
-                <textarea
-                  value={nota}
-                  onChange={(e) => setNota(e.target.value)}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--primary-color)] focus:border-[var(--primary-color)]"
-                  placeholder="Qué se hizo, observaciones…"
-                />
-              </div>
-            )}
+      <SegmentedControl
+        value={activeSection}
+        onChange={setActiveSection}
+        className="solicitud-admin-tabs"
+        items={[
+          { id: 'pendientes', label: `Pendientes (${activas.length})`, shortLabel: `Pend. (${activas.length})` },
+          { id: 'historial', label: `Historial (${historial.length})`, shortLabel: `Hist. (${historial.length})` },
+        ]}
+      />
 
-            {fotosSubidas > 0 && (
-              <div>
-                <p className="text-xs uppercase text-slate-400 mb-2">
-                  Fotos subidas ({fotosSubidas})
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {completing.fotos.map((f) => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      onClick={() => openFoto(completing.id, f.id)}
-                      className="text-xs px-2 py-1 rounded bg-slate-50 border border-slate-200 text-sky-700 hover:bg-sky-50"
-                    >
-                      {f.nombre_original || `Foto ${f.id}`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+      {error && <AlertBanner variant="danger">{error}</AlertBanner>}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Nuevas fotos
-              </label>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={(e) => setFiles(Array.from(e.target.files || []))}
-                className="block w-full text-sm text-slate-600"
-              />
-              {files.length > 0 && (
-                <p className="text-xs text-slate-500 mt-1">{files.length} archivo(s) pendientes de subir</p>
-              )}
-            </div>
+      {loading ? (
+        <AlertBanner variant="loading" loading>Cargando tareas...</AlertBanner>
+      ) : visibleList.length === 0 ? (
+        <AlertBanner variant="info" title={activeSection === 'pendientes' ? 'No tienes tareas pendientes' : 'Sin historial aún'}>
+          {activeSection === 'pendientes' ? 'Cuando te asignen tareas, aparecerán aquí.' : 'Las tareas completadas aparecerán en esta sección.'}
+        </AlertBanner>
+      ) : (
+        <div className="solicitud-admin-mobile-list">
+          {visibleList.map((t) => renderTarea(t, activeSection === 'historial'))}
+        </div>
+      )}
 
-            <div className="flex flex-wrap justify-end gap-3 pt-2">
-              <Button
-                variant="secondary"
-                onClick={() => setCompleting(null)}
-                disabled={submitting || uploadingFotos}
-              >
+      {typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={Boolean(completing)}
+          onClose={() => !submitting && !uploadingFotos && setCompleting(null)}
+          title={yaHecha ? 'Añadir fotos' : 'Completar tarea'}
+          showCloseButton={false}
+          className="app-modal--form"
+          footer={completing ? (
+            <div className="app-modal__actions flex-wrap">
+              <button type="button" onClick={() => setCompleting(null)} disabled={submitting || uploadingFotos} className="app-modal__btn">
                 {yaHecha ? 'Cerrar' : 'Cancelar'}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={submitUploadFotos}
-                loading={uploadingFotos}
-                disabled={submitting || uploadingFotos || files.length === 0}
-              >
+              </button>
+              <button type="button" onClick={submitUploadFotos} disabled={submitting || uploadingFotos || files.length === 0} className="app-modal__btn">
                 {uploadingFotos ? 'Subiendo…' : 'Subir fotos'}
-              </Button>
+              </button>
               {!yaHecha && (
-                <Button
-                  variant="primary"
-                  onClick={submitCompletar}
-                  loading={submitting}
-                  disabled={submitting || uploadingFotos}
-                >
+                <button type="button" onClick={submitCompletar} disabled={submitting || uploadingFotos} className="app-modal__btn app-modal__btn--ok">
                   {submitting ? 'Enviando…' : 'Marcar hecha'}
-                </Button>
+                </button>
               )}
             </div>
-          </div>
-        )}
-      </Modal>
+          ) : null}
+        >
+          {completing && (
+            <div className="space-y-4">
+              <p className="app-modal__meta font-medium">{completing.titulo}</p>
+              <AlertBanner variant="info">
+                Puedes subir fotos varias veces. Selecciona un lote, pulsa «Subir fotos» y repite si olvidaste alguna.
+              </AlertBanner>
+              {!yaHecha && (
+                <div className="app-modal__field">
+                  <label htmlFor="tarea-nota" className="app-modal__label">Nota (opcional)</label>
+                  <textarea
+                    id="tarea-nota"
+                    value={nota}
+                    onChange={(e) => setNota(e.target.value)}
+                    rows={3}
+                    className="app-modal__input min-h-[5rem] resize-y"
+                    placeholder="Qué se hizo, observaciones…"
+                  />
+                </div>
+              )}
+              {fotosSubidas > 0 && (
+                <div>
+                  <p className="app-modal__label">Fotos subidas ({fotosSubidas})</p>
+                  <div className="solicitud-admin-toolbar flex-wrap mt-1">
+                    {completing.fotos.map((f) => (
+                      <button key={f.id} type="button" onClick={() => openFoto(completing.id, f.id)} className="solicitud-admin-btn">
+                        <ImageIcon className="w-4 h-4" aria-hidden />
+                        <span className="truncate max-w-[8rem]">{f.nombre_original || `Foto ${f.id}`}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="app-modal__field">
+                <label htmlFor="tarea-fotos" className="app-modal__label">Nuevas fotos</label>
+                <input
+                  ref={fileInputRef}
+                  id="tarea-fotos"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => setFiles(Array.from(e.target.files || []))}
+                  className="app-modal__input py-2"
+                />
+                {files.length > 0 && (
+                  <p className="app-modal__meta mt-1">{files.length} archivo(s) pendientes de subir</p>
+                )}
+              </div>
+            </div>
+          )}
+        </Modal>,
+        document.body
+      )}
 
-      <Modal
-        isOpen={Boolean(previewUrl)}
-        onClose={() => setPreviewUrl(null)}
-        title="Foto"
-        size="lg"
-      >
-        {previewUrl && (
-          <img src={previewUrl} alt="Evidencia" className="max-h-[70vh] w-full object-contain rounded-lg" />
-        )}
-      </Modal>
+      {typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={Boolean(previewUrl)}
+          onClose={() => setPreviewUrl(null)}
+          title="Foto"
+          showCloseButton={false}
+          size="lg"
+          className="app-modal--preview"
+          footer={(
+            <button type="button" onClick={() => setPreviewUrl(null)} className="app-modal__btn">Cerrar</button>
+          )}
+        >
+          {previewUrl && (
+            <img src={previewUrl} alt="Evidencia" className="max-h-[70vh] w-full object-contain rounded-lg" />
+          )}
+        </Modal>,
+        document.body
+      )}
     </div>
   );
 }

@@ -361,11 +361,15 @@ export class SolicitudesService {
 
     if (maxPersonas !== undefined && maxPersonas !== null) {
       if (!Number.isFinite(maxPersonas)) {
-        throw new BadRequestException('max_personas_dia no es un número válido');
+        throw new BadRequestException(
+          'max_personas_dia no es un número válido',
+        );
       }
       const n = Math.round(Number(maxPersonas));
       if (n < 1 || n > 50) {
-        throw new BadRequestException('max_personas_dia debe estar entre 1 y 50');
+        throw new BadRequestException(
+          'max_personas_dia debe estar entre 1 y 50',
+        );
       }
       nextPersonas = n;
     }

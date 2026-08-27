@@ -70,10 +70,7 @@ export function addTotales(a: TotalesMoney, b: TotalesMoney): TotalesMoney {
 }
 
 function optTotales(o: OpcionTotalesInput): TotalesMoney {
-  const t =
-    o.resultado?.totales ||
-    (o.resultado_json as any)?.totales ||
-    null;
+  const t = o.resultado?.totales || (o.resultado_json as any)?.totales || null;
   return normalizeTotales(t);
 }
 
@@ -117,8 +114,7 @@ export function computeDocumentTotales(
     // Legacy: no opciones array → treat line resultado as one acumulable option
     if (!opciones.length) {
       const legacy = normalizeTotales(
-        (svc.resultado as any)?.totales ||
-          (svc.resultado_json as any)?.totales,
+        (svc.resultado as any)?.totales || (svc.resultado_json as any)?.totales,
       );
       totales_sin_alternativas = addTotales(totales_sin_alternativas, legacy);
       continue;

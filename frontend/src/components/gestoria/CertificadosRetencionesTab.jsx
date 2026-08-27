@@ -70,8 +70,8 @@ export default function CertificadosRetencionesTab({ showNotification }) {
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
         <div className="flex items-center gap-3 sm:gap-4">
-          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
-            <span className="text-white text-xl sm:text-2xl">📑</span>
+          <div className="documentos-empleados-avatar shrink-0 w-10 h-10 sm:w-12 sm:h-12 text-base">
+            CR
           </div>
           <div>
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Certificados de retenciones</h2>

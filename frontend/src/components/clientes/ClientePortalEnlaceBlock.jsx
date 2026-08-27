@@ -83,24 +83,23 @@ export default function ClientePortalEnlaceBlock({ clienteId }) {
   if (!clienteId) return null;
 
   return (
-    <Card>
-      <div className="p-6 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-          <Link2 className="h-5 w-5" />
-          Portal clientes (enlace comunidad)
-        </h3>
+    <Card className="app-card" padding="">
+      <div className="clientes-detail-card__head flex-wrap">
+        <Link2 className="h-5 w-5" aria-hidden />
+        <h3 className="clientes-detail-card__title">Portal clientes (enlace comunidad)</h3>
         <Button
           type="button"
           variant="outline"
           size="sm"
+          className="ml-auto"
           onClick={() => ensureToken(true)}
           disabled={loading}
         >
-          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
-          Nuevo token (invalida QR anterior)
+          <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} aria-hidden />
+          Nuevo token
         </Button>
       </div>
-      <div className="p-6 space-y-4">
+      <div className="clientes-detail-card__body space-y-4">
         <p className="text-sm text-gray-600">
           Comparte este enlace (o el código QR) con la junta: cada comunidad tiene
           su propia URL. El contacto introduce su email y recibe el código OTP.
@@ -124,9 +123,7 @@ export default function ClientePortalEnlaceBlock({ clienteId }) {
               </div>
               <div className="flex-1 min-w-0 space-y-2">
                 <label className="text-xs font-medium text-gray-500">Enlace</label>
-                <p className="text-sm break-all font-mono bg-gray-50 border rounded px-3 py-2">
-                  {portalUrl}
-                </p>
+                <p className="clientes-portal-link">{portalUrl}</p>
                 <Button type="button" size="sm" variant="outline" onClick={copy}>
                   <Copy className="h-4 w-4 mr-1" />
                   Copiar enlace

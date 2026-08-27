@@ -100,7 +100,11 @@ export class PresupuestosV2Controller {
     },
   ) {
     await this.service.assertCanAccess(req.user);
-    const data = await this.service.calcularPresupuesto(req.user, id, body || {});
+    const data = await this.service.calcularPresupuesto(
+      req.user,
+      id,
+      body || {},
+    );
     return { success: true, data };
   }
 
@@ -140,7 +144,12 @@ export class PresupuestosV2Controller {
     },
   ) {
     await this.service.assertCanAccess(req.user);
-    const data = await this.service.addVariante(req.user, id, lineaId, body || {});
+    const data = await this.service.addVariante(
+      req.user,
+      id,
+      lineaId,
+      body || {},
+    );
     return { success: true, data };
   }
 
@@ -180,6 +189,21 @@ export class PresupuestosV2Controller {
       req.user,
       id,
       body?.servicios_digitales ?? body,
+    );
+    return { success: true, data };
+  }
+
+  @Put(':id/descuento-fidelidad')
+  async updateDescuentoFidelidad(
+    @Request() req: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { descuento_fidelidad_pct?: unknown },
+  ) {
+    await this.service.assertCanAccess(req.user);
+    const data = await this.service.updateDescuentoFidelidad(
+      req.user,
+      id,
+      body?.descuento_fidelidad_pct,
     );
     return { success: true, data };
   }
@@ -266,10 +290,7 @@ export class PresupuestosV2Controller {
     const { buffer, filename, contentType } =
       await this.pdfService.generatePreviewPdf(req.user, id);
     res.setHeader('Content-Type', contentType);
-    res.setHeader(
-      'Content-Disposition',
-      `inline; filename="${filename}"`,
-    );
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
     res.send(buffer);
   }
 
@@ -287,10 +308,7 @@ export class PresupuestosV2Controller {
         forceNewVersion: regen === '1' || regen === 'true',
       });
     res.setHeader('Content-Type', contentType);
-    res.setHeader(
-      'Content-Disposition',
-      `inline; filename="${filename}"`,
-    );
+    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
     res.setHeader('X-Presupuesto-V2-Pdf', '1');
     res.send(buffer);
   }
@@ -312,7 +330,11 @@ export class PresupuestosV2Controller {
     @Body() body: Record<string, unknown>,
   ) {
     await this.service.assertCanAccess(req.user);
-    const data = await this.service.updateClienteOverrides(req.user, id, body || {});
+    const data = await this.service.updateClienteOverrides(
+      req.user,
+      id,
+      body || {},
+    );
     return { success: true, data };
   }
 
@@ -406,10 +428,7 @@ export class PresupuestosV2ConfigController {
   }
 
   @Get('parametros-audit')
-  async parametrosAudit(
-    @Request() req: any,
-    @Query('clave') clave?: string,
-  ) {
+  async parametrosAudit(@Request() req: any, @Query('clave') clave?: string) {
     await this.service.assertCanConfig(req.user);
     const data = await this.configAdmin.listParamAudit(clave);
     return { success: true, data };
@@ -535,10 +554,7 @@ export class PresupuestosV2ConfigController {
         const buf = Buffer.isBuffer(obj.body)
           ? obj.body
           : Buffer.from(obj.body as any);
-        res.setHeader(
-          'Content-Type',
-          obj.contentType || 'image/png',
-        );
+        res.setHeader('Content-Type', obj.contentType || 'image/png');
         res.setHeader('Cache-Control', 'private, max-age=60');
         return res.send(buf);
       } catch {

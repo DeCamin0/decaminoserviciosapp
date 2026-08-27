@@ -1,9 +1,4 @@
-import {
-  BcPair,
-  CalcParams,
-  LineaCalcResult,
-  MotorDefinition,
-} from '../tipos';
+import { BcPair, CalcParams, LineaCalcResult, MotorDefinition } from '../tipos';
 
 function n(v: unknown, fallback = 0): number {
   const x = Number(v);
@@ -94,8 +89,7 @@ export function calculateLimpiezaCoste(
   const D36 = vig.b * vig.c * params.meses_anio;
   const D38 = gastoB * B4 * params.semanas_mes * params.meses_anio;
   const D40 = benef.b * benef.c * params.meses_anio;
-  const D42 =
-    D20 + D22 + D24 + D26 + D28 + D30 + D32 + D34 + D36 + D38 + D40;
+  const D42 = D20 + D22 + D24 + D26 + D28 + D30 + D32 + D34 + D36 + D38 + D40;
   const D44 = (D18 + D42) * params.iva_pct;
   const D46 = D18 + D42 + D44;
   const D48 =
@@ -103,9 +97,7 @@ export function calculateLimpiezaCoste(
 
   const d48ManualRaw = inputs.d48Manual;
   const d48ManualNum =
-    d48ManualRaw != null && d48ManualRaw !== ''
-      ? Number(d48ManualRaw)
-      : NaN;
+    d48ManualRaw != null && d48ManualRaw !== '' ? Number(d48ManualRaw) : NaN;
   const d48ParaPrecio =
     !Number.isNaN(d48ManualNum) && d48ManualNum >= 0 ? d48ManualNum : D48;
   if (!Number.isNaN(d48ManualNum) && d48ManualNum >= 0) {
@@ -173,24 +165,104 @@ export const motorLimpiezaCoste: MotorDefinition = {
   defaultInputs: defaultInputsLimpieza,
   calculate: calculateLimpiezaCoste,
   inputSchema: [
-    { key: 'convenioBase', label: 'Convenio base (€/mes)', type: 'number', group: 'base' },
-    { key: 'numOperarias', label: 'Nº operarias', type: 'number', group: 'base' },
-    { key: 'horasPorDiaPorOperaria', label: 'Horas / día / operaria', type: 'number', group: 'base' },
-    { key: 'diasLaborablesSemana', label: 'Días laborables / semana', type: 'number', group: 'base' },
-    { key: 'serviciosExtraHoras', label: 'Horas servicios extra (anual)', type: 'number', group: 'base' },
-    { key: 'uniformidad', label: 'Uniformidad', type: 'bc_pair', group: 'costes' },
+    {
+      key: 'convenioBase',
+      label: 'Convenio base (€/mes)',
+      type: 'number',
+      group: 'base',
+    },
+    {
+      key: 'numOperarias',
+      label: 'Nº operarias',
+      type: 'number',
+      group: 'base',
+    },
+    {
+      key: 'horasPorDiaPorOperaria',
+      label: 'Horas / día / operaria',
+      type: 'number',
+      group: 'base',
+    },
+    {
+      key: 'diasLaborablesSemana',
+      label: 'Días laborables / semana',
+      type: 'number',
+      group: 'base',
+    },
+    {
+      key: 'serviciosExtraHoras',
+      label: 'Horas servicios extra (anual)',
+      type: 'number',
+      group: 'base',
+    },
+    {
+      key: 'uniformidad',
+      label: 'Uniformidad',
+      type: 'bc_pair',
+      group: 'costes',
+    },
     { key: 'gestoria', label: 'Gestoría', type: 'bc_pair', group: 'costes' },
-    { key: 'productosLimpieza', label: 'Productos limpieza', type: 'bc_pair', group: 'costes' },
-    { key: 'aplicaLimpiezaGajare', label: 'Aplicar limpieza Gajare', type: 'boolean', group: 'costes' },
-    { key: 'limpiezaGajare', label: 'Limpieza Gajare', type: 'bc_pair', group: 'costes' },
-    { key: 'acristalado', label: 'Acristalado', type: 'bc_pair', group: 'costes' },
-    { key: 'cristalero', label: 'Cristalero', type: 'bc_pair', group: 'costes' },
+    {
+      key: 'productosLimpieza',
+      label: 'Productos limpieza',
+      type: 'bc_pair',
+      group: 'costes',
+    },
+    {
+      key: 'aplicaLimpiezaGajare',
+      label: 'Aplicar limpieza Gajare',
+      type: 'boolean',
+      group: 'costes',
+    },
+    {
+      key: 'limpiezaGajare',
+      label: 'Limpieza Gajare',
+      type: 'bc_pair',
+      group: 'costes',
+    },
+    {
+      key: 'acristalado',
+      label: 'Acristalado',
+      type: 'bc_pair',
+      group: 'costes',
+    },
+    {
+      key: 'cristalero',
+      label: 'Cristalero',
+      type: 'bc_pair',
+      group: 'costes',
+    },
     { key: 'cubos', label: 'Cubos', type: 'bc_pair', group: 'costes' },
     { key: 'telefono', label: 'Teléfono', type: 'bc_pair', group: 'costes' },
-    { key: 'vigilancia', label: 'Vigilancia', type: 'bc_pair', group: 'costes' },
-    { key: 'gastosFijoHoras', label: 'Gastos fijo (€/h; C=B4)', type: 'bc_pair', group: 'costes' },
-    { key: 'beneficioEmpresarial', label: 'Beneficio empresarial', type: 'bc_pair', group: 'costes' },
-    { key: 'd48Manual', label: 'Precio mensual forzado (opcional)', type: 'number', group: 'oferta' },
-    { key: 'extra', label: 'Extra €/mes (oferta)', type: 'number', group: 'oferta' },
+    {
+      key: 'vigilancia',
+      label: 'Vigilancia',
+      type: 'bc_pair',
+      group: 'costes',
+    },
+    {
+      key: 'gastosFijoHoras',
+      label: 'Gastos fijo (€/h; C=B4)',
+      type: 'bc_pair',
+      group: 'costes',
+    },
+    {
+      key: 'beneficioEmpresarial',
+      label: 'Beneficio empresarial',
+      type: 'bc_pair',
+      group: 'costes',
+    },
+    {
+      key: 'd48Manual',
+      label: 'Precio mensual forzado (opcional)',
+      type: 'number',
+      group: 'oferta',
+    },
+    {
+      key: 'extra',
+      label: 'Extra €/mes (oferta)',
+      type: 'number',
+      group: 'oferta',
+    },
   ],
 };

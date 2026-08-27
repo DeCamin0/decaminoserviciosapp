@@ -175,19 +175,17 @@ export default function ClienteContactosSection({ clienteId }) {
   }
 
   return (
-    <Card>
-      <div className="p-6 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-          <Users className="h-5 w-5" />
-          Contactos comunidad
-        </h3>
-        <Button type="button" size="sm" onClick={openNew} disabled={saving}>
-          <Plus className="h-4 w-4 mr-1" />
+    <Card className="app-card" padding="">
+      <div className="clientes-detail-card__head flex-wrap">
+        <Users className="h-5 w-5" aria-hidden />
+        <h3 className="clientes-detail-card__title">Contactos comunidad</h3>
+        <Button type="button" size="sm" className="ml-auto" onClick={openNew} disabled={saving}>
+          <Plus className="h-4 w-4 mr-1" aria-hidden />
           Añadir contacto
         </Button>
       </div>
 
-      <div className="p-6 space-y-4">
+      <div className="clientes-detail-card__body space-y-4">
         <p className="text-sm text-gray-600">
           Personas de contacto (junta, administrador de fincas…). El acceso al
           portal es siempre por el <strong>enlace/QR de esta comunidad</strong>:
@@ -363,7 +361,40 @@ export default function ClienteContactosSection({ clienteId }) {
             No hay contactos. Pulsa «Añadir contacto».
           </div>
         ) : (
-          <div className="overflow-x-auto rounded border border-gray-200">
+          <>
+            <div className="clientes-contactos-list md:hidden">
+              {items.map((row) => (
+                <div key={row.id} className="clientes-contactos-row">
+                  <div>
+                    <p className="clientes-contactos-row__name">
+                      {row.nombre}
+                      {row.es_principal ? (
+                        <Badge className="ml-2 text-xs bg-amber-100 text-amber-900">Principal</Badge>
+                      ) : null}
+                    </p>
+                    <p className="clientes-contactos-row__meta">{labelCargo(row)}</p>
+                    <p className="clientes-contactos-row__meta">{row.email || '—'}</p>
+                    <p className="clientes-contactos-row__meta">{row.telefono || '—'}</p>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {row.acceso_portal ? <Badge variant="secondary" className="text-xs">Portal</Badge> : null}
+                      {row.recibe_notificaciones ? <Badge variant="secondary" className="text-xs">Avisos</Badge> : null}
+                      {row.estado === 'inactivo' ? <Badge className="text-xs bg-gray-200 text-gray-700">Inactivo</Badge> : null}
+                    </div>
+                  </div>
+                  <div className="clientes-contactos-row__actions">
+                    <Button type="button" variant="secondary" size="sm" onClick={() => openEdit(row)} disabled={saving}>
+                      <Pencil className="h-4 w-4" aria-hidden />
+                      <span>Editar</span>
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="text-red-600" onClick={() => remove(row.id)} disabled={saving}>
+                      <Trash2 className="h-4 w-4" aria-hidden />
+                      <span>Eliminar</span>
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden md:block overflow-x-auto rounded border border-gray-200">
             <table className="min-w-full text-sm">
               <thead className="bg-gray-100 text-left text-xs uppercase text-gray-600">
                 <tr>
@@ -441,6 +472,7 @@ export default function ClienteContactosSection({ clienteId }) {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </Card>

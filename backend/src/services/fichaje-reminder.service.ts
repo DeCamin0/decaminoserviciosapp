@@ -178,7 +178,9 @@ export class FichajeReminderService {
           fichajes: fichajesByCode.get(schedule.codigo) ?? [],
           lastSent: lastSentMap.get(schedule.codigo) ?? {},
           defaultWindow,
-          retryMinutes: Number.isFinite(retryMinutes) ? Math.max(1, retryMinutes) : 30,
+          retryMinutes: Number.isFinite(retryMinutes)
+            ? Math.max(1, retryMinutes)
+            : 30,
           dryRun,
           result,
         });
@@ -241,22 +243,16 @@ export class FichajeReminderService {
       result.skippedAusencia += 1;
       const tipo = String(ctx.ausenciaInfo.tipo || 'Ausencia').trim();
       const isVac =
-        /vacaci[oó]n/i.test(tipo) || /^vac$/i.test(tipo) || /holiday/i.test(tipo);
-      pushSkip(
-        'ausencia',
-        isVac ? 'Vacaciones' : `Ausencia: ${tipo}`,
-        tipo,
-      );
+        /vacaci[oó]n/i.test(tipo) ||
+        /^vac$/i.test(tipo) ||
+        /holiday/i.test(tipo);
+      pushSkip('ausencia', isVac ? 'Vacaciones' : `Ausencia: ${tipo}`, tipo);
       return;
     }
 
     if (ctx.bajaInfo) {
       result.skippedBaja += 1;
-      pushSkip(
-        'baja_medica',
-        'Baja médica',
-        ctx.bajaInfo.situacion || null,
-      );
+      pushSkip('baja_medica', 'Baja médica', ctx.bajaInfo.situacion || null);
       return;
     }
 
@@ -588,9 +584,7 @@ export class FichajeReminderService {
     }
 
     const lastTipo = String(last.tipo || '');
-    const coincides = lastTipo
-      .toUpperCase()
-      .startsWith(expected.toUpperCase());
+    const coincides = lastTipo.toUpperCase().startsWith(expected.toUpperCase());
 
     if (coincides) {
       return {

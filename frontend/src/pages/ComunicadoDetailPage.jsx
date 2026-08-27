@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router';
 import { useAuth } from '../contexts/AuthContextBase';
 import { useComunicadosApi } from '../hooks/useComunicadosApi';
 import { config } from '../config/env';
+import { PageHeader, AlertBanner, Modal, Notification } from '../components/ui';
 import {
-  ArrowLeft,
   Calendar,
   User,
   Edit,
@@ -15,11 +16,8 @@ import {
   Send,
   Users,
   Eye,
-  X,
 } from 'lucide-react';
-import Notification from '../components/ui/Notification';
 import ConfirmModal from '../components/ui/ConfirmModal';
-import Modal from '../components/ui/Modal';
 import PDFViewerAndroid from '../components/PDFViewerAndroid';
 
 // Helper function pentru a converti Blob la Base64
@@ -333,212 +331,147 @@ const ComunicadoDetailPage = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">
-            Cargando comunicado...
-          </p>
-        </div>
+      <div className="app-page comunicados-page">
+        <PageHeader title="Comunicado" backTo="/comunicados" />
+        <AlertBanner variant="loading" loading>Cargando comunicado...</AlertBanner>
       </div>
     );
   }
 
   if (error || !comunicado) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 md:p-6">
-        <div className="max-w-4xl mx-auto">
-          <button
-            onClick={() => navigate('/comunicados')}
-            className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-6"
-          >
-            <ArrowLeft className="w-5 h-5" />
-            Volver a Comunicados
-          </button>
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">
-            <p className="text-red-800 dark:text-red-200">
-              {error || 'Comunicado no encontrado'}
-            </p>
-          </div>
-        </div>
+      <div className="app-page comunicados-page">
+        <PageHeader title="Comunicado" backTo="/comunicados" />
+        <AlertBanner variant="danger" title="Error">{error || 'Comunicado no encontrado'}</AlertBanner>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 md:p-6">
-      <div className="max-w-4xl mx-auto">
-        {/* Notification */}
-        {notification && (
-          <Notification
-            type={notification.type}
-            message={notification.message}
-            onClose={() => setNotification(null)}
-          />
+    <div className="app-page comunicados-page">
+      {notification && (
+        <Notification
+          type={notification.type}
+          message={notification.message}
+          onClose={() => setNotification(null)}
+        />
+      )}
+
+      <PageHeader
+        title={comunicado.titulo}
+        subtitle={formatDate(comunicado.created_at)}
+        backTo="/comunicados"
+        actions={canManageComunicados() ? (
+          <div className="flex flex-wrap gap-2">
+            {!comunicado.publicado && (
+              <button type="button" onClick={handlePublish} className="solicitud-admin-btn solicitud-admin-btn--primary" title="Publicar">
+                <Send className="w-4 h-4" aria-hidden />
+                <span className="hidden sm:inline">Publicar</span>
+              </button>
+            )}
+            {comunicado.publicado && (
+              <button type="button" onClick={handleNotify} disabled={isNotifying} className="solicitud-admin-btn solicitud-admin-btn--primary" title="Notificar de nuevo">
+                <Send className="w-4 h-4" aria-hidden />
+                <span className="hidden sm:inline">{isNotifying ? 'Notificando…' : 'Notificar'}</span>
+              </button>
+            )}
+            <button type="button" onClick={() => navigate(`/comunicados/${id}/editar`)} className="solicitud-admin-btn" title="Editar">
+              <Edit className="w-4 h-4" aria-hidden />
+            </button>
+            <button type="button" onClick={handleDelete} className="solicitud-admin-btn" title="Eliminar">
+              <Trash2 className="w-4 h-4" aria-hidden />
+            </button>
+          </div>
+        ) : null}
+      />
+
+      <div className="app-card app-card--pad space-y-4">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+          <span className="inline-flex items-center gap-1">
+            <Calendar className="w-3.5 h-3.5" aria-hidden />
+            {formatDate(comunicado.created_at)}
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <User className="w-3.5 h-3.5" aria-hidden />
+            {canManageComunicados() ? (comunicado.autor_nombre || comunicado.autor_id) : 'Empresa'}
+          </span>
+          {isMarkedAsRead && (
+            <span className="solicitud-status solicitud-status--ok">Leído</span>
+          )}
+          {canManageComunicados() && (
+            <span className={`solicitud-status ${comunicado.publicado ? 'solicitud-status--ok' : 'solicitud-status--pendiente'}`}>
+              {comunicado.publicado ? 'Publicado' : 'Borrador'}
+            </span>
+          )}
+          {canManageComunicados() && comunicado.leidos && comunicado.leidos.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowReadersModal(true)}
+              className="inline-flex items-center gap-1 text-primary-600 hover:underline"
+            >
+              <Users className="w-3.5 h-3.5" aria-hidden />
+              {comunicado.leidos.length} leídos
+            </button>
+          )}
+        </div>
+
+        {comunicado.has_archivo && comunicado.nombre_archivo && (
+          <div className="solicitud-admin-callout">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <Paperclip className="w-4 h-4 shrink-0" aria-hidden />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Archivo adjunto</p>
+                  <p className="text-xs text-gray-500 truncate">{comunicado.nombre_archivo}</p>
+                </div>
+              </div>
+              <div className="solicitud-admin-toolbar flex-wrap">
+                <button type="button" onClick={handlePreviewFile} className="solicitud-admin-btn">
+                  <Eye className="w-4 h-4" aria-hidden />
+                  <span>Ver</span>
+                </button>
+                <a
+                  href={`${config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || ''}/api/comunicados/${id}/download`}
+                  download={comunicado.nombre_archivo}
+                  className="solicitud-admin-btn solicitud-admin-btn--primary"
+                  onClick={(e) => {
+                    const token = localStorage.getItem('auth_token');
+                    if (token) {
+                      e.preventDefault();
+                      fetch(
+                        `${config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || ''}/api/comunicados/${id}/download`,
+                        { headers: { Authorization: `Bearer ${token}` } },
+                      )
+                        .then((res) => res.blob())
+                        .then((blob) => {
+                          const url = window.URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = comunicado.nombre_archivo;
+                          document.body.appendChild(a);
+                          a.click();
+                          window.URL.revokeObjectURL(url);
+                          document.body.removeChild(a);
+                        })
+                        .catch((err) => {
+                          setNotification({
+                            type: 'error',
+                            message: `Error al descargar archivo: ${err.message}`,
+                          });
+                        });
+                    }
+                  }}
+                >
+                  <Download className="w-4 h-4" aria-hidden />
+                  <span>Descargar</span>
+                </a>
+              </div>
+            </div>
+          </div>
         )}
 
-        {/* Back Button */}
-        <button
-          onClick={() => navigate('/comunicados')}
-          className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-6"
-        >
-          <ArrowLeft className="w-5 h-5" />
-          Volver a Comunicados
-        </button>
-
-        {/* Comunicado Content */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 md:p-8">
-          {/* Header */}
-          <div className="flex items-start justify-between mb-6">
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
-                {comunicado.titulo}
-              </h1>
-              <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
-                <div className="flex items-center gap-1">
-                  <Calendar className="w-4 h-4" />
-                  <span>{formatDate(comunicado.created_at)}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <User className="w-4 h-4" />
-                  <span>Autor: {canManageComunicados() ? (comunicado.autor_nombre || comunicado.autor_id) : 'Empresa'}</span>
-                </div>
-                {isMarkedAsRead && (
-                  <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
-                    <CheckCircle className="w-4 h-4" />
-                    <span>Leído</span>
-                  </div>
-                )}
-                {canManageComunicados() && comunicado.leidos && comunicado.leidos.length > 0 && (
-                  <button
-                    onClick={() => setShowReadersModal(true)}
-                    className="flex items-center gap-1 text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors cursor-pointer"
-                    title="Ver quién ha leído"
-                  >
-                    <Users className="w-4 h-4" />
-                    <span>{comunicado.leidos.length} leídos</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Actions (Admin only) */}
-            {canManageComunicados() && (
-              <div className="flex items-center gap-2 ml-4">
-                {!comunicado.publicado && (
-                  <button
-                    onClick={handlePublish}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-                    title="Publicar comunicado"
-                  >
-                    <Send className="w-4 h-4" />
-                    Publicar
-                  </button>
-                )}
-                {comunicado.publicado && (
-                  <button
-                    onClick={handleNotify}
-                    disabled={isNotifying}
-                    className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Enviar de nuevo notificación push a todos los empleados"
-                  >
-                    <Send className="w-4 h-4" />
-                    {isNotifying ? 'Notificando...' : 'Notificar de nuevo'}
-                  </button>
-                )}
-                <button
-                  onClick={() => navigate(`/comunicados/${id}/editar`)}
-                  className="p-2 text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                  title="Editar"
-                >
-                  <Edit className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={handleDelete}
-                  className="p-2 text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                  title="Eliminar"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Archivo adjunto */}
-          {comunicado.has_archivo && comunicado.nombre_archivo && (
-            <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Paperclip className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-                  <div>
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Archivo adjunto
-                    </p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {comunicado.nombre_archivo}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handlePreviewFile}
-                    className="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
-                    title="Ver preview"
-                  >
-                    <Eye className="w-4 h-4" />
-                    Ver preview
-                  </button>
-                  <a
-                    href={`${config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || ''}/api/comunicados/${id}/download`}
-                    download={comunicado.nombre_archivo}
-                    className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
-                    onClick={(e) => {
-                      // Adaugă token JWT în header pentru download
-                      const token = localStorage.getItem('auth_token');
-                      if (token) {
-                        e.preventDefault();
-                        fetch(
-                          `${config.BACKEND_BASE || config.API_BASE_URL || config.API_URL || ''}/api/comunicados/${id}/download`,
-                          {
-                            headers: {
-                              Authorization: `Bearer ${token}`,
-                            },
-                          },
-                        )
-                          .then((res) => res.blob())
-                          .then((blob) => {
-                            const url = window.URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = comunicado.nombre_archivo;
-                            document.body.appendChild(a);
-                            a.click();
-                            window.URL.revokeObjectURL(url);
-                            document.body.removeChild(a);
-                          })
-                          .catch((err) => {
-                            setNotification({
-                              type: 'error',
-                              message: `Error al descargar archivo: ${err.message}`,
-                            });
-                          });
-                      }
-                    }}
-                  >
-                    <Download className="w-4 h-4" />
-                    Descargar
-                  </a>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Content */}
-          <div className="prose dark:prose-invert max-w-none">
-            <div className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-              {comunicado.contenido}
-            </div>
-          </div>
+        <div className="comunicados-detail-content">
+          {comunicado.contenido}
         </div>
       </div>
 
@@ -583,166 +516,105 @@ const ComunicadoDetailPage = () => {
       />
 
       {/* Modal pentru lista de cititori */}
-      <Modal
-        isOpen={showReadersModal}
-        onClose={() => setShowReadersModal(false)}
-        title="Usuarios que han leído"
-        size="md"
-      >
-        {comunicado && comunicado.leidos ? (
-          <div className="space-y-3">
-            {comunicado.leidos.length === 0 ? (
-              <p className="text-gray-500 dark:text-gray-400 text-center py-4">
-                Nadie ha leído este comunicado aún.
-              </p>
-            ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {comunicado.leidos.map((leido, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center">
-                        <Users className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-white">
+      {typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={showReadersModal}
+          onClose={() => setShowReadersModal(false)}
+          title="Usuarios que han leído"
+          showCloseButton={false}
+          size="md"
+          className="app-modal--form"
+          footer={(
+            <button type="button" onClick={() => setShowReadersModal(false)} className="app-modal__btn app-modal__btn--ok">
+              Cerrar
+            </button>
+          )}
+        >
+          {comunicado && comunicado.leidos ? (
+            <div className="space-y-2">
+              {comunicado.leidos.length === 0 ? (
+                <p className="app-modal__meta text-center py-4">Nadie ha leído este comunicado aún.</p>
+              ) : (
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {comunicado.leidos.map((leido, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between gap-3 p-3 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                           {leido.user_nombre || leido.user_id}
                         </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {formatDateTime(leido.read_at)}
-                        </p>
+                        <p className="text-xs text-gray-500">{formatDateTime(leido.read_at)}</p>
                       </div>
+                      <CheckCircle className="w-4 h-4 text-green-600 shrink-0" aria-hidden />
                     </div>
-                    <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="text-center py-4">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-            <p className="mt-2 text-gray-500 dark:text-gray-400">Cargando...</p>
-          </div>
-        )}
-      </Modal>
-
-      {/* Modal de Preview para Archivo (móvil: min-w-0 en cabecera para que el cierre no quede fuera de pantalla) */}
-      {showFilePreview && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-2 backdrop-blur-sm"
-          onClick={handleClosePreview}
-          role="presentation"
-        >
-          <div
-            className="relative flex max-h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in fade-in duration-300 dark:border-gray-700 dark:bg-gray-800"
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Vista previa del archivo"
-          >
-            {/* Cierre fijo esquina: siempre visible en móvil */}
-            <button
-              type="button"
-              onClick={handleClosePreview}
-              className="absolute right-2 top-2 z-20 flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white/95 text-gray-700 shadow-lg ring-1 ring-black/5 transition hover:bg-red-50 hover:text-red-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-red-900/30 dark:hover:text-red-300 sm:right-3 sm:top-3"
-              aria-label="Cerrar vista previa"
-            >
-              <X className="h-6 w-6" strokeWidth={2.5} />
-            </button>
-
-            {/* Header */}
-            <div className="shrink-0 border-b border-blue-200 bg-gradient-to-r from-blue-50 to-blue-100 px-4 pb-3 pt-12 dark:border-gray-600 dark:from-gray-700 dark:to-gray-800 sm:px-6 sm:py-4 sm:pt-4">
-              <div className="flex min-w-0 items-start gap-3 sm:gap-4">
-                <div className="hidden h-12 w-12 shrink-0 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg sm:flex sm:items-center sm:justify-center">
-                  <Eye className="h-6 w-6 text-white" />
-                </div>
-                <div className="min-w-0 flex-1 pr-10 sm:pr-2">
-                  <h3 className="line-clamp-2 text-base font-bold leading-tight text-gray-900 dark:text-white sm:text-xl">
-                    Vista previa: {previewData?.fileName || comunicado?.nombre_archivo}
-                  </h3>
-                  <p className="mt-1 text-xs font-medium text-blue-600 dark:text-blue-400 sm:text-sm">
-                    Visualización de archivo
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleClosePreview}
-                    className="mt-3 w-full rounded-lg border border-gray-300 bg-white py-2.5 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600 sm:hidden"
-                  >
-                    Cerrar
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="min-h-0 flex-1 overflow-auto bg-gray-50 p-3 dark:bg-gray-900 sm:p-4">
-              {previewLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-                  <span className="ml-3 text-gray-600 dark:text-gray-400">Cargando preview...</span>
-                </div>
-              ) : previewData?.isPdf ? (
-                <div className="p-4 bg-gray-50 dark:bg-gray-800 h-[75vh] pdf-preview-container">
-                  {isAndroid || isIOS ? (
-                    <PDFViewerAndroid 
-                      pdfUrl={previewData?.previewUrl || ''} 
-                      className="w-full h-full"
-                    />
-                  ) : (
-                    <iframe
-                      src={previewData?.previewUrl || ''}
-                      className="w-full h-full border-0 rounded-lg"
-                      title={previewData?.fileName}
-                    />
-                  )}
-                </div>
-              ) : previewData?.isImage ? (
-                <div className="p-4 bg-gray-50 dark:bg-gray-800 flex items-center justify-center min-h-[60vh]">
-                  <div className="max-w-full max-h-[70vh] overflow-auto">
-                    <img
-                      src={previewData?.previewUrl || ''}
-                      alt={previewData?.fileName}
-                      className={`max-w-full h-auto rounded-lg shadow-2xl ${
-                        isIOS ? 'brightness-100 contrast-100' : ''
-                      }`}
-                      style={{
-                        ...(isIOS && {
-                          filter: 'none',
-                          WebkitFilter: 'none',
-                          imageRendering: 'auto',
-                          WebkitImageRendering: 'auto',
-                          backgroundColor: 'transparent'
-                        })
-                      }}
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                        const container = e.target.parentElement;
-                        if (container) {
-                          container.innerHTML = `
-                            <div class="text-center py-12">
-                              <div class="text-6xl mb-4">🖼️</div>
-                              <p class="text-gray-600 dark:text-gray-400 mb-4">Error al cargar la imagen</p>
-                              <p class="text-sm text-gray-500 dark:text-gray-500">Usa el botón de descarga para ver el archivo</p>
-                            </div>
-                          `;
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-12">
-                  <div className="text-6xl mb-4">📄</div>
-                  <p className="text-gray-600 dark:text-gray-400 mb-4">Preview no disponible para este tipo de archivo</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-500">Usa el botón de descarga para ver el archivo</p>
+                  ))}
                 </div>
               )}
             </div>
-          </div>
-        </div>
+          ) : (
+            <AlertBanner variant="loading" loading>Cargando...</AlertBanner>
+          )}
+        </Modal>,
+        document.body
+      )}
+
+      {/* Preview archivo */}
+      {typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={showFilePreview}
+          onClose={handleClosePreview}
+          title={previewData?.fileName || comunicado?.nombre_archivo || 'Vista previa'}
+          showCloseButton={false}
+          size="xl"
+          className="app-modal--preview"
+          footer={(
+            <button type="button" onClick={handleClosePreview} className="app-modal__btn">Cerrar</button>
+          )}
+        >
+          {previewLoading ? (
+            <AlertBanner variant="loading" loading>Cargando preview...</AlertBanner>
+          ) : previewData?.isPdf ? (
+            <div className="pdf-preview-container h-[70vh] min-h-[50vh]">
+              {isAndroid || isIOS ? (
+                <PDFViewerAndroid pdfUrl={previewData?.previewUrl || ''} className="w-full h-full" />
+              ) : (
+                <iframe
+                  src={previewData?.previewUrl || ''}
+                  className="w-full h-full border-0 rounded-lg"
+                  title={previewData?.fileName}
+                />
+              )}
+            </div>
+          ) : previewData?.isImage ? (
+            <div className="flex items-center justify-center min-h-[50vh]">
+              <img
+                src={previewData?.previewUrl || ''}
+                alt={previewData?.fileName}
+                className={`max-h-[70vh] w-full object-contain rounded-lg ${isIOS ? 'brightness-100 contrast-100' : ''}`}
+                style={isIOS ? { filter: 'none', WebkitFilter: 'none' } : undefined}
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                  const container = e.target.parentElement;
+                  if (container) {
+                    container.innerHTML = `
+                      <div class="text-center py-8">
+                        <p class="text-gray-600 dark:text-gray-400 mb-2">Error al cargar la imagen</p>
+                        <p class="text-sm text-gray-500">Usa el botón de descarga para ver el archivo</p>
+                      </div>
+                    `;
+                  }
+                }}
+              />
+            </div>
+          ) : (
+            <AlertBanner variant="info" title="Preview no disponible">
+              Usa el botón de descarga para ver el archivo.
+            </AlertBanner>
+          )}
+        </Modal>,
+        document.body
       )}
     </div>
   );

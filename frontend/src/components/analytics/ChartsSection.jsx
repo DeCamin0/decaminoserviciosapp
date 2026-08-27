@@ -2301,29 +2301,29 @@ const ChartsSection = forwardRef(({
 
       {productivoModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4"
           onClick={closeProductivoModal}
           role="presentation"
         >
           <div
-            className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col"
+            className="bg-white shadow-xl w-full max-w-4xl flex flex-col rounded-t-2xl sm:rounded-xl h-[100dvh] max-h-[100dvh] sm:h-auto sm:max-h-[90vh] pb-[env(safe-area-inset-bottom)] sm:pb-0"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-labelledby="productivo-modal-title"
           >
-            <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-gray-200">
+            <div className="flex items-start justify-between gap-3 px-4 sm:px-5 py-3 sm:py-4 border-b border-gray-200">
               <div className="min-w-0">
-                <h2 id="productivo-modal-title" className="text-xl font-bold text-gray-900 truncate">
+                <h2 id="productivo-modal-title" className="text-lg sm:text-xl font-bold text-gray-900 leading-tight break-words">
                   {productivoModal.nombre}
                 </h2>
-                <p className="text-sm text-gray-500 mt-0.5">
+                <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
                   Registros · {productivoPeriodLabel}
                   {productivoModal.grupo ? (
                     <span className="text-gray-400"> · {productivoModal.grupo}</span>
                   ) : null}
                   {productivoModal.codigo ? (
-                    <span className="text-gray-400"> · Código {productivoModal.codigo}</span>
+                    <span className="hidden sm:inline text-gray-400"> · Código {productivoModal.codigo}</span>
                   ) : null}
                 </p>
                 {(productivoModal.horasPrevistas > 0 || productivoModal.supera) && (
@@ -2399,7 +2399,7 @@ const ChartsSection = forwardRef(({
                     )}
                   </div>
                 )}
-                <p className="mt-2 text-[11px] text-gray-500 leading-relaxed">
+                <p className="mt-2 hidden sm:block text-[11px] text-gray-500 leading-relaxed">
                   El plan previsto ya descuenta vacaciones, ausencias por días, baja médica y festivos.
                   Las ausencias por horas se restan del plan del día. Si la jornada de hoy aún no está
                   cerrada (entrada sin salida), ese día no se marca como déficit.
@@ -2408,7 +2408,7 @@ const ChartsSection = forwardRef(({
               <button
                 type="button"
                 onClick={closeProductivoModal}
-                className="text-gray-400 hover:text-gray-600 transition-colors shrink-0"
+                className="text-gray-400 hover:text-gray-600 transition-colors shrink-0 p-1 -mr-1"
                 aria-label="Cerrar"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2417,7 +2417,7 @@ const ChartsSection = forwardRef(({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5">
+            <div className="flex-1 overflow-y-auto overscroll-contain px-4 sm:p-5 py-3">
               {productivoRegistrosLoading ? (
                 <div className="flex items-center justify-center py-16">
                   <div className="text-center">
@@ -2474,7 +2474,67 @@ const ChartsSection = forwardRef(({
                     </div>
                   )}
 
-                  <div className="overflow-x-auto rounded-lg border border-gray-200">
+                  <div className="sm:hidden space-y-2">
+                    {productivoRegistros.map((r, idx) => {
+                      let fechaLabel = r.fecha || '-';
+                      if (r.fecha) {
+                        const d = new Date(r.fecha);
+                        if (!Number.isNaN(d.getTime())) {
+                          fechaLabel = d.toLocaleDateString('es-ES', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric'
+                          });
+                        }
+                      }
+                      const tipoLower = String(r.tipo || '').toLowerCase();
+                      const tipoClass =
+                        tipoLower.includes('entrada')
+                          ? 'bg-green-100 text-green-800'
+                          : tipoLower.includes('salida')
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-gray-100 text-gray-700';
+                      const anomala = isDuracionAnomala(r.duracion);
+                      const horasDur = anomala ? convertToDecimal(String(r.duracion)) : 0;
+
+                      return (
+                        <article
+                          key={r.id ?? `${r.fecha}-${r.hora}-${idx}`}
+                          className={`rounded-xl border px-3 py-2.5 ${
+                            anomala
+                              ? 'border-red-200 bg-red-50'
+                              : 'border-gray-200 bg-white'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-medium text-gray-900">{fechaLabel}</span>
+                            <span className="text-sm tabular-nums text-gray-700">{r.hora || '-'}</span>
+                          </div>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${tipoClass}`}>
+                              {r.tipo || '-'}
+                            </span>
+                            <span className={`text-xs tabular-nums ${anomala ? 'font-bold text-red-700' : 'text-gray-700'}`}>
+                              {r.duracion || '—'}
+                            </span>
+                            {anomala ? (
+                              <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide bg-red-600 text-white">
+                                anómala · {horasDur.toFixed(0)}h
+                              </span>
+                            ) : null}
+                            {r.hasRegularizacion ? (
+                              <span className="text-[10px] text-amber-600 font-medium">reg.</span>
+                            ) : null}
+                          </div>
+                          <p className="mt-1 text-xs text-gray-500 leading-snug break-words">
+                            {r.direccion || 'Sin dirección'}
+                          </p>
+                        </article>
+                      );
+                    })}
+                  </div>
+
+                  <div className="hidden sm:block overflow-x-auto rounded-lg border border-gray-200">
                     <table className="min-w-full text-sm">
                       <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                         <tr>
@@ -2551,16 +2611,20 @@ const ChartsSection = forwardRef(({
             </div>
 
             {!productivoRegistrosLoading && !productivoRegistrosError && (
-              <div className="mx-5 mb-1 rounded-xl border border-sky-100 bg-gradient-to-br from-sky-50 to-white px-4 py-3">
+              <div className="mx-4 sm:mx-5 mb-1 rounded-xl border border-sky-100 bg-gradient-to-br from-sky-50 to-white px-3 sm:px-4 py-2.5 sm:py-3">
                 <p className="text-sm font-semibold text-sky-900">
-                  Enviar ficha y recuerdo de regularización
+                  Enviar ficha y recuerdo
                 </p>
-                <p className="mt-1 text-xs leading-relaxed text-sky-800/90">
+                <p className="mt-1 text-xs leading-relaxed text-sky-800/90 hidden sm:block">
                   Se enviará un email claro explicando su situación de horas en{' '}
                   {productivoPeriodLabel}, con un <strong>PDF adjunto</strong> de
                   todos los registros (fecha, hora, tipo, duración y dirección),
                   más un recuerdo amable para regularizar desde Registros si
                   corresponde. También recibe notificación en la app.
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-sky-800/90 sm:hidden">
+                  Email con PDF de registros y recuerdo de regularización. También
+                  notificación en la app.
                 </p>
                 {sendFichaFeedback && (
                   <p
@@ -2574,7 +2638,7 @@ const ChartsSection = forwardRef(({
               </div>
             )}
 
-            <div className="px-5 py-3 border-t border-gray-200 flex flex-wrap items-center justify-end gap-2">
+            <div className="px-4 sm:px-5 py-3 border-t border-gray-200 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2">
               <button
                 type="button"
                 onClick={requestEnviarFichaRegularizacion}
@@ -2583,7 +2647,7 @@ const ChartsSection = forwardRef(({
                   sendFichaLoading ||
                   productivoRegistrosLoading
                 }
-                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
               >
                 {sendFichaLoading ? (
                   <>
@@ -2591,13 +2655,16 @@ const ChartsSection = forwardRef(({
                     Enviando…
                   </>
                 ) : (
-                  <>📧 Enviar ficha de registros y recuerdo de regularización</>
+                  <>
+                    <span className="sm:hidden">📧 Enviar ficha</span>
+                    <span className="hidden sm:inline">📧 Enviar ficha de registros y recuerdo de regularización</span>
+                  </>
                 )}
               </button>
               <button
                 type="button"
                 onClick={closeProductivoModal}
-                className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200"
+                className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200"
               >
                 Cerrar
               </button>

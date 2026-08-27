@@ -128,7 +128,8 @@ const MobileBottomNav = () => {
     if (canAccessFichar) {
       items.push({
         id: 'fichaje',
-        label: 'Registro de Jornada',
+        label: 'Jornada',
+        ariaLabel: 'Registro de Jornada',
         icon: Clock,
         path: '/fichaje',
         show: true,
@@ -201,7 +202,10 @@ const MobileBottomNav = () => {
   };
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 dark:bg-gray-800/95 backdrop-blur border-t border-gray-200 dark:border-gray-700 safe-area-bottom" style={{ position: 'fixed' }}>
+    <nav
+      className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 dark:bg-gray-800/95 backdrop-blur border-t border-gray-200 dark:border-gray-700 safe-area-bottom"
+      style={{ position: 'fixed' }}
+    >
       <div className="flex items-center justify-around h-16 px-2 max-w-screen-xl mx-auto">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -215,11 +219,11 @@ const MobileBottomNav = () => {
                 flex flex-col items-center justify-center flex-1 min-w-0 px-2 py-1
                 transition-colors duration-200
                 ${active 
-                  ? 'text-red-600 dark:text-red-400' 
+                  ? 'text-primary-600 dark:text-primary-400' 
                   : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                 }
               `}
-              aria-label={item.label}
+              aria-label={item.ariaLabel || item.label}
             >
               <div className="relative">
                 <Icon 
@@ -227,7 +231,7 @@ const MobileBottomNav = () => {
                   strokeWidth={active ? 2.5 : 2}
                 />
                 {active && (
-                  <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-red-600 dark:bg-red-400 rounded-full"></div>
+                  <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-primary-600 dark:bg-primary-400 rounded-full"></div>
                 )}
                 {/* Badge pentru comunicări necitite */}
                 {item.notificationCount && item.notificationCount > 0 && (

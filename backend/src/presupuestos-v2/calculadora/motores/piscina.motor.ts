@@ -113,7 +113,12 @@ export const motorPiscina: MotorDefinition = {
   calculate: calculatePiscina,
   inputSchema: [
     { key: 'concepto', label: 'Concepto', type: 'string', group: 'temporada' },
-    { key: 'horas', label: 'Horas (texto)', type: 'string', group: 'temporada' },
+    {
+      key: 'horas',
+      label: 'Horas (texto)',
+      type: 'string',
+      group: 'temporada',
+    },
     { key: 'dias', label: 'Días (texto)', type: 'string', group: 'temporada' },
     {
       key: 'precioSinIva',
@@ -122,10 +127,35 @@ export const motorPiscina: MotorDefinition = {
       group: 'temporada',
     },
     { key: 'extra', label: 'Extra €/mes', type: 'number', group: 'temporada' },
-    { key: 'incluirInvernalConLona', label: 'Incluir invernal con lona', type: 'boolean', group: 'invernal' },
-    { key: 'precioConLona', label: 'Precio invernal con lona', type: 'number', group: 'invernal' },
-    { key: 'incluirInvernalSinLona', label: 'Incluir invernal sin lona', type: 'boolean', group: 'invernal' },
-    { key: 'precioSinLona', label: 'Precio invernal sin lona', type: 'number', group: 'invernal' },
-    { key: 'recuperacionAguaPrecio', label: 'Recuperación de agua (€)', type: 'number', group: 'extras' },
+    {
+      key: 'incluirInvernalConLona',
+      label: 'Incluir invernal con lona',
+      type: 'boolean',
+      group: 'invernal',
+    },
+    {
+      key: 'precioConLona',
+      label: 'Precio invernal con lona',
+      type: 'number',
+      group: 'invernal',
+    },
+    {
+      key: 'incluirInvernalSinLona',
+      label: 'Incluir invernal sin lona',
+      type: 'boolean',
+      group: 'invernal',
+    },
+    {
+      key: 'precioSinLona',
+      label: 'Precio invernal sin lona',
+      type: 'number',
+      group: 'invernal',
+    },
+    {
+      key: 'recuperacionAguaPrecio',
+      label: 'Recuperación de agua (€)',
+      type: 'number',
+      group: 'extras',
+    },
   ],
 };

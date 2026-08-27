@@ -63,31 +63,29 @@ export function fingerprintFicha(ficha: ClienteFichaSnapshot | null): string {
   return JSON.stringify(payload);
 }
 
-export function mapClienteRowToFicha(
-  row: {
+export function mapClienteRowToFicha(row: {
+  id: number;
+  NOMBRE_O_RAZON_SOCIAL?: string | null;
+  NIF?: string | null;
+  DIRECCION?: string | null;
+  CODIGO_POSTAL?: string | null;
+  POBLACION?: string | null;
+  PROVINCIA?: string | null;
+  PAIS?: string | null;
+  EMAIL?: string | null;
+  TELEFONO?: string | null;
+  MOVIL?: string | null;
+  contactos?: Array<{
     id: number;
-    NOMBRE_O_RAZON_SOCIAL?: string | null;
-    NIF?: string | null;
-    DIRECCION?: string | null;
-    CODIGO_POSTAL?: string | null;
-    POBLACION?: string | null;
-    PROVINCIA?: string | null;
-    PAIS?: string | null;
-    EMAIL?: string | null;
-    TELEFONO?: string | null;
-    MOVIL?: string | null;
-    contactos?: Array<{
-      id: number;
-      nombre: string;
-      email: string | null;
-      telefono: string | null;
-      cargo_codigo: string | null;
-      cargo_libre: string | null;
-      es_principal: boolean;
-      estado: string;
-    }>;
-  },
-): ClienteFichaSnapshot {
+    nombre: string;
+    email: string | null;
+    telefono: string | null;
+    cargo_codigo: string | null;
+    cargo_libre: string | null;
+    es_principal: boolean;
+    estado: string;
+  }>;
+}): ClienteFichaSnapshot {
   const principal =
     (row.contactos || []).find(
       (c) => c.es_principal && c.estado === 'activo',
@@ -167,7 +165,9 @@ export function detectFichaStale(
 ): boolean {
   if (!working?.source_cliente_id || !liveFicha) return false;
   const liveFp = fingerprintFicha(liveFicha);
-  return Boolean(working.ficha_fingerprint) && working.ficha_fingerprint !== liveFp;
+  return (
+    Boolean(working.ficha_fingerprint) && working.ficha_fingerprint !== liveFp
+  );
 }
 
 /**

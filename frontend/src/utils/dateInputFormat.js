@@ -33,7 +33,7 @@ export function isValidFechaBajaDisplay(value) {
     return false;
   }
   return (
-    /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(s) ||
-    /^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(s)
+    /^\d{1,2}[/-]\d{1,2}[/-]\d{4}$/.test(s) ||
+    /^\d{4}[/-]\d{1,2}[/-]\d{1,2}$/.test(s)
   );
 }

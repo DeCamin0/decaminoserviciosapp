@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { Button, Card, Badge, Separator } from '../components/ui';
-import { ArrowLeft, MapPin, Phone, Mail, Globe, CreditCard, FileText, Building, User, AlertCircle } from 'lucide-react';
+import { Button, Card, Badge, Separator, PageHeader } from '../components/ui';
+import { MapPin, Phone, Mail, Globe, CreditCard, FileText, Building, User, AlertCircle, List, ExternalLink, Loader2 } from 'lucide-react';
+import { ClientesStatusBadge, isComunidadCliente } from '../components/clientes';
 import { routes } from '../utils/routes';
 import GeocodingAddress from '../components/GeocodingAddress';
 import ClienteContactosSection from '../components/clientes/ClienteContactosSection';
@@ -34,16 +35,7 @@ export default function ClienteDetallePage() {
     return `https://www.google.com/maps?q=${normalizedLat},${normalizedLng}`;
   };
 
-  // Funcție helper pentru a detecta comunități
-  const isComunidad = (cliente) => {
-    if (!cliente) return false;
-    const nombre = cliente['NOMBRE O RAZON SOCIAL'] || '';
-    return nombre.includes('C.P.') || 
-           nombre.includes('C.P ') || 
-           nombre.includes('CP ') || 
-           nombre.includes('CP.') || 
-           nombre.includes('COMUNIDAD DE PROPIETARIOS');
-  };
+  const isComunidad = isComunidadCliente;
 
   // Încarcă datele clientului
   const fetchCliente = useCallback(async () => {
@@ -301,10 +293,10 @@ export default function ClienteDetallePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
-          <div className="text-gray-600">Cargando detalles del cliente...</div>
+      <div className="clientes-detail-page app-page">
+        <div className="clientes-state clientes-state--page">
+          <Loader2 className="clientes-state__icon animate-spin" aria-hidden />
+          <p className="clientes-state__title">Cargando detalles del cliente…</p>
         </div>
       </div>
     );
@@ -312,14 +304,12 @@ export default function ClienteDetallePage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-800 mb-2">Error</h2>
-          <p className="text-gray-600 mb-4">{error}</p>
-          <Button onClick={() => navigate('/clientes')}>
-            ← Volver a Clientes
-          </Button>
+      <div className="clientes-detail-page app-page">
+        <div className="clientes-state clientes-state--page">
+          <AlertCircle className="clientes-state__icon text-red-500" aria-hidden />
+          <p className="clientes-state__title">Error</p>
+          <p className="clientes-state__text">{error}</p>
+          <Button onClick={() => navigate('/clientes')}>Volver a clientes</Button>
         </div>
       </div>
     );
@@ -327,70 +317,37 @@ export default function ClienteDetallePage() {
 
   if (!cliente) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <User className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-800 mb-2">Cliente no encontrado</h2>
-          <p className="text-gray-600 mb-4">El cliente con el NIF especificado no fue encontrado.</p>
-          <Button onClick={() => navigate('/clientes')}>
-            ← Volver a Clientes
-          </Button>
+      <div className="clientes-detail-page app-page">
+        <div className="clientes-state clientes-state--page">
+          <User className="clientes-state__icon" aria-hidden />
+          <p className="clientes-state__title">Cliente no encontrado</p>
+          <p className="clientes-state__text">El cliente con el NIF especificado no fue encontrado.</p>
+          <Button onClick={() => navigate('/clientes')}>Volver a clientes</Button>
         </div>
       </div>
     );
   }
 
   return (
-    <>
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-4">
-              <Button
-                variant="ghost"
-                onClick={() => navigate('/clientes')}
-                className="text-gray-600 hover:text-gray-900"
-              >
-                <ArrowLeft className="h-5 w-5 mr-2" />
-                Volver a Clientes
-              </Button>
-              <div className="h-6 w-px bg-gray-300"></div>
-              <div>
-                <h1 className="text-xl font-semibold text-gray-900">
-                  Detalles Cliente
-                </h1>
-                <p className="text-sm text-gray-500">NIF: {cliente.NIF}</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-3">
-              {isComunidad(cliente) && (
-                <Badge variant="secondary" className="bg-purple-100 text-purple-800">
-                  🏘️ Comunidad
-                </Badge>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="clientes-detail-page app-page">
+      <PageHeader
+        title={cliente['NOMBRE O RAZON SOCIAL']}
+        subtitle={`NIF: ${cliente.NIF}`}
+        backTo="/clientes"
+        backTitle="Volver a clientes"
+        actions={isComunidad(cliente) ? <ClientesStatusBadge row={cliente} /> : null}
+      />
 
-      {/* Conținut principal */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
+      <div className="clientes-detail-grid">
           {/* Informații principale */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="clientes-detail-main">
             
-                         {/* Card Informații de bază */}
-             <Card>
-               <div className="p-6 border-b border-gray-200">
-                 <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                   <User className="h-5 w-5" />
-                   Información básica
-                 </h3>
+             <Card className="app-card" padding="">
+               <div className="clientes-detail-card__head">
+                 <User className="h-5 w-5" aria-hidden />
+                 <h3 className="clientes-detail-card__title">Información básica</h3>
                </div>
-               <div className="p-6 space-y-4">
+               <div className="clientes-detail-card__body">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-sm font-medium text-gray-500">Nombre / Denominación</label>
@@ -461,18 +418,17 @@ export default function ClienteDetallePage() {
               </div>
             </Card>
 
-            {/* Servicios periódicos + activo */}
-            <Card>
-              <div className="p-6 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                  <Building className="h-5 w-5" />
-                  Servicios periódicos
-                </h3>
-                <p className="text-sm text-gray-500 mt-1">
-                  Controla si este cliente aparece en la matriz y qué servicios se hacen.
-                </p>
+            <Card className="app-card" padding="">
+              <div className="clientes-detail-card__head">
+                <Building className="h-5 w-5" aria-hidden />
+                <div>
+                  <h3 className="clientes-detail-card__title">Servicios periódicos</h3>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    Controla si este cliente aparece en la matriz y qué servicios se hacen.
+                  </p>
+                </div>
               </div>
-              <div className="p-6 space-y-4">
+              <div className="clientes-detail-card__body space-y-4">
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
@@ -558,15 +514,12 @@ export default function ClienteDetallePage() {
               </div>
             </Card>
 
-                         {/* Card Adresa */}
-             <Card>
-               <div className="p-6 border-b border-gray-200">
-                 <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                   <MapPin className="h-5 w-5" />
-                   Dirección
-                 </h3>
+             <Card className="app-card" padding="">
+               <div className="clientes-detail-card__head">
+                 <MapPin className="h-5 w-5" aria-hidden />
+                 <h3 className="clientes-detail-card__title">Dirección</h3>
                </div>
-               <div className="p-6 space-y-4">
+               <div className="clientes-detail-card__body space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-sm font-medium text-gray-500">Dirección completa</label>
@@ -624,7 +577,8 @@ export default function ClienteDetallePage() {
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:text-blue-800 text-sm"
                         >
-                          📍 Ver en Google Maps
+                          <ExternalLink className="h-4 w-4 inline mr-1" aria-hidden />
+                          Ver en Google Maps
                         </a>
                       </div>
                     </div>
@@ -645,7 +599,8 @@ export default function ClienteDetallePage() {
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:text-blue-800 text-sm"
                         >
-                          📍 Ver en Google Maps
+                          <ExternalLink className="h-4 w-4 inline mr-1" aria-hidden />
+                          Ver en Google Maps
                         </a>
                       </div>
                     </div>
@@ -654,15 +609,12 @@ export default function ClienteDetallePage() {
               </div>
             </Card>
 
-                         {/* Card Informații financiare */}
-             <Card>
-               <div className="p-6 border-b border-gray-200">
-                 <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                   <CreditCard className="h-5 w-5" />
-                   Información financiera
-                 </h3>
+             <Card className="app-card" padding="">
+               <div className="clientes-detail-card__head">
+                 <CreditCard className="h-5 w-5" aria-hidden />
+                 <h3 className="clientes-detail-card__title">Información financiera</h3>
                </div>
-               <div className="p-6 space-y-4">
+               <div className="clientes-detail-card__body space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-sm font-medium text-gray-500">Descuento por defecto</label>
@@ -687,7 +639,7 @@ export default function ClienteDetallePage() {
                       {cliente['CUENTAS BANCARIAS'] ? (
                         <div className="space-y-2">
                           <Badge variant="success" className="text-xs">
-                            ✅ Cuentas disponibles
+                            Cuentas disponibles
                           </Badge>
                           <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded-lg border">
                             <p className="font-medium mb-1">Cuentas bancarias:</p>
@@ -699,7 +651,7 @@ export default function ClienteDetallePage() {
                       ) : (
                         <div className="flex items-center gap-2">
                           <Badge variant="secondary" className="text-xs">
-                            ❌ Sin cuentas
+                            Sin cuentas
                           </Badge>
                           <span className="text-gray-500 text-sm">No hay cuentas bancarias configuradas</span>
                         </div>
@@ -714,16 +666,13 @@ export default function ClienteDetallePage() {
 
             <ClienteContactosSection clienteId={cliente.id} />
 
-                         {/* Card Note private */}
-             {cliente['NOTAS PRIVADAS'] && (
-               <Card>
-                 <div className="p-6 border-b border-gray-200">
-                   <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                     <FileText className="h-5 w-5" />
-                     Notas privadas
-                   </h3>
+            {cliente['NOTAS PRIVADAS'] && (
+               <Card className="app-card" padding="">
+                 <div className="clientes-detail-card__head">
+                   <FileText className="h-5 w-5" aria-hidden />
+                   <h3 className="clientes-detail-card__title">Notas privadas</h3>
                  </div>
-                 <div className="p-6">
+                 <div className="clientes-detail-card__body">
                   <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
                     <p className="text-orange-800">{cliente['NOTAS PRIVADAS']}</p>
                   </div>
@@ -733,23 +682,20 @@ export default function ClienteDetallePage() {
           </div>
 
           {/* Sidebar cu acțiuni rapide */}
-          <div className="space-y-6">
-            
-                         {/* Card Acțiuni rapide */}
-             <Card>
-               <div className="p-6 border-b border-gray-200">
-                 <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                   <Building className="h-5 w-5" />
-                   Acciones rápidas
-                 </h3>
+          <div className="clientes-detail-aside">
+             <Card className="app-card" padding="">
+               <div className="clientes-detail-card__head">
+                 <Building className="h-5 w-5" aria-hidden />
+                 <h3 className="clientes-detail-card__title">Acciones rápidas</h3>
                </div>
-               <div className="p-6 space-y-3">
+               <div className="clientes-detail-card__body clientes-detail-actions">
                 <Button 
                   variant="outline" 
                   className="w-full justify-start"
                   onClick={() => navigate(`/clientes?search=${cliente.NIF}`)}
                 >
-                  📋 Ver en lista de clientes
+                  <List className="h-4 w-4 mr-2" aria-hidden />
+                  Ver en lista de clientes
                 </Button>
                 
                 <Button 
@@ -762,7 +708,8 @@ export default function ClienteDetallePage() {
                   }}
                   disabled={!cliente.EMAIL}
                 >
-                  📧 Enviar email
+                  <Mail className="h-4 w-4 mr-2" aria-hidden />
+                  Enviar email
                 </Button>
                 
                 <Button 
@@ -776,7 +723,8 @@ export default function ClienteDetallePage() {
                   }}
                   disabled={!cliente.TELEFONO && !cliente.MOVIL}
                 >
-                                     📞 Llamar
+                  <Phone className="h-4 w-4 mr-2" aria-hidden />
+                  Llamar
                  </Button>
 
                 <Separator className="my-2" />
@@ -794,8 +742,8 @@ export default function ClienteDetallePage() {
                   ) : (
                     <div className="space-y-3 max-h-[min(420px,50vh)] overflow-y-auto pr-1">
                       {facturasPorMes.map(([mesKey, lista]) => (
-                        <div key={mesKey}>
-                          <p className="text-xs font-medium text-gray-600 mb-1.5 border-b border-gray-100 pb-0.5">
+                        <div key={mesKey} className="clientes-facturas-group">
+                          <p className="clientes-facturas-group__title">
                             {etiquetaMes(mesKey)}
                           </p>
                           <ul className="space-y-1">
@@ -824,7 +772,7 @@ export default function ClienteDetallePage() {
                               if (fechaVto) detalles.push(`Venc.: ${fechaVto}`);
                               if (importeTxt) detalles.push(importeTxt);
                               return (
-                                <li key={f.id}>
+                                <li key={f.id} className="clientes-facturas-item">
                                   <button
                                     type="button"
                                     className="w-full text-left text-xs text-red-700 hover:text-red-900 hover:underline flex flex-col gap-0.5 py-1"
@@ -890,9 +838,6 @@ export default function ClienteDetallePage() {
              </Card>
            </div>
          </div>
-       </div>
      </div>
-
-    </>
    );
- } 
+ }

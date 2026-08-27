@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 
 import { useAuth } from '../contexts/AuthContextBase';
 
@@ -7,17 +8,19 @@ import PDFViewerAndroid from '../components/PDFViewerAndroid';
 
 import { Link } from 'react-router';
 
-import Back3DButton from '../components/Back3DButton.jsx';
-import ChangeEmployee3DButton from '../components/ChangeEmployee3DButton.jsx';
 import EmailIngestionButton from '../components/EmailIngestionButton';
 import FolderIngestionButton from '../components/FolderIngestionButton';
 
-import { Button, Card, LoadingSpinner } from '../components/ui';
+import { LoadingSpinner, PageHeader, AlertBanner, SegmentedControl, Modal } from '../components/ui';
 
 import Notification from '../components/ui/Notification';
+import {
+  Search, X, RefreshCw, ArrowLeft, Eye, FileSpreadsheet, Wrench,
+  FileUp, Archive, GraduationCap, Download, CheckCircle2, AlertTriangle,
+} from 'lucide-react';
 
 import { routes } from '../utils/routes.js';
-import { fetchAvatarOnce, getCachedAvatar, setCachedAvatar, DEFAULT_AVATAR } from '../utils/avatarCache';
+import { fetchAvatarOnce, getCachedAvatar, DEFAULT_AVATAR, mapBulkAvatarsResponse, isRealAvatarUrl } from '../utils/avatarCache';
 
 import activityLogger from '../utils/activityLogger';
 import NominasMatrixTab from '../components/gestoria/NominasMatrixTab';
@@ -174,30 +177,6 @@ const formatPeriodo = (mes, año) => {
 
 };
 
-// Funcție helper pentru calcularea antiguedad
-function calculateAntiguedad(fechaAlta) {
-  if (!fechaAlta) return 'Sin fecha';
-
-  try {
-    const altaDate = new Date(fechaAlta);
-    const now = new Date();
-    const diffTime = Math.abs(now - altaDate);
-    const diffYears = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 365));
-    const diffMonths = Math.floor((diffTime % (1000 * 60 * 60 * 24 * 365)) / (1000 * 60 * 60 * 24 * 30));
-
-    if (diffYears > 0) {
-      return `${diffYears} año${diffYears !== 1 ? 's' : ''}${diffMonths > 0 ? ` y ${diffMonths} mes${diffMonths !== 1 ? 'es' : ''}` : ''}`;
-    } else if (diffMonths > 0) {
-      return `${diffMonths} mes${diffMonths !== 1 ? 'es' : ''}`;
-    } else {
-      return 'Menos de 1 mes';
-    }
-  } catch (error) {
-    console.error('Error calculating antigüedad:', error);
-    return 'Sin fecha';
-  }
-}
-
 export default function DocumentosEmpleadosPage() {
 
   const { user: authUser } = useAuth();
@@ -266,32 +245,7 @@ export default function DocumentosEmpleadosPage() {
         return;
       }
 
-      const avatarsMap = {};
-
-      data.forEach(item => {
-        if (!item) return;
-
-        const codigo = item.CODIGO || item.codigo || item.codEmpleado || item.employeeCode;
-        if (!codigo) return;
-
-        const avatarB64 = item.AVATAR_B64 || item.avatar_b64 || item.avatarBase64;
-        const avatarUrlField = item.AVATAR || item.avatar || item.url || item.imageUrl || item.imagen;
-
-        let avatarUrl = null;
-
-        if (avatarB64) {
-          avatarUrl = `data:image/jpeg;base64,${String(avatarB64).replace(/\n/g, '')}`;
-        } else if (avatarUrlField) {
-          avatarUrl = avatarUrlField;
-        }
-
-        if (avatarUrl) {
-          avatarsMap[codigo] = avatarUrl;
-          setCachedAvatar(codigo, avatarUrl);
-        } else {
-          avatarsMap[codigo] = DEFAULT_AVATAR;
-        }
-      });
+      const avatarsMap = mapBulkAvatarsResponse(data);
 
       console.debug('[DocumentosEmpleados] Bulk avatars mapped:', Object.keys(avatarsMap).length);
 
@@ -321,24 +275,10 @@ export default function DocumentosEmpleadosPage() {
     fetchBulkAvatars();
   }, [fetchBulkAvatars]);
 
-  useEffect(() => {
-    if (!bulkAvatarsLoaded) return;
-
-    empleados?.forEach(empleado => {
-      if (!empleado?.CODIGO) return;
-
-      const codigo = empleado.CODIGO;
-
-      if (!Object.prototype.hasOwnProperty.call(employeeAvatarsRef.current, codigo)) {
-        setEmployeeAvatars(prev => ({ ...prev, [codigo]: null }));
-      }
-    });
-  }, [bulkAvatarsLoaded, empleados]);
-
   const loadEmployeeAvatar = useCallback(async (codigo, nombre) => {
     if (!codigo) return;
 
-    if (Object.prototype.hasOwnProperty.call(employeeAvatarsRef.current, codigo)) {
+    if (isRealAvatarUrl(employeeAvatarsRef.current[codigo])) {
       return;
     }
     if (pendingAvatarRequestsRef.current.has(codigo)) return;
@@ -398,7 +338,7 @@ export default function DocumentosEmpleadosPage() {
 
   const enqueueAvatar = useCallback((codigo, nombre) => {
     if (!codigo) return;
-    if (Object.prototype.hasOwnProperty.call(employeeAvatarsRef.current, codigo)) return;
+    if (isRealAvatarUrl(employeeAvatarsRef.current[codigo])) return;
     if (pendingAvatarRequestsRef.current.has(codigo)) return;
     if (avatarQueueRef.current.some(item => item.codigo === codigo)) return;
     console.debug('[DocumentosEmpleados] enqueueAvatar → fallback individual request for', codigo, nombre);
@@ -412,7 +352,7 @@ export default function DocumentosEmpleadosPage() {
     empleados?.forEach(empleado => {
       if (
         empleado?.CODIGO &&
-        !Object.prototype.hasOwnProperty.call(employeeAvatarsRef.current, empleado.CODIGO)
+        !isRealAvatarUrl(employeeAvatarsRef.current[empleado.CODIGO])
       ) {
         enqueueAvatar(empleado.CODIGO, empleado['NOMBRE / APELLIDOS']);
       }
@@ -4953,44 +4893,60 @@ export default function DocumentosEmpleadosPage() {
 
 
   if (!isManager) {
-
     return (
-
-      <div className="min-h-screen flex items-center justify-center">
-
-        <div className="text-center">
-
-          <h1 className="text-2xl font-bold text-red-600 mb-4">
-
-            Acceso Restringido
-
-          </h1>
-
-          <p className="text-gray-600 mb-6">
-
-            Solo los managers pueden acceder a esta página.
-
-          </p>
-
-          <Link 
-
-            to="/inicio"
-
-            className="inline-flex items-center px-6 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors"
-
-          >
-
-            ← Volver al Inicio
-
-          </Link>
-
-        </div>
-
+      <div className="app-page documentos-empleados-page">
+        <PageHeader title="Acceso restringido" subtitle="Solo los managers pueden acceder a esta página" backTo="/inicio" />
+        <AlertBanner variant="danger" title="Permisos insuficientes">
+          No tienes permisos para gestionar documentos de empleados.
+        </AlertBanner>
+        <Link to="/inicio" className="solicitud-admin-btn solicitud-admin-btn--primary inline-flex w-fit">
+          <ArrowLeft className="w-4 h-4" aria-hidden />
+          <span>Volver al inicio</span>
+        </Link>
       </div>
-
     );
-
   }
+
+  const mainTabs = [
+    { id: 'empleados', label: 'Empleados', shortLabel: 'Emp.' },
+    { id: 'gestoria-nominas', label: 'Gestoría Nóminas', shortLabel: 'Gestoría' },
+    { id: 'coste-personal', label: 'Coste Personal', shortLabel: 'Coste' },
+    { id: 'diplomas', label: 'Diplomas', shortLabel: 'Dipl.' },
+    { id: 'certificados-retenciones', label: 'Certificados retenciones', shortLabel: 'Cert.' },
+  ];
+
+  const empleadoSubTabs = [
+    { id: 'documentos', label: 'Documentos', shortLabel: 'Docs' },
+    { id: 'nominas', label: 'Nóminas', shortLabel: 'Nom.' },
+    { id: 'documentos-empresa', label: 'Empresa', shortLabel: 'Emp.' },
+    { id: 'documentos-prl', label: 'PRL', shortLabel: 'PRL' },
+    { id: 'subir-documentos', label: 'Subir', shortLabel: 'Subir' },
+  ];
+
+  const handleMainTabChange = (tabId) => {
+    setActiveTab(tabId);
+    setSelectedEmpleado(null);
+  };
+
+  const getEmpleadoInitials = (empleado) => {
+    const name = empleado?.['NOMBRE / APELLIDOS'] || '';
+    return name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || '?';
+  };
+
+  const volverEmpleadosBtn = (
+    <button
+      type="button"
+      onClick={() => {
+        setActiveTab('empleados');
+        setSelectedEmpleado(null);
+      }}
+      className="solicitud-admin-btn shrink-0"
+      title="Volver a la lista de empleados"
+    >
+      <ArrowLeft className="w-4 h-4" aria-hidden />
+      <span className="hidden sm:inline">Volver</span>
+    </button>
+  );
 
 
 
@@ -5015,659 +4971,194 @@ export default function DocumentosEmpleadosPage() {
 
 
   if (error) {
-
     return (
-
-      <div className="min-h-screen flex items-center justify-center">
-
-        <div className="text-center">
-
-          <h1 className="text-2xl font-bold text-red-600 mb-4">
-
-            {error}
-
-          </h1>
-
-          <Button
-
-            onClick={fetchEmpleados}
-
-            variant="primary"
-
-            size="lg"
-
-          >
-
-            Inténtalo de nuevo
-
-          </Button>
-
-        </div>
-
+      <div className="app-page documentos-empleados-page">
+        <PageHeader title="Documentos por Empleado" backTo="/inicio" />
+        <AlertBanner variant="danger" title="Error">{error}</AlertBanner>
+        <button type="button" onClick={fetchEmpleados} className="solicitud-admin-btn solicitud-admin-btn--primary w-fit">
+          <RefreshCw className="w-4 h-4" aria-hidden />
+          <span>Inténtalo de nuevo</span>
+        </button>
       </div>
-
     );
-
   }
 
 
 
+  const canUseAdminTools = isManager || authUser?.GRUPO === 'Admin' || authUser?.GRUPO === 'Developer' || authUser?.GRUPO === 'Supervisor';
+
   return (
     <>
-    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-red-50 via-white to-red-50">
-      {/* Background Effects ULTRA WOW */}
-      <div className="absolute inset-0 overflow-hidden">
-        {/* Floating blobs */}
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-red-200 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-red-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-2000"></div>
-        <div className="absolute top-40 left-40 w-80 h-80 bg-red-100 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-blob animation-delay-4000"></div>
-        
-        {/* Floating particles */}
-        <div className="absolute top-20 left-1/4 w-4 h-4 bg-red-300 rounded-full opacity-30 animate-pulse" style={{animationDelay: '1s'}}></div>
-        <div className="absolute top-40 right-1/3 w-3 h-3 bg-red-400 rounded-full opacity-25 animate-pulse" style={{animationDelay: '2.5s'}}></div>
-        <div className="absolute bottom-32 left-1/3 w-5 h-5 bg-red-200 rounded-full opacity-20 animate-pulse" style={{animationDelay: '4s'}}></div>
-        <div className="absolute top-60 right-1/4 w-2 h-2 bg-red-500 rounded-full opacity-35 animate-pulse" style={{animationDelay: '1.5s'}}></div>
-        <div className="absolute bottom-20 right-20 w-3 h-3 bg-red-300 rounded-full opacity-25 animate-pulse" style={{animationDelay: '3s'}}></div>
-        <div className="absolute top-80 left-20 w-4 h-4 bg-red-400 rounded-full opacity-30 animate-pulse" style={{animationDelay: '2s'}}></div>
-        
-        {/* Geometric shapes */}
-        <div className="absolute top-32 right-32 w-8 h-8 bg-red-200 opacity-10 rotate-45 animate-pulse" style={{animationDelay: '2.2s'}}></div>
-        <div className="absolute bottom-40 left-16 w-6 h-6 bg-red-300 opacity-15 rotate-12 animate-pulse" style={{animationDelay: '3.8s'}}></div>
-        <div className="absolute top-1/2 right-16 w-10 h-10 bg-red-100 opacity-8 rotate-90 animate-pulse" style={{animationDelay: '1.8s'}}></div>
-        
-        {/* Gradient orbs */}
-        <div className="absolute top-1/3 left-1/5 w-32 h-32 bg-gradient-to-r from-red-200 to-red-300 rounded-full opacity-5 blur-2xl animate-pulse" style={{animationDelay: '2.8s'}}></div>
-        <div className="absolute bottom-1/3 right-1/5 w-24 h-24 bg-gradient-to-r from-red-300 to-red-400 rounded-full opacity-8 blur-xl animate-pulse" style={{animationDelay: '4.2s'}}></div>
-      </div>
+    <div className="app-page documentos-empleados-page">
+      <PageHeader
+        title="Documentos por Empleado"
+        subtitle="Gestiona documentos, nóminas y certificados por empleado"
+        backTo="/inicio"
+        className="documentos-empleados-page-header"
+      />
 
-      <div className="relative z-10 space-y-8 p-6">
-        {/* Header ULTRA WOW 3D */}
-        <div className="relative group overflow-hidden">
-          <div 
-            className="relative overflow-hidden rounded-3xl"
-            style={{
-              background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(249, 250, 251, 0.95) 100%)',
-              backdropFilter: 'blur(20px)',
-              borderRadius: '1.5rem',
-              border: '1px solid rgba(229, 231, 235, 0.3)',
-              boxShadow: '0 25px 50px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.6)',
-              padding: '2rem'
-            }}
-          >
-            {/* Glow animado en hover */}
-            <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-red-400 via-pink-400 to-red-400 opacity-0 group-hover:opacity-10 blur-xl transition-all duration-500"></div>
-            
-            <div className="relative flex items-center justify-between">
-              {/* Back Button - Left Side */}
-              <Back3DButton to="/inicio" title="Volver al Inicio" />
+      <SegmentedControl
+        layout="grid"
+        value={activeTab}
+        onChange={handleMainTabChange}
+        className="documentos-empleados-main-tabs"
+        items={mainTabs}
+      />
 
-              {/* Title Section - Center */}
-              <div className="flex items-center gap-6">
-                <div 
-                  className="relative group/icon overflow-hidden"
-                  style={{
-                    background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                    borderRadius: '1rem',
-                    boxShadow: '0 15px 35px rgba(239, 68, 68, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)',
-                    padding: '1rem',
-                    transform: 'perspective(1000px) rotateX(0deg) rotateY(0deg)',
-                    transition: 'all 0.3s ease'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'perspective(1000px) rotateX(-5deg) rotateY(5deg) translateZ(10px)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateZ(0px)';
-                  }}
-                >
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover/icon:translate-x-[200%] transition-transform duration-1000"></div>
-                  <span className="text-white text-3xl relative z-10">📄</span>
-                </div>
-                
-                <div>
-                  <h1 
-                    className="text-4xl font-black mb-2 bg-gradient-to-r from-red-600 via-red-500 to-red-600 bg-clip-text text-transparent"
-                    style={{
-                      textShadow: '0 4px 20px rgba(239, 68, 68, 0.3)',
-                      filter: 'drop-shadow(0 2px 10px rgba(239, 68, 68, 0.2))'
-                    }}
-                  >
-                    Documentos por Empleado
-                  </h1>
-                  <p 
-                    className="text-gray-600 font-medium text-lg"
-                    style={{
-                      textShadow: '0 2px 10px rgba(0, 0, 0, 0.1)'
-                    }}
-                  >
-                    Gestiona documentos por empleado con estilo
-                  </p>
-                </div>
-              </div>
-
-              {/* Email Ingestion Button (Admin only) - Right Side */}
-              {(isManager || authUser?.GRUPO === 'Admin' || authUser?.GRUPO === 'Developer' || authUser?.GRUPO === 'Supervisor') && (
-                <div className="flex items-center gap-3 relative" style={{ zIndex: 10000 }}>
-                  <button
-                    onClick={fetchEmpleadosConStatusContratos}
-                    disabled={loadingContratos}
-                    className="px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white text-sm font-semibold rounded-lg transition-all duration-200 flex items-center space-x-2 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Ver lista de empleados con status de contratos"
-                  >
-                    {loadingContratos ? (
-                      <>
-                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <span>Cargando...</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <span>Status Contratos</span>
-                      </>
-                    )}
-                  </button>
-                  <EmailIngestionButton />
-                  <FolderIngestionButton />
-                </div>
-              )}
-            </div>
+      {canUseAdminTools && (
+        <div className="documentos-empleados-admin-toolbar">
+          <div className="documentos-empleados-admin-toolbar__desktop hidden sm:flex solicitud-admin-toolbar documentos-actions flex-wrap">
+            <button
+              type="button"
+              onClick={fetchEmpleadosConStatusContratos}
+              disabled={loadingContratos}
+              className="solicitud-admin-btn"
+              title="Ver lista de empleados con status de contratos"
+            >
+              <FileSpreadsheet className={`w-4 h-4 ${loadingContratos ? 'animate-spin' : ''}`} aria-hidden />
+              <span>Status contratos</span>
+            </button>
+            <EmailIngestionButton variant="toolbar" />
+            <FolderIngestionButton variant="toolbar" />
           </div>
-        </div>
-
-
-
-        {/* Tabs de navegación ULTRA MODERN */}
-        <div className="relative mb-6">
-          {/* Background glow effect */}
-          <div className="absolute -inset-1 bg-gradient-to-r from-red-500 via-pink-500 to-red-500 rounded-2xl blur opacity-20 group-hover:opacity-30 transition duration-1000 group-hover:duration-200"></div>
-          
-          {/* Tab-uri Principale (întotdeauna vizibile) */}
-          <div className="relative bg-white/80 backdrop-blur-xl rounded-2xl p-2 border border-gray-200/50 shadow-xl mb-4">
-            <div className="flex flex-wrap gap-2">
-              
-              {/* Tab Empleados */}
+          <details className="documentos-empleados-tools-menu sm:hidden">
+            <summary className="solicitud-admin-btn documentos-empleados-tools-menu__trigger">
+              <Wrench className="w-4 h-4" aria-hidden />
+              <span>Herramientas</span>
+            </summary>
+            <div className="documentos-empleados-tools-menu__panel solicitud-admin-toolbar documentos-actions">
               <button
-                onClick={() => {
-                  setActiveTab('empleados');
-                  setSelectedEmpleado(null); // Reset angajat când schimbăm tab-ul principal
-                }}
-                className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
-                  activeTab === 'empleados'
-                    ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg shadow-red-200'
-                    : 'text-gray-600 hover:text-red-600 hover:bg-red-50/50'
-                }`}
+                type="button"
+                onClick={fetchEmpleadosConStatusContratos}
+                disabled={loadingContratos}
+                className="solicitud-admin-btn w-full"
+                title="Ver lista de empleados con status de contratos"
               >
-                {/* Active glow */}
-                {activeTab === 'empleados' && (
-                  <div className="absolute inset-0 bg-red-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
-                )}
-                <div className="relative flex items-center gap-2">
-                  <span className="text-base">👥</span>
-                  <span>Empleados</span>
-                </div>
+                <FileSpreadsheet className={`w-4 h-4 ${loadingContratos ? 'animate-spin' : ''}`} aria-hidden />
+                <span>Status contratos</span>
               </button>
-
-              {/* Tab Gestoría Nóminas */}
-              <button
-                onClick={() => {
-                  setActiveTab('gestoria-nominas');
-                  setSelectedEmpleado(null);
-                }}
-                className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
-                  activeTab === 'gestoria-nominas'
-                    ? 'bg-gradient-to-r from-teal-500 to-teal-600 text-white shadow-lg shadow-teal-200'
-                    : 'text-gray-600 hover:text-teal-600 hover:bg-teal-50/50'
-                }`}
-              >
-                {activeTab === 'gestoria-nominas' && (
-                  <div className="absolute inset-0 bg-teal-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
-                )}
-                <div className="relative flex items-center gap-2">
-                  <span className="text-base">💼</span>
-                  <span>Gestoría Nóminas</span>
-                </div>
-              </button>
-
-              {/* Tab Coste Personal */}
-              <button
-                onClick={() => {
-                  setActiveTab('coste-personal');
-                  setSelectedEmpleado(null);
-                }}
-                className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
-                  activeTab === 'coste-personal'
-                    ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white shadow-lg shadow-indigo-200'
-                    : 'text-gray-600 hover:text-indigo-600 hover:bg-indigo-50/50'
-                }`}
-              >
-                {activeTab === 'coste-personal' && (
-                  <div className="absolute inset-0 bg-indigo-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
-                )}
-                <div className="relative flex items-center gap-2">
-                  <span className="text-base">💰</span>
-                  <span>Coste Personal</span>
-                </div>
-              </button>
-
-              {/* Tab Diplomas */}
-              <button
-                onClick={() => {
-                  setActiveTab('diplomas');
-                  setSelectedEmpleado(null);
-                }}
-                className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
-                  activeTab === 'diplomas'
-                    ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white shadow-lg shadow-yellow-200'
-                    : 'text-gray-600 hover:text-yellow-600 hover:bg-yellow-50/50'
-                }`}
-              >
-                {activeTab === 'diplomas' && (
-                  <div className="absolute inset-0 bg-yellow-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
-                )}
-                <div className="relative flex items-center gap-2">
-                  <span className="text-base">🎓</span>
-                  <span>Diplomas</span>
-                </div>
-              </button>
-
-              {/* Tab Certificados retenciones */}
-              <button
-                onClick={() => {
-                  setActiveTab('certificados-retenciones');
-                  setSelectedEmpleado(null);
-                }}
-                className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
-                  activeTab === 'certificados-retenciones'
-                    ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-200'
-                    : 'text-gray-600 hover:text-emerald-600 hover:bg-emerald-50/50'
-                }`}
-              >
-                {activeTab === 'certificados-retenciones' && (
-                  <div className="absolute inset-0 bg-emerald-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
-                )}
-                <div className="relative flex items-center gap-2">
-                  <span className="text-base">📑</span>
-                  <span className="whitespace-nowrap">CERTIFICADOS RETENCIONES</span>
-                </div>
-              </button>
+              <EmailIngestionButton variant="toolbar" />
+              <FolderIngestionButton variant="toolbar" />
             </div>
+          </details>
+        </div>
+      )}
+
+      {selectedEmpleado && activeTab === 'empleados' && (
+        <div className="documentos-empleados-context app-card app-card--pad">
+          <div className="documentos-empleados-context__row">
+            <div className="documentos-empleados-context__identity min-w-0">
+              <div className="documentos-empleados-avatar">
+                {employeeAvatars[selectedEmpleado.CODIGO] ? (
+                  <img src={employeeAvatars[selectedEmpleado.CODIGO]} alt="" />
+                ) : (
+                  <span>{getEmpleadoInitials(selectedEmpleado)}</span>
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="documentos-empleados-context__name truncate">
+                  {selectedEmpleado['NOMBRE / APELLIDOS'] || 'Empleado'}
+                </p>
+                <p className="documentos-empleados-context__meta truncate">
+                  {selectedEmpleado.CODIGO}
+                  {selectedEmpleado['CENTRO TRABAJO'] ? ` · ${selectedEmpleado['CENTRO TRABAJO']}` : ''}
+                  {selectedEmpleado.GRUPO ? ` · ${selectedEmpleado.GRUPO}` : ''}
+                </p>
+              </div>
+            </div>
+            {volverEmpleadosBtn}
           </div>
-
-          {/* Tab-uri pentru Angajat (doar când e selectat un angajat) */}
-          {selectedEmpleado && (
-            <div className="relative bg-gradient-to-r from-blue-50/80 to-purple-50/80 backdrop-blur-xl rounded-2xl p-2 border-2 border-blue-200/50 shadow-xl">
-              <div className="flex items-center justify-between mb-2 px-2">
-                <span className="text-xs font-semibold text-blue-700">📋 {selectedEmpleado['NOMBRE / APELLIDOS'] || 'Empleado'}</span>
-                <button
-                  onClick={() => setSelectedEmpleado(null)}
-                  className="group relative px-3 py-1.5 rounded-lg font-semibold text-xs transition-all duration-300 transform hover:scale-105 bg-gradient-to-r from-gray-500 to-gray-600 text-white shadow-md hover:shadow-lg hover:from-gray-600 hover:to-gray-700"
-                  title="Volver a la lista de empleados"
-                >
-                  <div className="relative flex items-center gap-1.5">
-                    <span className="text-sm">←</span>
-                    <span>Volver</span>
-                  </div>
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {/* Tab Documentos */}
-                <button
-                  onClick={() => setActiveEmpleadoTab('documentos')}
-                  className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
-                    activeEmpleadoTab === 'documentos'
-                      ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-200'
-                      : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50/50'
-                  }`}
-                >
-                  {activeEmpleadoTab === 'documentos' && (
-                    <div className="absolute inset-0 bg-blue-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
-                  )}
-                  <div className="relative flex items-center gap-2">
-                    <span className="text-base">📄</span>
-                    <span>Documentos</span>
-                  </div>
-                </button>
-
-                {/* Tab Nóminas */}
-                <button
-                  onClick={() => setActiveEmpleadoTab('nominas')}
-                  className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
-                    activeEmpleadoTab === 'nominas'
-                      ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg shadow-green-200'
-                      : 'text-gray-600 hover:text-green-600 hover:bg-green-50/50'
-                  }`}
-                >
-                  {activeEmpleadoTab === 'nominas' && (
-                    <div className="absolute inset-0 bg-green-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
-                  )}
-                  <div className="relative flex items-center gap-2">
-                    <span className="text-base">💰</span>
-                    <span>Nóminas</span>
-                  </div>
-                </button>
-
-                {/* Tab Documentos Empresa */}
-                <button
-                  onClick={() => setActiveEmpleadoTab('documentos-empresa')}
-                  className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
-                    activeEmpleadoTab === 'documentos-empresa'
-                      ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-lg shadow-purple-200'
-                      : 'text-gray-600 hover:text-purple-600 hover:bg-purple-50/50'
-                  }`}
-                >
-                  {activeEmpleadoTab === 'documentos-empresa' && (
-                    <div className="absolute inset-0 bg-purple-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
-                  )}
-                  <div className="relative flex items-center gap-2">
-                    <span className="text-base">🏢</span>
-                    <span>Empresa</span>
-                  </div>
-                </button>
-
-                {/* Tab Documentos PRL */}
-                <button
-                  onClick={() => setActiveEmpleadoTab('documentos-prl')}
-                  className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
-                    activeEmpleadoTab === 'documentos-prl'
-                      ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-lg shadow-amber-200'
-                      : 'text-gray-600 hover:text-amber-700 hover:bg-amber-50/50'
-                  }`}
-                >
-                  {activeEmpleadoTab === 'documentos-prl' && (
-                    <div className="absolute inset-0 bg-amber-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
-                  )}
-                  <div className="relative flex items-center gap-2">
-                    <span className="text-base">🦺</span>
-                    <span>PRL</span>
-                  </div>
-                </button>
-
-                {/* Tab Subir Documentos */}
-                <button
-                  onClick={() => setActiveEmpleadoTab('subir-documentos')}
-                  className={`group relative px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-300 transform hover:scale-105 ${
-                    activeEmpleadoTab === 'subir-documentos'
-                      ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-200'
-                      : 'text-gray-600 hover:text-orange-600 hover:bg-orange-50/50'
-                  }`}
-                >
-                  {activeEmpleadoTab === 'subir-documentos' && (
-                    <div className="absolute inset-0 bg-orange-400 rounded-xl blur-md opacity-40 animate-pulse"></div>
-                  )}
-                  <div className="relative flex items-center gap-2">
-                    <span className="text-base">📤</span>
-                    <span>Subir</span>
-                  </div>
-                </button>
-              </div>
-            </div>
-          )}
+          <SegmentedControl
+            layout="grid"
+            value={activeEmpleadoTab}
+            onChange={setActiveEmpleadoTab}
+            className="documentos-empleados-sub-tabs"
+            items={empleadoSubTabs}
+          />
         </div>
+      )}
 
-        {/* Contenido de tabs */}
-        <div 
-          className="p-6"
-          style={{
-            background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(249, 250, 251, 0.95) 100%)',
-            backdropFilter: 'blur(20px)',
-            borderRadius: '1.5rem',
-            border: '1px solid rgba(229, 231, 235, 0.3)',
-            boxShadow: '0 25px 50px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6)'
-          }}
-        >
-
-          {activeTab === 'empleados' && !selectedEmpleado && (
+      <div className="documentos-empleados-tab-panel app-card app-card--pad">
+{activeTab === 'empleados' && !selectedEmpleado && (
             <div>
-              {/* Section Title and Search Bar - Side by Side */}
-              <div className="flex items-center justify-between mb-8">
-                {/* Section Title */}
-                <div className="relative">
-                  <h2 
-                    className="text-2xl font-black bg-gradient-to-r from-red-600 via-red-500 to-red-600 bg-clip-text text-transparent mb-2"
-                    style={{
-                      textShadow: '0 4px 20px rgba(239, 68, 68, 0.3)',
-                      filter: 'drop-shadow(0 2px 10px rgba(239, 68, 68, 0.2))'
-                    }}
-                  >
-                    Selecciona un Empleado
-                  </h2>
-                  <div className="h-1 w-24 bg-gradient-to-r from-red-500 to-red-600 rounded-full"></div>
-                </div>
-
-                {/* Barra de búsqueda ULTRA WOW */}
-                <div 
-                  className="relative max-w-md group"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(249, 250, 251, 0.95) 100%)',
-                    backdropFilter: 'blur(20px)',
-                    borderRadius: '1rem',
-                    border: '2px solid rgba(239, 68, 68, 0.2)',
-                    boxShadow: '0 15px 35px rgba(239, 68, 68, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.6)',
-                    overflow: 'hidden'
-                  }}
-                >
-                  {/* Glow animado en hover */}
-                  <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-red-400 via-pink-400 to-red-400 opacity-0 group-hover:opacity-10 blur-xl transition-opacity duration-500"></div>
-                  
-                  <div className="relative flex items-center">
-                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none z-10">
-                      <svg 
-                        className="h-6 w-6 text-red-400 group-hover:text-red-500 transition-colors duration-300" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        viewBox="0 0 24 24"
-                        style={{
-                          filter: 'drop-shadow(0 2px 4px rgba(239, 68, 68, 0.3))'
-                        }}
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                    </div>
-
-                    <input
-                      id="documentos-empleados-search"
-                      name="documentos-empleados-search"
-                      type="text"
-                      placeholder="Buscar por nombre, email, código o grupo..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-12 pr-12 py-4 bg-transparent text-gray-700 placeholder-gray-400 focus:outline-none focus:placeholder-gray-300 font-medium text-lg"
-                      style={{
-                        textShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
-                      }}
-                    />
-
-                    {searchTerm && (
-                      <button
-                        onClick={() => setSearchTerm('')}
-                        className="absolute inset-y-0 right-0 pr-4 flex items-center z-10 group/clear"
-                        style={{
-                          filter: 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1))'
-                        }}
-                      >
-                        <div 
-                          className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 group-hover/clear:bg-red-100 group-hover/clear:scale-110"
-                        >
-                          <svg 
-                            className="h-5 w-5 text-red-400 group-hover/clear:text-red-600 transition-colors duration-300" 
-                            fill="none" 
-                            stroke="currentColor" 
-                            viewBox="0 0 24 24"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </div>
-                      </button>
-                    )}
-                  </div>
+              <div className="solicitud-admin-toolbar documentos-empleados-section-head">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100">Selecciona un empleado</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Busca por nombre, código, email o grupo</p>
                 </div>
               </div>
 
-              {/* Search Results Counter */}
+              <div className="documentos-empleados-filter-bar app-card app-card--pad">
+                <div className="documentos-empleados-search-wrap">
+                  <Search className="documentos-empleados-search-icon w-4 h-4" aria-hidden />
+                  <input
+                    id="documentos-empleados-search"
+                    name="documentos-empleados-search"
+                    type="search"
+                    placeholder="Buscar empleado…"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="documentos-empleados-search-input"
+                    aria-label="Buscar empleados"
+                  />
+                  {searchTerm && (
+                    <button type="button" onClick={() => setSearchTerm('')} className="solicitud-admin-btn documentos-empleados-search-clear" aria-label="Limpiar búsqueda">
+                      <X className="w-4 h-4" aria-hidden />
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {searchTerm && (
-                <div className="mb-6">
-                  <div 
-                    className="inline-block px-4 py-2 rounded-full"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.1) 100%)',
-                    backdropFilter: 'blur(10px)',
-                    border: '1px solid rgba(239, 68, 68, 0.2)',
-                    boxShadow: '0 4px 15px rgba(239, 68, 68, 0.1)'
-                  }}
-                >
-                  <p 
-                    className="text-sm font-bold text-red-700"
-                    style={{
-                      textShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
-                    }}
-                  >
-                    {filteredEmpleados.length} empleado{filteredEmpleados.length !== 1 ? 's' : ''} encontrado{filteredEmpleados.length !== 1 ? 's' : ''}
-                  </p>
-                </div>
-              </div>
-            )}
+                <AlertBanner variant="info" compact className="mb-3">
+                  {filteredEmpleados.length} empleado{filteredEmpleados.length !== 1 ? 's' : ''} encontrado{filteredEmpleados.length !== 1 ? 's' : ''}
+                </AlertBanner>
+              )}
 
             {filteredEmpleados.length === 0 ? (
-                <div 
-                  className="text-center py-16"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(249, 250, 251, 0.95) 100%)',
-                    backdropFilter: 'blur(20px)',
-                    borderRadius: '1.5rem',
-                    border: '2px solid rgba(239, 68, 68, 0.1)',
-                    boxShadow: '0 25px 50px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6)'
-                  }}
-                >
-                  <div className="text-6xl mb-4">🔍</div>
-                  <p 
-                    className="text-gray-600 font-medium text-lg"
-                    style={{
-                      textShadow: '0 2px 10px rgba(0, 0, 0, 0.1)'
-                    }}
-                  >
-                    {searchTerm ? 'No se encontraron empleados con esa búsqueda.' : 'No hay empleados disponibles.'}
-                  </p>
-                </div>
+                <AlertBanner variant="neutral" title="Sin resultados">
+                  {searchTerm ? 'No se encontraron empleados con esa búsqueda.' : 'No hay empleados disponibles.'}
+                </AlertBanner>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                <div className="documentos-empleados-employee-list solicitud-admin-mobile-list">
                   {filteredEmpleados.map((empleado, idx) => (
-                    <div 
+                    <article
                       key={empleado.CODIGO || idx}
-                      className="group relative overflow-hidden cursor-pointer"
-                      style={{
-                        background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(249, 250, 251, 0.95) 100%)',
-                        backdropFilter: 'blur(20px)',
-                        borderRadius: '1.5rem',
-                        border: '2px solid rgba(239, 68, 68, 0.1)',
-                        boxShadow: '0 15px 35px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6)',
-                        transform: 'perspective(1000px) rotateX(0deg) rotateY(0deg)',
-                        transition: 'all 0.3s ease'
-                      }}
-                      onClick={() => handleEmpleadoSelect(empleado)}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = 'perspective(1000px) rotateX(-5deg) rotateY(5deg) translateZ(20px)';
-                        e.currentTarget.style.boxShadow = '0 25px 50px rgba(239, 68, 68, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.8)';
-                        e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.3)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateZ(0px)';
-                        e.currentTarget.style.boxShadow = '0 15px 35px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.6)';
-                        e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.1)';
-                      }}
+                      className="solicitud-admin-mobile-card documentos-empleados-employee-card"
                     >
-                      {/* Glow animado en hover */}
-                      <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-red-400 via-pink-400 to-red-400 opacity-0 group-hover:opacity-10 blur-xl transition-opacity duration-500"></div>
-                      
-                      {/* Shimmer effect */}
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000"></div>
-                      
-                      <div className="relative p-4 sm:p-6">
-                        <div className="flex items-start space-x-3 sm:space-x-4">
-                          <div 
-                            className="relative group/avatar overflow-hidden flex-shrink-0"
-                            style={{
-                              background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                              borderRadius: '1rem',
-                              boxShadow: '0 8px 25px rgba(239, 68, 68, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2)',
-                              width: '2.5rem',
-                              height: '2.5rem',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              transform: 'perspective(1000px) rotateX(0deg) rotateY(0deg)',
-                              transition: 'all 0.3s ease'
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.transform = 'perspective(1000px) rotateX(-10deg) rotateY(10deg) translateZ(10px)';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateZ(0px)';
-                            }}
-                          >
-                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover/avatar:translate-x-[200%] transition-transform duration-1000"></div>
-                            {employeeAvatars[empleado.CODIGO] ? (
-                              <img 
-                                src={employeeAvatars[empleado.CODIGO]} 
-                                alt={empleado['NOMBRE / APELLIDOS']} 
-                                className="w-full h-full object-cover rounded-full"
-                              />
-                            ) : (
-                              <span className="text-white text-2xl relative z-10">
-                                {empleado['NOMBRE / APELLIDOS']?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '👤'}
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex-1 min-w-0 overflow-hidden">
-                            <h3 
-                              className="font-bold text-gray-900 text-base sm:text-lg mb-1 break-words"
-                              style={{
-                                textShadow: '0 2px 10px rgba(0, 0, 0, 0.1)'
-                              }}
-                            >
-                              {empleado['NOMBRE / APELLIDOS'] || 'Empleado'}
-                            </h3>
-                            <p 
-                              className="text-xs sm:text-sm text-gray-600 mb-2 break-words"
-                              style={{
-                                textShadow: '0 1px 5px rgba(0, 0, 0, 0.1)'
-                              }}
-                            >
-                              {empleado['CORREO ELECTRONICO'] || 'Sin email'}
-                            </p>
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                              <div 
-                                className="inline-block px-2 sm:px-3 py-1 rounded-full text-xs font-bold"
-                                style={{
-                                  background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.1) 100%)',
-                                  border: '1px solid rgba(239, 68, 68, 0.2)',
-                                  color: '#dc2626',
-                                  textShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
-                                }}
-                              >
-                                {empleado.GRUPO || 'Sin grupo'}
-                              </div>
-                              <div 
-                                className="inline-block px-2 sm:px-3 py-1 rounded-full text-xs font-bold"
-                                style={{
-                                  background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(22, 163, 74, 0.1) 100%)',
-                                  border: '1px solid rgba(34, 197, 94, 0.2)',
-                                  color: '#16a34a',
-                                  textShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
-                                }}
-                              >
-                                🎯 {calculateAntiguedad(empleado['FECHA DE ALTA'])}
-                              </div>
-                            </div>
-                          </div>
+                      <div className="solicitud-admin-mobile-card__head">
+                        <div className="documentos-empleados-avatar">
+                          {employeeAvatars[empleado.CODIGO] ? (
+                            <img src={employeeAvatars[empleado.CODIGO]} alt="" />
+                          ) : (
+                            <span>{getEmpleadoInitials(empleado)}</span>
+                          )}
                         </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="solicitud-admin-mobile-card__title truncate">
+                            {empleado['NOMBRE / APELLIDOS'] || 'Empleado'}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5 truncate">
+                            {empleado.CODIGO}
+                            {empleado['CENTRO TRABAJO'] ? ` · ${empleado['CENTRO TRABAJO']}` : ''}
+                          </p>
+                          <p className="text-xs text-gray-500 truncate">{empleado['CORREO ELECTRONICO'] || 'Sin email'}</p>
+                        </div>
+                        {empleado.GRUPO && (
+                          <span className="solicitud-status solicitud-status--neutral shrink-0">{empleado.GRUPO}</span>
+                        )}
                       </div>
-                    </div>
+                      <div className="empleados-card-actions">
+                        <button
+                          type="button"
+                          onClick={() => handleEmpleadoSelect(empleado)}
+                          className="solicitud-admin-btn solicitud-admin-btn--primary empleados-card-actions__primary"
+                        >
+                          <Eye className="w-4 h-4" aria-hidden />
+                          <span>Ver documentos</span>
+                        </button>
+                      </div>
+                    </article>
                   ))}
                 </div>
               )}
@@ -5679,53 +5170,22 @@ export default function DocumentosEmpleadosPage() {
 
             <div className="space-y-4">
 
-              {/* Header compacto y responsive */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-
-                <div className="flex items-center gap-3">
-
-                  <h2 className="text-lg sm:text-xl font-bold text-red-600 truncate">
-
-                    Documentos de {selectedEmpleado['NOMBRE / APELLIDOS'] || 'Empleado'}
-
-                  </h2>
-
-                  <button
-
-                    onClick={() => {
-
-                      console.log('🔄 Refresh button clicked for:', selectedEmpleado);
-
-                      setEmpleadoDocumentos([]);
-
-                      fetchEmpleadoDocumentos(selectedEmpleado);
-
-                    }}
-
-                    className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200 flex-shrink-0"
-
-                    title="Actualizar documentos"
-
-                  >
-
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-
-                    </svg>
-
-                  </button>
-
+              <div className="solicitud-admin-toolbar mb-3">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100">Documentos del empleado</h2>
                 </div>
-
-                <ChangeEmployee3DButton
+                <button
+                  type="button"
                   onClick={() => {
-                    setActiveTab('empleados');
-                    setSelectedEmpleado(null);
+                    setEmpleadoDocumentos([]);
+                    fetchEmpleadoDocumentos(selectedEmpleado);
                   }}
-                  title="Cambiar Empleado"
-                />
-
+                  className="solicitud-admin-btn"
+                  title="Actualizar documentos"
+                >
+                  <RefreshCw className="w-4 h-4" aria-hidden />
+                  <span className="hidden sm:inline">Actualizar</span>
+                </button>
               </div>
 
 
@@ -5755,7 +5215,7 @@ export default function DocumentosEmpleadosPage() {
                 return (
                   <div className="flex justify-center mb-6">
                     {/* Total Documentos Normales */}
-                    <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-xl border border-blue-200/50 hover:shadow-md transition-all duration-200 w-full max-w-sm">
+                    <div className="app-card app-card--pad documentos-empleados-stat">
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-xs font-medium text-blue-700 uppercase tracking-wide">Total Documentos</p>
@@ -5865,7 +5325,7 @@ export default function DocumentosEmpleadosPage() {
 
                     return (
                       <div key={`${documento.id || 'no-id'}-${idx}-${documento.fileName || 'no-name'}`} 
-                           className={`group relative overflow-hidden bg-gradient-to-r ${style.bg} p-4 rounded-xl border ${style.border} hover:shadow-md transition-all duration-200`}>
+                           className="documentos-empleados-doc-row">
 
                         {/* Header del documento */}
                         <div className="flex items-start justify-between mb-3">
@@ -5911,7 +5371,7 @@ export default function DocumentosEmpleadosPage() {
                         <div className="flex flex-wrap gap-2">
                           <button
                             onClick={() => handlePreviewDocument(documento)}
-                            className="group/btn relative px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-medium rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 flex items-center space-x-1"
+                            className="solicitud-admin-btn solicitud-admin-btn--primary text-xs"
                           >
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -5922,7 +5382,7 @@ export default function DocumentosEmpleadosPage() {
 
                           <button
                             onClick={() => handleDownloadDocument(documento)}
-                            className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1"
+                            className="solicitud-admin-btn text-xs"
                           >
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -5932,7 +5392,7 @@ export default function DocumentosEmpleadosPage() {
 
                           <button
                             onClick={() => openDeleteConfirmModalDocumento(documento)}
-                            className="px-3 py-1.5 border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1"
+                            className="solicitud-admin-btn solicitud-admin-btn--danger text-xs"
                           >
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -5970,50 +5430,50 @@ export default function DocumentosEmpleadosPage() {
 
           {/* Tab Gestoría Nóminas (matriz) */}
           {activeTab === 'gestoria-nominas' && (
-            <NominasMatrixTab />
+            <div className="documentos-empleados-gestoria-embed">
+              <NominasMatrixTab />
+            </div>
           )}
 
           {/* Tab Coste Personal */}
           {activeTab === 'coste-personal' && (
-            <CostePersonalTab />
+            <div className="documentos-empleados-gestoria-embed">
+              <CostePersonalTab />
+            </div>
           )}
 
           {activeTab === 'certificados-retenciones' && (
-            <CertificadosRetencionesTab showNotification={showNotification} />
+            <div className="documentos-empleados-gestoria-embed">
+              <CertificadosRetencionesTab showNotification={showNotification} />
+            </div>
           )}
 
           {activeTab === 'diplomas' && (
-            <div>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 sm:mb-6 gap-4">
-                <div className="flex items-center gap-3 sm:gap-4">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <span className="text-white text-xl sm:text-2xl">🎓</span>
-                  </div>
-                  <div>
-                    <h2 className="text-xl sm:text-2xl font-bold text-gray-900">Diplomas</h2>
-                    <p className="text-gray-600 text-xs sm:text-sm">Gestiona diplomas de empleados</p>
-                  </div>
+            <div className="documentos-empleados-diplomas-panel">
+              <div className="solicitud-admin-toolbar mb-3">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100">Diplomas</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Gestiona diplomas de empleados</p>
                 </div>
               </div>
 
               {/* Upload PDFs individuales */}
-              <div className="card mb-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">📄 Subir PDFs Individuales</h3>
-                <p className="text-sm text-gray-600 mb-4">
+              <div className="app-card app-card--pad">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-1 flex items-center gap-2">
+                  <FileUp className="w-4 h-4 text-gray-500" aria-hidden />
+                  Subir PDFs individuales
+                </h3>
+                <p className="text-xs text-gray-600 dark:text-gray-400 mb-4">
                   Selecciona uno o más archivos PDF de diplomas. El sistema extraerá automáticamente los nombres de los empleados desde el PDF (o desde el nombre del archivo como fallback).
                 </p>
                 
                 <div className="flex flex-col gap-4">
-                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                      <svg className="w-10 h-10 mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                      </svg>
-                      <p className="mb-2 text-sm text-gray-500">
-                        <span className="font-semibold">Click para seleccionar</span> o arrastra los PDFs aquí
-                      </p>
-                      <p className="text-xs text-gray-500">Puedes seleccionar múltiples archivos PDF</p>
-                    </div>
+                  <label className="documentos-empleados-upload-zone">
+                    <FileUp className="w-8 h-8 text-gray-400 mb-2" aria-hidden />
+                    <p className="mb-1 text-sm text-gray-600 dark:text-gray-400">
+                      <span className="font-semibold">Click para seleccionar</span> o arrastra los PDFs aquí
+                    </p>
+                    <p className="text-xs text-gray-500">Puedes seleccionar múltiples archivos PDF</p>
                     <input
                       type="file"
                       accept=".pdf"
@@ -6072,16 +5532,11 @@ export default function DocumentosEmpleadosPage() {
                   </label>
 
                   {diplomasPdfsLoading && (
-                    <div className="flex items-center justify-center py-4">
-                      <div className="w-8 h-8 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
-                      <span className="ml-3 text-gray-600">Procesando PDFs...</span>
-                    </div>
+                    <AlertBanner variant="info" loading title="Procesando PDFs…" />
                   )}
 
                   {diplomasPdfsError && (
-                    <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                      <p className="text-red-800 text-sm">❌ {diplomasPdfsError}</p>
-                    </div>
+                    <AlertBanner variant="danger" title="Error">{diplomasPdfsError}</AlertBanner>
                   )}
 
                   {diplomasPdfsPreview && (
@@ -6094,34 +5549,32 @@ export default function DocumentosEmpleadosPage() {
                         {diplomasPdfsPreview.diplomas.map((diploma, idx) => (
                           <div
                             key={idx}
-                            className={`p-3 rounded-lg border-2 ${
-                              diploma.empleadoCodigo
-                                ? 'bg-green-50 border-green-200'
-                                : 'bg-yellow-50 border-yellow-200'
+                            className={`documentos-empleados-diploma-row ${
+                              diploma.empleadoCodigo ? 'documentos-empleados-diploma-row--ok' : 'documentos-empleados-diploma-row--warn'
                             }`}
                           >
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <p className="font-medium text-sm text-gray-900">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
                                   {diploma.nombreArchivo}
                                 </p>
                                 {diploma.nombreExtraido && (
-                                  <p className="text-xs text-gray-600 mt-1">
+                                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
                                     Nombre extraído: <span className="font-semibold">{diploma.nombreExtraido}</span>
                                     {diploma.fuente && (
-                                      <span className="ml-2 text-gray-500">
-                                        ({diploma.fuente === 'pdf' ? '📄 PDF' : '📝 Filename'})
-                                      </span>
+                                      <span className="ml-2 text-gray-500">({diploma.fuente === 'pdf' ? 'PDF' : 'Filename'})</span>
                                     )}
                                   </p>
                                 )}
                                 {diploma.empleadoCodigo ? (
-                                  <p className="text-xs text-green-700 mt-1">
-                                    ✅ Asociado a: {diploma.empleadoNombre} ({diploma.empleadoCodigo})
+                                  <p className="text-xs text-green-700 dark:text-green-400 mt-1 flex items-center gap-1">
+                                    <CheckCircle2 className="w-3 h-3 shrink-0" aria-hidden />
+                                    Asociado a: {diploma.empleadoNombre} ({diploma.empleadoCodigo})
                                   </p>
                                 ) : (
-                                  <p className="text-xs text-yellow-700 mt-1">
-                                    ⚠️ No se encontró empleado
+                                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-1 flex items-center gap-1">
+                                    <AlertTriangle className="w-3 h-3 shrink-0" aria-hidden />
+                                    No se encontró empleado
                                   </p>
                                 )}
                               </div>
@@ -6213,16 +5666,16 @@ export default function DocumentosEmpleadosPage() {
                             }
                           }}
                           disabled={diplomasPdfsGuardando || diplomasPdfsSeleccionadas.length === 0}
-                          className="w-full px-5 py-2.5 rounded-lg font-medium text-white bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                          className="solicitud-admin-btn solicitud-admin-btn--primary w-full disabled:opacity-50"
                         >
                           {diplomasPdfsGuardando ? (
                             <>
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              <span>Guardando...</span>
+                              <RefreshCw className="w-4 h-4 animate-spin" aria-hidden />
+                              <span>Guardando…</span>
                             </>
                           ) : (
                             <>
-                              <span>💾</span>
+                              <Download className="w-4 h-4" aria-hidden />
                               <span>Guardar {diplomasPdfsSeleccionadas.length} diplomas seleccionadas</span>
                             </>
                           )}
@@ -6234,23 +5687,22 @@ export default function DocumentosEmpleadosPage() {
               </div>
 
               {/* Upload ZIP */}
-              <div className="card mb-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">📦 Subir ZIP con Diplomas</h3>
-                <p className="text-sm text-gray-600 mb-4">
+              <div className="app-card app-card--pad">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-1 flex items-center gap-2">
+                  <Archive className="w-4 h-4 text-gray-500" aria-hidden />
+                  Subir ZIP con diplomas
+                </h3>
+                <p className="text-xs text-gray-600 dark:text-gray-400 mb-4">
                   Sube un archivo ZIP con diplomas en formato PDF. El sistema extraerá automáticamente los nombres de los empleados desde el PDF (o desde el nombre del archivo como fallback).
                 </p>
                 
                 <div className="flex flex-col gap-4">
-                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
-                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                      <svg className="w-10 h-10 mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                      </svg>
-                      <p className="mb-2 text-sm text-gray-500">
-                        <span className="font-semibold">Click para seleccionar</span> o arrastra el ZIP aquí
-                      </p>
-                      <p className="text-xs text-gray-500">ZIP con archivos PDF</p>
-                    </div>
+                  <label className="documentos-empleados-upload-zone">
+                    <Archive className="w-8 h-8 text-gray-400 mb-2" aria-hidden />
+                    <p className="mb-1 text-sm text-gray-600 dark:text-gray-400">
+                      <span className="font-semibold">Click para seleccionar</span> o arrastra el ZIP aquí
+                    </p>
+                    <p className="text-xs text-gray-500">ZIP con archivos PDF</p>
                     <input
                       type="file"
                       accept=".zip"
@@ -6306,16 +5758,11 @@ export default function DocumentosEmpleadosPage() {
                   </label>
 
                   {diplomasLoading && (
-                    <div className="flex items-center justify-center py-4">
-                      <div className="w-8 h-8 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
-                      <span className="ml-3 text-gray-600">Procesando ZIP...</span>
-                    </div>
+                    <AlertBanner variant="info" loading title="Procesando ZIP…" />
                   )}
 
                   {diplomasError && (
-                    <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                      <p className="text-red-800 text-sm">❌ {diplomasError}</p>
-                    </div>
+                    <AlertBanner variant="danger" title="Error">{diplomasError}</AlertBanner>
                   )}
 
                   {diplomasPreview && (
@@ -6328,34 +5775,32 @@ export default function DocumentosEmpleadosPage() {
                         {diplomasPreview.diplomas.map((diploma, idx) => (
                           <div
                             key={idx}
-                            className={`p-3 rounded-lg border-2 ${
-                              diploma.empleadoCodigo
-                                ? 'bg-green-50 border-green-200'
-                                : 'bg-yellow-50 border-yellow-200'
+                            className={`documentos-empleados-diploma-row ${
+                              diploma.empleadoCodigo ? 'documentos-empleados-diploma-row--ok' : 'documentos-empleados-diploma-row--warn'
                             }`}
                           >
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <p className="font-medium text-sm text-gray-900">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
                                   {diploma.nombreArchivo}
                                 </p>
                                 {diploma.nombreExtraido && (
-                                  <p className="text-xs text-gray-600 mt-1">
+                                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
                                     Nombre extraído: <span className="font-semibold">{diploma.nombreExtraido}</span>
                                     {diploma.fuente && (
-                                      <span className="ml-2 text-gray-500">
-                                        ({diploma.fuente === 'pdf' ? '📄 PDF' : '📝 Filename'})
-                                      </span>
+                                      <span className="ml-2 text-gray-500">({diploma.fuente === 'pdf' ? 'PDF' : 'Filename'})</span>
                                     )}
                                   </p>
                                 )}
                                 {diploma.empleadoCodigo ? (
-                                  <p className="text-xs text-green-700 mt-1">
-                                    ✅ Asociado a: {diploma.empleadoNombre} ({diploma.empleadoCodigo})
+                                  <p className="text-xs text-green-700 dark:text-green-400 mt-1 flex items-center gap-1">
+                                    <CheckCircle2 className="w-3 h-3 shrink-0" aria-hidden />
+                                    Asociado a: {diploma.empleadoNombre} ({diploma.empleadoCodigo})
                                   </p>
                                 ) : (
-                                  <p className="text-xs text-yellow-700 mt-1">
-                                    ⚠️ No se encontró empleado
+                                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-1 flex items-center gap-1">
+                                    <AlertTriangle className="w-3 h-3 shrink-0" aria-hidden />
+                                    No se encontró empleado
                                   </p>
                                 )}
                               </div>
@@ -6445,16 +5890,16 @@ export default function DocumentosEmpleadosPage() {
                             }
                           }}
                           disabled={diplomasGuardando || diplomasSeleccionadas.length === 0}
-                          className="w-full px-5 py-2.5 rounded-lg font-medium text-white bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                          className="solicitud-admin-btn solicitud-admin-btn--primary w-full disabled:opacity-50"
                         >
                           {diplomasGuardando ? (
                             <>
-                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                              <span>Guardando...</span>
+                              <RefreshCw className="w-4 h-4 animate-spin" aria-hidden />
+                              <span>Guardando…</span>
                             </>
                           ) : (
                             <>
-                              <span>💾</span>
+                              <Download className="w-4 h-4" aria-hidden />
                               <span>Guardar {diplomasSeleccionadas.length} diplomas seleccionadas</span>
                             </>
                           )}
@@ -6466,22 +5911,25 @@ export default function DocumentosEmpleadosPage() {
               </div>
 
               {/* Lista de todas las diplomas */}
-              <div className="card mt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-bold text-gray-900">📋 Todas las Diplomas</h3>
+              <div className="app-card app-card--pad">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                    <GraduationCap className="w-4 h-4 text-gray-500" aria-hidden />
+                    Todas las diplomas
+                  </h3>
                   <button
                     onClick={fetchTodasLasDiplomas}
                     disabled={todasLasDiplomasLoading}
-                    className="px-4 py-2 rounded-lg font-medium text-white bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    className="solicitud-admin-btn solicitud-admin-btn--primary inline-flex items-center gap-2 disabled:opacity-50"
                   >
                     {todasLasDiplomasLoading ? (
                       <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        <span>Cargando...</span>
+                        <RefreshCw className="w-4 h-4 animate-spin" aria-hidden />
+                        <span>Cargando…</span>
                       </>
                     ) : (
                       <>
-                        <span>🔄</span>
+                        <RefreshCw className="w-4 h-4" aria-hidden />
                         <span>Actualizar</span>
                       </>
                     )}
@@ -6489,34 +5937,26 @@ export default function DocumentosEmpleadosPage() {
                 </div>
 
                 {todasLasDiplomasLoading ? (
-                  <div className="text-center py-8">
-                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-yellow-500 border-t-transparent mx-auto mb-4"></div>
-                    <p className="text-gray-600">Cargando diplomas...</p>
-                  </div>
+                  <AlertBanner variant="info" loading title="Cargando diplomas…" />
                 ) : todasLasDiplomasError ? (
-                  <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
-                    <p className="text-red-800">❌ {todasLasDiplomasError}</p>
-                  </div>
+                  <AlertBanner variant="danger" title="Error">{todasLasDiplomasError}</AlertBanner>
                 ) : todasLasDiplomas.length === 0 ? (
                   <div className="text-center py-8">
-                    <div className="text-4xl mb-2">🎓</div>
-                    <p className="text-gray-600">No hay diplomas en la base de datos</p>
+                    <GraduationCap className="w-10 h-10 text-gray-300 mx-auto mb-2" aria-hidden />
+                    <p className="text-sm text-gray-600 dark:text-gray-400">No hay diplomas en la base de datos</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <div className="text-sm text-gray-600 mb-4">
+                    <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
                       Total: <span className="font-bold">{todasLasDiplomas.length}</span> diplomas
                     </div>
                     <div className="max-h-96 overflow-y-auto space-y-2">
                       {todasLasDiplomas.map((diploma) => (
-                        <div
-                          key={diploma.id}
-                          className="p-4 rounded-lg border-2 border-gray-200 hover:border-yellow-300 hover:bg-yellow-50 transition-all duration-200"
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1">
-                              <h4 className="font-bold text-gray-900 mb-1">{diploma.nombre_archivo}</h4>
-                              <p className="text-sm text-gray-600">
+                        <div key={diploma.id} className="documentos-empleados-diploma-row">
+                          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-semibold text-sm text-gray-900 dark:text-gray-100 mb-1 truncate">{diploma.nombre_archivo}</h4>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">
                                 <span className="font-semibold">Empleado:</span> {diploma.nombre_empleado} ({diploma.empleado_id})
                               </p>
                               <p className="text-xs text-gray-500 mt-1">
@@ -6560,9 +6000,9 @@ export default function DocumentosEmpleadosPage() {
                                   showNotification('error', 'Error', `Error al descargar diploma: ${error.message}`);
                                 }
                               }}
-                              className="px-4 py-2 rounded-lg font-medium text-white bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
+                              className="solicitud-admin-btn solicitud-admin-btn--primary inline-flex items-center gap-2 w-full sm:w-auto shrink-0"
                             >
-                              <span>📥</span>
+                              <Download className="w-4 h-4" aria-hidden />
                               <span>Descargar</span>
                             </button>
                           </div>
@@ -6609,23 +6049,14 @@ export default function DocumentosEmpleadosPage() {
                   </button>
 
                 </div>
-
-                <ChangeEmployee3DButton
-                  onClick={() => {
-                    setActiveTab('empleados');
-                    setSelectedEmpleado(null);
-                  }}
-                  title="Cambiar Empleado"
-                />
-
-              </div>
+</div>
 
 
 
               {/* Estadísticas compactas para nóminas */}
               <div className="flex justify-center mb-6">
                 {/* Total Nóminas */}
-                <div className="bg-gradient-to-r from-green-50 to-green-100 p-4 rounded-xl border border-green-200/50 hover:shadow-md transition-all duration-200 w-full max-w-sm">
+                <div className="app-card app-card--pad documentos-empleados-stat">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-xs font-medium text-green-700 uppercase tracking-wide">Total Nóminas</p>
@@ -6702,7 +6133,7 @@ export default function DocumentosEmpleadosPage() {
 
                   {nominas.map((nomina, idx) => (
 
-                    <div key={`nomina-${nomina.id}-${idx}-${nomina.fileName}`} className="group relative overflow-hidden bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-xl border border-green-200/50 hover:shadow-md transition-all duration-200">
+                    <div key={`nomina-${nomina.id}-${idx}-${nomina.fileName}`} className="documentos-empleados-doc-row">
 
                       {/* Header de la nómina */}
                       <div className="flex items-start justify-between mb-3">
@@ -6738,7 +6169,7 @@ export default function DocumentosEmpleadosPage() {
                       <div className="flex flex-wrap gap-2">
                         <button
                           onClick={() => handlePreviewDocument(nomina)}
-                          className="group/btn relative px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-medium rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 flex items-center space-x-1"
+                          className="solicitud-admin-btn solicitud-admin-btn--primary text-xs"
                         >
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -6775,7 +6206,7 @@ export default function DocumentosEmpleadosPage() {
                               console.error('Error descargando nómina:', error);
                             }
                           }}
-                          className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1"
+                          className="solicitud-admin-btn text-xs"
                         >
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -6785,7 +6216,7 @@ export default function DocumentosEmpleadosPage() {
 
                         <button
                           onClick={() => openDeleteConfirmModal(nomina)}
-                          className="px-3 py-1.5 border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1"
+                          className="solicitud-admin-btn solicitud-admin-btn--danger text-xs"
                         >
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -6842,16 +6273,7 @@ export default function DocumentosEmpleadosPage() {
                   </button>
 
                 </div>
-
-                <ChangeEmployee3DButton
-                  onClick={() => {
-                    setActiveTab('empleados');
-                    setSelectedEmpleado(null);
-                  }}
-                  title="Cambiar Empleado"
-                />
-
-              </div>
+</div>
 
 
 
@@ -6872,7 +6294,7 @@ export default function DocumentosEmpleadosPage() {
               {/* Estadísticas compactas para documentos empresa */}
               <div className="flex justify-center mb-6">
                 {/* Total Documentos Oficiales */}
-                <div className="bg-gradient-to-r from-purple-50 to-purple-100 p-4 rounded-xl border border-purple-200/50 hover:shadow-md transition-all duration-200 w-full max-w-sm">
+                <div className="app-card app-card--pad documentos-empleados-stat w-full max-w-sm">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-xs font-medium text-purple-700 uppercase tracking-wide">Documentos Oficiales</p>
@@ -6942,7 +6364,7 @@ export default function DocumentosEmpleadosPage() {
 
                     {documentosOficiales.map((documento, idx) => (
 
-                      <div key={`${documento.id || 'no-id'}-${idx}-${documento.fileName || 'no-name'}`} className="group relative overflow-hidden bg-gradient-to-r from-purple-50 to-violet-50 p-4 rounded-xl border border-purple-200/50 hover:shadow-md transition-all duration-200">
+                      <div key={`${documento.id || 'no-id'}-${idx}-${documento.fileName || 'no-name'}`} className="documentos-empleados-doc-row">
 
                         {/* Header del documento */}
                         <div className="flex items-start justify-between mb-3">
@@ -7040,7 +6462,7 @@ export default function DocumentosEmpleadosPage() {
                         <div className="flex flex-wrap gap-2">
                           <button
                             onClick={() => handlePreviewDocumentOficial(documento)}
-                            className="group/btn relative px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1"
+                            className="solicitud-admin-btn solicitud-admin-btn--primary text-xs"
                             title="Vista previa del documento"
                           >
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -7052,7 +6474,7 @@ export default function DocumentosEmpleadosPage() {
 
                           <button
                             onClick={() => handleFirmarDocumentoOficial(documento)}
-                            className="px-3 py-1.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1"
+                            className="solicitud-admin-btn text-xs"
                             title="Firmar documento"
                           >
                             <span className="text-xs">✍️</span>
@@ -7063,7 +6485,7 @@ export default function DocumentosEmpleadosPage() {
                             <button
                               onClick={() => setDocumentoSelloToConfirm(documento)}
                               disabled={aplicandoSelloDocId === documento.doc_id}
-                              className="px-3 py-1.5 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 disabled:opacity-60 disabled:cursor-wait text-white text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1"
+                              className="solicitud-admin-btn text-xs disabled:opacity-60"
                               title="Añadir sello de empresa y reemplazar el PDF"
                             >
                               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -7077,7 +6499,7 @@ export default function DocumentosEmpleadosPage() {
 
                           <button
                             onClick={() => handleDownloadDocumentOficial(documento)}
-                            className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1"
+                            className="solicitud-admin-btn text-xs"
                             title="Descargar documento"
                           >
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -7088,7 +6510,7 @@ export default function DocumentosEmpleadosPage() {
 
                           <button
                             onClick={() => openDeleteConfirmModalDocumentoOficial(documento)}
-                            className="px-3 py-1.5 border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 text-xs font-medium rounded-lg transition-all duration-200 flex items-center space-x-1"
+                            className="solicitud-admin-btn solicitud-admin-btn--danger text-xs"
                           >
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -7183,33 +6605,26 @@ export default function DocumentosEmpleadosPage() {
                     </svg>
                   </button>
                 </div>
-                <ChangeEmployee3DButton
-                  onClick={() => {
-                    setActiveTab('empleados');
-                    setSelectedEmpleado(null);
-                  }}
-                  title="Cambiar Empleado"
-                />
-              </div>
+</div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-                <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-3 rounded-xl border border-amber-200/50">
+                <div className="app-card app-card--pad documentos-empleados-stat">
                   <p className="text-xs font-medium text-amber-700 uppercase tracking-wide">Total</p>
                   <p className="text-2xl font-bold text-amber-900">{documentosPrl.length}</p>
                 </div>
-                <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 p-3 rounded-xl border border-yellow-200/50">
+                <div className="app-card app-card--pad documentos-empleados-stat">
                   <p className="text-xs font-medium text-yellow-700 uppercase tracking-wide">Pendientes</p>
                   <p className="text-2xl font-bold text-yellow-900">
                     {documentosPrl.filter((d) => d.estado === 'PENDIENTE').length}
                   </p>
                 </div>
-                <div className="bg-gradient-to-r from-green-50 to-green-100 p-3 rounded-xl border border-green-200/50">
+                <div className="app-card app-card--pad documentos-empleados-stat">
                   <p className="text-xs font-medium text-green-700 uppercase tracking-wide">Firmados</p>
                   <p className="text-2xl font-bold text-green-900">
                     {documentosPrl.filter((d) => d.estado === 'FIRMADO').length}
                   </p>
                 </div>
-                <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-3 rounded-xl border border-blue-200/50">
+                <div className="app-card app-card--pad documentos-empleados-stat">
                   <p className="text-xs font-medium text-blue-700 uppercase tracking-wide">Otros</p>
                   <p className="text-2xl font-bold text-blue-900">
                     {documentosPrl.filter((d) => d.estado !== 'PENDIENTE' && d.estado !== 'FIRMADO').length}
@@ -7335,16 +6750,7 @@ export default function DocumentosEmpleadosPage() {
                   Subir Documentos para {selectedEmpleado['NOMBRE / APELLIDOS'] || 'Empleado'}
 
                 </h2>
-
-                <ChangeEmployee3DButton
-                  onClick={() => {
-                    setActiveTab('empleados');
-                    setSelectedEmpleado(null);
-                  }}
-                  title="Cambiar Empleado"
-                />
-
-              </div>
+</div>
 
               <div className="bg-gray-50 rounded-lg p-8 text-center">
 
@@ -7639,33 +7045,37 @@ export default function DocumentosEmpleadosPage() {
       </div>
 
       {/* Modal para selección de tipo de documento */}
-      {showUploadModal && (
-
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-
-            <div className="flex items-center justify-between mb-4">
-
-              <h3 className="text-lg font-bold text-gray-900">
-
-                📋 Configurar Documentos
-
-              </h3>
-
-              <button
-
-                onClick={handleUploadCancel}
-
-                className="text-gray-400 hover:text-gray-600"
-
-              >
-
-                ✕
-
+      {typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={showUploadModal}
+          onClose={handleUploadCancel}
+          title="Configurar documentos"
+          size="md"
+          className="app-modal--form documentos-empleados-upload-modal"
+          showCloseButton={false}
+          footer={(
+            <div className="flex flex-col sm:flex-row gap-2 w-full">
+              <button type="button" onClick={handleUploadCancel} className="solicitud-admin-btn flex-1">
+                Cancelar
               </button>
-
+              <button
+                type="button"
+                onClick={handleUploadConfirm}
+                disabled={uploading || !Object.values(documentTypes).every((type) => type.trim())}
+                className="solicitud-admin-btn solicitud-admin-btn--primary flex-1 disabled:opacity-50"
+              >
+                {uploading ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <RefreshCw className="w-4 h-4 animate-spin" aria-hidden />
+                    Subiendo…
+                  </span>
+                ) : (
+                  'Subir documentos'
+                )}
+              </button>
             </div>
+          )}
+        >
 
 
 
@@ -7673,9 +7083,8 @@ export default function DocumentosEmpleadosPage() {
 
               {/* Información de archivos seleccionados */}
 
-              <div className="bg-gray-50 rounded-lg p-4">
-
-                <h4 className="font-medium text-gray-900 mb-2">Archivos Seleccionados:</h4>
+              <div className="app-card app-card--pad documentos-empleados-upload-files">
+                <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">Archivos seleccionados</h4>
 
                 <div className="space-y-2">
 
@@ -7735,7 +7144,7 @@ export default function DocumentosEmpleadosPage() {
 
                       }))}
 
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  className="app-modal__input w-full"
 
                   required
 
@@ -7753,153 +7162,36 @@ export default function DocumentosEmpleadosPage() {
 
               </div>
 
-
-
-              {/* Botones de acción */}
-
-              <div className="flex space-x-3 pt-4">
-
-                <button
-
-                  onClick={handleUploadCancel}
-
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
-
-                >
-
-                  Cancelar
-
-                </button>
-
-                <button
-
-                  onClick={handleUploadConfirm}
-
-                  disabled={uploading || !Object.values(documentTypes).every(type => type.trim())}
-
-                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-
-                >
-
-                  {uploading ? (
-
-                    <span className="flex items-center justify-center">
-
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-
-                      Subiendo...
-
-                    </span>
-
-                  ) : (
-
-                    'Subir Documentos'
-
-                  )}
-
-                </button>
-
-              </div>
-
             </div>
-
-          </div>
-
-        </div>
-
+        </Modal>,
+        document.body
       )}
 
 
 
       {/* Información */}
-
-      <Card>
-
-        <h3 className="text-lg font-bold text-red-600 mb-3">Información</h3>
-
-        <div className="space-y-2 text-sm text-gray-600">
-
-          <p>• Selecciona un empleado para ver sus documentos</p>
-
-          <p>• Visualiza estadísticas de documentos y nóminas</p>
-
-          <p>• Accede a la lista completa de documentos del empleado</p>
-
-          <p>• Gestiona nóminas y recibos de salario</p>
-
-          <p>• Visualiza y descarga documentos existentes</p>
-
-          <p>• Sube nuevos documentos para cada empleado</p>
-
-          <p>• Formatos soportados: PDF, DOC, DOCX, JPG, PNG, TXT</p>
-
-          <p>• Todas las acciones son registradas en el sistema</p>
-
-        </div>
-
-      </Card>
+      <AlertBanner variant="info" compact className="documentos-empleados-info">
+        Selecciona un empleado para gestionar documentos, nóminas y certificados. Formatos: PDF, DOC, DOCX, JPG, PNG, TXT.
+      </AlertBanner>
 
 
 
       {/* Modal para preview de documentos */}
-
-      {showPreviewModal && (
-
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-0 sm:p-4">
-
-          <div className="bg-white rounded-none sm:rounded-2xl max-w-6xl w-full h-full sm:h-auto sm:max-h-[95vh] overflow-hidden shadow-2xl border-0 sm:border border-gray-200 animate-in fade-in duration-300 relative flex flex-col">
-
-            {/* Header moderno */}
-            <div className="bg-gradient-to-r from-blue-50 to-blue-100 px-4 sm:px-6 py-3 sm:py-4 border-b border-blue-200 relative flex-shrink-0">
-
-              <div className="flex items-center justify-between gap-2 pr-16 sm:pr-0">
-
-                <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
-
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
-
-                    <span className="text-white text-lg sm:text-xl">👁️</span>
-
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-
-                    <h3 className="text-base sm:text-xl font-bold text-gray-900 break-all leading-tight truncate">
-
-                      Vista Previa: {previewDocument?.fileName || 'Documento'}
-
-                      {previewDocument?.tipo === 'Nómina' && <span className="ml-2 text-sm text-green-600">(Nómina)</span>}
-
-                    </h3>
-
-                    <p className="text-xs sm:text-sm text-blue-600 font-medium hidden sm:block">Visualización de documento</p>
-
-                  </div>
-
-                </div>
-
-                {/* Buton de închidere în header - ascuns pe mobil, vizibil pe desktop */}
-
-                <button
-
-                  onClick={handleClosePreview}
-
-                  className="hidden sm:flex w-10 h-10 bg-white hover:bg-red-50 border border-gray-200 hover:border-red-300 rounded-xl items-center justify-center transition-all duration-200 shadow-md hover:shadow-lg group flex-shrink-0 touch-manipulation"
-
-                  aria-label="Cerrar preview"
-
-                >
-
-                  <span className="text-gray-400 group-hover:text-red-500 text-xl">✕</span>
-
-                </button>
-
-              </div>
-
-            </div>
-
-
-
+      {typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={showPreviewModal}
+          onClose={handleClosePreview}
+          title={`Vista previa: ${previewDocument?.fileName || 'Documento'}${previewDocument?.tipo === 'Nómina' ? ' (Nómina)' : ''}`}
+          size="xl"
+          className="app-modal--preview documentos-empleados-preview-modal"
+          showCloseButton
+          footer={(
+            <button type="button" onClick={handleClosePreview} className="app-modal__btn solicitud-admin-btn w-full sm:w-auto">
+              Cerrar
+            </button>
+          )}
+        >
+          <div className="documentos-preview-body relative">
             {previewLoading && (
 
               <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3 z-50">
@@ -8257,26 +7549,9 @@ export default function DocumentosEmpleadosPage() {
 
             </div>
             
-            {/* Buton de închidere fixat jos - VIZIBIL PE MOBIL */}
-            <div className="flex-shrink-0 border-t border-gray-200 bg-white sm:hidden" style={{ zIndex: 10001, marginBottom: '64px' }}>
-              <button
-                onClick={handleClosePreview}
-                className="w-full py-4 px-6 bg-red-600 hover:bg-red-700 text-white font-semibold text-lg rounded-none transition-all duration-200 shadow-lg touch-manipulation"
-                aria-label="Cerrar preview"
-                style={{ 
-                  paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
-                  position: 'relative',
-                  zIndex: 10001
-                }}
-              >
-                Cerrar preview
-              </button>
             </div>
-
-          </div>
-
-        </div>
-
+        </Modal>,
+        document.body
       )}
 
 
@@ -8286,44 +7561,33 @@ export default function DocumentosEmpleadosPage() {
 
 
       {/* Modal separado para nóminas */}
-
-      {showNominaUploadModal && (
-
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-
-            <div className="flex items-center justify-between mb-4">
-
-              <h3 className="text-lg font-bold text-gray-900">
-
-                💰 Configurar Nómina
-
-              </h3>
-
-              <button
-
-                onClick={() => {
-
-                  setShowNominaUploadModal(false);
-
-                  setSelectedFiles([]);
-
-                  setSelectedMonth(new Date().getMonth());
-
-                    setSelectedYear(new Date().getFullYear());
-
-                }}
-
-                className="text-gray-400 hover:text-gray-600"
-
-              >
-
-                ✕
-
+      {typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={showNominaUploadModal}
+          onClose={() => {
+            setShowNominaUploadModal(false);
+            setSelectedFiles([]);
+            setSelectedMonth(new Date().getMonth());
+            setSelectedYear(new Date().getFullYear());
+          }}
+          title="Configurar nómina"
+          size="md"
+          className="app-modal--form documentos-empleados-upload-modal"
+          showCloseButton={false}
+          footer={(
+            <div className="flex flex-col sm:flex-row gap-2 w-full">
+              <button type="button" onClick={() => {
+                setShowNominaUploadModal(false);
+                setSelectedFiles([]);
+                setSelectedMonth(new Date().getMonth());
+                setSelectedYear(new Date().getFullYear());
+              }} className="solicitud-admin-btn flex-1">Cancelar</button>
+              <button type="button" onClick={handleUploadConfirm} disabled={uploading} className="solicitud-admin-btn solicitud-admin-btn--primary flex-1 disabled:opacity-50">
+                {uploading ? 'Subiendo…' : 'Subir nómina'}
               </button>
-
             </div>
+          )}
+        >
 
 
 
@@ -8387,7 +7651,7 @@ export default function DocumentosEmpleadosPage() {
 
                   }}
 
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="app-modal__input w-full"
 
                 >
 
@@ -8459,7 +7723,7 @@ export default function DocumentosEmpleadosPage() {
 
                   }}
 
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="app-modal__input w-full"
 
                 >
 
@@ -8499,571 +7763,145 @@ export default function DocumentosEmpleadosPage() {
 
 
 
-              {/* Botones de acción */}
-
-              <div className="flex justify-end space-x-3 pt-4">
-
-                <button
-
-                  onClick={() => {
-
-                    setShowNominaUploadModal(false);
-
-                    setSelectedFiles([]);
-
-                    setSelectedMonth(new Date().getMonth());
-
-                    setSelectedYear(new Date().getFullYear());
-
-                  }}
-
-                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 transition-colors"
-
-                >
-
-                  Cancelar
-
-                </button>
-
-                <button
-
-                  onClick={handleUploadConfirm}
-
-                  disabled={uploading}
-
-                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50"
-
-                >
-
-                  {uploading ? 'Subiendo...' : '💰 Subir Nómina'}
-
-                </button>
-
               </div>
 
-            </div>
 
-          </div>
 
-        </div>
-
+        </Modal>,
+        document.body
       )}
 
 
 
       {/* Modal de Confirmare de Borrado de Nómina */}
 
-      {showDeleteConfirmModal && nominaToDelete && (
-
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border-4 border-red-100">
-
-            {/* Header */}
-
-            <div className="flex items-center justify-between p-6 border-b-2 border-red-200 bg-gradient-to-r from-red-50 to-white">
-
-              <div className="flex items-center gap-3">
-
-                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-
-                  <span className="text-red-600 text-2xl">🗑️</span>
-
-                </div>
-
-                <div>
-
-                  <h3 className="text-xl font-bold text-gray-900">Confirmar Borrado</h3>
-
-                  <p className="text-sm text-red-600 font-medium">Acción irreversible</p>
-
-                </div>
-
-              </div>
-
+      {showDeleteConfirmModal && nominaToDelete && typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={showDeleteConfirmModal && !!nominaToDelete}
+          onClose={() => { setShowDeleteConfirmModal(false); setNominaToDelete(null); }}
+          title="Confirmar borrado"
+          size="md"
+          className="app-modal--form"
+          showCloseButton={false}
+          footer={(
+            <div className="flex flex-col sm:flex-row gap-2 w-full">
+              <button type="button" onClick={() => { setShowDeleteConfirmModal(false); setNominaToDelete(null); }} className="solicitud-admin-btn flex-1">Cancelar</button>
               <button
-
-                onClick={() => {
-
-                  setShowDeleteConfirmModal(false);
-
-                  setNominaToDelete(null);
-
-                }}
-
-                className="w-10 h-10 bg-red-100 hover:bg-red-200 text-red-600 hover:text-red-700 rounded-full flex items-center justify-center text-xl font-bold transition-all duration-200 hover:scale-110"
-
-              >
-
-                ×
-
-              </button>
-
-            </div>
-
-
-
-            {/* Content */}
-
-            <div className="p-6">
-
-              <div className="text-center mb-6">
-
-                <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-
-                  <span className="text-red-600 text-4xl">⚠️</span>
-
-                </div>
-
-                <h4 className="text-lg font-semibold text-gray-900 mb-2">
-
-                  ¿Estás seguro de que quieres borrar esta nómina?
-
-                </h4>
-
-                <p className="text-gray-600 mb-4">
-
-                  <span className="font-medium text-red-600">{nominaToDelete.fileName}</span>
-
-                </p>
-
-                <p className="text-sm text-gray-500">
-
-                  Esta acción no se puede deshacer. La nómina será eliminada permanentemente del sistema.
-
-                </p>
-
-              </div>
-
-            </div>
-
-
-
-            {/* Footer */}
-
-            <div className="flex justify-between items-center p-6 border-t-2 border-red-200 bg-gradient-to-r from-white to-red-50">
-
-              <button
-
-                onClick={() => {
-
-                  setShowDeleteConfirmModal(false);
-
-                  setNominaToDelete(null);
-
-                }}
-
-                className="px-6 py-3 border-2 border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg font-medium transition-all duration-200"
-
-              >
-
-                ✕ Cancelar
-
-              </button>
-
-              <button
-
+                type="button"
                 onClick={async () => {
-
                   setShowDeleteConfirmModal(false);
-
                   await handleDeleteNomina(nominaToDelete);
-
                   setNominaToDelete(null);
-
                 }}
-
-                className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium shadow-lg hover:shadow-xl transition-all duration-200"
-
+                className="solicitud-admin-btn solicitud-admin-btn--danger flex-1"
               >
-
-                🗑️ Sí, Borrar
-
+                Borrar nómina
               </button>
-
             </div>
-
-          </div>
-
-        </div>
-
+          )}
+        >
+          <AlertBanner variant="danger" title="Acción irreversible">
+            ¿Estás seguro de que quieres borrar <strong>{nominaToDelete.fileName}</strong>? Esta acción no se puede deshacer.
+          </AlertBanner>
+        </Modal>,
+        document.body
       )}
 
 
 
       {/* Modal de Confirmare de Borrado de Documento Normal */}
-
-      {showDeleteConfirmModal && documentoToDelete && (
-
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border-4 border-red-100">
-
-            {/* Header */}
-
-            <div className="flex items-center justify-between p-6 border-b-2 border-red-200 bg-gradient-to-r from-red-50 to-white">
-
-              <div className="flex items-center gap-3">
-
-                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-
-                  <span className="text-red-600 text-2xl">🗑️</span>
-
-                </div>
-
-                <div>
-
-                  <h3 className="text-xl font-bold text-gray-900">Confirmar Borrado</h3>
-
-                  <p className="text-sm text-red-600 font-medium">Acción irreversible</p>
-
-                </div>
-
-              </div>
-
-              <button
-
-                onClick={() => {
-
-                  setShowDeleteConfirmModal(false);
-
-                  setDocumentoToDelete(null);
-
-                }}
-
-                className="w-10 h-10 bg-red-100 hover:bg-red-200 text-red-600 hover:text-red-700 rounded-full flex items-center justify-center text-xl font-bold transition-all duration-200 hover:scale-110"
-
-              >
-
-                ×
-
-              </button>
-
+      {showDeleteConfirmModal && documentoToDelete && typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={showDeleteConfirmModal && !!documentoToDelete}
+          onClose={() => { setShowDeleteConfirmModal(false); setDocumentoToDelete(null); }}
+          title="Confirmar borrado"
+          size="md"
+          className="app-modal--form"
+          showCloseButton={false}
+          footer={(
+            <div className="flex flex-col sm:flex-row gap-2 w-full">
+              <button type="button" onClick={() => { setShowDeleteConfirmModal(false); setDocumentoToDelete(null); }} className="solicitud-admin-btn flex-1">Cancelar</button>
+              <button type="button" onClick={async () => { setShowDeleteConfirmModal(false); await handleDeleteDocumento(documentoToDelete); setDocumentoToDelete(null); }} className="solicitud-admin-btn solicitud-admin-btn--danger flex-1">Borrar documento</button>
             </div>
-
-
-
-            {/* Content */}
-
-            <div className="p-6">
-
-              <div className="text-center mb-6">
-
-                <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-
-                  <span className="text-red-600 text-4xl">⚠️</span>
-
-                </div>
-
-                <h4 className="text-lg font-semibold text-gray-900 mb-2">
-
-                  ¿Estás seguro de que quieres borrar este documento?
-
-                </h4>
-
-                <p className="text-gray-600 mb-4">
-
-                  <span className="font-medium text-red-600">{documentoToDelete.fileName}</span>
-
-                </p>
-
-                <p className="text-sm text-gray-500">
-
-                  Esta acción no se puede deshacer. El documento será eliminado permanentemente del sistema.
-
-                </p>
-
-              </div>
-
-            </div>
-
-
-
-            {/* Footer */}
-
-            <div className="flex justify-between items-center p-6 border-t-2 border-red-200 bg-gradient-to-r from-white to-red-50">
-
-              <button
-
-                onClick={() => {
-
-                  setShowDeleteConfirmModal(false);
-
-                  setDocumentoToDelete(null);
-
-                }}
-
-                className="px-6 py-3 border-2 border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg font-medium transition-all duration-200"
-
-              >
-
-                ✕ Cancelar
-
-              </button>
-
-              <button
-
-                onClick={async () => {
-
-                  setShowDeleteConfirmModal(false);
-
-                  await handleDeleteDocumento(documentoToDelete);
-
-                  setDocumentoToDelete(null);
-
-                }}
-
-                className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium shadow-lg hover:shadow-xl transition-all duration-200"
-
-              >
-
-                🗑️ Sí, Borrar
-
-              </button>
-
-            </div>
-
-          </div>
-
-        </div>
-
+          )}
+        >
+          <AlertBanner variant="danger" title="Acción irreversible">
+            ¿Estás seguro de que quieres borrar <strong>{documentoToDelete.fileName}</strong>? Esta acción no se puede deshacer.
+          </AlertBanner>
+        </Modal>,
+        document.body
       )}
 
 
 
       {/* Modal de Confirmare de Borrado de Documento Oficial */}
-
-      {showDeleteConfirmModal && documentoOficialToDelete && (
-
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border-4 border-red-100">
-
-            {/* Header */}
-
-            <div className="flex items-center justify-between p-6 border-b-2 border-red-200 bg-gradient-to-r from-red-50 to-white">
-
-              <div className="flex items-center gap-3">
-
-                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-
-                  <span className="text-red-600 text-2xl">🗑️</span>
-
-                </div>
-
-                <div>
-
-                  <h3 className="text-xl font-bold text-gray-900">Confirmar Borrado</h3>
-
-                  <p className="text-sm text-red-600 font-medium">Acción irreversible</p>
-
-                </div>
-
-              </div>
-
-              <button
-
-                onClick={() => {
-
-                  setShowDeleteConfirmModal(false);
-
-                  setDocumentoOficialToDelete(null);
-
-                }}
-
-                className="w-10 h-10 bg-red-100 hover:bg-red-200 text-red-600 hover:text-red-700 rounded-full flex items-center justify-center text-xl font-bold transition-all duration-200 hover:scale-110"
-
-              >
-
-                ×
-
-              </button>
-
+      {showDeleteConfirmModal && documentoOficialToDelete && typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={showDeleteConfirmModal && !!documentoOficialToDelete}
+          onClose={() => { setShowDeleteConfirmModal(false); setDocumentoOficialToDelete(null); }}
+          title="Confirmar borrado"
+          size="md"
+          className="app-modal--form"
+          showCloseButton={false}
+          footer={(
+            <div className="flex flex-col sm:flex-row gap-2 w-full">
+              <button type="button" onClick={() => { setShowDeleteConfirmModal(false); setDocumentoOficialToDelete(null); }} className="solicitud-admin-btn flex-1">Cancelar</button>
+              <button type="button" onClick={async () => { setShowDeleteConfirmModal(false); await handleDeleteDocumentoOficial(documentoOficialToDelete); setDocumentoOficialToDelete(null); }} className="solicitud-admin-btn solicitud-admin-btn--danger flex-1">Borrar documento</button>
             </div>
-
-
-
-            {/* Content */}
-
-            <div className="p-6">
-
-              <div className="text-center mb-6">
-
-                <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-
-                  <span className="text-red-600 text-4xl">⚠️</span>
-
-                </div>
-
-                <h4 className="text-lg font-semibold text-gray-900 mb-2">
-
-                  ¿Estás seguro de que quieres borrar este documento oficial?
-
-                </h4>
-
-                <p className="text-gray-600 mb-4">
-
-                  <span className="font-medium text-red-600">{documentoOficialToDelete.fileName}</span>
-
-                </p>
-
-                <p className="text-sm text-gray-500">
-
-                  Esta acción no se puede deshacer. El documento oficial será eliminado permanentemente del sistema.
-
-                </p>
-
-              </div>
-
-            </div>
-
-
-
-            {/* Footer */}
-
-            <div className="flex justify-between items-center p-6 border-t-2 border-red-200 bg-gradient-to-r from-white to-red-50">
-
-              <button
-
-                onClick={() => {
-
-                  setShowDeleteConfirmModal(false);
-
-                  setDocumentoOficialToDelete(null);
-
-                }}
-
-                className="px-6 py-3 border-2 border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg font-medium transition-all duration-200"
-
-              >
-
-                ✕ Cancelar
-
-              </button>
-
-              <button
-
-                onClick={async () => {
-
-                  setShowDeleteConfirmModal(false);
-
-                  await handleDeleteDocumentoOficial(documentoOficialToDelete);
-
-                  setDocumentoOficialToDelete(null);
-
-                }}
-
-                className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium shadow-lg hover:shadow-xl transition-all duration-200"
-
-              >
-
-                🗑️ Sí, Borrar
-
-              </button>
-
-            </div>
-
-          </div>
-
-        </div>
-
+          )}
+        >
+          <AlertBanner variant="danger" title="Acción irreversible">
+            ¿Estás seguro de que quieres borrar el documento oficial <strong>{documentoOficialToDelete.fileName}</strong>? Esta acción no se puede deshacer.
+          </AlertBanner>
+        </Modal>,
+        document.body
       )}
 
-      {documentoSelloToConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border-4 border-teal-100">
-            <div className="flex items-center justify-between p-6 border-b-2 border-teal-200 bg-gradient-to-r from-teal-50 to-white">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center">
-                  <span className="text-teal-700 text-2xl">🔏</span>
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">Añadir sello</h3>
-                  <p className="text-sm text-teal-700 font-medium">Reemplaza el PDF actual</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setDocumentoSelloToConfirm(null)}
-                disabled={!!aplicandoSelloDocId}
-                className="w-10 h-10 bg-teal-100 hover:bg-teal-200 text-teal-700 rounded-full flex items-center justify-center text-xl font-bold transition-all duration-200 hover:scale-110 disabled:opacity-50"
-              >
-                ×
+      {documentoSelloToConfirm && typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={!!documentoSelloToConfirm}
+          onClose={() => !aplicandoSelloDocId && setDocumentoSelloToConfirm(null)}
+          title="Añadir sello de empresa"
+          size="md"
+          className="app-modal--form"
+          showCloseButton={false}
+          footer={(
+            <div className="flex flex-col sm:flex-row gap-2 w-full">
+              <button type="button" onClick={() => setDocumentoSelloToConfirm(null)} disabled={!!aplicandoSelloDocId} className="solicitud-admin-btn flex-1">Cancelar</button>
+              <button type="button" onClick={() => handleAplicarSelloEmpresa(documentoSelloToConfirm)} disabled={!!aplicandoSelloDocId} className="solicitud-admin-btn solicitud-admin-btn--primary flex-1 disabled:opacity-50">
+                {aplicandoSelloDocId ? 'Aplicando…' : 'Añadir sello'}
               </button>
             </div>
-
-            <div className="p-6">
-              <div className="text-center mb-2">
-                <div className="w-20 h-20 bg-teal-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <span className="text-teal-700 text-4xl">📄</span>
-                </div>
-                <h4 className="text-lg font-semibold text-gray-900 mb-2">
-                  ¿Añadir el sello de empresa a este contrato?
-                </h4>
-                <p className="text-gray-600 mb-4">
-                  <span className="font-medium text-teal-700">
-                    {documentoSelloToConfirm.nombre_archivo || documentoSelloToConfirm.fileName}
-                  </span>
-                </p>
-                <p className="text-sm text-gray-500">
-                  Se colocará el sello en la última página (casilla empresa) y se reemplazará el archivo actual.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-between items-center p-6 border-t-2 border-teal-200 bg-gradient-to-r from-white to-teal-50">
-              <button
-                onClick={() => setDocumentoSelloToConfirm(null)}
-                disabled={!!aplicandoSelloDocId}
-                className="px-6 py-3 border-2 border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg font-medium transition-all duration-200 disabled:opacity-50"
-              >
-                ✕ Cancelar
-              </button>
-              <button
-                onClick={() => handleAplicarSelloEmpresa(documentoSelloToConfirm)}
-                disabled={!!aplicandoSelloDocId}
-                className="px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-60 disabled:cursor-wait"
-              >
-                {aplicandoSelloDocId ? 'Sellando…' : '✓ Sí, añadir sello'}
-              </button>
-            </div>
-          </div>
-        </div>
+          )}
+        >
+          <AlertBanner variant="info" title="Reemplaza el PDF actual">
+            ¿Añadir el sello de empresa a <strong>{documentoSelloToConfirm.nombre_archivo || documentoSelloToConfirm.fileName}</strong>? Se colocará en la última página y se reemplazará el archivo actual.
+          </AlertBanner>
+        </Modal>,
+        document.body
       )}
 
-      {/* Modal pentru lista de angajați cu statusul contractelor */}
-      {showContratosModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col">
-            {/* Header */}
-            <div className="px-6 py-4 border-b-2 border-purple-200 bg-gradient-to-r from-purple-50 to-purple-100 rounded-t-2xl">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Status Contratos por Empleado</h2>
-                    <p className="text-sm text-gray-600">Lista de empleados con estado de contratos</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowContratosModal(false)}
-                  className="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors"
-                >
-                  <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+      {showContratosModal && typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={showContratosModal}
+          onClose={() => setShowContratosModal(false)}
+          title="Status contratos por empleado"
+          size="xl"
+          className="app-modal--form"
+          footer={(
+            <div className="flex flex-wrap gap-2 justify-between w-full items-center">
+              <p className="text-sm text-gray-600">Total: {empleadosContratos.length} empleados</p>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={handleExportContratosExcel} disabled={loadingContratos || empleadosContratos.length === 0} className="solicitud-admin-btn">Excel</button>
+                <button type="button" onClick={handleExportContratosPDF} disabled={loadingContratos || empleadosContratos.length === 0} className="solicitud-admin-btn">PDF</button>
+                <button type="button" onClick={() => setShowContratosModal(false)} className="solicitud-admin-btn solicitud-admin-btn--primary">Cerrar</button>
               </div>
             </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
+          )}
+        >
               {loadingContratos ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
+                  <RefreshCw className="w-8 h-8 animate-spin text-gray-400" aria-hidden />
                 </div>
               ) : empleadosContratos.length === 0 ? (
                 <div className="text-center py-12">
@@ -9074,12 +7912,12 @@ export default function DocumentosEmpleadosPage() {
                   {empleadosContratos.map((empleado) => (
                     <div
                       key={empleado.codigo}
-                      className="bg-white border-2 border-gray-200 rounded-xl p-4 hover:border-purple-300 hover:shadow-md transition-all duration-200"
+                      className="documentos-empleados-diploma-row"
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3">
+                            <div className="documentos-empleados-avatar shrink-0">
                               {empleado.nombre?.charAt(0) || '?'}
                             </div>
                             <div>
@@ -9174,94 +8012,41 @@ export default function DocumentosEmpleadosPage() {
                   ))}
                 </div>
               )}
-            </div>
-
-            {/* Footer */}
-            <div className="px-6 py-4 border-t-2 border-gray-200 bg-gray-50 rounded-b-2xl">
-              <div className="flex justify-between items-center flex-wrap gap-3">
-                <p className="text-sm text-gray-600">
-                  Total: {empleadosContratos.length} empleados
-                </p>
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={handleExportContratosExcel}
-                    disabled={loadingContratos || empleadosContratos.length === 0}
-                    className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
-                    title="Exportar a Excel"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <span>Excel</span>
-                  </button>
-                  <button
-                    onClick={handleExportContratosPDF}
-                    disabled={loadingContratos || empleadosContratos.length === 0}
-                    className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
-                    title="Exportar a PDF"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                    </svg>
-                    <span>PDF</span>
-                  </button>
-                  <button
-                    onClick={() => setShowContratosModal(false)}
-                    className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
-                  >
-                    Cerrar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        </Modal>,
+        document.body
       )}
 
-      {/* Modal pentru selecția contractelor pentru preview */}
-      {showContratosPreviewModal && empleadoParaPreview && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
-            {/* Header */}
-            <div className="px-6 py-4 border-b-2 border-blue-200 bg-gradient-to-r from-blue-50 to-blue-100 rounded-t-2xl">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-lg">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Seleccionar Contrato</h2>
-                    <p className="text-sm text-gray-600">{empleadoParaPreview.nombre || 'Sin nombre'}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowContratosPreviewModal(false);
-                    setContratosDisponibles([]);
-                    setEmpleadoParaPreview(null);
-                  }}
-                  className="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors"
-                >
-                  <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
+      {showContratosPreviewModal && empleadoParaPreview && typeof document !== 'undefined' && createPortal(
+        <Modal
+          isOpen={showContratosPreviewModal}
+          onClose={() => {
+            setShowContratosPreviewModal(false);
+            setContratosDisponibles([]);
+            setEmpleadoParaPreview(null);
+          }}
+          title={`Seleccionar contrato — ${empleadoParaPreview.nombre || 'Sin nombre'}`}
+          size="lg"
+          className="app-modal--form"
+          footer={(
+            <button
+              type="button"
+              onClick={() => {
+                setShowContratosPreviewModal(false);
+                setContratosDisponibles([]);
+                setEmpleadoParaPreview(null);
+              }}
+              className="solicitud-admin-btn solicitud-admin-btn--primary w-full sm:w-auto"
+            >
+              Cerrar
+            </button>
+          )}
+        >
               {loadingContratosPreview ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
                 </div>
               ) : contratosDisponibles.length === 0 ? (
-                <div className="text-center py-12">
-                  <p className="text-gray-500">No se encontraron contratos</p>
-                </div>
+                <AlertBanner variant="neutral">No se encontraron contratos</AlertBanner>
               ) : (
                 <div className="space-y-3">
                   {contratosDisponibles.map((contrato, index) => {
@@ -9269,16 +8054,12 @@ export default function DocumentosEmpleadosPage() {
                     return (
                       <div
                         key={contrato.doc_id || index}
-                        className="bg-white border-2 border-gray-200 rounded-xl p-4 hover:border-blue-300 hover:shadow-md transition-all duration-200"
+                        className="documentos-empleados-doc-row"
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2 mb-2">
-                              <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${
-                                esFirmado 
-                                  ? 'bg-green-100 text-green-700' 
-                                  : 'bg-blue-100 text-blue-700'
-                              }`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                              <span className={`solicitud-status ${esFirmado ? 'solicitud-status--approved' : 'solicitud-status--neutral'}`}>
                                 {esFirmado ? 'CONTRATO FIRMADO' : 'CONTRATO'}
                               </span>
                               {contrato.fecha_creacion && (
@@ -9287,19 +8068,16 @@ export default function DocumentosEmpleadosPage() {
                                 </span>
                               )}
                             </div>
-                            <p className="text-sm font-medium text-gray-900">
+                            <p className="documentos-empleados-doc-row__title">
                               {contrato.fileName || contrato.nombre_archivo || 'CONTRATO.pdf'}
                             </p>
                           </div>
                           <button
+                            type="button"
                             onClick={() => handlePreviewContratoSeleccionado(contrato)}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-all duration-200 flex items-center space-x-2"
+                            className="solicitud-admin-btn solicitud-admin-btn--primary text-sm shrink-0"
                           >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                            </svg>
-                            <span>Ver Preview</span>
+                            Ver preview
                           </button>
                         </div>
                       </div>
@@ -9307,136 +8085,10 @@ export default function DocumentosEmpleadosPage() {
                   })}
                 </div>
               )}
-            </div>
-
-            {/* Footer */}
-            <div className="px-6 py-4 border-t-2 border-gray-200 bg-gray-50 rounded-b-2xl">
-              <div className="flex justify-end">
-                <button
-                  onClick={() => {
-                    setShowContratosPreviewModal(false);
-                    setContratosDisponibles([]);
-                    setEmpleadoParaPreview(null);
-                  }}
-                  className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
-                >
-                  Cerrar
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        </Modal>,
+        document.body
       )}
 
-      {/* Modal pentru selecția contractelor pentru preview */}
-      {showContratosPreviewModal && empleadoParaPreview && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
-            {/* Header */}
-            <div className="px-6 py-4 border-b-2 border-blue-200 bg-gradient-to-r from-blue-50 to-blue-100 rounded-t-2xl">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-lg">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Seleccionar Contrato</h2>
-                    <p className="text-sm text-gray-600">{empleadoParaPreview.nombre || 'Sin nombre'}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowContratosPreviewModal(false);
-                    setContratosDisponibles([]);
-                    setEmpleadoParaPreview(null);
-                  }}
-                  className="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-colors"
-                >
-                  <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6">
-              {loadingContratosPreview ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                </div>
-              ) : contratosDisponibles.length === 0 ? (
-                <div className="text-center py-12">
-                  <p className="text-gray-500">No se encontraron contratos</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {contratosDisponibles.map((contrato, index) => {
-                    const esFirmado = contrato.tipo === 'CONTRATO firmado' || contrato.tipo_documento === 'CONTRATO firmado';
-                    return (
-                      <div
-                        key={contrato.doc_id || index}
-                        className="bg-white border-2 border-gray-200 rounded-xl p-4 hover:border-blue-300 hover:shadow-md transition-all duration-200"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2 mb-2">
-                              <span className={`px-3 py-1 rounded-lg text-xs font-semibold ${
-                                esFirmado 
-                                  ? 'bg-green-100 text-green-700' 
-                                  : 'bg-blue-100 text-blue-700'
-                              }`}>
-                                {esFirmado ? 'CONTRATO FIRMADO' : 'CONTRATO'}
-                              </span>
-                              {contrato.fecha_creacion && (
-                                <span className="text-xs text-gray-500">
-                                  {new Date(contrato.fecha_creacion).toLocaleDateString('es-ES')}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-sm font-medium text-gray-900">
-                              {contrato.fileName || contrato.nombre_archivo || 'CONTRATO.pdf'}
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => handlePreviewContratoSeleccionado(contrato)}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-all duration-200 flex items-center space-x-2"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                            </svg>
-                            <span>Ver Preview</span>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="px-6 py-4 border-t-2 border-gray-200 bg-gray-50 rounded-b-2xl">
-              <div className="flex justify-end">
-                <button
-                  onClick={() => {
-                    setShowContratosPreviewModal(false);
-                    setContratosDisponibles([]);
-                    setEmpleadoParaPreview(null);
-                  }}
-                  className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
-                >
-                  Cerrar
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ContractSigner pentru documente oficiale */}
       {showOficialSigner && documentoOficialToSign && documentoOficialPdfUrl && (
@@ -9489,7 +8141,6 @@ export default function DocumentosEmpleadosPage() {
         duration={notification.duration}
         onClose={hideNotification}
       />
-    </div>
     </>
   );
 }

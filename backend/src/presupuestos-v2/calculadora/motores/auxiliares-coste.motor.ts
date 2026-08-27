@@ -1,9 +1,4 @@
-import {
-  BcPair,
-  CalcParams,
-  LineaCalcResult,
-  MotorDefinition,
-} from '../tipos';
+import { BcPair, CalcParams, LineaCalcResult, MotorDefinition } from '../tipos';
 
 function n(v: unknown, fallback = 0): number {
   const x = Number(v);
@@ -118,8 +113,7 @@ export function calculateAuxiliaresCoste(
   const D40 = vig.b * vig.c * params.meses_anio;
   const D42 = gasto.b * gasto.c * params.semanas_mes * params.meses_anio;
   const D44 = benef.c * benef.b * params.meses_anio;
-  const D46 =
-    D24 + D26 + D28 + D30 + D32 + D34 + D36 + D38 + D40 + D42 + D44;
+  const D46 = D24 + D26 + D28 + D30 + D32 + D34 + D36 + D38 + D40 + D42 + D44;
   const D48 = (D22 + D46) * params.iva_pct;
   const D50 = D22 + D46 + D48;
   const D52 = D50 / params.iva_factor / params.meses_anio;
@@ -191,31 +185,146 @@ export const motorAuxiliaresCoste: MotorDefinition = {
   defaultInputs: defaultInputsAuxiliares,
   calculate: calculateAuxiliaresCoste,
   inputSchema: [
-    { key: 'convenioBase', label: 'Convenio base (€/mes)', type: 'number', group: 'base' },
-    { key: 'horasDiarias', label: 'Horas / día', type: 'number', group: 'base' },
-    { key: 'diasPorSemana', label: 'Días / semana', type: 'number', group: 'base' },
-    { key: 'horasACubrirPorSemana', label: 'Horas a cubrir / semana', type: 'number', group: 'base' },
-    { key: 'sinFestivos', label: 'Sin festivos (texto oferta)', type: 'boolean', group: 'base' },
-    { key: 'aplicaNocturnidad', label: 'Aplicar nocturnidad', type: 'boolean', group: 'suplementos' },
-    { key: 'nocturnidad', label: 'Nocturnidad (B×C)', type: 'bc_pair', group: 'suplementos' },
-    { key: 'aplicaFinDeSemana', label: 'Aplicar fin de semana', type: 'boolean', group: 'suplementos' },
-    { key: 'finDeSemana', label: 'Fin de semana (B×C)', type: 'bc_pair', group: 'suplementos' },
-    { key: 'aplicaServiciosExtra', label: 'Aplicar servicios extra', type: 'boolean', group: 'suplementos' },
-    { key: 'serviciosExtraHoras', label: 'Horas servicios extra', type: 'number', group: 'suplementos' },
-    { key: 'aplicaUniformidadAuto', label: 'Uniformidad auto', type: 'boolean', group: 'costes' },
-    { key: 'numEmpleadosManual', label: 'Nº empleados (manual)', type: 'number', group: 'costes' },
-    { key: 'uniformidad', label: 'Uniformidad', type: 'bc_pair', group: 'costes' },
-    { key: 'aplicaGestoriaAuto', label: 'Gestoría auto', type: 'boolean', group: 'costes' },
+    {
+      key: 'convenioBase',
+      label: 'Convenio base (€/mes)',
+      type: 'number',
+      group: 'base',
+    },
+    {
+      key: 'horasDiarias',
+      label: 'Horas / día',
+      type: 'number',
+      group: 'base',
+    },
+    {
+      key: 'diasPorSemana',
+      label: 'Días / semana',
+      type: 'number',
+      group: 'base',
+    },
+    {
+      key: 'horasACubrirPorSemana',
+      label: 'Horas a cubrir / semana',
+      type: 'number',
+      group: 'base',
+    },
+    {
+      key: 'sinFestivos',
+      label: 'Sin festivos (texto oferta)',
+      type: 'boolean',
+      group: 'base',
+    },
+    {
+      key: 'aplicaNocturnidad',
+      label: 'Aplicar nocturnidad',
+      type: 'boolean',
+      group: 'suplementos',
+    },
+    {
+      key: 'nocturnidad',
+      label: 'Nocturnidad (B×C)',
+      type: 'bc_pair',
+      group: 'suplementos',
+    },
+    {
+      key: 'aplicaFinDeSemana',
+      label: 'Aplicar fin de semana',
+      type: 'boolean',
+      group: 'suplementos',
+    },
+    {
+      key: 'finDeSemana',
+      label: 'Fin de semana (B×C)',
+      type: 'bc_pair',
+      group: 'suplementos',
+    },
+    {
+      key: 'aplicaServiciosExtra',
+      label: 'Aplicar servicios extra',
+      type: 'boolean',
+      group: 'suplementos',
+    },
+    {
+      key: 'serviciosExtraHoras',
+      label: 'Horas servicios extra',
+      type: 'number',
+      group: 'suplementos',
+    },
+    {
+      key: 'aplicaUniformidadAuto',
+      label: 'Uniformidad auto',
+      type: 'boolean',
+      group: 'costes',
+    },
+    {
+      key: 'numEmpleadosManual',
+      label: 'Nº empleados (manual)',
+      type: 'number',
+      group: 'costes',
+    },
+    {
+      key: 'uniformidad',
+      label: 'Uniformidad',
+      type: 'bc_pair',
+      group: 'costes',
+    },
+    {
+      key: 'aplicaGestoriaAuto',
+      label: 'Gestoría auto',
+      type: 'boolean',
+      group: 'costes',
+    },
     { key: 'gestoria', label: 'Gestoría', type: 'bc_pair', group: 'costes' },
-    { key: 'productosLimpieza', label: 'Productos limpieza', type: 'bc_pair', group: 'costes' },
-    { key: 'limpiezaGajare', label: 'Limpieza Gajare', type: 'bc_pair', group: 'costes' },
-    { key: 'acristalado', label: 'Acristalado', type: 'bc_pair', group: 'costes' },
-    { key: 'cristalero', label: 'Cristalero', type: 'bc_pair', group: 'costes' },
+    {
+      key: 'productosLimpieza',
+      label: 'Productos limpieza',
+      type: 'bc_pair',
+      group: 'costes',
+    },
+    {
+      key: 'limpiezaGajare',
+      label: 'Limpieza Gajare',
+      type: 'bc_pair',
+      group: 'costes',
+    },
+    {
+      key: 'acristalado',
+      label: 'Acristalado',
+      type: 'bc_pair',
+      group: 'costes',
+    },
+    {
+      key: 'cristalero',
+      label: 'Cristalero',
+      type: 'bc_pair',
+      group: 'costes',
+    },
     { key: 'cubos', label: 'Cubos', type: 'bc_pair', group: 'costes' },
     { key: 'telefono', label: 'Teléfono', type: 'bc_pair', group: 'costes' },
-    { key: 'vigilancia', label: 'Vigilancia', type: 'bc_pair', group: 'costes' },
-    { key: 'gastosFijoHoras', label: 'Gastos fijo horas', type: 'bc_pair', group: 'costes' },
-    { key: 'beneficioEmpresarial', label: 'Beneficio empresarial', type: 'bc_pair', group: 'costes' },
-    { key: 'extra', label: 'Extra €/mes (oferta)', type: 'number', group: 'oferta' },
+    {
+      key: 'vigilancia',
+      label: 'Vigilancia',
+      type: 'bc_pair',
+      group: 'costes',
+    },
+    {
+      key: 'gastosFijoHoras',
+      label: 'Gastos fijo horas',
+      type: 'bc_pair',
+      group: 'costes',
+    },
+    {
+      key: 'beneficioEmpresarial',
+      label: 'Beneficio empresarial',
+      type: 'bc_pair',
+      group: 'costes',
+    },
+    {
+      key: 'extra',
+      label: 'Extra €/mes (oferta)',
+      type: 'number',
+      group: 'oferta',
+    },
   ],
 };

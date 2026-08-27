@@ -1,8 +1,13 @@
 import { useState, useRef, useEffect, useContext, useMemo } from 'react';
-import { Bell } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router';
+import { Bell, ChevronRight } from 'lucide-react';
 import { NotificationsContext } from '../contexts/NotificationsContext';
-import { requestNotificationPermission, isNotificationPermissionGranted } from '../utils/pushNotifications';
-import Notification from './ui/Notification';
+import {
+  requestNotificationPermission,
+  isNotificationPermissionGranted,
+} from '../utils/pushNotifications';
+import { resolveNotificationUrl } from '../utils/notificationNavigation';
 
 /**
  * Component pentru afișarea notificărilor în timp real
@@ -10,25 +15,59 @@ import Notification from './ui/Notification';
  * și un dropdown cu lista de notificări
  */
 const NotificationsBell = () => {
-  // TOATE hooks-urile trebuie apelate înainte de orice return condițional
+  const navigate = useNavigate();
   const context = useContext(NotificationsContext);
   const [isOpen, setIsOpen] = useState(false);
-  const [showNotification, setShowNotification] = useState(null);
-  const [hasPermission, setHasPermission] = useState(isNotificationPermissionGranted());
+  const [hasPermission, setHasPermission] = useState(
+    isNotificationPermissionGranted(),
+  );
+  const [panelStyle, setPanelStyle] = useState(null);
+  const buttonRef = useRef(null);
   const dropdownRef = useRef(null);
-  
-  // Extragem valorile din context (sau folosim valori default) - folosim useMemo pentru stabilitate
-  const notifications = useMemo(() => context?.notifications || [], [context?.notifications]);
+
+  const notifications = useMemo(
+    () => context?.notifications || [],
+    [context?.notifications],
+  );
   const unreadCount = context?.unreadCount || 0;
-  const markAsRead = useMemo(() => context?.markAsRead || (() => {}), [context?.markAsRead]);
+  const markAsRead = useMemo(
+    () => context?.markAsRead || (() => {}),
+    [context?.markAsRead],
+  );
   const markAllAsRead = context?.markAllAsRead || (() => {});
 
-  // Închide dropdown-ul când se face click în afara lui
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const updatePosition = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const width = Math.min(320, window.innerWidth - 16);
+      const right = Math.max(8, window.innerWidth - rect.right);
+      setPanelStyle({
+        position: 'fixed',
+        top: `${rect.bottom + 8}px`,
+        right: `${right}px`,
+        width: `${width}px`,
+        zIndex: 200,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isOpen]);
+
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
+      const target = event.target;
+      if (buttonRef.current?.contains(target)) return;
+      if (dropdownRef.current?.contains(target)) return;
+      setIsOpen(false);
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -37,36 +76,24 @@ const NotificationsBell = () => {
     };
   }, []);
 
-  // Afișează notificarea când apare una nouă
+  // Navigare din Service Worker (click pe push când app e deja deschisă)
   useEffect(() => {
-    if (!context) return; // Early return în useEffect, nu în component
-    
-    const latestNotification = notifications[0];
-    if (latestNotification && !latestNotification.read) {
-      // Folosim setTimeout pentru a evita apelarea sincronă a setState
-      const timer = setTimeout(() => {
-        setShowNotification({
-          type: latestNotification.type || 'info',
-          title: latestNotification.title || 'Nueva notificación',
-          message: latestNotification.message || latestNotification.content,
-          onClose: () => {
-            setShowNotification(null);
-            if (latestNotification.id) {
-              markAsRead(latestNotification.id);
-            }
-          },
-        });
-      }, 0);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [notifications, markAsRead, context]);
-  
-  // Verificare defensivă: dacă context-ul nu este disponibil, returnăm null
-  // IMPORTANT: Această verificare trebuie să fie DUPĂ toate hooks-urile
+    if (!('serviceWorker' in navigator)) return undefined;
+    const onMessage = (event) => {
+      const msg = event?.data;
+      if (!msg || msg.type !== 'NOTIFICATION_NAVIGATE') return;
+      const path = resolveNotificationUrl({
+        data: { url: msg.url },
+        url: msg.url,
+      });
+      if (path) navigate(path);
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () =>
+      navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, [navigate]);
+
   if (!context) {
-    // Context-ul nu este disponibil (provider-ul nu este montat)
-    // Returnăm null pentru a evita eroarea
     return null;
   }
 
@@ -75,116 +102,136 @@ const NotificationsBell = () => {
       markAsRead(notification.id);
     }
     setIsOpen(false);
+    const path = resolveNotificationUrl(notification);
+    if (path) {
+      navigate(path);
+    }
   };
 
-  return (
-    <>
-      {/* Icon cu badge */}
-      <div className="relative">
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="relative p-2 text-gray-600 hover:text-gray-900 transition-colors"
-          aria-label="Notificaciones"
+  const dropdown = isOpen && panelStyle
+    ? createPortal(
+        <div
+          ref={dropdownRef}
+          style={panelStyle}
+          className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-600 max-h-96 overflow-y-auto"
         >
-          <Bell className="w-6 h-6" />
-          {unreadCount > 0 && (
-            <span className="absolute top-0 right-0 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-              {unreadCount > 9 ? '9+' : unreadCount}
-            </span>
-          )}
-        </button>
-
-        {/* Dropdown cu notificări */}
-        {isOpen && (
-          <div
-            ref={dropdownRef}
-            className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-96 overflow-y-auto"
-          >
-            <div className="p-4 border-b border-gray-200">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-semibold text-gray-900">Notificaciones</h3>
-                {unreadCount > 0 && (
-                  <button
-                    onClick={() => {
-                      markAllAsRead();
-                    }}
-                    className="text-sm text-blue-600 hover:text-blue-800"
-                  >
-                    Marcar todas como leídas
-                  </button>
-                )}
-              </div>
-              
-              {/* Buton pentru activarea notificărilor push */}
-              {!hasPermission && (
+          <div className="p-4 border-b border-gray-200 dark:border-gray-600">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">
+                Notificaciones
+              </h3>
+              {unreadCount > 0 && (
                 <button
-                  onClick={async () => {
-                    const granted = await requestNotificationPermission();
-                    setHasPermission(granted);
-                    if (granted) {
-                      alert('✅ Las notificaciones push están activadas. Recibirás notificaciones incluso cuando la aplicación esté cerrada.');
-                    }
+                  type="button"
+                  onClick={() => {
+                    markAllAsRead();
                   }}
-                  className="w-full mt-2 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
+                  className="text-sm text-blue-600 hover:text-blue-800"
                 >
-                  🔔 Activar notificaciones push
+                  Marcar todas como leídas
                 </button>
               )}
             </div>
 
-            <div className="divide-y divide-gray-200">
-              {notifications.length === 0 ? (
-                <div className="p-4 text-center text-gray-500">
-                  No tienes notificaciones
-                </div>
-              ) : (
-                notifications.map((notification) => (
-                  <div
+            {!hasPermission && (
+              <button
+                type="button"
+                onClick={async () => {
+                  const granted = await requestNotificationPermission();
+                  setHasPermission(granted);
+                  if (granted) {
+                    alert(
+                      '✅ Las notificaciones push están activadas. Recibirás notificaciones incluso cuando la aplicación esté cerrada.',
+                    );
+                  }
+                }}
+                className="w-full mt-2 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                🔔 Activar notificaciones push
+              </button>
+            )}
+          </div>
+
+          <div className="divide-y divide-gray-200 dark:divide-gray-700">
+            {notifications.length === 0 ? (
+              <div className="p-4 text-center text-gray-500">
+                No tienes notificaciones
+              </div>
+            ) : (
+              notifications.map((notification) => {
+                const path = resolveNotificationUrl(notification);
+                return (
+                  <button
+                    type="button"
                     key={notification.id || notification.timestamp}
                     onClick={() => handleNotificationClick(notification)}
-                    className={`p-4 cursor-pointer hover:bg-gray-50 transition-colors ${
-                      !notification.read ? 'bg-blue-50' : ''
+                    className={`w-full text-left p-4 hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-colors ${
+                      !notification.read ? 'bg-blue-50 dark:bg-blue-900/30' : ''
                     }`}
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <p className={`text-sm font-medium ${
-                          !notification.read ? 'text-gray-900' : 'text-gray-600'
-                        }`}>
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className={`text-sm font-medium ${
+                            !notification.read
+                              ? 'text-gray-900 dark:text-gray-100'
+                              : 'text-gray-600 dark:text-gray-300'
+                          }`}
+                        >
                           {notification.title || 'Notificación'}
                         </p>
-                        <p className="text-sm text-gray-500 mt-1">
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                           {notification.message || notification.content}
                         </p>
                         {notification.timestamp && (
                           <p className="text-xs text-gray-400 mt-1">
-                            {new Date(notification.timestamp).toLocaleString('es-ES')}
+                            {new Date(notification.timestamp).toLocaleString(
+                              'es-ES',
+                            )}
                           </p>
                         )}
                       </div>
-                      {!notification.read && (
-                        <div className="ml-2 w-2 h-2 bg-blue-500 rounded-full"></div>
-                      )}
+                      <div className="flex items-center gap-1 mt-0.5 shrink-0">
+                        {!notification.read && (
+                          <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                        )}
+                        {path && (
+                          <ChevronRight
+                            className="w-4 h-4 text-gray-400"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))
-              )}
-            </div>
+                  </button>
+                );
+              })
+            )}
           </div>
-        )}
-      </div>
+        </div>,
+        document.body,
+      )
+    : null;
 
-      {/* Notificare popup pentru notificări noi */}
-      {showNotification && (
-        <Notification
-          type={showNotification.type}
-          title={showNotification.title}
-          message={showNotification.message}
-          onClose={showNotification.onClose}
-          duration={5000}
-        />
-      )}
-    </>
+  return (
+    <div className="relative">
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setIsOpen((open) => !open)}
+        className="relative p-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors"
+        aria-label="Notificaciones"
+        aria-expanded={isOpen}
+      >
+        <Bell className="w-6 h-6" />
+        {unreadCount > 0 && (
+          <span className="absolute top-0 right-0 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+      {dropdown}
+    </div>
   );
 };
 

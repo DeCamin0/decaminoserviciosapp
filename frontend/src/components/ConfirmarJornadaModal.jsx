@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Modal, Button } from './ui';
+import { Modal } from './ui';
 import { useApi } from '../hooks/useApi';
 import { routes } from '../utils/routes';
 import { success, error as logError } from '../utils/logger';
@@ -119,92 +119,77 @@ export default function ConfirmarJornadaModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="⚠️ Confirmar Jornada"
-      size="md"
+      title="Confirmar jornada"
+      size="sm"
+      showCloseButton={false}
     >
-      <div className="space-y-4">
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="text-gray-600">Has fichado:</span>
-              <p className="font-semibold text-lg text-blue-600">
-                {punchedHours}
-              </p>
-            </div>
-            <div>
-              <span className="text-gray-600">Horario previsto:</span>
-              <p className="font-semibold text-lg text-green-600">
-                {scheduledHours}
-              </p>
-            </div>
-          </div>
-          <div className="mt-3 pt-3 border-t border-gray-200">
-            <span className="text-gray-600">Diferencia:</span>
-            <p
-              className={`font-bold text-lg ${
-                isMore ? 'text-orange-600' : 'text-red-600'
-              }`}
-            >
-              {isMore ? '+' : '-'}
-              {deltaHours}
-            </p>
-          </div>
+      <div className="app-modal__stats">
+        <div>
+          <span className="app-modal__stat-label">Has fichado</span>
+          <p className="app-modal__stat-value">{punchedHours}</p>
         </div>
-
-        <div className="text-center">
-          {isMore ? (
-            <>
-              <p className="text-gray-700 font-medium mb-4">
-                ¿Has trabajado más horas de las previstas?
-              </p>
-              <div className="flex gap-3 justify-center">
-                <Button
-                  onClick={() => handleConfirm('user_no')}
-                  disabled={loading}
-                  className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold"
-                >
-                  No he trabajado más
-                </Button>
-                <Button
-                  onClick={() => handleConfirm('user_yes')}
-                  disabled={loading}
-                  className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-3 rounded-lg font-semibold"
-                >
-                  He trabajado más
-                </Button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="text-gray-700 font-medium mb-4">
-                ¿Has trabajado menos horas de las previstas?
-              </p>
-              <div className="flex gap-3 justify-center">
-                <Button
-                  onClick={() => handleConfirm('user_yes', null)}
-                  disabled={loading}
-                  className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold"
-                >
-                  Sí, he trabajado menos
-                </Button>
-                <Button
-                  onClick={() => handleConfirm('user_no', 'punch_error')}
-                  disabled={loading}
-                  className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-semibold"
-                >
-                  No, fue error de fichaje
-                </Button>
-              </div>
-            </>
-          )}
+        <div>
+          <span className="app-modal__stat-label">Horario previsto</span>
+          <p className="app-modal__stat-value">{scheduledHours}</p>
         </div>
-
-        {loading && (
-          <div className="text-center text-gray-500 text-sm">
-            Procesando...
-          </div>
-        )}
+        <div className="col-span-2">
+          <span className="app-modal__stat-label">Diferencia</span>
+          <p className={`app-modal__stat-value ${isMore ? 'text-orange-600' : 'text-red-600'}`}>
+            {isMore ? '+' : '-'}
+            {deltaHours}
+          </p>
+        </div>
       </div>
+
+      <p className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-3">
+        {isMore
+          ? '¿Has trabajado más horas de las previstas?'
+          : '¿Has trabajado menos horas de las previstas?'}
+      </p>
+
+      {isMore ? (
+        <div className="app-modal__actions">
+          <button
+            type="button"
+            onClick={() => handleConfirm('user_no')}
+            disabled={loading}
+            className="app-modal__btn app-modal__btn--ok"
+          >
+            No he trabajado más
+          </button>
+          <button
+            type="button"
+            onClick={() => handleConfirm('user_yes')}
+            disabled={loading}
+            className="app-modal__btn app-modal__btn--primary"
+          >
+            He trabajado más
+          </button>
+        </div>
+      ) : (
+        <div className="app-modal__actions">
+          <button
+            type="button"
+            onClick={() => handleConfirm('user_yes', null)}
+            disabled={loading}
+            className="app-modal__btn app-modal__btn--ok"
+          >
+            Sí, he trabajado menos
+          </button>
+          <button
+            type="button"
+            onClick={() => handleConfirm('user_no', 'punch_error')}
+            disabled={loading}
+            className="app-modal__btn app-modal__btn--primary"
+          >
+            No, fue error de fichaje
+          </button>
+        </div>
+      )}
+
+      {loading && (
+        <p className="app-modal__hint text-center">Procesando...</p>
+      )}
     </Modal>
   );
 }

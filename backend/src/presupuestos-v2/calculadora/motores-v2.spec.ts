@@ -137,7 +137,10 @@ describe('Presupuestos V2 motors vs Legacy formulas', () => {
 
   describe('precio_mensual', () => {
     it('matches Legacy ×1.21 / ×12', () => {
-      const r = calculatePrecioMensual({ precioSinIva: 100, concepto: 'Test' }, P);
+      const r = calculatePrecioMensual(
+        { precioSinIva: 100, concepto: 'Test' },
+        P,
+      );
       expect(r.totales.mensualidad_sin_iva).toBe(100);
       expect(r.totales.mensualidad_con_iva).toBeCloseTo(121, 8);
       expect(r.totales.anualidad_sin_iva).toBe(1200);

@@ -13,15 +13,14 @@ const documentosSolicitadosGlobalCache = {
 import { useAuth } from '../contexts/AuthContextBase';
 import { useLoadingState } from '../hooks/useLoadingState';
 import { useBreakpoint } from '../hooks/useBreakpoint';
-import Back3DButton from '../components/Back3DButton.jsx';
-import { Card, LoadingSpinner } from '../components/ui';
+import { LoadingSpinner, PageHeader, AlertBanner, SegmentedControl } from '../components/ui';
 import Modal from '../components/ui/Modal';
 import { useApi } from '../hooks/useApi';
 import { useAdminApi } from '../hooks/useAdminApi';
 import { routes } from '../utils/routes.js';
 import { API_ENDPOINTS } from '../utils/constants.js';
 import activityLogger from '../utils/activityLogger';
-import { ChevronLeft, ChevronRight, Edit, Trash2, RefreshCw, Lock, Unlock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Edit, Trash2, RefreshCw, Lock, Unlock, Eye, Check, X, Download } from 'lucide-react';
 import { usePolling } from '../hooks/usePolling';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 import { config } from '../config/env.js';
@@ -286,13 +285,16 @@ const getSolicitudTipoShort = (tipo) => {
 const getStatusIndicatorColor = (estado) => {
   switch (estado) {
     case 'Aprobada':
-      return 'bg-green-500';
+      return 'solicitud-status-dot solicitud-status-dot--ok';
     case 'Pendiente':
-      return 'bg-yellow-500';
+      return 'solicitud-status-dot solicitud-status-dot--pendiente';
     case 'Rechazada':
-      return 'bg-red-500';
+      return 'solicitud-status-dot solicitud-status-dot--rechazada';
+    case 'Anulada':
+    case 'Cancelada':
+      return 'solicitud-status-dot solicitud-status-dot--anulada';
     default:
-      return 'bg-gray-500';
+      return 'solicitud-status-dot solicitud-status-dot--neutral';
   }
 };
 
@@ -426,7 +428,7 @@ function MobileBajaMedicaItem({ item, formatDate, formatDateTime, getSituacionCo
   };
   
   return (
-    <div className="relative">
+    <div className="solicitud-row">
       <div
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-center gap-2 p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
@@ -450,14 +452,14 @@ function MobileBajaMedicaItem({ item, formatDate, formatDateTime, getSituacionCo
         </span>
         
         {/* Chevron pentru expand */}
-        <span className={`text-gray-400 text-[10px] transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
+        <span className={`solicitud-row__chev ${isExpanded ? 'is-open' : ''}`} aria-hidden>
           ▼
         </span>
       </div>
       
       {/* Detalii expandate */}
       {isExpanded && (
-        <div className="mt-1 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 space-y-2">
+        <div className="solicitud-row__details space-y-2">
           {/* Caso ID */}
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Caso:</span>
@@ -772,13 +774,14 @@ function MobileAusenciaItemTodas({
     !tipoRowLower.includes('injustificada');
 
   return (
-    <div className="relative">
-      <div
+    <div className="solicitud-row">
+      <button
+        type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-2 p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+        className="solicitud-row__main"
+        aria-expanded={isExpanded}
       >
-        {/* Indicator mic (portocaliu pentru ausencias) */}
-        <div className="w-2 h-2 rounded-full flex-shrink-0 bg-orange-500"></div>
+        <span className="solicitud-status-dot solicitud-status-dot--pendiente" aria-hidden />
         
         {/* Fecha - text mic (primul în titlu) */}
         <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium min-w-[65px]">
@@ -803,14 +806,12 @@ function MobileAusenciaItemTodas({
         </span>
         
         {/* Chevron pentru expand */}
-        <span className={`text-gray-400 text-[10px] transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
-          ▼
-        </span>
-      </div>
+        <span className={`solicitud-row__chev ${isExpanded ? 'is-open' : ''}`} aria-hidden>▼</span>
+      </button>
       
       {/* Detalii expandate */}
       {isExpanded && (
-        <div className="mt-1 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 space-y-2">
+        <div className="solicitud-row__details space-y-2">
           {/* Nume complet */}
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-medium text-gray-600 dark:text-gray-400">Empleado:</span>
@@ -1392,17 +1393,18 @@ function MobileSolicitudItem({
   }
   
   return (
-    <div className="relative">
-      <div
+    <div className="solicitud-row">
+      <button
+        type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-2 p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+        className="solicitud-row__main"
+        aria-expanded={isExpanded}
       >
-        {/* Indicator mic (verde/galben/roșu) */}
-        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${getStatusIndicatorColor(solicitud.estado)}`}></div>
+        <span className={getStatusIndicatorColor(solicitud.estado)} aria-hidden />
         
         {/* Pentru Vacaciones și Asuntos Propios: afișăm numele/inițialele în loc de FECHA */}
         {(isVacaciones || isAsuntoPropio) && solicitud.nombre ? (
-          <span className="text-[11px] text-gray-700 dark:text-gray-300 font-semibold min-w-[65px] truncate">
+          <span className="solicitud-row__meta min-w-[4rem] truncate">
             {(() => {
               const nombre = solicitud.nombre || solicitud.NOMBRE || '';
               if (!nombre) return '—';
@@ -1419,13 +1421,12 @@ function MobileSolicitudItem({
           </span>
         ) : (
           /* Pentru alte tipuri: afișăm FECHA */
-          <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium min-w-[65px]">
+          <span className="solicitud-row__meta min-w-[4rem] truncate">
             {formattedFechaSolicitud.length > 12 ? formattedFechaSolicitud.substring(0, 12) + '...' : formattedFechaSolicitud}
           </span>
         )}
         
-        {/* Duration - text mic */}
-        <span className={`text-[10px] font-medium min-w-[45px] ${
+        <span className={`text-[0.68rem] font-semibold min-w-[2.5rem] ${
           durationDisplay.isDayBased 
             ? 'text-blue-600 dark:text-blue-400' 
             : 'text-purple-600 dark:text-purple-400'
@@ -1433,25 +1434,22 @@ function MobileSolicitudItem({
           {durationDisplay.text}
         </span>
         
-        {/* Tipo - text mic, scurtat */}
-        <span className="text-[11px] font-semibold flex-1 text-gray-700 dark:text-gray-300">
+        <span className="solicitud-row__period truncate">
           {getSolicitudTipoShort(solicitud.tipo)}
         </span>
         
-        {/* Status badge mic */}
-        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${getStatusColor(solicitud.estado)}`}>
-          {solicitud.estado === 'Aprobada' ? '✓' : solicitud.estado === 'Pendiente' ? '⏳' : '✗'}
+        <span className={getStatusColor(solicitud.estado)}>
+          {solicitud.estado === 'Aprobada' ? 'OK' : solicitud.estado === 'Pendiente' ? 'Pend.' : solicitud.estado === 'Rechazada' ? 'Rech.' : (solicitud.estado || '—').substring(0, 5)}
         </span>
         
-        {/* Chevron pentru expand */}
-        <span className={`text-gray-400 text-[10px] transition-transform flex-shrink-0 ${isExpanded ? 'rotate-180' : ''}`}>
+        <span className={`solicitud-row__chev ${isExpanded ? 'is-open' : ''}`} aria-hidden>
           ▼
         </span>
-      </div>
+      </button>
       
       {/* Detalii expandate */}
       {isExpanded && (
-        <div className="mt-1 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 space-y-2">
+        <div className="solicitud-row__details space-y-2">
           {/* Nume complet (doar pentru Vacaciones și Asuntos Propios) */}
           {(isVacaciones || isAsuntoPropio) && solicitud.nombre && (
             <div className="flex items-center gap-2">
@@ -7669,13 +7667,16 @@ export default function SolicitudesPage() {
   const getStatusColor = (estado) => {
     switch (estado) {
       case 'Aprobada':
-        return 'bg-green-100 text-green-800';
+        return 'solicitud-status solicitud-status--ok';
       case 'Pendiente':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'solicitud-status solicitud-status--pendiente';
       case 'Rechazada':
-        return 'bg-red-100 text-red-800';
+        return 'solicitud-status solicitud-status--rechazada';
+      case 'Anulada':
+      case 'Cancelada':
+        return 'solicitud-status solicitud-status--anulada';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'solicitud-status solicitud-status--neutral';
     }
   };
 
@@ -9433,240 +9434,91 @@ export default function SolicitudesPage() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header moderno */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Back3DButton to="/inicio" title="Regresar al Dashboard" />
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
-              Gestión de Solicitudes
-            </h1>
-            <p className="text-gray-600 dark:text-white text-sm sm:text-base">
-              Solicita días de asuntos propios o vacaciones
-            </p>
-          </div>
-        </div>
-      </div>
+    <div className="app-page solicitud-page">
+      <PageHeader
+        className="solicitud-page-header"
+        title="Gestión de Solicitudes"
+        subtitle="Solicita días de asuntos propios o vacaciones"
+        backTo="/inicio"
+        backTitle="Regresar al Dashboard"
+        actions={
+          <button
+            type="button"
+            onClick={() => {
+              const solicitudesActivas = solicitudes?.filter(s =>
+                s.estado === 'Pendiente' || s.estado === 'Aprobada'
+              ) || [];
+              const tiposSolicitudes = [...new Set(solicitudesActivas.map(s => s.tipo || s.TIPO))].filter(Boolean);
+              const pageData = {
+                additionalInfo: [
+                  solicitudesActivas.length > 0 ? `[SOLICITUDES] Total activas: ${solicitudesActivas.length}` : null,
+                  tiposSolicitudes.length > 0 ? `[TIPOS] ${tiposSolicitudes.join(", ")}` : null,
+                  allSolicitudes?.length > 0 ? `[TOTAL] ${allSolicitudes.length} solicitudes en total` : null,
+                ].filter(Boolean),
+              };
+              const message = buildErrorReportMessage({
+                authUser,
+                userData: empleadoCompleto,
+                pageName: "Gestión de Solicitudes",
+                pageData,
+              });
+              openWhatsAppErrorReport(message);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-[var(--app-radius-sm,0.65rem)] border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+          >
+            Reportar error
+          </button>
+        }
+      />
 
-      {/* Botón Reportar Error */}
-      <div className="flex justify-end mb-4">
-        <button 
-          onClick={() => {
-            // Date relevante pentru pagina de solicitudes
-            const solicitudesActivas = solicitudes?.filter(s => 
-              s.estado === 'Pendiente' || s.estado === 'Aprobada'
-            ) || [];
-            const tiposSolicitudes = [...new Set(solicitudesActivas.map(s => s.tipo || s.TIPO))].filter(Boolean);
-            
-            const pageData = {
-              additionalInfo: [
-                solicitudesActivas.length > 0 ? `[SOLICITUDES] Total activas: ${solicitudesActivas.length}` : null,
-                tiposSolicitudes.length > 0 ? `[TIPOS] ${tiposSolicitudes.join(", ")}` : null,
-                allSolicitudes?.length > 0 ? `[TOTAL] ${allSolicitudes.length} solicitudes en total` : null,
-              ].filter(Boolean),
-            };
-            
-            const message = buildErrorReportMessage({
-              authUser,
-              userData: empleadoCompleto,
-              pageName: "Gestión de Solicitudes",
-              pageData,
-            });
-            
-            openWhatsAppErrorReport(message);
-          }}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white text-sm font-medium rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105"
-        >
-          <span className="text-base">📱</span>
-          Reportar error
-        </button>
-      </div>
-
-      {/* Verifică dacă utilizatorul are acces la pagină */}
       {loadingPermissions && (
-        <Card>
-          <div className="text-center py-8">
-            <LoadingSpinner />
-            <p className="text-gray-600 mt-4">Cargando permisos...</p>
-          </div>
-        </Card>
+        <AlertBanner loading title="Cargando permisos..." />
       )}
 
-      {/* Dacă nu are permisiuni în backend sau nu are permisiuni pentru solicitudes */}
       {!loadingPermissions && !canAccessPage && (
-        <Card>
-          <div className="text-center py-8">
-            <div className="max-w-md mx-auto">
-              <p className="text-gray-800 text-lg font-semibold mb-2">
-                No tienes acceso a esta página
-              </p>
-              <p className="text-gray-600 mb-4">
-                No tienes permisos configurados para acceder a la página de Solicitudes.
-              </p>
-              <p className="text-gray-600">
-                Por favor, contacta con tu supervisor para que te asigne los permisos necesarios.
-              </p>
-            </div>
-          </div>
-        </Card>
+        <AlertBanner variant="warning" title="No tienes acceso a esta página">
+          No tienes permisos configurados para acceder a la página de Solicitudes. Por favor, contacta con tu supervisor.
+        </AlertBanner>
       )}
 
-      {/* Tabs - doar dacă are acces */}
       {!loadingPermissions && canAccessPage && (
-      <Card>
-        <div className="flex flex-wrap gap-4 mb-8">
-          <button
-            onClick={() => setActiveTab('lista')}
-            className={`group relative px-8 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-              activeTab === 'lista'
-                ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200'
-                : 'bg-white text-red-600 border-2 border-red-200 hover:border-red-400 hover:bg-red-50'
-            }`}
-          >
-            {/* Glow effect */}
-            <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-              activeTab === 'lista' 
-                ? 'bg-red-400 opacity-30 blur-md animate-pulse' 
-                : 'bg-red-400 opacity-0 group-hover:opacity-20 blur-md'
-            }`}></div>
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
-                activeTab === 'lista' 
-                  ? 'bg-white/20' 
-                  : 'bg-red-100 group-hover:bg-red-200'
-              }`}>
-                <span className={`text-xl ${
-                  activeTab === 'lista' ? 'text-white' : 'text-red-600'
-                }`}>📋</span>
-              </div>
-              <div className="text-left">
-                <div className="text-lg font-bold">Mis Solicitudes</div>
-                <div className={`text-xs ${
-                  activeTab === 'lista' ? 'text-white/80' : 'text-red-500'
-                }`}>Ver mis peticiones</div>
-              </div>
-            </div>
-          </button>
+      <>
+        <SegmentedControl
+          value={activeTab === 'lista' || activeTab === 'nueva' ? activeTab : ''}
+          onChange={setActiveTab}
+          items={[
+            { id: 'lista', label: 'Mis solicitudes', shortLabel: 'Mis' },
+            { id: 'nueva', label: 'Nueva solicitud', shortLabel: 'Nueva' },
+          ]}
+          className="solicitud-employee-tabs"
+        />
 
-          <button
-            onClick={() => setActiveTab('nueva')}
-            className={`group relative px-8 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-              activeTab === 'nueva'
-                ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200'
-                : 'bg-white text-green-600 border-2 border-green-200 hover:border-green-400 hover:bg-green-50'
-            }`}
-          >
-            {/* Glow effect */}
-            <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-              activeTab === 'nueva' 
-                ? 'bg-green-400 opacity-30 blur-md animate-pulse' 
-                : 'bg-green-400 opacity-0 group-hover:opacity-20 blur-md'
-            }`}></div>
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
-                activeTab === 'nueva' 
-                  ? 'bg-white/20' 
-                  : 'bg-green-100 group-hover:bg-green-200'
-              }`}>
-                <span className={`text-xl ${
-                  activeTab === 'nueva' ? 'text-white' : 'text-green-600'
-                }`}>➕</span>
-              </div>
-              <div className="text-left">
-                <div className="text-lg font-bold">Nueva Solicitud</div>
-                <div className={`text-xs ${
-                  activeTab === 'nueva' ? 'text-white/80' : 'text-green-500'
-                }`}>Crear petición</div>
-              </div>
-            </div>
-          </button>
+        {canAccessAllTabs && (
+          <SegmentedControl
+            value={activeTab === 'todas' || activeTab === 'estadisticas' ? activeTab : ''}
+            onChange={setActiveTab}
+            items={[
+              { id: 'todas', label: 'Todas las solicitudes', shortLabel: 'Todas' },
+              { id: 'estadisticas', label: 'Estadísticas', shortLabel: 'Stats' },
+            ]}
+            className="solicitud-admin-tabs"
+          />
+        )}
 
-          {canAccessAllTabs && (
-            <>
-              <button
-                onClick={() => setActiveTab('todas')}
-                className={`group relative px-8 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                  activeTab === 'todas'
-                    ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200'
-                    : 'bg-white text-blue-600 border-2 border-blue-200 hover:border-blue-400 hover:bg-blue-50'
-                }`}
-              >
-                {/* Glow effect */}
-                <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                  activeTab === 'todas' 
-                    ? 'bg-blue-400 opacity-30 blur-md animate-pulse' 
-                    : 'bg-blue-400 opacity-0 group-hover:opacity-20 blur-md'
-                }`}></div>
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
-                    activeTab === 'todas' 
-                      ? 'bg-white/20' 
-                      : 'bg-blue-100 group-hover:bg-blue-200'
-                  }`}>
-                    <span className={`text-xl ${
-                      activeTab === 'todas' ? 'text-white' : 'text-blue-600'
-                    }`}>👥</span>
-                  </div>
-                  <div className="text-left">
-                    <div className="text-lg font-bold">Todas las Solicitudes</div>
-                    <div className={`text-xs ${
-                      activeTab === 'todas' ? 'text-white/80' : 'text-blue-500'
-                    }`}>Gestionar equipo</div>
-                  </div>
-                </div>
-              </button>
-              
-              <button
-                onClick={() => setActiveTab('estadisticas')}
-                className={`group relative px-8 py-4 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                  activeTab === 'estadisticas'
-                    ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200'
-                    : 'bg-white text-purple-600 border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50'
-                }`}
-              >
-                {/* Glow effect */}
-                <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                  activeTab === 'estadisticas' 
-                    ? 'bg-purple-400 opacity-30 blur-md animate-pulse' 
-                    : 'bg-purple-400 opacity-0 group-hover:opacity-20 blur-md'
-                }`}></div>
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-300 ${
-                    activeTab === 'estadisticas' 
-                      ? 'bg-white/20' 
-                      : 'bg-purple-100 group-hover:bg-purple-200'
-                  }`}>
-                    <span className={`text-xl ${
-                      activeTab === 'estadisticas' ? 'text-white' : 'text-purple-600'
-                    }`}>📊</span>
-                  </div>
-                  <div className="text-left">
-                    <div className="text-lg font-bold">Estadísticas</div>
-                    <div className={`text-xs ${
-                      activeTab === 'estadisticas' ? 'text-white/80' : 'text-purple-500'
-                    }`}>Vacaciones y Asuntos Propios</div>
-                  </div>
-                </div>
-              </button>
-            </>
-          )}
-        </div>
-
+        <div className="app-card app-card--pad solicitud-panel">
         {activeTab === 'lista' ? (
           // Lista de solicitudes del usuario (filtrada por año seleccionado)
           <div>
-            <div className={`flex ${isMobile ? 'flex-col' : 'items-center justify-between'} ${isMobile ? 'gap-2 mb-4' : 'mb-6'}`}>
-              <div className="flex flex-wrap items-center gap-2 gap-y-2">
-                <h2 className={`${isMobile ? 'text-lg' : 'text-xl'} font-bold text-gray-900`}>
-                  Mis Solicitudes
-                </h2>
-                <label className="inline-flex items-center gap-1.5 text-sm text-gray-600">
-                  <span>Año:</span>
+            <div className="solicitud-list-header">
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                <h2 className="solicitud-list-header__title">Mis solicitudes</h2>
+                <label className="fichaje-month inline-flex items-center gap-1.5 mb-0">
+                  <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Año</span>
                   <select
                     value={misSolicitudesYear}
                     onChange={(e) => setMisSolicitudesYear(Number(e.target.value))}
-                    className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-800 shadow-sm focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+                    className="fichaje-month__select"
+                    style={{ flex: '0 1 auto', minWidth: '5.5rem' }}
                   >
                     {(() => {
                       const currentYear = new Date().getFullYear();
@@ -9679,30 +9531,24 @@ export default function SolicitudesPage() {
                   </select>
                 </label>
               </div>
-              <div className={`flex ${isMobile ? 'flex-wrap gap-1.5 mt-1' : 'gap-3'}`}>
+              <div className="fichaje-metrics">
                 {totalAsuntoPropioDaysForYear > 0 && (
-                  <span className={`inline-flex items-center ${isMobile ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-sm'} font-medium rounded-full bg-purple-100 text-purple-800 border border-purple-200`}>
-                    📅 Asunto Propio: {totalAsuntoPropioDaysForYear} días
-                  </span>
+                  <span className="fichaje-metric">Asunto propio: {totalAsuntoPropioDaysForYear} días</span>
                 )}
                 {totalVacacionesDaysForYear > 0 && (
-                  <span className={`inline-flex items-center ${isMobile ? 'px-2 py-0.5 text-[10px]' : 'px-3 py-1 text-sm'} font-medium rounded-full bg-cyan-100 text-cyan-800 border border-cyan-200`}>
-                    🏖️ Vacaciones: {totalVacacionesDaysForYear} días
-                  </span>
+                  <span className="fichaje-metric fichaje-metric--ok">Vacaciones: {totalVacacionesDaysForYear} días</span>
                 )}
               </div>
             </div>
             
             {isOperationLoading('solicitudes') ? (
-              <div className="flex justify-center py-8">
-                <LoadingSpinner size="lg" text="Cargando solicitudes..." />
-              </div>
+              <AlertBanner loading title="Cargando solicitudes..." />
             ) : solicitudesForYear.length === 0 ? (
-              <div className={`text-center ${isMobile ? 'py-4 text-sm' : 'py-8'} text-gray-500`}>
+              <AlertBanner variant="info" title={solicitudes.length === 0 ? 'Sin solicitudes' : `Sin solicitudes en ${misSolicitudesYear}`}>
                 {solicitudes.length === 0 ? 'No tienes solicitudes aún.' : `No tienes solicitudes en ${misSolicitudesYear}.`}
-              </div>
+              </AlertBanner>
             ) : (
-              <div className={isMobile ? "space-y-2" : "space-y-3"}>
+              <div className="solicitud-list">
                 {solicitudesForYear.map((solicitud, index) => (
                   isMobile ? (
                     <MobileSolicitudItem
@@ -9723,35 +9569,16 @@ export default function SolicitudesPage() {
                       allAusencias={allAusencias}
                     />
                   ) : (
-                  <div key={solicitud.id || index} className="card hover:shadow-lg transition-all duration-200 border-l-4 border-l-red-500">
-                    {/* Header compact pe mobil, complet pe ecrane mari */}
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center shadow-md flex-shrink-0">
-                          <span className="text-white text-lg">
-                            {solicitud.tipo === 'Vacaciones' ? '🏖️' : '📅'}
-                          </span>
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <h3 className="font-semibold text-gray-900 truncate">{solicitud.tipo}</h3>
-                          {/* ID și Codigo: mutat sub tip pe mobil */}
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                              ID: {solicitud.id}
-                            </span>
-                            {solicitud.codigo && (
-                              <span className="text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
-                                Código: {solicitud.codigo}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(solicitud.estado)}`}>
-                              {solicitud.estado === 'Aprobada' ? '✅' : solicitud.estado === 'Pendiente' ? '⏳' : '❌'} {solicitud.estado}
-                            </span>
-                          </div>
+                  <div key={solicitud.id || index} className="solicitud-row solicitud-row--desktop">
+                    <div className="solicitud-row__head">
+                      <div className="min-w-0 flex-1">
+                        <h3 className="solicitud-row__tipo">{solicitud.tipo}</h3>
+                        <div className="solicitud-row__meta flex flex-wrap items-center gap-2 mt-1">
+                          <span>ID: {solicitud.id}</span>
+                          {solicitud.codigo ? <span>Código: {solicitud.codigo}</span> : null}
                         </div>
                       </div>
+                      <span className={getStatusColor(solicitud.estado)}>{solicitud.estado}</span>
                     </div>
                     
                     {/* Grid: 1 col pe mobil, 2 pe tablet, 4 pe desktop */}
@@ -10420,23 +10247,15 @@ export default function SolicitudesPage() {
           // Lista de todas las solicitudes (solo para managers)
           <div>
             {/* Header con título y botones de export */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-              <h2 className="text-xl font-bold text-gray-900">
-              Todas las Solicitudes
-            </h2>
-            
-              {/* Botones export y crear solicitud */}
-              <div className="flex gap-3 flex-wrap">
+            <div className="solicitud-list-header mb-4">
+              <h2 className="solicitud-list-header__title">Todas las solicitudes</h2>
+              <div className="solicitud-admin-toolbar">
               {selectedTab === 'vacaciones' && (
                 <button
                   onClick={() => { setErrorMsg(''); setShowVacationBlockedPeriodsModal(true); fetchVacationBlockedPeriods(); }}
-                  className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-amber-500 to-amber-600 text-white"
+                  className="solicitud-admin-btn solicitud-admin-btn--primary"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">🔒</span>
-                    <span className="text-sm">Bloquear periodos vacaciones</span>
-                  </div>
-                </button>
+                  Bloquear periodos vacaciones</button>
               )}
               {selectedTab === 'asunto' && (
                 <button
@@ -10446,13 +10265,9 @@ export default function SolicitudesPage() {
                     setShowAsuntoPropioBlockedPeriodsModal(true);
                     fetchAsuntoPropioBlockedPeriods();
                   }}
-                  className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-violet-500 to-purple-600 text-white"
+                  className="solicitud-admin-btn solicitud-admin-btn--primary"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">🔒</span>
-                    <span className="text-sm">Bloquear Asuntos Propios</span>
-                  </div>
-                </button>
+                  Bloquear Asuntos Propios</button>
               )}
               {selectedTab === 'ausencias' &&
                 ['Developer', 'Admin'].includes(userGrupo) && (
@@ -10461,70 +10276,45 @@ export default function SolicitudesPage() {
                     onClick={handleTriggerCronAusenciasProximas}
                     disabled={isOperationLoading('cron-ausencias')}
                     title="Envía ahora a Telegram el resumen de ausencias de los próximos 10 días (igual que el cron automático)"
-                    className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-teal-500 to-cyan-600 text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                    className="solicitud-admin-btn solicitud-admin-btn--primary"
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">⚡</span>
-                      <span className="text-sm">
+                    
                         {isOperationLoading('cron-ausencias')
                           ? 'Enviando…'
                           : 'Probar cron ausencias'}
-                      </span>
-                    </div>
-                  </button>
+                      </button>
                 )}
               <button
                 onClick={() => setShowManagerSolicitudModal(true)}
-                  className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-indigo-500 to-indigo-600 text-white"
+                  className="solicitud-admin-btn solicitud-admin-btn--primary"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">➕</span>
-                    <span className="text-sm">Crear Solicitud para Empleado</span>
-                </div>
-              </button>
+                  Crear Solicitud para Empleado</button>
               
               <button
                 onClick={handleExportExcel}
                   disabled={selectedTab === 'control_vacaciones'}
                   title={selectedTab === 'control_vacaciones' ? 'Cambia de pestaña para exportar la lista' : undefined}
-                  className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-emerald-500 to-emerald-600 text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  className="solicitud-admin-btn"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">📊</span>
-                    <span className="text-sm">Excel</span>
-                </div>
-              </button>
+                  Excel</button>
 
               <button
                 onClick={handleExportPDF}
                   disabled={selectedTab === 'control_vacaciones'}
                   title={selectedTab === 'control_vacaciones' ? 'Cambia de pestaña para exportar la lista' : undefined}
-                  className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-orange-500 to-orange-600 text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  className="solicitud-admin-btn"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">📄</span>
-                    <span className="text-sm">PDF</span>
-                </div>
-              </button>
+                  PDF</button>
               </div>
             </div>
 
             {/* Filtros para managers - Layout refinado */}
             <div className="space-y-4 mb-6">
               {/* Selector usuario refinado */}
-              <div className="bg-gradient-to-r from-gray-50 to-blue-50 p-6 rounded-2xl border border-gray-200 shadow-lg backdrop-blur-sm user-dropdown-container relative z-10">
-                <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                      <span className="text-white text-lg">👥</span>
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-gray-800">Filtrar por Empleado</h3>
-                      <p className="text-xs text-gray-500">Busca y selecciona un empleado específico</p>
-                    </div>
-                  </div>
-                  <div className="relative flex-1 max-w-lg">
-                    <div className="relative group">
+              <div className="solicitud-admin-filter app-card app-card--pad user-dropdown-container relative z-10">
+                <label htmlFor="manager-user-search" className="solicitud-admin-filter__label">Filtrar por empleado</label>
+                <div className="solicitud-admin-filter__row relative flex-1 max-w-lg">
+                    <div className="relative">
                     <input
                       id="manager-user-search"
                       name="manager-user-search"
@@ -10536,7 +10326,7 @@ export default function SolicitudesPage() {
                         setShowUserDropdown(true);
                       }}
                       onFocus={() => setShowUserDropdown(true)}
-                        className={`w-full ${isMobile ? 'px-3 py-2 pl-10 pr-10 text-xs' : 'px-4 py-3 pl-12 pr-12 text-sm'} border-2 border-gray-200 ${isMobile ? 'rounded-lg' : 'rounded-xl'} focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/80 backdrop-blur-sm transition-all duration-300 placeholder-gray-400 shadow-sm group-hover:shadow-md`}
+                        className="app-modal__input w-full min-h-[44px] pl-9 pr-9"
                     />
                     <div className={`absolute ${isMobile ? 'left-3' : 'left-4'} top-1/2 transform -translate-y-1/2`}>
                         <span className={`text-gray-400 ${isMobile ? 'text-sm' : 'text-lg'} group-focus-within:text-blue-500 transition-colors`}>🔍</span>
@@ -10557,7 +10347,7 @@ export default function SolicitudesPage() {
                   
                     {/* Dropdown refinado */}
                   {showUserDropdown && (
-                      <div className={`absolute z-[9999] w-full ${isMobile ? 'mt-2' : 'mt-3'} bg-white border border-gray-200 ${isMobile ? 'rounded-lg' : 'rounded-2xl'} shadow-2xl ${isMobile ? 'max-h-60' : 'max-h-80'} overflow-y-auto`} 
+                      <div className="solicitud-admin-filter__dropdown" 
                            style={{ 
                              zIndex: 9999,
                              position: 'absolute',
@@ -10582,20 +10372,8 @@ export default function SolicitudesPage() {
                             setUserSearchTerm(user.name);
                             setShowUserDropdown(false);
                           }}
-                              className={`w-full text-left ${isMobile ? 'px-2.5 py-2' : 'px-4 py-3'} hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 transition-all duration-200 flex items-center ${isMobile ? 'gap-2' : 'gap-3'} ${isMobile ? 'rounded-lg mb-0.5' : 'rounded-xl mb-1'} ${
-                                selectedUser === user.email ? 'bg-gradient-to-r from-blue-100 to-purple-100 border-l-4 border-l-blue-500 shadow-sm' : ''
-                              }`}
-                            >
-                              <div className={`${isMobile ? 'w-8 h-8' : 'w-10 h-10'} ${isMobile ? 'rounded-lg' : 'rounded-xl'} flex items-center justify-center shadow-md transition-all duration-200 ${
-                            user.email === 'ALL' 
-                              ? 'bg-gradient-to-br from-gray-500 to-gray-600' 
-                                  : 'bg-gradient-to-br from-blue-500 to-purple-600'
-                              }`}>
-                            <span className={`text-white ${isMobile ? 'text-xs' : 'text-sm'} font-bold`}>
-                              {user.email === 'ALL' ? '👥' : user.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                            </span>
-                          </div>
-                          <div className="flex-1 min-w-0">
+                              className={`solicitud-admin-filter__option${selectedUser === user.email ? ' is-active' : ''}`}
+                            ><div className="flex-1 min-w-0">
                                 <p className={`font-semibold text-gray-900 ${isMobile ? 'text-xs truncate' : 'text-sm'}`}>{user.name}</p>
                             {user.email !== 'ALL' && (
                               <p className={`${isMobile ? 'text-[10px]' : 'text-xs'} text-gray-500 truncate`}>{user.email}</p>
@@ -10613,173 +10391,41 @@ export default function SolicitudesPage() {
                     </div>
                   )}
                   </div>
-                </div>
               </div>
 
-              {/* Tabs para tipo - Modernos con efectos */}
-              <div className="flex flex-wrap gap-3">
-                <button
-                  onClick={() => setSelectedTab('asunto')}
-                  className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
-                    selectedTab === 'asunto'
-                      ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200'
-                      : 'bg-white text-red-600 border-2 border-red-200 hover:border-red-400 hover:bg-red-50'
-                  }`}
-                >
-                  {/* Glow effect */}
-                  <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                    selectedTab === 'asunto' 
-                      ? 'bg-red-400 opacity-25 blur-md animate-pulse' 
-                      : 'bg-red-400 opacity-0 group-hover:opacity-15 blur-md'
-                  }`}></div>
-                  <div className="relative flex items-center gap-2">
-                    <span className="text-lg">📋</span>
-                    <span>Asuntos Propios</span>
-                  </div>
-                </button>
-                
-                <button
-                  onClick={() => setSelectedTab('vacaciones')}
-                  className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
-                    selectedTab === 'vacaciones'
-                      ? 'bg-gradient-to-r from-cyan-500 to-cyan-600 text-white shadow-cyan-200'
-                      : 'bg-white text-cyan-600 border-2 border-cyan-200 hover:border-cyan-400 hover:bg-cyan-50'
-                  }`}
-                >
-                  {/* Glow effect */}
-                  <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                    selectedTab === 'vacaciones' 
-                      ? 'bg-cyan-400 opacity-25 blur-md animate-pulse' 
-                      : 'bg-cyan-400 opacity-0 group-hover:opacity-15 blur-md'
-                  }`}></div>
-                  <div className="relative flex items-center gap-2">
-                    <span className="text-lg">🏖️</span>
-                    <span>Vacaciones</span>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedTab('control_vacaciones')}
-                  className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
-                    selectedTab === 'control_vacaciones'
-                      ? 'bg-gradient-to-r from-teal-500 to-teal-600 text-white shadow-teal-200'
-                      : 'bg-white text-teal-700 border-2 border-teal-200 hover:border-teal-400 hover:bg-teal-50'
-                  }`}
-                >
-                  <div
-                    className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                      selectedTab === 'control_vacaciones'
-                        ? 'bg-teal-400 opacity-25 blur-md animate-pulse'
-                        : 'bg-teal-400 opacity-0 group-hover:opacity-15 blur-md'
-                    }`}
+              {/* Subnavegación Todas */}
+              {(() => {
+                const pendientes = allSolicitudes.filter((s) => {
+                  const tipo = (s.tipo || s.TIPO || '').toLowerCase();
+                  const estado = (s.estado || s.ESTADO || '').toLowerCase();
+                  const esPermisoRetribuido = tipo.includes('permiso') && tipo.includes('retribuido');
+                  const esBajaVoluntaria = tipo.includes('baja') && tipo.includes('voluntaria');
+                  const esAusenciaJustificada = tipo.includes('ausencias') && tipo.includes('justificada');
+                  const esVacaciones = tipo.includes('vacacion');
+                  return estado === 'pendiente' && (esPermisoRetribuido || esBajaVoluntaria || esAusenciaJustificada || esVacaciones);
+                }).length;
+                return (
+                  <SegmentedControl
+                    value={selectedTab}
+                    onChange={setSelectedTab}
+                    layout="grid"
+                    className="solicitud-admin-subtabs"
+                    items={[
+                      { id: 'asunto', label: 'Asuntos Propios', shortLabel: 'Asuntos' },
+                      { id: 'vacaciones', label: 'Vacaciones', shortLabel: 'Vac.' },
+                      { id: 'control_vacaciones', label: 'Control vacaciones', shortLabel: 'Ctrl.' },
+                      { id: 'ausencias', label: 'Ausencias', shortLabel: 'Aus.' },
+                      { id: 'baja', label: 'Bajas Médicas', shortLabel: 'Bajas' },
+                      { id: 'baja_voluntaria', label: 'Bajas Voluntarias', shortLabel: 'Vol.' },
+                      {
+                        id: 'aprobacion',
+                        label: pendientes > 0 ? `Aprobación (${pendientes})` : 'Aprobación',
+                        shortLabel: pendientes > 0 ? `Aprob ${pendientes}` : 'Aprob',
+                      },
+                    ]}
                   />
-                  <div className="relative flex items-center gap-2">
-                    <span className="text-lg">📈</span>
-                    <span className="hidden sm:inline">Control vacaciones</span>
-                    <span className="sm:hidden">Ctrl. vac.</span>
-                  </div>
-                </button>
-                
-                <button
-                  onClick={() => setSelectedTab('ausencias')}
-                  className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
-                    selectedTab === 'ausencias'
-                      ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-orange-200'
-                      : 'bg-white text-orange-600 border-2 border-orange-200 hover:border-orange-400 hover:bg-orange-50'
-                  }`}
-                >
-                  {/* Glow effect */}
-                  <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                    selectedTab === 'ausencias' 
-                      ? 'bg-orange-400 opacity-25 blur-md animate-pulse' 
-                      : 'bg-orange-400 opacity-0 group-hover:opacity-15 blur-md'
-                  }`}></div>
-                  <div className="relative flex items-center gap-2">
-                    <span className="text-lg">🚫</span>
-                    <span>Ausencias</span>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => setSelectedTab('baja')}
-                  className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
-                    selectedTab === 'baja'
-                      ? 'bg-gradient-to-r from-rose-500 to-rose-600 text-white shadow-rose-200'
-                      : 'bg-white text-rose-600 border-2 border-rose-200 hover:border-rose-400 hover:bg-rose-50'
-                  }`}
-                >
-                  <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                    selectedTab === 'baja'
-                      ? 'bg-rose-400 opacity-25 blur-md animate-pulse'
-                      : 'bg-rose-400 opacity-0 group-hover:opacity-15 blur-md'
-                  }`}></div>
-                  <div className="relative flex items-center gap-2">
-                    <span className="text-lg">🩺</span>
-                    <span>Bajas Médicas</span>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => setSelectedTab('baja_voluntaria')}
-                  className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
-                    selectedTab === 'baja_voluntaria'
-                      ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200'
-                      : 'bg-white text-purple-600 border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50'
-                  }`}
-                >
-                  <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                    selectedTab === 'baja_voluntaria'
-                      ? 'bg-purple-400 opacity-25 blur-md animate-pulse'
-                      : 'bg-purple-400 opacity-0 group-hover:opacity-15 blur-md'
-                  }`}></div>
-                  <div className="relative flex items-center gap-2">
-                    <span className="text-lg">🚪</span>
-                    <span>Bajas Voluntarias</span>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => setSelectedTab('aprobacion')}
-                  className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
-                    selectedTab === 'aprobacion'
-                      ? 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white shadow-yellow-200'
-                      : 'bg-white text-yellow-600 border-2 border-yellow-200 hover:border-yellow-400 hover:bg-yellow-50'
-                  }`}
-                >
-                  <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                    selectedTab === 'aprobacion'
-                      ? 'bg-yellow-400 opacity-25 blur-md animate-pulse'
-                      : 'bg-yellow-400 opacity-0 group-hover:opacity-15 blur-md'
-                  }`}></div>
-                  <div className="relative flex items-center gap-2">
-                    <span className="text-lg">⏳</span>
-                    <span>Aprobación</span>
-                    {(() => {
-                      // Numără cererile pendiente (incl. Vacaciones)
-                      const pendientes = allSolicitudes.filter(s => {
-                        const tipo = (s.tipo || s.TIPO || '').toLowerCase();
-                        const estado = (s.estado || s.ESTADO || '').toLowerCase();
-                        const esPermisoRetribuido = tipo.includes('permiso') && tipo.includes('retribuido');
-                        const esBajaVoluntaria = tipo.includes('baja') && tipo.includes('voluntaria');
-                        const esAusenciaJustificada = tipo.includes('ausencias') && tipo.includes('justificada');
-                        const esVacaciones = tipo.includes('vacacion');
-                        return estado === 'pendiente' && (esPermisoRetribuido || esBajaVoluntaria || esAusenciaJustificada || esVacaciones);
-                      }).length;
-                      return pendientes > 0 ? (
-                        <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold ${
-                          selectedTab === 'aprobacion'
-                            ? 'bg-white/30 text-white'
-                            : 'bg-yellow-100 text-yellow-700'
-                        }`}>
-                          {pendientes}
-                        </span>
-                      ) : null;
-                    })()}
-                  </div>
-                </button>
-              </div>
-
+                );
+              })()}
 
               {/* Selector meses y tipo - Dropdowns en línea */}
               <div className="flex flex-col sm:flex-row gap-4 w-full">
@@ -11060,7 +10706,7 @@ export default function SolicitudesPage() {
                       className={`${isMobile ? 'px-2.5 py-1.5 text-xs' : 'px-4 py-2'} rounded-lg font-semibold transition-all duration-300 shadow-md hover:shadow-lg flex items-center gap-2 ${
                         isOperationLoading('uploadBajas') || !BAJA_UPLOAD_ENDPOINT
                           ? 'bg-rose-200 text-rose-500 cursor-not-allowed'
-                          : 'bg-gradient-to-r from-rose-500 to-rose-600 text-white hover:from-rose-600 hover:to-rose-700'
+                          : 'solicitud-admin-btn solicitud-admin-btn--primary'
                       }`}
                     >
                       <span className={isMobile ? 'text-sm' : ''}>{isOperationLoading('uploadBajas') ? '⏳' : '🩺'}</span>
@@ -11110,7 +10756,7 @@ export default function SolicitudesPage() {
 
             {/* Panel de statistici pentru bajas médicas */}
             {selectedTab === 'baja' && canAccessAllTabs && (
-              <div className={`bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200 ${isMobile ? 'rounded-lg p-3' : 'rounded-xl p-6'} shadow-lg ${isMobile ? 'mb-3' : 'mb-6'}`}>
+              <div className={`app-card app-card--pad border-rose-200 ${isMobile ? 'mb-3' : 'mb-6'}`}>
                 <div className={`flex items-center justify-between ${isMobile ? 'mb-2' : 'mb-4'}`}>
                   <h3 className={`${isMobile ? 'text-sm' : 'text-lg'} font-bold text-rose-900 flex items-center gap-2`}>
                     <span className={isMobile ? 'text-base' : ''}>📊</span>
@@ -11250,27 +10896,59 @@ export default function SolicitudesPage() {
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                        <div className="text-xs font-medium text-gray-500">Empleados activos</div>
-                        <div className="text-2xl font-bold text-gray-900">{vacationControlUso.summary.total}</div>
+                    <div className="solicitud-admin-stat-grid">
+                      <div className="solicitud-admin-stat">
+                        <div className="solicitud-admin-stat__label">Empleados activos</div>
+                        <div className="solicitud-admin-stat__value">{vacationControlUso.summary.total}</div>
                       </div>
-                      <div className="rounded-xl border border-orange-200 bg-orange-50 p-4 shadow-sm">
-                        <div className="text-xs font-medium text-orange-800">Cupo agotado</div>
-                        <div className="text-2xl font-bold text-orange-900">{vacationControlUso.summary.completo}</div>
-                        <div className="text-[10px] text-orange-700 mt-1">Sin días restantes (con consumo)</div>
+                      <div className="solicitud-admin-stat">
+                        <div className="solicitud-admin-stat__label">Cupo agotado</div>
+                        <div className="solicitud-admin-stat__value">{vacationControlUso.summary.completo}</div>
                       </div>
-                      <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
-                        <div className="text-xs font-medium text-blue-800">Uso parcial</div>
-                        <div className="text-2xl font-bold text-blue-900">{vacationControlUso.summary.parcial}</div>
+                      <div className="solicitud-admin-stat">
+                        <div className="solicitud-admin-stat__label">Uso parcial</div>
+                        <div className="solicitud-admin-stat__value">{vacationControlUso.summary.parcial}</div>
                       </div>
-                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 shadow-sm">
-                        <div className="text-xs font-medium text-gray-600">Sin consumir</div>
-                        <div className="text-2xl font-bold text-gray-900">{vacationControlUso.summary.sin_uso}</div>
+                      <div className="solicitud-admin-stat">
+                        <div className="solicitud-admin-stat__label">Sin consumir</div>
+                        <div className="solicitud-admin-stat__value">{vacationControlUso.summary.sin_uso}</div>
                       </div>
                     </div>
 
-                    <div className="overflow-x-auto rounded-xl border border-teal-200 bg-white shadow-sm">
+                    <div className="md:hidden solicitud-admin-mobile-list">
+                      {vacationControlByGroupMonth.length === 0 ? (
+                        <p className="text-sm text-gray-500 text-center py-4">Sin datos por grupo.</p>
+                      ) : (
+                        vacationControlByGroupMonth.map((row) => (
+                          <div key={row.group} className="solicitud-admin-mobile-card app-card app-card--pad">
+                            <div className="solicitud-admin-mobile-card__head">
+                              <h4 className="solicitud-admin-mobile-card__title">{row.group}</h4>
+                              <span className="fichaje-metric">N={row.groupSize}</span>
+                            </div>
+                            <div className="solicitud-admin-month-grid">
+                              {row.months.map((m) => (
+                                <div
+                                  key={m.monthIndex}
+                                  className={`solicitud-admin-month-pill ${
+                                    m.groupSize > 0 && m.empleadosConVacaciones >= m.groupSize
+                                      ? 'solicitud-admin-month-pill--warn'
+                                      : m.empleadosConVacaciones > 0
+                                        ? 'solicitud-admin-month-pill--ok'
+                                        : ''
+                                  }`}
+                                  title={`${m.monthLabel}: ${m.empleadosConVacaciones}/${m.groupSize}; pico ${m.picoSimultaneosMes}`}
+                                >
+                                  <div className="font-bold">{m.monthLabel.slice(0, 3)}</div>
+                                  <div>{m.empleadosConVacaciones}/{m.groupSize}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="solicitud-admin-table-wrap hidden md:block">
                       <table className="min-w-[900px] w-full text-xs sm:text-sm">
                         <thead>
                           <tr className="bg-teal-600 text-white">
@@ -11487,7 +11165,7 @@ export default function SolicitudesPage() {
                         document.body,
                       )}
 
-                    <div className="rounded-xl border border-slate-300 bg-gradient-to-br from-slate-50 to-white shadow-sm overflow-hidden">
+                    <div className="solicitud-admin-section">
                       <div className="px-4 py-3 border-b border-slate-200 bg-slate-100/80">
                         <h4 className="font-semibold text-gray-900">
                           Contratación estimada (personal nuevo — no sobrecargar la plantilla)
@@ -11508,7 +11186,33 @@ export default function SolicitudesPage() {
                           No hay grupos con datos para esta estimación.
                         </div>
                       ) : (
-                        <div className="overflow-x-auto">
+                        <>
+                        <div className="md:hidden solicitud-admin-mobile-list max-h-[480px] overflow-y-auto">
+                          {vacationNewHireEstimateByGroup.map((g) => (
+                            <div key={g.group} className="solicitud-admin-mobile-card app-card app-card--pad">
+                              <div className="solicitud-admin-mobile-card__head">
+                                <h4 className="solicitud-admin-mobile-card__title">{g.group}</h4>
+                                <span className={g.deficitMax > 0 ? 'solicitud-status solicitud-status--pendiente' : 'solicitud-status solicitud-status--ok'}>
+                                  {g.deficitMax > 0 ? `+${g.deficitMax} ref.` : 'OK'}
+                                </span>
+                              </div>
+                              <dl className="solicitud-admin-kv">
+                                <dt>Activos (N)</dt><dd>{g.groupSize}</dd>
+                                <dt>Mín. refuerzos</dt><dd>{g.deficitMax}</dd>
+                                <dt>Meses déficit</dt><dd>{g.mesesConDeficit}</dd>
+                              </dl>
+                              {g.months.some((_, idx) => (g.deficits[idx] ?? 0) > 0) && (
+                                <p className="text-[11px] text-gray-600 mt-2 line-clamp-3">
+                                  {g.months.map((m, idx) => {
+                                    const d = g.deficits[idx] ?? 0;
+                                    return d > 0 ? `${m}: ${d}` : null;
+                                  }).filter(Boolean).join(' · ')}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="solicitud-admin-table-wrap hidden md:block overflow-x-auto">
                           <table className="min-w-[640px] w-full text-xs sm:text-sm">
                             <thead className="bg-slate-200/90">
                               <tr className="text-slate-900">
@@ -11579,6 +11283,7 @@ export default function SolicitudesPage() {
                             </tbody>
                           </table>
                         </div>
+                        </>
                       )}
                       {vacationNewHireEstimateByGroup.some((x) => x.deficitMax > 0) && (
                         <div className="px-4 py-3 border-t border-slate-200 bg-white text-xs text-gray-600 leading-relaxed">
@@ -11590,7 +11295,7 @@ export default function SolicitudesPage() {
                       )}
                     </div>
 
-                    <div className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50/90 to-white shadow-sm overflow-hidden">
+                    <div className="solicitud-admin-section">
                       <div className="px-4 py-3 border-b border-violet-100">
                         <h4 className="font-semibold text-gray-900">
                           Limpiador / Auxiliar De Servicios — L: contrato &lt; 8 h/día (Lun–Vie)
@@ -11712,7 +11417,34 @@ export default function SolicitudesPage() {
                           «HORAS DE CONTRATO» en ficha.
                         </div>
                       ) : (
-                        <div className="overflow-x-auto max-h-[min(60vh,420px)] overflow-y-auto">
+                        <>
+                        <div className="lg:hidden solicitud-admin-mobile-list max-h-[min(60vh,420px)] overflow-y-auto">
+                          {vacationPartTimeRefuerzoCobertura.rows.map((r) => (
+                            <div key={r.codigo || r.nombre} className="solicitud-admin-mobile-card app-card app-card--pad">
+                              <div className="solicitud-admin-mobile-card__head">
+                                <h4 className="solicitud-admin-mobile-card__title">{r.nombre}</h4>
+                                <span className={r.puedeSerRefuerzoMes ? 'solicitud-status solicitud-status--ok' : 'solicitud-status solicitud-status--neutral'}>
+                                  {r.puedeSerRefuerzoMes ? 'Refuerzo' : '—'}
+                                </span>
+                              </div>
+                              <dl className="solicitud-admin-kv">
+                                <dt>Centro</dt><dd className="truncate">{r.centroTrabajo || '—'}</dd>
+                                <dt>Grupo</dt><dd>{r.grupoRaw}</dd>
+                                <dt>h/día contr.</dt><dd>{r.horasDia}</dd>
+                                <dt>Hasta 8h</dt><dd>{r.horasDisponiblesHasta8}</dd>
+                                <dt>Vac. mes</dt><dd>{r.enVacacionesEnMesSeleccionado ? 'Sí' : 'No'}</dd>
+                                <dt>h/día horario</dt><dd>{r.horasDiaHorario != null ? r.horasDiaHorario : '—'}</dd>
+                              </dl>
+                              {r.cubreVacacionesMismoCentroEtiqueta ? (
+                                <p className="text-[11px] text-gray-700 mt-2 line-clamp-4"><strong>Cubre (centro):</strong> {r.cubreVacacionesMismoCentroEtiqueta}</p>
+                              ) : null}
+                              {r.enVacacionesEnMesSeleccionado && r.lePuedenCubrirMismoCentroEtiqueta ? (
+                                <p className="text-[11px] text-gray-700 mt-1 line-clamp-4"><strong>Le cubren:</strong> {r.lePuedenCubrirMismoCentroEtiqueta}</p>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="solicitud-admin-table-wrap hidden lg:block max-h-[min(60vh,420px)] overflow-y-auto">
                           <table className="min-w-[2100px] w-full text-xs sm:text-sm">
                             <thead className="bg-violet-100/90 sticky top-0 z-[1]">
                               <tr className="text-violet-950">
@@ -12007,6 +11739,7 @@ export default function SolicitudesPage() {
                             </tbody>
                           </table>
                         </div>
+                        </>
                       )}
                       {vacationControlLimpiadorPartTimeList.length > 0 && (
                         <div className="px-4 py-3 border-t border-violet-100 bg-white text-xs text-gray-800 leading-relaxed space-y-1.5">
@@ -12066,7 +11799,32 @@ export default function SolicitudesPage() {
                           <LoadingSpinner size="lg" text="Cargando estadísticas de empleados..." />
                         </div>
                       ) : (
-                        <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+                        <>
+                        <div className="md:hidden solicitud-admin-mobile-list max-h-[480px] overflow-y-auto">
+                          {vacationControlEmpleadosFiltrados.map((emp) => (
+                            <div key={emp.codigo} className="solicitud-admin-mobile-card app-card app-card--pad">
+                              <div className="solicitud-admin-mobile-card__head">
+                                <h4 className="solicitud-admin-mobile-card__title">{emp.nombre}</h4>
+                                {emp.estadoUso === 'completo' && (
+                                  <span className="solicitud-status solicitud-status--pendiente">Agotado</span>
+                                )}
+                                {emp.estadoUso === 'parcial' && (
+                                  <span className="solicitud-status solicitud-status--ok">Parcial</span>
+                                )}
+                                {emp.estadoUso === 'sin_uso' && (
+                                  <span className="solicitud-status solicitud-status--neutral">Sin consumo</span>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-600 mb-2">{emp.grupo || '—'}</p>
+                              <dl className="solicitud-admin-kv">
+                                <dt>Generados</dt><dd>{(emp.vacaciones?.dias_generados_hasta_hoy ?? 0).toFixed(1)}</dd>
+                                <dt>Consumidos</dt><dd>{(emp.vacaciones?.dias_consumidos_aprobados ?? 0).toFixed(1)}</dd>
+                                <dt>Restantes</dt><dd>{(emp.vacaciones?.dias_restantes ?? 0).toFixed(1)}</dd>
+                              </dl>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="solicitud-admin-table-wrap hidden md:block overflow-x-auto max-h-[480px] overflow-y-auto">
                           <table className="min-w-[640px] w-full text-xs sm:text-sm">
                             <thead className="bg-gray-50 sticky top-0 z-[1]">
                               <tr>
@@ -12119,6 +11877,7 @@ export default function SolicitudesPage() {
                             </div>
                           )}
                         </div>
+                        </>
                       )}
                     </div>
                   </>
@@ -12316,23 +12075,9 @@ export default function SolicitudesPage() {
                       }
                       
                       return (
-                    <div key={item.id || item.email} className="card hover:shadow-xl transition-all duration-300 border-l-4 border-l-purple-500 group">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center gap-4 flex-1">
-                          <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all duration-300">
-                            <span className="text-white text-xl group-hover:scale-110 transition-transform duration-300">
-                              {selectedTab === 'ausencias'
-                                ? '🚫'
-                                : selectedTab === 'baja' || isBajaMedica(item.tipo)
-                                ? '🩺'
-                                : selectedTab === 'baja_voluntaria' || item.tipo === 'BAJA_VOLUNTARIA'
-                                ? '🚪'
-                                : item.tipo === 'Vacaciones'
-                                ? '🏖️'
-                                : '📅'}
-                            </span>
-                          </div>
-                          <div className="flex-1">
+                    <div key={item.id || item.email} className="solicitud-row solicitud-row--desktop">
+                      <div className="solicitud-row__head">
+                        <div className="flex-1 min-w-0">
                             {selectedTab === 'ausencias' ? (
                               <>
                                 <h3 className="font-semibold text-gray-900 text-lg">{item.NOMBRE || item.nombre || 'N/A'}</h3>
@@ -12476,7 +12221,6 @@ export default function SolicitudesPage() {
                               </>
                             )}
                           </div>
-                        </div>
                         {/* Iconițe Edit și Delete */}
                         {selectedTab !== 'baja' && (
                           <div className="flex items-center gap-2 flex-shrink-0">
@@ -12502,27 +12246,30 @@ export default function SolicitudesPage() {
                                   return (
                                     <>
                                       <button
+                                        type="button"
                                         onClick={() => handlePreviewBajaVoluntaria(item)}
-                                        className="group/preview relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-blue-50"
+                                        className="solicitud-admin-icon-btn solicitud-admin-icon-btn--preview"
                                         title="Vista previa del PDF"
                                       >
-                                        <span className="text-2xl">👁️</span>
+                                        <Eye className="w-4 h-4" />
                                       </button>
                                       <button
+                                        type="button"
                                         onClick={() => handleApproveBajaVoluntaria(item)}
                                         disabled={isOperationLoading('approve')}
-                                        className="group/approve relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="solicitud-admin-icon-btn solicitud-admin-icon-btn--approve"
                                         title="Aprobar y enviar a gestoria"
                                       >
-                                        <span className="text-2xl">✅</span>
+                                        <Check className="w-4 h-4" />
                                       </button>
                                       <button
+                                        type="button"
                                         onClick={() => handleRejectBajaVoluntaria(item)}
                                         disabled={isOperationLoading('reject')}
-                                        className="group/reject relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="solicitud-admin-icon-btn solicitud-admin-icon-btn--reject"
                                         title="Rechazar"
                                       >
-                                        <span className="text-2xl">❌</span>
+                                        <X className="w-4 h-4" />
                                       </button>
                                     </>
                                   );
@@ -12533,20 +12280,22 @@ export default function SolicitudesPage() {
                                   return (
                                     <>
                                       <button
+                                        type="button"
                                         onClick={() => handleApprovePermisoRetribuido(item)}
                                         disabled={isOperationLoading('approve-permiso')}
-                                        className="group/approve relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="solicitud-admin-icon-btn solicitud-admin-icon-btn--approve"
                                         title="Aprobar permiso retribuido"
                                       >
-                                        <span className="text-2xl">✅</span>
+                                        <Check className="w-4 h-4" />
                                       </button>
                                       <button
+                                        type="button"
                                         onClick={() => handleRejectPermisoRetribuidoClick(item)}
                                         disabled={isOperationLoading('reject-permiso')}
-                                        className="group/reject relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="solicitud-admin-icon-btn solicitud-admin-icon-btn--reject"
                                         title="Rechazar permiso retribuido"
                                       >
-                                        <span className="text-2xl">❌</span>
+                                        <X className="w-4 h-4" />
                                       </button>
                                     </>
                                   );
@@ -12556,20 +12305,22 @@ export default function SolicitudesPage() {
                                   return (
                                     <>
                                       <button
+                                        type="button"
                                         onClick={() => handleApproveAusenciaJustificada(item)}
                                         disabled={isOperationLoading('approve-ausencia')}
-                                        className="group/approve relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="solicitud-admin-icon-btn solicitud-admin-icon-btn--approve"
                                         title="Aprobar ausencia justificada"
                                       >
-                                        <span className="text-2xl">✅</span>
+                                        <Check className="w-4 h-4" />
                                       </button>
                                       <button
+                                        type="button"
                                         onClick={() => handleRejectPermisoRetribuidoClick(item)}
                                         disabled={isOperationLoading('reject-permiso')}
-                                        className="group/reject relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="solicitud-admin-icon-btn solicitud-admin-icon-btn--reject"
                                         title="Rechazar ausencia justificada"
                                       >
-                                        <span className="text-2xl">❌</span>
+                                        <X className="w-4 h-4" />
                                       </button>
                                     </>
                                   );
@@ -12579,27 +12330,30 @@ export default function SolicitudesPage() {
                                   return (
                                     <>
                                       <button
+                                        type="button"
                                         onClick={() => handleApproveVacaciones(item)}
                                         disabled={isOperationLoading('approve-vacaciones')}
-                                        className="group/approve relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="solicitud-admin-icon-btn solicitud-admin-icon-btn--approve"
                                         title="Aprobar vacaciones"
                                       >
-                                        <span className="text-2xl">✅</span>
+                                        <Check className="w-4 h-4" />
                                       </button>
                                       <button
+                                        type="button"
                                         onClick={() => handleRejectPermisoRetribuidoClick(item)}
                                         disabled={isOperationLoading('reject-permiso')}
-                                        className="group/reject relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="solicitud-admin-icon-btn solicitud-admin-icon-btn--reject"
                                         title="Rechazar vacaciones"
                                       >
-                                        <span className="text-2xl">❌</span>
+                                        <X className="w-4 h-4" />
                                       </button>
                                       <button
+                                        type="button"
                                         onClick={() => handleEdit(item)}
-                                        className="group/edit relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-blue-50"
+                                        className="solicitud-admin-icon-btn solicitud-admin-icon-btn--edit"
                                         title="Editar solicitud"
                                       >
-                                        <Edit className="w-5 h-5 text-blue-600 group-hover/edit:text-blue-700" />
+                                        <Edit className="w-4 h-4" />
                                       </button>
                                     </>
                                   );
@@ -12610,19 +12364,21 @@ export default function SolicitudesPage() {
                               return (
                                 <>
                                   <button
+                                    type="button"
                                     onClick={() => handleEdit(item)}
-                                    className="group/edit relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-blue-50"
+                                    className="solicitud-admin-icon-btn solicitud-admin-icon-btn--edit"
                                     title="Editar solicitud"
                                   >
-                                    <Edit className="w-5 h-5 text-blue-600 group-hover/edit:text-blue-700" />
+                                    <Edit className="w-4 h-4" />
                                   </button>
                                   <button
+                                    type="button"
                                     onClick={() => handleDeleteClick(item.id)}
                                     disabled={isOperationLoading('delete')}
-                                    className="group/delete relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="solicitud-admin-icon-btn solicitud-admin-icon-btn--reject"
                                     title="Eliminar solicitud"
                                   >
-                                    <Trash2 className="w-5 h-5 text-red-600 group-hover/delete:text-red-700" />
+                                    <Trash2 className="w-4 h-4" />
                                   </button>
                                 </>
                               );
@@ -12633,14 +12389,15 @@ export default function SolicitudesPage() {
                         {selectedTab === 'baja' && canAccessAllTabs && item.fuente && String(item.fuente).toUpperCase() !== 'MUTUA' && (
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <button
+                              type="button"
                               onClick={() => {
                                 setDeleteBajaMedicaModal({ isOpen: true, baja: item, mensaje: '' });
                               }}
                               disabled={isOperationLoading('deleteBaja')}
-                              className="group/delete relative p-2 rounded-lg transition-all duration-300 transform hover:scale-110 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="solicitud-admin-icon-btn solicitud-admin-icon-btn--reject"
                               title="Eliminar baja médica (solo si Fuente no es MUTUA)"
                             >
-                              <Trash2 className="w-5 h-5 text-red-600 group-hover/delete:text-red-700" />
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
                         )}
@@ -12649,16 +12406,16 @@ export default function SolicitudesPage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                         {selectedTab === 'ausencias' ? (
                           <>
-                            <div className="bg-blue-50 p-4 rounded-lg group-hover:bg-blue-100 transition-colors duration-300 border border-blue-200">
+                            <div className="app-card app-card--pad">
                             <span className="block text-xs font-medium text-blue-700 mb-1">📅 Fecha</span>
                               <p className="text-sm font-bold text-blue-900">{formatFechaFlexible(item.FECHA || item.fecha, item.fecha_inicio, item.fecha_fin)}</p>
                             </div>
-                            <div className="bg-gray-50 p-4 rounded-lg group-hover:bg-gray-100 transition-colors duration-300">
+                            <div className="app-card app-card--pad">
                             <span className="block text-xs font-medium text-gray-600 mb-1">Hora</span>
                               <p className="text-sm font-bold text-gray-900">{formatHora(item.HORA || item.hora) || 'N/A'}</p>
                             </div>
                             {(item.created_at || item.CREATED_AT || item.createdAt) && (
-                              <div className="bg-green-50 p-4 rounded-lg group-hover:bg-green-100 transition-colors duration-300 border border-green-200">
+                              <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-green-700 mb-1">📋 Fecha Solicitud</span>
                                 <p className="text-sm font-bold text-green-900">
                                   {(() => {
@@ -12678,11 +12435,11 @@ export default function SolicitudesPage() {
                                 </p>
                               </div>
                             )}
-                            <div className="bg-gray-50 p-4 rounded-lg group-hover:bg-gray-100 transition-colors duration-300">
+                            <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Ubicación</span>
                               <p className="text-sm font-bold text-gray-900">{item.LOCACION || item.locacion || 'N/A'}</p>
                             </div>
-                            <div className="bg-gray-50 p-4 rounded-lg group-hover:bg-gray-100 transition-colors duración-300">
+                            <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Duración</span>
                               <p className={`text-sm font-bold ${durationInfo.isDayBased ? 'text-blue-700' : 'text-purple-600'}`}>
                                 {durationInfo.isDayBased ? `📅 ${durationInfo.text}` : `⏱️ ${durationInfo.text}`}
@@ -12691,14 +12448,14 @@ export default function SolicitudesPage() {
                           </>
                         ) : selectedTab === 'baja' ? (
                           <>
-                            <div className="bg-rose-50 p-4 rounded-lg border border-rose-200 group-hover:bg-rose-100 transition-colors duration-300">
+                            <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-rose-700 mb-1">🩺 Días de baja</span>
                               <p className="text-sm font-bold text-rose-900">{formatNumber(item.diasBaja)} días</p>
                               <p className="text-xs text-rose-700 mt-1">
                                 Previsto SPS: {formatNumber(item.diasPrevistosSps)} días
                               </p>
                             </div>
-                            <div className="bg-white p-4 rounded-lg border border-gray-200 group-hover:bg-gray-50 transition-colors duration-300">
+                            <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Fecha baja</span>
                               {editingBaja?.idCaso === item.casoId && editingBaja?.idPosicion === item.posicionId && editingBaja?.field === 'fechaBaja' ? (
                                 <div className="flex items-center gap-2">
@@ -12761,7 +12518,7 @@ export default function SolicitudesPage() {
                                 </p>
                               )}
                             </div>
-                            <div className="bg-white p-4 rounded-lg border border-gray-200 group-hover:bg-gray-50 transition-colors duration-300">
+                            <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Fecha alta</span>
                               {editingBaja?.idCaso === item.casoId && editingBaja?.idPosicion === item.posicionId && editingBaja?.field === 'fechaAlta' ? (
                                 <div className="flex items-center gap-2">
@@ -12824,17 +12581,17 @@ export default function SolicitudesPage() {
                                 </p>
                               )}
                             </div>
-                            <div className="bg-gray-50 p-4 rounded-lg group-hover:bg-gray-100 transition-colors duration-300">
+                            <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Pago delegado</span>
                               <p className="text-sm font-bold text-gray-900">Inicio: {formatDate(item.inicioPagoDelegado)}</p>
                               <p className="text-xs text-gray-600 mt-1">Fin: {formatDate(item.finPagoDelegado)}</p>
                             </div>
-                            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 group-hover:bg-blue-100 transition-colors duration-300">
+                            <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-blue-700 mb-1">Gestiones Mutua</span>
                               <p className="text-sm font-bold text-blue-900">Última: {formatDate(item.ultimaGestionMutua)}</p>
                               <p className="text-xs text-blue-700 mt-1">Próxima: {formatDate(item.proximaGestionMutua)}</p>
                             </div>
-                            <div className="bg-gray-50 p-4 rounded-lg group-hover:bg-gray-100 transition-colors duración-300">
+                            <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Seguimiento INSS</span>
                               <p className="text-sm font-bold text-gray-900">
                                 Pendiente validación: {formatNumber(item.pendienteINSS)}
@@ -12846,11 +12603,11 @@ export default function SolicitudesPage() {
                           </>
                         ) : selectedTab === 'baja_voluntaria' || item.tipo === 'BAJA_VOLUNTARIA' ? (
                           <>
-                            <div className="bg-blue-50 p-4 rounded-lg group-hover:bg-blue-100 transition-colors duration-300 border border-blue-200">
+                            <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-blue-700 mb-1">📅 Fecha Solicitud</span>
                               <p className="text-sm font-bold text-blue-900">{formatDate(item.fecha_solicitud)}</p>
                             </div>
-                            <div className="bg-purple-50 p-4 rounded-lg group-hover:bg-purple-100 transition-colors duration-300 border border-purple-200">
+                            <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-purple-700 mb-1">🚪 Último día de trabajo</span>
                               <p className="text-sm font-bold text-purple-900">
                                 {formatDate(item.fecha_ultimo_dia_trabajo || item.fecha_inicio || item.fecha_fin)}
@@ -12935,19 +12692,19 @@ export default function SolicitudesPage() {
                           </>
                         ) : (
                           <>
-                            <div className="bg-blue-50 p-4 rounded-lg group-hover:bg-blue-100 transition-colors duración-300 border border-blue-200">
+                            <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-blue-700 mb-1">📅 Fecha Solicitud</span>
                               <p className="text-sm font-bold text-blue-900">{formatDate(item.fecha_solicitud)}</p>
                             </div>
-                            <div className="bg-gray-50 p-4 rounded-lg group-hover:bg-gray-100 transition-colors duración-300">
+                            <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Fecha Inicio</span>
                               <p className="text-sm font-bold text-gray-900">{formatDate(item.fecha_inicio || item['fecha inicio'] || item.fecha) || (item.FECHA ? (item.FECHA.includes(' - ') ? item.FECHA.split(' - ')[0] : item.FECHA) : '')}</p>
                             </div>
-                            <div className="bg-gray-50 p-4 rounded-lg group-hover:bg-gray-100 transition-colors duración-300">
+                            <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Fecha Fin</span>
                               <p className="text-sm font-bold text-gray-900">{formatDate(item.fecha_fin || item['fecha fin']) || (item.FECHA && item.FECHA.includes(' - ') ? item.FECHA.split(' - ')[1] : '')}</p>
                             </div>
-                            <div className="bg-gray-50 p-4 rounded-lg group-hover:bg-gray-100 transition-colors duración-300">
+                            <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Duración</span>
                               <p className="text-sm font-bold text-purple-600">
                                 {item.FECHA
@@ -12986,7 +12743,7 @@ export default function SolicitudesPage() {
                               </div>
                             </div>
                             {(item.motivo || item.MOTIVO) && (
-                              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                              <div className="app-card app-card--pad">
                                 <span className="block text-xs font-medium text-blue-700 mb-1">Motivo</span>
                                 <p className="text-sm text-blue-800">{item.motivo || item.MOTIVO}</p>
                               </div>
@@ -13011,7 +12768,7 @@ export default function SolicitudesPage() {
                       })()}
                       
                       {selectedTab === 'ausencias' && !((item.tipo || item.TIPO || '').toLowerCase().includes('ausencias') && (item.tipo || item.TIPO || '').toLowerCase().includes('justificada')) && (item.MOTIVO || item.motivo) && (
-                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 mb-4">
+                        <div className="app-card app-card--pad">
                           <span className="block text-xs font-medium text-blue-700 mb-1">Motivo</span>
                           <p className="text-sm text-blue-800">{item.MOTIVO || item.motivo}</p>
                         </div>
@@ -13108,7 +12865,7 @@ export default function SolicitudesPage() {
                           const esCompletado = justificante.estado === 'completado';
                           
                           return (
-                            <div className="mt-4 p-4 rounded-lg border-2 bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200">
+                            <div className="solicitud-admin-callout mt-4 border-amber-200">
                               <div className="flex items-center justify-between gap-4">
                                 <div className="flex-1">
                                   <div className="flex items-center gap-2 mb-2">
@@ -13137,7 +12894,7 @@ export default function SolicitudesPage() {
                                     onClick={() => {
                                       window.location.href = '/documentos';
                                     }}
-                                    className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap text-sm"
+                                    className="solicitud-admin-btn solicitud-admin-btn--primary text-sm whitespace-nowrap"
                                   >
                                     📤 Subir
                                   </button>
@@ -13190,7 +12947,7 @@ export default function SolicitudesPage() {
                                   <button
                                     onClick={() => handleRecalcularDuracion(item.id || item.ID)}
                                     disabled={isOperationLoading('recalcular-duracion')}
-                                    className="px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg font-semibold hover:from-purple-600 hover:to-purple-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="solicitud-admin-btn solicitud-admin-btn--primary text-sm whitespace-nowrap"
                                     title="Recalcular duración basada en el intervalo de fechas"
                                   >
                                     {isOperationLoading('recalcular-duracion') ? (
@@ -13210,7 +12967,7 @@ export default function SolicitudesPage() {
                                 <button
                                   onClick={() => handleCalcularDuracion(item.id || item.ID)}
                                   disabled={isOperationLoading('calcular-duracion')}
-                                  className="px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg font-semibold hover:from-purple-600 hover:to-purple-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="solicitud-admin-btn solicitud-admin-btn--primary text-sm whitespace-nowrap"
                                   title="Calcular duración basada en horas fichadas vs horas programadas"
                                 >
                                   {isOperationLoading('calcular-duracion') ? (
@@ -13229,7 +12986,7 @@ export default function SolicitudesPage() {
                                 <button
                                   onClick={() => handleOpenEditarDuracionModal(item)}
                                   disabled={isOperationLoading('update-duracion')}
-                                  className="px-4 py-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg font-semibold hover:from-orange-600 hover:to-orange-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="solicitud-admin-btn solicitud-admin-btn--warn text-sm whitespace-nowrap"
                                   title="Editar duración manualmente"
                                 >
                                   ✏️ Editar Duración
@@ -13247,7 +13004,7 @@ export default function SolicitudesPage() {
                                   <button
                                     onClick={() => handleMarcarSinAusencia(item.id || item.ID)}
                                     disabled={isOperationLoading('marcar-sin-ausencia')}
-                                    className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg font-semibold hover:from-green-600 hover:to-green-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="solicitud-admin-btn solicitud-admin-btn--success text-sm whitespace-nowrap"
                                     title="Marcar como sin ausencia (no ha faltado al trabajo)"
                                   >
                                     {isOperationLoading('marcar-sin-ausencia') ? (
@@ -13266,7 +13023,7 @@ export default function SolicitudesPage() {
                                 <button
                                   onClick={() => handleAsociarAusencia(item.id || item.ID, null)}
                                   disabled={isOperationLoading('asociar-ausencia')}
-                                  className="px-4 py-2 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded-lg font-semibold hover:from-gray-600 hover:to-gray-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="solicitud-admin-btn text-sm whitespace-nowrap"
                                 >
                                   {isOperationLoading('asociar-ausencia') ? (
                                     <span className="flex items-center gap-2">
@@ -13281,7 +13038,7 @@ export default function SolicitudesPage() {
                                 <button
                                   onClick={() => setAsociarAusenciaModal({ isOpen: true, ausencia: item })}
                                   disabled={isOperationLoading('asociar-ausencia')}
-                                  className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                  className="solicitud-admin-btn solicitud-admin-btn--primary text-sm whitespace-nowrap"
                                 >
                                   🔗 Asociar
                                 </button>
@@ -13295,26 +13052,17 @@ export default function SolicitudesPage() {
                       {selectedTab === 'ausencias' && ((item.tipo || item.TIPO) === 'Ausencias justificada' || (item.tipo || item.TIPO) === 'Ausencia Injustificada') && (
                         <div className="mt-4 flex justify-end items-center gap-3">
                           <button
+                            type="button"
                             onClick={() => setConvertirConfirm({ isOpen: true, ausencia: item })}
-                            className={`group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg ${
+                            className={`solicitud-admin-btn text-sm ${
                               (item.tipo || item.TIPO) === 'Ausencias justificada'
-                                ? 'bg-gradient-to-r from-red-500 to-red-600 text-white'
-                                : 'bg-gradient-to-r from-green-500 to-green-600 text-white'
+                                ? 'solicitud-admin-btn--danger'
+                                : 'solicitud-admin-btn--success'
                             }`}
                           >
-                            <div className={`absolute inset-0 rounded-lg opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300 ${
-                              (item.tipo || item.TIPO) === 'Ausencias justificada'
-                                ? 'bg-red-400'
-                                : 'bg-green-400'
-                            }`}></div>
-                            <div className="relative flex items-center gap-2">
-                              <span className="text-sm">{(item.tipo || item.TIPO) === 'Ausencias justificada' ? '⚠️' : '✅'}</span>
-                              <span className="text-sm">
-                                {(item.tipo || item.TIPO) === 'Ausencias justificada'
-                                  ? 'Convertir en ausencia injustificada'
-                                  : 'Convertir en ausencia justificada'}
-                              </span>
-                            </div>
+                            {(item.tipo || item.TIPO) === 'Ausencias justificada'
+                              ? 'Convertir en ausencia injustificada'
+                              : 'Convertir en ausencia justificada'}
                           </button>
                         </div>
                       )}
@@ -13477,7 +13225,7 @@ export default function SolicitudesPage() {
                                   <button
                                     onClick={() => handleRecordarJustificante(item)}
                                     disabled={isOperationLoading('recordar-justificante')}
-                                    className="group relative px-4 py-2 rounded-lg font-medium transition-all duration-300 transform hover:scale-105 shadow-md hover:shadow-lg bg-gradient-to-r from-orange-500 to-orange-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="solicitud-admin-btn solicitud-admin-btn--warn text-sm whitespace-nowrap"
                                   >
                                     <div className="absolute inset-0 rounded-lg bg-orange-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
                                     <div className="relative flex items-center gap-2">
@@ -13526,7 +13274,7 @@ export default function SolicitudesPage() {
                       })()}
 
                       {selectedTab === 'baja' && (
-                        <div className="bg-rose-50 p-4 rounded-lg border border-rose-200 mb-4">
+                        <div className="app-card app-card--pad">
                           <span className="block text-xs font-medium text-rose-700 mb-1">Información adicional</span>
                           <div className="text-sm text-rose-900 space-y-1">
                             <div>
@@ -13548,7 +13296,7 @@ export default function SolicitudesPage() {
                       )}
 
                       {selectedTab !== 'ausencias' && selectedTab !== 'baja' && (item.motivo || item.MOTIVO) && !((item.tipo || item.TIPO || '').toLowerCase().includes('ausencias') && (item.tipo || item.TIPO || '').toLowerCase().includes('justificada')) && (
-                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 mb-4">
+                        <div className="app-card app-card--pad">
                           <span className="block text-xs font-medium text-blue-700 mb-1">Motivo</span>
                           <p className="text-sm text-blue-800">{item.motivo || item.MOTIVO}</p>
                         </div>
@@ -13564,11 +13312,10 @@ export default function SolicitudesPage() {
         ) : activeTab === 'estadisticas' ? (
           // Tab Estadísticas - Vacaciones y Asuntos Propios
           <div>
-            <div className={`flex ${isMobile ? 'flex-col gap-2' : 'items-center justify-between'} ${isMobile ? 'mb-3' : 'mb-6'}`}>
-              <h2 className={`${isMobile ? 'text-lg' : 'text-xl'} font-bold text-gray-900`}>
-                Estadísticas de Solicitudes
-              </h2>
+            <div className="solicitud-list-header mb-4">
+              <h2 className="solicitud-list-header__title">Estadísticas</h2>
               <button
+                type="button"
                 onClick={async () => {
                   setEstadisticasLoading(true);
                   try {
@@ -13587,7 +13334,7 @@ export default function SolicitudesPage() {
                   }
                 }}
                 disabled={estadisticasLoading}
-                className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-4 py-2'} bg-purple-600 hover:bg-purple-700 text-white ${isMobile ? 'rounded-lg' : 'rounded-lg'} font-medium transition-colors disabled:opacity-50 flex items-center gap-2`}
+                className="solicitud-admin-btn solicitud-admin-btn--primary"
               >
                 {estadisticasLoading ? (
                   <>
@@ -13604,12 +13351,10 @@ export default function SolicitudesPage() {
             </div>
 
             {estadisticasLoading ? (
-              <div className={`flex justify-center ${isMobile ? 'py-6' : 'py-12'}`}>
-                <LoadingSpinner size={isMobile ? 'md' : 'lg'} text="Cargando estadísticas..." />
-              </div>
+              <AlertBanner loading title="Cargando estadísticas..." />
             ) : estadisticas.length === 0 ? (
-              <div className={`text-center ${isMobile ? 'py-6 px-3' : 'py-12'} bg-gray-50 ${isMobile ? 'rounded-lg' : 'rounded-xl'}`}>
-                <p className={`${isMobile ? 'text-sm mb-3' : 'text-gray-600 mb-4'}`}>No hay estadísticas disponibles</p>
+              <AlertBanner variant="info" title="Sin estadísticas">
+                <p className="mb-3">No hay estadísticas disponibles</p>
                 <button
                   onClick={async () => {
                     setEstadisticasLoading(true);
@@ -13628,37 +13373,55 @@ export default function SolicitudesPage() {
                       setEstadisticasLoading(false);
                     }
                   }}
-                  className={`${isMobile ? 'px-4 py-1.5 text-xs' : 'px-6 py-2'} bg-purple-600 hover:bg-purple-700 text-white ${isMobile ? 'rounded-lg' : 'rounded-lg'} font-medium transition-colors`}
+                  className="solicitud-admin-btn solicitud-admin-btn--primary"
                 >
-                  Cargar Estadísticas
+                  Cargar estadísticas
                 </button>
-              </div>
+              </AlertBanner>
             ) : (
-              <div className="overflow-x-auto">
-                <table className={`min-w-full bg-white border border-gray-200 ${isMobile ? 'rounded-lg' : 'rounded-xl'} overflow-hidden shadow-lg`}>
-                  <thead className="bg-gradient-to-r from-purple-500 to-purple-600 text-white">
-                    <tr>
-                      <th className={`${isMobile ? 'px-3 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-left font-bold sticky left-0 bg-purple-600 z-10`}>Empleado</th>
-                      <th className={`${isMobile ? 'px-3 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-left font-bold`}>Código</th>
-                      <th className={`${isMobile ? 'px-3 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-left font-bold`}>Grupo</th>
-                      <th className={`${isMobile ? 'px-2 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-center font-bold border-l-2 border-purple-400`} colSpan={6}>
-                        🏖️ Vacaciones
+              <>
+              <div className="md:hidden solicitud-admin-mobile-list">
+                {estadisticas.map((emp) => (
+                  <div key={emp.codigo} className="solicitud-admin-mobile-card app-card app-card--pad">
+                    <div className="solicitud-admin-mobile-card__head">
+                      <h4 className="solicitud-admin-mobile-card__title">{emp.nombre}</h4>
+                      <span className="solicitud-row__meta">{emp.codigo}</span>
+                    </div>
+                    <p className="text-xs text-gray-600 mb-2">{emp.grupo || '—'}</p>
+                    <dl className="solicitud-admin-kv">
+                      <dt>Vac. restantes</dt><dd>{emp.vacaciones?.dias_restantes ?? '—'}</dd>
+                      <dt>Vac. consumidos</dt><dd>{emp.vacaciones?.dias_consumidos ?? '—'}</dd>
+                      <dt>AP restantes</dt><dd>{emp.asuntos_propios?.dias_restantes ?? '—'}</dd>
+                      <dt>AP consumidos</dt><dd>{emp.asuntos_propios?.dias_consumidos ?? '—'}</dd>
+                    </dl>
+                  </div>
+                ))}
+              </div>
+              <div className="solicitud-admin-table-wrap hidden md:block overflow-x-auto">
+                <table className="min-w-full w-full text-xs sm:text-sm">
+                  <thead>
+                    <tr className="bg-gray-100 dark:bg-gray-800">
+                      <th className="px-4 py-2 text-left font-bold sticky left-0 bg-gray-100 dark:bg-gray-800 z-10">Empleado</th>
+                      <th className="px-4 py-2 text-left font-bold">Código</th>
+                      <th className="px-4 py-2 text-left font-bold">Grupo</th>
+                      <th className="px-3 py-2 text-center font-bold border-l border-gray-200" colSpan={6}>
+                        Vacaciones
                       </th>
-                      <th className={`${isMobile ? 'px-2 py-2 text-[10px]' : 'px-6 py-4 text-sm'} text-center font-bold border-l-2 border-purple-400`} colSpan={3}>
-                        📅 Asuntos Propios
+                      <th className="px-3 py-2 text-center font-bold border-l border-gray-200" colSpan={3}>
+                        Asuntos propios
                       </th>
                     </tr>
-                    <tr className="bg-purple-500/90">
-                      <th className={`${isMobile ? 'px-3 py-1 text-[9px]' : 'px-6 py-2 text-xs'} font-medium sticky left-0 bg-purple-500/90 z-10`}></th>
-                      <th className={`${isMobile ? 'px-3 py-1 text-[9px]' : 'px-6 py-2 text-xs'} font-medium`}></th>
-                      <th className={`${isMobile ? 'px-3 py-1 text-[9px]' : 'px-6 py-2 text-xs'} font-medium`}></th>
-                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium border-l-2 border-purple-400`}>Anuales</th>
+                    <tr className="bg-gray-50 dark:bg-gray-900">
+                      <th className="px-4 py-1 text-xs font-medium sticky left-0 bg-gray-50 dark:bg-gray-900 z-10" />
+                      <th className="px-4 py-1 text-xs font-medium" />
+                      <th className="px-4 py-1 text-xs font-medium" />
+                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium border-l border-gray-200`}>Anuales</th>
                       <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Generados</th>
                       <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Consumidos</th>
                       <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`} title="Días de vacaciones aprobadas cuya fecha ya ha pasado">Disfrutadas</th>
                       <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Rest. Año Pasado</th>
                       <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Restantes</th>
-                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium border-l-2 border-purple-400`}>Anuales</th>
+                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium border-l border-gray-200`}>Anuales</th>
                       <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Consumidos</th>
                       <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Restantes</th>
                     </tr>
@@ -13743,7 +13506,7 @@ export default function SolicitudesPage() {
                                   setEditingVacacionesAnuales(newEditing);
                                 }
                               }}
-                              className={`${isMobile ? 'w-12 text-[10px] px-1 py-0.5 border' : 'w-20 px-2 py-1 border-2'} text-center border-purple-300 ${isMobile ? 'rounded' : 'rounded-lg'} focus:ring-2 focus:ring-purple-500 focus:border-purple-500`}
+                              className="app-modal__input w-20 text-center text-sm"
                               autoFocus
                               placeholder="NULL"
                             />
@@ -13849,7 +13612,7 @@ export default function SolicitudesPage() {
                                   setEditingRestantes(newEditing);
                                 }
                               }}
-                              className={`${isMobile ? 'w-12 text-[10px] px-1 py-0.5 border' : 'w-20 px-2 py-1 border-2'} text-center border-purple-300 ${isMobile ? 'rounded' : 'rounded-lg'} focus:ring-2 focus:ring-purple-500 focus:border-purple-500`}
+                              className="app-modal__input w-20 text-center text-sm"
                               autoFocus
                             />
                           ) : (
@@ -13939,7 +13702,7 @@ export default function SolicitudesPage() {
                                   setEditingAsuntosPropiosAnuales(newEditing);
                                 }
                               }}
-                              className={`${isMobile ? 'w-12 text-[10px] px-1 py-0.5 border' : 'w-20 px-2 py-1 border-2'} text-center border-purple-300 ${isMobile ? 'rounded' : 'rounded-lg'} focus:ring-2 focus:ring-purple-500 focus:border-purple-500`}
+                              className="app-modal__input w-20 text-center text-sm"
                               autoFocus
                               placeholder="NULL"
                             />
@@ -13975,134 +13738,73 @@ export default function SolicitudesPage() {
                   </tbody>
                 </table>
                 
-                {/* Butoane de export */}
-                <div className={`${isMobile ? 'mt-2' : 'mt-4'} flex ${isMobile ? 'flex-col gap-2' : 'gap-3'} ${isMobile ? '' : 'justify-end'}`}>
+                <div className="solicitud-admin-toolbar mt-4">
                   <button
+                    type="button"
                     onClick={handleExportEstadisticasExcel}
                     disabled={estadisticasLoading || estadisticas.length === 0}
-                    className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-4 py-2'} bg-green-600 text-white ${isMobile ? 'rounded-lg' : 'rounded-lg'} hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2`}
+                    className="solicitud-admin-btn"
                   >
-                    <span className={isMobile ? 'text-sm' : ''}>📊</span>
-                    <span>Exportar Excel</span>
+                    Exportar Excel
                   </button>
                   <button
+                    type="button"
                     onClick={handleExportEstadisticasPDF}
                     disabled={estadisticasLoading || estadisticas.length === 0}
-                    className={`${isMobile ? 'px-3 py-1.5 text-xs' : 'px-4 py-2'} bg-red-600 text-white ${isMobile ? 'rounded-lg' : 'rounded-lg'} hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2`}
+                    className="solicitud-admin-btn"
                   >
-                    <span className={isMobile ? 'text-sm' : ''}>📄</span>
-                    <span>Exportar PDF</span>
+                    Exportar PDF
                   </button>
                 </div>
               </div>
+              </>
             )}
           </div>
         ) : (
-          // Formulario para nueva solicitud - SUPER WOW 3D MODERNIZADO ✨
-          <div className="max-w-3xl mx-auto">
-            {/* Header ULTRA WOW con efectos 3D */}
-            <div className="relative mb-10">
-              {/* Glow background animado */}
-              <div className="absolute inset-0 bg-gradient-to-r from-red-400 via-pink-400 to-purple-400 opacity-20 blur-3xl animate-pulse"></div>
-              
-              {/* Buton Volver - doar când se editează */}
-              {editingSolicitud && (
-                <div className="relative mb-4">
-                  <button
-                    onClick={() => {
-                      setEditingSolicitud(null);
-                      setOriginalSolicitudData(null);
-                      setTipo('Asuntos Propios');
-                      setFechaInicio('');
-                      setFechaFin('');
-                      setMotivo('');
-                      setTipoJustificante('');
-                      setHoraCita('');
-                      setCentroMedico('');
-                      setDescripcionOtro('');
-                      setArchivoJustificante(null);
-                      // Revine la tab-ul corespunzător
-                      if (isManager) {
-                        setActiveTab('todas');
-                      } else {
-                        setActiveTab('lista');
-                      }
-                    }}
-                    className="group flex items-center gap-2 text-gray-700 hover:text-red-600 transition-colors duration-300"
-                  >
-                    <svg className="w-5 h-5 text-red-600 group-hover:text-red-700 transition-colors duration-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M19 12H6" />
-                      <path d="M12 19l-7-7 7-7" />
-                    </svg>
-                    <span className="font-semibold">Volver a Solicitudes</span>
-                  </button>
-                </div>
-              )}
-              
-              <div className="relative text-center">
-                {/* Icono 3D flotante con sombra y animaciones */}
-                <div className="relative inline-block mb-6">
-                  {/* Círculo exterior con gradiente y blur */}
-                  <div className="absolute inset-0 bg-gradient-to-br from-red-400 to-pink-500 rounded-full blur-lg opacity-60 animate-pulse"></div>
-                  
-                  {/* Círculo principal 3D */}
-                  <div 
-                    className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-2xl transform hover:scale-110 hover:rotate-12 transition-all duration-500"
-                    style={{
-                      background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 50%, #991b1b 100%)',
-                      boxShadow: '0 20px 40px rgba(239, 68, 68, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.3)'
-                    }}
-                  >
-                    <span className="text-4xl animate-bounce">📝</span>
-                  </div>
-                </div>
-
-                {/* Título animado con gradiente */}
-                <h2 
-                  className="text-3xl sm:text-4xl font-black mb-3 bg-gradient-to-r from-red-600 via-pink-600 to-purple-600 bg-clip-text text-transparent animate-pulse"
-                  style={{
-                    textShadow: '0 2px 20px rgba(239, 68, 68, 0.3)'
-                  }}
-                >
-                  {editingSolicitud ? 'Editar Solicitud' : 'Nueva Solicitud'}
-                </h2>
-                <p className="text-gray-600 text-base sm:text-lg font-medium">
-                  {editingSolicitud ? 'Modifica los datos de la solicitud' : 'Completa el formulario para enviar tu solicitud'}
-                </p>
-              </div>
-            </div>
-            
-            <div className="space-y-6">
-              {/* Tipo de solicitud - SUPER WOW 3D */}
-              <div 
-                className="relative group p-4 sm:p-6"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.05) 0%, rgba(147, 51, 234, 0.05) 100%)',
-                  backdropFilter: 'blur(10px)',
-                  borderRadius: '1rem',
-                  border: '1px solid rgba(168, 85, 247, 0.2)',
-                  boxShadow: '0 10px 30px rgba(168, 85, 247, 0.15)'
+          <div className="solicitud-form max-w-3xl mx-auto">
+            {editingSolicitud && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingSolicitud(null);
+                  setOriginalSolicitudData(null);
+                  setTipo('Asuntos Propios');
+                  setFechaInicio('');
+                  setFechaFin('');
+                  setMotivo('');
+                  setTipoJustificante('');
+                  setHoraCita('');
+                  setCentroMedico('');
+                  setDescripcionOtro('');
+                  setArchivoJustificante(null);
+                  if (isManager) {
+                    setActiveTab('todas');
+                  } else {
+                    setActiveTab('lista');
+                  }
                 }}
+                className="solicitud-form__back"
               >
-                {/* Glow animado en hover */}
-                <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-purple-400 to-purple-600 opacity-0 group-hover:opacity-20 blur-xl transition-opacity duración-500"></div>
-                
-                {/* Header con icono 3D */}
-                <div className="relative flex items-start sm:items-center justify-between flex-wrap gap-3 sm:gap-6 mb-6">
-                  <div className="flex items-center">
-                    <div 
-                      className="w-12 h-12 rounded-xl flex items-center justify-center mr-4 shadow-lg transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
-                      style={{
-                          background: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)',
-                          boxShadow: '0 8px 20px rgba(168, 85, 247, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-                      }}
-                    >
-                      <span className="text-2xl">📋</span>
-                    </div>
-                    <h3 className="text-xl font-bold text-gray-900">
-                      Tipo de Solicitud
-                    </h3>
-                  </div>
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M19 12H6" />
+                  <path d="M12 19l-7-7 7-7" />
+                </svg>
+                Volver a solicitudes
+              </button>
+            )}
+            <div className="solicitud-form__intro">
+              <h2 className="solicitud-form__title">
+                {editingSolicitud ? 'Editar solicitud' : 'Nueva solicitud'}
+              </h2>
+              <p className="solicitud-form__subtitle">
+                {editingSolicitud ? 'Modifica los datos de la solicitud' : 'Completa el formulario para enviar tu solicitud'}
+              </p>
+            </div>
+            <div className="solicitud-form__sections">
+              {/* Tipo de solicitud */}
+              <div className="app-card app-card--pad solicitud-form__section">
+                <div className="solicitud-form__section-head">
+                  <h3 className="solicitud-form__section-title">Tipo de solicitud</h3>
 
                   {/* Select modernizado */}
                   <select
@@ -14147,7 +13849,7 @@ export default function SolicitudesPage() {
                       }
                     }}
                     disabled={editingSolicitud !== null}
-                    className="relative w-full px-4 py-4 text-base font-semibold rounded-xl border-2 transition-all duration-300 shadow-md hover:shadow-xl focus:shadow-xl disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="app-modal__input w-full sm:max-w-xs min-h-[44px]"
                     style={{
                       background: editingSolicitud !== null 
                         ? 'linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%)'
@@ -14303,35 +14005,10 @@ export default function SolicitudesPage() {
                       </div>
                     )}
                     {/* Calendar for Vacaciones */}
-                  <div 
-                    className="relative group p-4 sm:p-6"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(37, 99, 235, 0.05) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '1rem',
-                      border: '1px solid rgba(59, 130, 246, 0.2)',
-                      boxShadow: '0 10px 30px rgba(59, 130, 246, 0.15)'
-                    }}
-                  >
-                    {/* Glow animado en hover */}
-                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-blue-400 to-cyan-400 opacity-0 group-hover:opacity-20 blur-xl transition-opacity duration-500"></div>
-                    
+                  <div className="app-card app-card--pad solicitud-form__section">
                     {/* Header con icono 3D */}
-                    <div className="relative flex items-start sm:items-center justify-between flex-wrap gap-3 sm:gap-6 mb-6">
-                      <div className="flex items-center">
-                        <div 
-                          className="w-12 h-12 rounded-xl flex items-center justify-center mr-4 shadow-lg transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
-                          style={{
-                            background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                            boxShadow: '0 8px 20px rgba(59, 130, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-                          }}
-                        >
-                          <span className="text-2xl">📅</span>
-                        </div>
-                        <h3 className="text-xl font-bold text-gray-900">
-                          Selecciona tus Vacaciones
-                        </h3>
-                      </div>
+                    <div className="solicitud-form__section-head">
+                      <h3 className="solicitud-form__section-title">Selecciona tus Vacaciones</h3>
                       
                       {/* Month Navigation */}
                       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -14690,36 +14367,10 @@ export default function SolicitudesPage() {
                       </div>
                     )}
                     {/* Calendar for Asuntos Propios */}
-                    <div 
-                    className="relative group p-4 sm:p-6"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.05) 0%, rgba(147, 51, 234, 0.05) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '1rem',
-                      border: '1px solid rgba(168, 85, 247, 0.2)',
-                      boxShadow: '0 10px 30px rgba(168, 85, 247, 0.15)',
-                      padding: 'clamp(1rem, 2vw + 0.5rem, 1.5rem)'
-                    }}
-                  >
-                    {/* Glow animado en hover */}
-                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-purple-400 to-purple-600 opacity-0 group-hover:opacity-20 blur-xl transition-opacity duración-500"></div>
-                    
+                    <div className="app-card app-card--pad solicitud-form__section">
                     {/* Header con icono 3D */}
-                    <div className="relative flex items-start sm:items-center justify-between flex-wrap gap-3 sm:gap-6 mb-6">
-                      <div className="flex items-center">
-                        <div 
-                          className="w-12 h-12 rounded-xl flex items-center justify-center mr-4 shadow-lg transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
-                          style={{
-                              background: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)',
-                              boxShadow: '0 8px 20px rgba(168, 85, 247, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-                          }}
-                        >
-                          <span className="text-2xl">📅</span>
-                        </div>
-                        <h3 className="text-xl font-bold text-gray-900">
-                            Selecciona tus Asuntos Propios
-                        </h3>
-                      </div>
+                    <div className="solicitud-form__section-head">
+                      <h3 className="solicitud-form__section-title">Selecciona tus Asuntos Propios</h3>
 
                       {/* Month Navigation */}
                       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -14968,30 +14619,8 @@ export default function SolicitudesPage() {
 
                 {/* Input date pentru Permiso Retribuido */}
                 {tipo === 'Permiso Retribuido' && (
-                  <div 
-                    className="relative group p-4 sm:p-6"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(5, 150, 105, 0.05) 0%, rgba(4, 120, 87, 0.05) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '1rem',
-                      border: '1px solid rgba(5, 150, 105, 0.2)',
-                      boxShadow: '0 10px 30px rgba(5, 150, 105, 0.15)'
-                    }}
-                  >
-                    <div className="relative flex items-center mb-4">
-                      <div 
-                        className="w-12 h-12 rounded-xl flex items-center justify-center mr-4 shadow-lg"
-                        style={{
-                          background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
-                          boxShadow: '0 8px 20px rgba(5, 150, 105, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-                        }}
-                      >
-                        <span className="text-2xl">📅</span>
-                      </div>
-                      <h3 className="text-xl font-bold text-gray-900">
-                        Período del Permiso
-                      </h3>
-                    </div>
+                  <div className="app-card app-card--pad solicitud-form__section">
+                    <h3 className="solicitud-form__section-title mb-3">Período del Permiso</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label htmlFor="permiso-fecha-inicio" className="block text-sm font-bold text-gray-700 mb-2">
@@ -15029,32 +14658,10 @@ export default function SolicitudesPage() {
 
                 {/* Ausencias justificada: Tipo de justificante + Fecha + condiționale + adjunto */}
                 {tipo === 'Ausencias justificada' && (
-                  <div
-                    className="relative group p-4 sm:p-6 space-y-6"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(8, 145, 178, 0.05) 0%, rgba(6, 122, 154, 0.05) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '1rem',
-                      border: '1px solid rgba(8, 145, 178, 0.2)',
-                      boxShadow: '0 10px 30px rgba(8, 145, 178, 0.15)'
-                    }}
-                  >
+                  <div className="app-card app-card--pad solicitud-form__section">
                     {/* Tipo de justificante (obligatoriu) */}
                     <div>
-                      <div className="relative flex items-center mb-4">
-                        <div
-                          className="w-12 h-12 rounded-xl flex items-center justify-center mr-4 shadow-lg"
-                          style={{
-                            background: 'linear-gradient(135deg, #0891b2 0%, #0679a2 100%)',
-                            boxShadow: '0 8px 20px rgba(8, 145, 178, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-                          }}
-                        >
-                          <span className="text-2xl">📋</span>
-                        </div>
-                        <h3 className="text-xl font-bold text-gray-900">
-                          Tipo de justificante <span className="text-red-500">*</span>
-                        </h3>
-                      </div>
+                      <h3 className="solicitud-form__section-title mb-3">Tipo de justificante <span className="text-red-500">*</span></h3>
                       <select
                         id="ausencia-tipo-justificante"
                         value={tipoJustificante}
@@ -15128,20 +14735,7 @@ export default function SolicitudesPage() {
 
                     {/* Fecha de la ausencia */}
                     <div>
-                      <div className="relative flex items-center mb-4">
-                        <div
-                          className="w-12 h-12 rounded-xl flex items-center justify-center mr-4 shadow-lg"
-                          style={{
-                            background: 'linear-gradient(135deg, #0891b2 0%, #0679a2 100%)',
-                            boxShadow: '0 8px 20px rgba(8, 145, 178, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-                          }}
-                        >
-                          <span className="text-2xl">📅</span>
-                        </div>
-                        <h3 className="text-xl font-bold text-gray-900">
-                          Fecha de la ausencia <span className="text-red-500">*</span>
-                        </h3>
-                      </div>
+                      <h3 className="solicitud-form__section-title mb-3">Fecha de la ausencia <span className="text-red-500">*</span></h3>
                       <label htmlFor="ausencia-justificada-fecha" className="block text-sm font-bold text-gray-700 mb-2">
                         Fecha <span className="text-red-500">*</span>
                       </label>
@@ -15204,17 +14798,7 @@ export default function SolicitudesPage() {
 
                 {/* Cálculo de días - MEGA WOW Badge */}
                 {fechaInicio && fechaFin && (
-                  <div 
-                    className="relative group overflow-hidden"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(22, 163, 74, 0.1) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '1rem',
-                      border: '2px solid rgba(34, 197, 94, 0.3)',
-                      boxShadow: '0 8px 25px rgba(34, 197, 94, 0.2)',
-                      padding: '1rem'
-                    }}
-                  >
+                  <div className="app-card app-card--pad solicitud-form__section">
                     {/* Shimmer effect */}
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000"></div>
                     
@@ -15276,37 +14860,11 @@ export default function SolicitudesPage() {
                 )}
 
                 {/* Motivo - SUPER WOW 3D */}
-                <div 
-                  className="relative group"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(107, 114, 128, 0.05) 0%, rgba(75, 85, 99, 0.05) 100%)',
-                    backdropFilter: 'blur(10px)',
-                    borderRadius: '1rem',
-                    border: '1px solid rgba(107, 114, 128, 0.2)',
-                    boxShadow: '0 10px 30px rgba(107, 114, 128, 0.15)',
-                    padding: '1.5rem'
-                  }}
-                >
-                  {/* Glow animado en hover */}
-                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-gray-400 to-slate-400 opacity-0 group-hover:opacity-20 blur-xl transition-opacity duration-500"></div>
-                  
+                <div className="app-card app-card--pad solicitud-form__section">
                   {/* Header con icono 3D */}
-                  <div className="relative flex items-center mb-4">
-                    <div 
-                      className="w-12 h-12 rounded-xl flex items-center justify-center mr-4 shadow-lg transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
-                      style={{
-                        background: 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)',
-                        boxShadow: '0 8px 20px rgba(107, 114, 128, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-                      }}
-                    >
-                      <span className="text-2xl">💬</span>
-                    </div>
-                    <h3 className="text-xl font-bold text-gray-900">
-                      Motivo <span className={`text-sm font-normal ${editingSolicitud ? 'text-red-600' : 'text-gray-500'}`}>
+                  <h3 className="solicitud-form__section-title mb-3">Motivo <span className={`text-sm font-normal ${editingSolicitud ? 'text-red-600' : 'text-gray-500'}`}>
                         {editingSolicitud ? '(obligatorio)' : '(opcional)'}
-                      </span>
-                    </h3>
-                  </div>
+                      </span></h3>
 
                   {/* Textarea modernizado */}
                   <textarea
@@ -15335,35 +14893,9 @@ export default function SolicitudesPage() {
 
                 {/* Fecha último día de trabajo - Pentru BAJA_VOLUNTARIA */}
                 {tipo === 'BAJA_VOLUNTARIA' && (
-                  <div 
-                    className="relative group"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(220, 38, 38, 0.05) 0%, rgba(185, 28, 28, 0.05) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '1rem',
-                      border: '1px solid rgba(220, 38, 38, 0.2)',
-                      boxShadow: '0 10px 30px rgba(220, 38, 38, 0.15)',
-                      padding: '1.5rem'
-                    }}
-                  >
-                    {/* Glow animado en hover */}
-                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-red-400 to-pink-400 opacity-0 group-hover:opacity-20 blur-xl transition-opacity duration-500"></div>
-                    
+                  <div className="app-card app-card--pad solicitud-form__section">
                     {/* Header con icono 3D */}
-                    <div className="relative flex items-center mb-4">
-                      <div 
-                        className="w-12 h-12 rounded-xl flex items-center justify-center mr-4 shadow-lg transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
-                        style={{
-                          background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
-                          boxShadow: '0 8px 20px rgba(220, 38, 38, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-                        }}
-                      >
-                        <span className="text-2xl">📅</span>
-                      </div>
-                      <h3 className="text-xl font-bold text-gray-900">
-                        Último día de trabajo <span className="text-sm font-normal text-red-600">(obligatorio)</span>
-                      </h3>
-                    </div>
+                    <h3 className="solicitud-form__section-title mb-3">Último día de trabajo <span className="text-sm font-normal text-red-600">(obligatorio)</span></h3>
 
                     {/* Input date */}
                     <input
@@ -15395,35 +14927,9 @@ export default function SolicitudesPage() {
 
                 {/* Upload documento - Pentru BAJA_VOLUNTARIA */}
                 {tipo === 'BAJA_VOLUNTARIA' && (
-                  <div 
-                    className="relative group"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(124, 58, 237, 0.05) 100%)',
-                      backdropFilter: 'blur(10px)',
-                      borderRadius: '1rem',
-                      border: '1px solid rgba(139, 92, 246, 0.2)',
-                      boxShadow: '0 10px 30px rgba(139, 92, 246, 0.15)',
-                      padding: '1.5rem'
-                    }}
-                  >
-                    {/* Glow animado en hover */}
-                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-purple-400 to-indigo-400 opacity-0 group-hover:opacity-20 blur-xl transition-opacity duration-500"></div>
-                    
+                  <div className="app-card app-card--pad solicitud-form__section">
                     {/* Header con icono 3D */}
-                    <div className="relative flex items-center mb-4">
-                      <div 
-                        className="w-12 h-12 rounded-xl flex items-center justify-center mr-4 shadow-lg transform group-hover:scale-110 group-hover:rotate-6 transition-all duration-300"
-                        style={{
-                          background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                          boxShadow: '0 8px 20px rgba(139, 92, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-                        }}
-                      >
-                        <span className="text-2xl">📄</span>
-                      </div>
-                      <h3 className="text-xl font-bold text-gray-900">
-                        Documento firmado <span className="text-sm font-normal text-purple-600">(opcional)</span>
-                      </h3>
-                    </div>
+                    <h3 className="solicitud-form__section-title mb-3">Documento firmado <span className="text-sm font-normal text-purple-600">(opcional)</span></h3>
 
                     {/* Input file */}
                     <input
@@ -15474,104 +14980,27 @@ export default function SolicitudesPage() {
                   </div>
                 )}
 
-                {/* Botón Enviar - MEGA ULTRA WOW 3D integrado en card */}
-                <div 
-                  className="relative group"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.05) 0%, rgba(220, 38, 38, 0.05) 100%)',
-                    backdropFilter: 'blur(10px)',
-                    borderRadius: '1rem',
-                    border: '1px solid rgba(239, 68, 68, 0.2)',
-                    boxShadow: '0 10px 30px rgba(239, 68, 68, 0.15)',
-                    padding: '2rem'
-                  }}
-                >
-                  {/* Glow animado en hover del card */}
-                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-red-400 to-pink-400 opacity-0 group-hover:opacity-20 blur-xl transition-opacity duration-500"></div>
-                  
-                  {/* Botón centrado */}
-                  <div className="relative text-center">
-                    <button
-                      onClick={handleAdd}
-                      disabled={isOperationLoading('submit')}
-                      className="group/btn relative inline-flex items-center justify-center overflow-hidden"
-                    >
-                      {/* Capa externa con glow animado más suave */}
-                      <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-red-400 via-pink-500 to-purple-500 opacity-50 blur-lg group-hover/btn:opacity-75 transition-opacity duration-300"></div>
-                      
-                      {/* Botón principal */}
-                      <div 
-                        className="relative px-10 py-4 rounded-2xl font-black text-lg text-white shadow-xl transform group-hover/btn:scale-105 group-active/btn:scale-95 transition-all duration-300"
-                        style={{
-                          background: isOperationLoading('submit') 
-                            ? 'linear-gradient(135deg, #9ca3af 0%, #6b7280 50%, #4b5563 100%)'
-                            : 'linear-gradient(135deg, #ef4444 0%, #dc2626 50%, #991b1b 100%)',
-                          boxShadow: '0 12px 28px rgba(239, 68, 68, 0.4), inset 0 2px 0 rgba(255, 255, 255, 0.3)'
-                        }}
-                      >
-                        {/* Shimmer effect */}
-                        {!isOperationLoading('submit') && (
-                          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent transform -skew-x-12 translate-x-[-200%] group-hover/btn:translate-x-[200%] transition-transform duration-1000"></div>
-                        )}
-                        
-                        {/* Contenido del botón */}
-                        <div className="relative flex items-center gap-3">
-                          {isOperationLoading('submit') ? (
-                            <>
-                              <div className="w-5 h-5 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
-                              <span>{editingSolicitud ? 'Actualizando...' : 'Enviando...'}</span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="text-2xl animate-bounce">{editingSolicitud ? '💾' : '📤'}</span>
-                              <span>{editingSolicitud ? 'Actualizar Solicitud' : 'Enviar Solicitud'}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Partículas flotantes más discretas */}
-                      {!isOperationLoading('submit') && (
-                        <>
-                          <div className="absolute -top-1 -right-1 w-2 h-2 bg-yellow-300 rounded-full animate-ping opacity-60"></div>
-                          <div className="absolute -bottom-1 -left-1 w-2 h-2 bg-pink-300 rounded-full animate-ping opacity-60" style={{ animationDelay: '0.3s' }}></div>
-                        </>
-                      )}
-                    </button>
-                  </div>
+                {/* Botón Enviar */}
+                <div className="solicitud-form__submit">
+                  <button
+                    type="button"
+                    onClick={handleAdd}
+                    disabled={isOperationLoading('submit')}
+                    className="app-modal__btn app-modal__btn--primary"
+                  >
+                    {isOperationLoading('submit')
+                      ? (editingSolicitud ? 'Actualizando...' : 'Enviando...')
+                      : (editingSolicitud ? 'Actualizar solicitud' : 'Enviar solicitud')}
+                  </button>
                 </div>
 
                 {/* Mensajes de feedback - Modernizados */}
                 {errorMsg && (
-                  <div 
-                    className="relative overflow-hidden rounded-xl p-4 border-2"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(254, 226, 226, 0.8) 0%, rgba(254, 202, 202, 0.8) 100%)',
-                      borderColor: '#fca5a5',
-                      boxShadow: '0 8px 20px rgba(239, 68, 68, 0.2)'
-                    }}
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className="text-2xl flex-shrink-0">❌</span>
-                      <p className="text-red-800 font-semibold">{errorMsg}</p>
-                    </div>
-                  </div>
+                  <AlertBanner compact variant="danger">{errorMsg}</AlertBanner>
                 )}
                 
                 {successMsg && (
-                  <div 
-                    className="relative overflow-hidden rounded-xl p-4 border-2"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(220, 252, 231, 0.8) 0%, rgba(187, 247, 208, 0.8) 100%)',
-                      borderColor: '#86efac',
-                      boxShadow: '0 8px 20px rgba(34, 197, 94, 0.2)'
-                    }}
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className="text-2xl flex-shrink-0">✅</span>
-                      <p className="text-green-800 font-semibold">{successMsg}</p>
-                    </div>
-                  </div>
+                  <AlertBanner compact variant="success">{successMsg}</AlertBanner>
                 )}
                 
                 {serverResp && (
@@ -15596,80 +15025,57 @@ export default function SolicitudesPage() {
             </div>
           </div>
         )}
-      </Card>
+        </div>
+      </>
       )}
 
       {/* Modal de confirmare ștergere */}
       <Modal
         isOpen={deleteConfirm.isOpen}
         onClose={() => setDeleteConfirm({ isOpen: false, solicitudId: null, mensaje: '' })}
-        title=""
+        title="¿Eliminar solicitud?"
         size="md"
-        className="max-w-lg"
+        showCloseButton={false}
       >
-        <div className="py-4">
-          {/* Icon */}
-          <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-4">
-            <Trash2 className="h-8 w-8 text-red-600" />
-          </div>
-          
-          {/* Titlu */}
-          <h3 className="text-xl font-bold text-gray-900 mb-2 text-center">
-            ¿Eliminar solicitud?
-          </h3>
-          
-          {/* Mesaj de confirmare */}
-          <p className="text-gray-600 mb-4 text-center">
+        <div className="app-modal__body">
+          <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
             ¿Estás seguro de que deseas eliminar esta solicitud? Esta acción no se puede deshacer.
           </p>
-
-          {/* Câmp pentru mesaj personalizat */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Mensaje para el empleado (opcional):
-            </label>
-            <textarea
-              value={deleteConfirm.mensaje}
-              onChange={(e) => setDeleteConfirm({ ...deleteConfirm, mensaje: e.target.value })}
-              placeholder="Escribe un mensaje que se enviará al empleado por email junto con la confirmación de eliminación..."
-              rows={4}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Este mensaje se enviará por email al empleado junto con la confirmación de que se ha eliminado su solicitud.
-            </p>
-          </div>
-          
-          {/* Butoane */}
-          <div className="flex gap-3 justify-center">
-            <button
-              onClick={() => setDeleteConfirm({ isOpen: false, solicitudId: null, mensaje: '' })}
-              className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={() => {
-                if (deleteConfirm.solicitudId) {
-                  handleDelete(deleteConfirm.solicitudId, deleteConfirm.mensaje);
-                }
-              }}
-              disabled={isOperationLoading('delete')}
-              className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isOperationLoading('delete') ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Eliminando...
-                </>
-              ) : (
-                <>
-                  <Trash2 className="w-4 h-4" />
-                  Eliminar
-                </>
-              )}
-            </button>
-          </div>
+          <label className="app-modal__label" htmlFor="delete-confirm-mensaje">
+            Mensaje para el empleado (opcional)
+          </label>
+          <textarea
+            id="delete-confirm-mensaje"
+            value={deleteConfirm.mensaje}
+            onChange={(e) => setDeleteConfirm({ ...deleteConfirm, mensaje: e.target.value })}
+            placeholder="Mensaje opcional para el email de confirmación..."
+            rows={4}
+            className="app-modal__input w-full resize-none"
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-4">
+            Este mensaje se enviará por email al empleado junto con la confirmación de eliminación.
+          </p>
+        </div>
+        <div className="app-modal__actions">
+          <button
+            type="button"
+            onClick={() => setDeleteConfirm({ isOpen: false, solicitudId: null, mensaje: '' })}
+            className="app-modal__btn"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (deleteConfirm.solicitudId) {
+                handleDelete(deleteConfirm.solicitudId, deleteConfirm.mensaje);
+              }
+            }}
+            disabled={isOperationLoading('delete')}
+            className="app-modal__btn app-modal__btn--primary"
+          >
+            {isOperationLoading('delete') ? 'Eliminando...' : 'Eliminar'}
+          </button>
         </div>
       </Modal>
 
@@ -15677,69 +15083,29 @@ export default function SolicitudesPage() {
       <Modal
         isOpen={rejectPermisoModal.isOpen}
         onClose={() => setRejectPermisoModal({ isOpen: false, solicitud: null, mensaje: '', tipoSolicitud: 'Permiso Retribuido' })}
-        title=""
+        title={`¿Rechazar ${rejectPermisoModal.tipoSolicitud === 'Ausencias justificada' ? 'ausencia justificada' : 'permiso retribuido'}?`}
         size="md"
-        className="max-w-lg"
+        showCloseButton={false}
       >
-        <div className="py-4">
-          {/* Icon */}
-          <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-4">
-            <span className="text-4xl">❌</span>
-          </div>
-          
-          {/* Titlu */}
-          <h3 className="text-xl font-bold text-gray-900 mb-2 text-center">
-            ¿Rechazar {rejectPermisoModal.tipoSolicitud === 'Ausencias justificada' ? 'ausencia justificada' : 'permiso retribuido'}?
-          </h3>
-          
-          {/* Mesaj de confirmare */}
-          <p className="text-gray-600 mb-4 text-center">
+        <div className="app-modal__body">
+          <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
             ¿Estás seguro de que deseas rechazar esta solicitud? Esta acción notificará al empleado.
           </p>
-
-          {/* Câmp pentru mesaj personalizat */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Mensaje para el empleado (opcional):
-            </label>
-            <textarea
-              value={rejectPermisoModal.mensaje}
-              onChange={(e) => setRejectPermisoModal({ ...rejectPermisoModal, mensaje: e.target.value })}
-              placeholder="Escribe un mensaje que se enviará al empleado por email junto con la notificación de rechazo..."
-              rows={4}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Este mensaje se enviará por email al empleado junto con la notificación de rechazo.
-            </p>
-          </div>
-          
-          {/* Butoane */}
-          <div className="flex gap-3 justify-center">
-            <button
-              onClick={() => setRejectPermisoModal({ isOpen: false, solicitud: null, mensaje: '' })}
-              className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleRejectSolicitudPendiente}
-              disabled={isOperationLoading('reject-permiso')}
-              className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isOperationLoading('reject-permiso') ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Rechazando...
-                </>
-              ) : (
-                <>
-                  <span className="text-lg">❌</span>
-                  Rechazar
-                </>
-              )}
-            </button>
-          </div>
+          <label className="app-modal__label" htmlFor="reject-permiso-mensaje">Mensaje para el empleado (opcional)</label>
+          <textarea
+            id="reject-permiso-mensaje"
+            value={rejectPermisoModal.mensaje}
+            onChange={(e) => setRejectPermisoModal({ ...rejectPermisoModal, mensaje: e.target.value })}
+            placeholder="Mensaje opcional para el email de rechazo..."
+            rows={4}
+            className="app-modal__input w-full resize-none"
+          />
+        </div>
+        <div className="app-modal__actions">
+          <button type="button" onClick={() => setRejectPermisoModal({ isOpen: false, solicitud: null, mensaje: '', tipoSolicitud: 'Permiso Retribuido' })} className="app-modal__btn">Cancelar</button>
+          <button type="button" onClick={handleRejectSolicitudPendiente} disabled={isOperationLoading('reject-permiso')} className="app-modal__btn app-modal__btn--primary">
+            {isOperationLoading('reject-permiso') ? 'Rechazando...' : 'Rechazar'}
+          </button>
         </div>
       </Modal>
 
@@ -15747,130 +15113,89 @@ export default function SolicitudesPage() {
       <Modal
         isOpen={deleteBajaMedicaModal.isOpen}
         onClose={() => setDeleteBajaMedicaModal({ isOpen: false, baja: null, mensaje: '' })}
-        title=""
+        title="¿Eliminar baja médica?"
         size="md"
-        className="max-w-lg"
+        showCloseButton={false}
       >
-        <div className="py-4">
-          {/* Icon */}
-          <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-4">
-            <Trash2 className="h-8 w-8 text-red-600" />
+        <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+          ¿Estás seguro de que deseas eliminar esta baja médica? Esta acción no se puede deshacer.
+        </p>
+        {deleteBajaMedicaModal.baja && (
+          <div className="app-card app-card--pad mb-4 text-sm space-y-2">
+            <div><span className="font-semibold text-gray-700 dark:text-gray-300">Caso:</span> {deleteBajaMedicaModal.baja.casoId}</div>
+            <div><span className="font-semibold text-gray-700 dark:text-gray-300">Trabajador:</span> {deleteBajaMedicaModal.baja.trabajador || 'N/A'}</div>
+            {deleteBajaMedicaModal.baja.fuente && (
+              <div><span className="font-semibold text-gray-700 dark:text-gray-300">Fuente:</span> {deleteBajaMedicaModal.baja.fuente}</div>
+            )}
           </div>
-          
-          {/* Titlu */}
-          <h3 className="text-xl font-bold text-gray-900 mb-2 text-center">
-            ¿Eliminar baja médica?
-          </h3>
-          
-          {/* Informații despre baja */}
-          {deleteBajaMedicaModal.baja && (
-            <div className="bg-gray-50 rounded-lg p-4 mb-4">
-              <div className="space-y-2 text-sm">
-                <div>
-                  <span className="font-semibold text-gray-700">Caso:</span>{' '}
-                  <span className="text-gray-900">{deleteBajaMedicaModal.baja.casoId}</span>
-                </div>
-                <div>
-                  <span className="font-semibold text-gray-700">Trabajador:</span>{' '}
-                  <span className="text-gray-900">{deleteBajaMedicaModal.baja.trabajador || 'N/A'}</span>
-                </div>
-                {deleteBajaMedicaModal.baja.fuente && (
-                  <div>
-                    <span className="font-semibold text-gray-700">Fuente:</span>{' '}
-                    <span className="text-gray-900">{deleteBajaMedicaModal.baja.fuente}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          
-          {/* Mesaj de confirmare */}
-          <p className="text-gray-600 mb-4 text-center">
-            ¿Estás seguro de que deseas eliminar esta baja médica? Esta acción no se puede deshacer.
-          </p>
-
-          {/* Câmp pentru mesaj personalizat */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Mensaje para el empleado (opcional):
-            </label>
-            <textarea
-              value={deleteBajaMedicaModal.mensaje}
-              onChange={(e) => setDeleteBajaMedicaModal({ ...deleteBajaMedicaModal, mensaje: e.target.value })}
-              placeholder="Escribe un mensaje que se enviará al empleado por email junto con la confirmación de eliminación..."
-              rows={4}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Este mensaje se enviará por email al empleado junto con la confirmación de que se ha eliminado su baja médica.
-            </p>
-          </div>
-          
-          {/* Butoane */}
-          <div className="flex gap-3 justify-center">
-            <button
-              onClick={() => setDeleteBajaMedicaModal({ isOpen: false, baja: null, mensaje: '' })}
-              className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={async () => {
-                if (!deleteBajaMedicaModal.baja) return;
+        )}
+        <label className="app-modal__label" htmlFor="delete-baja-mensaje">Mensaje para el empleado (opcional)</label>
+        <textarea
+          id="delete-baja-mensaje"
+          value={deleteBajaMedicaModal.mensaje}
+          onChange={(e) => setDeleteBajaMedicaModal({ ...deleteBajaMedicaModal, mensaje: e.target.value })}
+          placeholder="Escribe un mensaje que se enviará al empleado por email junto con la confirmación de eliminación..."
+          rows={4}
+          className="app-modal__input w-full resize-none"
+        />
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-4">
+          Este mensaje se enviará por email al empleado junto con la confirmación de que se ha eliminado su baja médica.
+        </p>
+        <div className="app-modal__actions">
+          <button
+            type="button"
+            onClick={() => setDeleteBajaMedicaModal({ isOpen: false, baja: null, mensaje: '' })}
+            className="app-modal__btn"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              if (!deleteBajaMedicaModal.baja) return;
+              
+              try {
+                setOperationLoading('deleteBaja', true);
+                setErrorMsg('');
+                const token = localStorage.getItem('auth_token');
                 
-                try {
-                  setOperationLoading('deleteBaja', true);
-                  setErrorMsg('');
-                  const token = localStorage.getItem('auth_token');
-                  
-                  const body = deleteBajaMedicaModal.mensaje.trim() 
-                    ? { mensajePersonalizado: deleteBajaMedicaModal.mensaje.trim() }
-                    : {};
-                  
-                  const response = await fetch(
-                    routes.deleteBajaMedica(deleteBajaMedicaModal.baja.casoId, deleteBajaMedicaModal.baja.posicionId),
-                    {
-                      method: 'DELETE',
-                      headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                      },
-                      body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
-                    }
-                  );
-                  
-                  if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(errorText || `HTTP ${response.status}`);
+                const body = deleteBajaMedicaModal.mensaje.trim() 
+                  ? { mensajePersonalizado: deleteBajaMedicaModal.mensaje.trim() }
+                  : {};
+                
+                const response = await fetch(
+                  routes.deleteBajaMedica(deleteBajaMedicaModal.baja.casoId, deleteBajaMedicaModal.baja.posicionId),
+                  {
+                    method: 'DELETE',
+                    headers: {
+                      'Authorization': `Bearer ${token}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
                   }
-                  
-                  const result = await response.json();
-                  setSuccessMsg(result.message || 'Baja médica eliminada correctamente');
-                  setDeleteBajaMedicaModal({ isOpen: false, baja: null, mensaje: '' });
-                  await fetchBajasMedicas();
-                } catch (error) {
-                  console.error('Error eliminando baja médica:', error);
-                  setErrorMsg(`Error al eliminar baja médica: ${error.message || error.toString()}`);
-                } finally {
-                  setOperationLoading('deleteBaja', false);
+                );
+                
+                if (!response.ok) {
+                  const errorText = await response.text();
+                  throw new Error(errorText || `HTTP ${response.status}`);
                 }
-              }}
-              disabled={isOperationLoading('deleteBaja')}
-              className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {isOperationLoading('deleteBaja') ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Eliminando...
-                </>
-              ) : (
-                <>
-                  <Trash2 className="w-4 h-4" />
-                  Eliminar
-                </>
-              )}
-            </button>
-          </div>
+                
+                const result = await response.json();
+                setSuccessMsg(result.message || 'Baja médica eliminada correctamente');
+                setDeleteBajaMedicaModal({ isOpen: false, baja: null, mensaje: '' });
+                await fetchBajasMedicas();
+              } catch (error) {
+                console.error('Error eliminando baja médica:', error);
+                setErrorMsg(`Error al eliminar baja médica: ${error.message || error.toString()}`);
+              } finally {
+                setOperationLoading('deleteBaja', false);
+              }
+            }}
+            disabled={isOperationLoading('deleteBaja')}
+            className="app-modal__btn app-modal__btn--primary"
+          >
+            {isOperationLoading('deleteBaja') ? 'Eliminando...' : 'Eliminar'}
+          </button>
         </div>
       </Modal>
 
@@ -15878,86 +15203,52 @@ export default function SolicitudesPage() {
       <Modal
         isOpen={convertirConfirm.isOpen}
         onClose={() => setConvertirConfirm({ isOpen: false, ausencia: null })}
-        title=""
+        title={(() => {
+          const tipoActual = convertirConfirm.ausencia ? (convertirConfirm.ausencia.TIPO || convertirConfirm.ausencia.tipo || '').trim() : '';
+          const esJustificada = tipoActual === 'Ausencias justificada';
+          return `Convertir en ausencia ${esJustificada ? 'injustificada' : 'justificada'}`;
+        })()}
         size="sm"
-        className="max-w-md"
+        showCloseButton={false}
       >
-        <div className="text-center py-4">
-          {(() => {
-            const tipoActual = convertirConfirm.ausencia ? (convertirConfirm.ausencia.TIPO || convertirConfirm.ausencia.tipo || '').trim() : '';
-            const esJustificada = tipoActual === 'Ausencias justificada';
-            const convertirA = esJustificada ? 'injustificada' : 'justificada';
-            
-            return (
-              <>
-                {/* Icon */}
-                <div className={`mx-auto flex items-center justify-center h-16 w-16 rounded-full mb-4 ${
-                  esJustificada ? 'bg-orange-100' : 'bg-green-100'
-                }`}>
-                  <span className="text-4xl">{esJustificada ? '⚠️' : '✅'}</span>
-                </div>
-                
-                {/* Titlu */}
-                <h3 className="text-xl font-bold text-gray-900 mb-2">
-                  Convertir en ausencia {convertirA}
-                </h3>
-                
-                {/* Mesaj */}
-                {esJustificada ? (
-                  <>
-                    <p className="text-gray-600 mb-4">
-                      Esta acción solo debe realizarse si no existe justificante válido para la ausencia.
-                    </p>
-                    <p className="text-sm text-gray-500 mb-6">
-                      ¿Estás seguro de que deseas convertir esta ausencia justificada en injustificada?
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-gray-600 mb-4">
-                    Esta acción convertirá la ausencia injustificada en justificada.
-                  </p>
-                )}
-              </>
-            );
-          })()}
-          
-          {/* Butoane */}
-          <div className="flex gap-3 justify-center">
-            <button
-              onClick={() => setConvertirConfirm({ isOpen: false, ausencia: null })}
-              className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg transition-colors duration-200"
-            >
-              Cancelar
-            </button>
-            {(() => {
-              const tipoActual = convertirConfirm.ausencia ? (convertirConfirm.ausencia.TIPO || convertirConfirm.ausencia.tipo || '').trim() : '';
-              const esJustificada = tipoActual === 'Ausencias justificada';
-              return (
-                <button
-                  onClick={() => {
-                    if (convertirConfirm.ausencia) {
-                      handleConvertirAusencia(convertirConfirm.ausencia);
-                    }
-                  }}
-                  disabled={isOperationLoading('convertir')}
-                  className={`px-6 py-2.5 text-white font-semibold rounded-lg transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${
-                    esJustificada
-                      ? 'bg-orange-600 hover:bg-orange-700'
-                      : 'bg-green-600 hover:bg-green-700'
-                  }`}
-                >
-                  {isOperationLoading('convertir') ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Convirtiendo...
-                    </>
-                  ) : (
-                    'Convertir'
-                  )}
-                </button>
-              );
-            })()}
-          </div>
+        {(() => {
+          const tipoActual = convertirConfirm.ausencia ? (convertirConfirm.ausencia.TIPO || convertirConfirm.ausencia.tipo || '').trim() : '';
+          const esJustificada = tipoActual === 'Ausencias justificada';
+          return esJustificada ? (
+            <>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
+                Esta acción solo debe realizarse si no existe justificante válido para la ausencia.
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                ¿Estás seguro de que deseas convertir esta ausencia justificada en injustificada?
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+              Esta acción convertirá la ausencia injustificada en justificada.
+            </p>
+          );
+        })()}
+        <div className="app-modal__actions">
+          <button
+            type="button"
+            onClick={() => setConvertirConfirm({ isOpen: false, ausencia: null })}
+            className="app-modal__btn"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (convertirConfirm.ausencia) {
+                handleConvertirAusencia(convertirConfirm.ausencia);
+              }
+            }}
+            disabled={isOperationLoading('convertir')}
+            className="app-modal__btn app-modal__btn--primary"
+          >
+            {isOperationLoading('convertir') ? 'Convirtiendo...' : 'Convertir'}
+          </button>
         </div>
       </Modal>
 
@@ -16375,20 +15666,13 @@ export default function SolicitudesPage() {
         {selectedAusenciaForUpload && (
           <div className="space-y-6">
             {/* Info ausencia */}
-            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-full flex items-center justify-center shadow-lg">
-                  <span className="text-white text-xl">📄</span>
-                </div>
-                <div>
-                  <p className="font-bold text-gray-900">
-                    {selectedAusenciaForUpload.tipo || selectedAusenciaForUpload.TIPO || 'Ausencia'}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    Fecha: {selectedAusenciaForUpload.FECHA || selectedAusenciaForUpload.fecha || selectedAusenciaForUpload.fecha_inicio || '-'}
-                  </p>
-                </div>
-              </div>
+            <div className="solicitud-modal-info">
+              <p className="solicitud-modal-info__title">
+                {selectedAusenciaForUpload.tipo || selectedAusenciaForUpload.TIPO || 'Ausencia'}
+              </p>
+              <p className="solicitud-modal-info__meta">
+                Fecha: {selectedAusenciaForUpload.FECHA || selectedAusenciaForUpload.fecha || selectedAusenciaForUpload.fecha_inicio || '-'}
+              </p>
             </div>
 
             {/* File input */}
@@ -16412,7 +15696,7 @@ export default function SolicitudesPage() {
                     setUploadJustificanteError(null);
                   }
                 }}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-white"
+                className="app-modal__input w-full"
               />
               {uploadJustificanteFile && (
                 <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
@@ -16443,7 +15727,7 @@ export default function SolicitudesPage() {
 
             {/* Error message */}
             {uploadJustificanteError && (
-              <div className="bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl p-4">
+              <div className="app-card app-card--pad border-red-200">
                 <div className="flex items-center">
                   <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center mr-3">
                     <span className="text-red-600 text-lg">⚠️</span>
@@ -16457,35 +15741,26 @@ export default function SolicitudesPage() {
             )}
 
             {/* Butoane */}
-            <div className="flex gap-4 justify-center mt-8">
+            <div className="app-modal__actions mt-4">
               <button
+                type="button"
                 onClick={() => {
                   setShowUploadJustificanteModal(false);
                   setSelectedAusenciaForUpload(null);
                   setUploadJustificanteFile(null);
                   setUploadJustificanteError(null);
                 }}
-                className="px-8 py-3 border-2 border-gray-300 hover:border-gray-400 rounded-lg font-semibold transition-colors duration-200"
+                className="app-modal__btn"
               >
-                <span className="mr-2">✖️</span>
                 Cancelar
               </button>
               <button
+                type="button"
                 onClick={handleUploadJustificante}
                 disabled={uploadJustificanteLoading || !uploadJustificanteFile}
-                className="px-8 py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg font-semibold shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="app-modal__btn app-modal__btn--primary"
               >
-                {uploadJustificanteLoading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                    Cargando...
-                  </>
-                ) : (
-                  <>
-                    <span className="mr-2">📤</span>
-                    Cargar Justificante
-                  </>
-                )}
+                {uploadJustificanteLoading ? 'Cargando...' : 'Cargar justificante'}
               </button>
             </div>
           </div>
@@ -16498,85 +15773,84 @@ export default function SolicitudesPage() {
         onClose={() => setJustificanteStatusModal({ isOpen: false, loading: false, item: null, cerere: null, presencia: null, error: null })}
         title="Estado de justificantes"
         size="md"
+        showCloseButton={false}
       >
         {justificanteStatusModal.loading ? (
           <div className="flex justify-center py-10">
             <LoadingSpinner size="md" text="Comprobando justificantes..." />
           </div>
         ) : (
-          <div className="space-y-4">
+          <>
             {justificanteStatusModal.item && (
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
                 {justificanteStatusModal.item.NOMBRE || justificanteStatusModal.item.nombre || justificanteStatusModal.item.email}
               </p>
             )}
             {justificanteStatusModal.error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-                {justificanteStatusModal.error}
-              </div>
+              <AlertBanner variant="error" className="mb-3">{justificanteStatusModal.error}</AlertBanner>
             )}
-            <div className="p-4 rounded-lg border border-gray-200 bg-gray-50 space-y-2">
-              <p className="text-sm font-medium text-gray-800">Justificante para la solicitud:</p>
+            <div className="app-card app-card--pad mb-3 space-y-2">
+              <p className="text-sm font-medium text-gray-800 dark:text-gray-200">Justificante para la solicitud:</p>
               {justificanteStatusModal.cerere?.status === 'cargado' && hasValidJustificanteDocId(justificanteStatusModal.cerere.doc) ? (
-                <div className="text-sm text-green-700 flex items-center gap-2 flex-wrap">
-                  <span>✅ Cargado</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="solicitud-status solicitud-status--ok">Cargado</span>
                   <button
                     type="button"
                     onClick={() => downloadJustificanteDoc(justificanteStatusModal.cerere.doc, justificanteStatusModal.item, false).catch(() => setErrorMsg('Error al descargar el justificante.'))}
-                    className="px-3 py-1.5 text-xs font-medium rounded bg-amber-600 text-white hover:bg-amber-700"
+                    className="solicitud-admin-btn text-xs"
                   >
-                    📥 Descargar
+                    <Download className="w-3.5 h-3.5" /> Descargar
                   </button>
                   <button
                     type="button"
                     onClick={() => downloadJustificanteDoc(justificanteStatusModal.cerere.doc, justificanteStatusModal.item, true).catch(() => setErrorMsg('Error al abrir el justificante.'))}
-                    className="px-3 py-1.5 text-xs font-medium rounded bg-cyan-600 text-white hover:bg-cyan-700"
+                    className="solicitud-admin-btn text-xs"
                   >
-                    👁️ Ver
+                    <Eye className="w-3.5 h-3.5" /> Ver
                   </button>
                 </div>
               ) : (
-                <p className="text-sm text-gray-600">No cargado.</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">No cargado.</p>
               )}
             </div>
-            <div className="p-4 rounded-lg border border-gray-200 bg-gray-50 space-y-2">
-              <p className="text-sm font-medium text-gray-800">Justificante de presencia a la cita:</p>
+            <div className="app-card app-card--pad mb-4 space-y-2">
+              <p className="text-sm font-medium text-gray-800 dark:text-gray-200">Justificante de presencia a la cita:</p>
               {justificanteStatusModal.presencia?.status === 'completado' ? (
-                <div className="text-sm text-green-700 flex items-center gap-2 flex-wrap">
-                  <span>✅ Completado</span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="solicitud-status solicitud-status--ok">Completado</span>
                   <button
                     type="button"
                     onClick={() => downloadJustificanteDoc(justificanteStatusModal.presencia.doc, justificanteStatusModal.item, false, true).catch(() => setErrorMsg('Error al descargar el justificante.'))}
-                    className="px-3 py-1.5 text-xs font-medium rounded bg-amber-600 text-white hover:bg-amber-700"
+                    className="solicitud-admin-btn text-xs"
                   >
-                    📥 Descargar
+                    <Download className="w-3.5 h-3.5" /> Descargar
                   </button>
                   <button
                     type="button"
                     onClick={() => downloadJustificanteDoc(justificanteStatusModal.presencia.doc, justificanteStatusModal.item, true, true).catch(() => setErrorMsg('Error al abrir el justificante.'))}
-                    className="px-3 py-1.5 text-xs font-medium rounded bg-cyan-600 text-white hover:bg-cyan-700"
+                    className="solicitud-admin-btn text-xs"
                   >
-                    👁️ Ver
+                    <Eye className="w-3.5 h-3.5" /> Ver
                   </button>
                 </div>
               ) : justificanteStatusModal.presencia?.status === 'tras_aprobacion' ? (
-                <p className="text-sm text-gray-500">{justificanteStatusModal.presencia.message}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{justificanteStatusModal.presencia.message}</p>
               ) : justificanteStatusModal.presencia?.status === 'pendiente' ? (
-                <p className="text-sm text-amber-700">{justificanteStatusModal.presencia.message}</p>
+                <p className="text-sm text-amber-700 dark:text-amber-300">{justificanteStatusModal.presencia.message}</p>
               ) : (
-                <p className="text-sm text-gray-500">—</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">—</p>
               )}
             </div>
-            <div className="flex justify-end pt-2">
+            <div className="app-modal__actions">
               <button
                 type="button"
                 onClick={() => setJustificanteStatusModal({ isOpen: false, loading: false, item: null, cerere: null, presencia: null, error: null })}
-                className="px-6 py-2.5 border-2 border-gray-300 hover:border-gray-400 rounded-lg font-semibold transition-colors"
+                className="app-modal__btn"
               >
                 Cerrar
               </button>
             </div>
-          </div>
+          </>
         )}
       </Modal>
 
@@ -16618,14 +15892,14 @@ export default function SolicitudesPage() {
                 />
               )}
             </div>
-            <div className="flex justify-end">
+            <div className="app-modal__actions">
               <button
                 type="button"
                 onClick={() => {
                   if (justificantePreview.blobUrl) URL.revokeObjectURL(justificantePreview.blobUrl);
                   setJustificantePreview({ isOpen: false, blobUrl: null, fileName: '', mimeType: '' });
                 }}
-                className="px-6 py-2.5 border-2 border-gray-300 hover:border-gray-400 rounded-lg font-semibold transition-colors"
+                className="app-modal__btn"
               >
                 Cerrar
               </button>
@@ -16650,31 +15924,19 @@ export default function SolicitudesPage() {
         {bajaVoluntariaPreview.solicitud && (
           <div className="space-y-4">
             {/* Informații solicitare */}
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="font-semibold text-purple-700">Empleado:</span>
-                  <p className="text-purple-900">{bajaVoluntariaPreview.solicitud.nombre || 'N/A'}</p>
-                </div>
-                <div>
-                  <span className="font-semibold text-purple-700">Código:</span>
-                  <p className="text-purple-900">{bajaVoluntariaPreview.solicitud.codigo || 'N/A'}</p>
-                </div>
-                <div>
-                  <span className="font-semibold text-purple-700">Último día de trabajo:</span>
-                  <p className="text-purple-900">
-                    {formatDate(bajaVoluntariaPreview.solicitud.fecha_ultimo_dia_trabajo || bajaVoluntariaPreview.solicitud.fecha_inicio)}
-                  </p>
-                </div>
-                <div>
-                  <span className="font-semibold text-purple-700">Días de preaviso:</span>
-                  <p className="text-purple-900">
-                    {bajaVoluntariaPreview.solicitud.dias_preaviso !== null && bajaVoluntariaPreview.solicitud.dias_preaviso !== undefined 
-                      ? `${bajaVoluntariaPreview.solicitud.dias_preaviso} días`
-                      : 'N/A'}
-                  </p>
-                </div>
-              </div>
+            <div className="app-card app-card--pad">
+              <dl className="solicitud-admin-kv grid-cols-2">
+                <dt>Empleado</dt><dd>{bajaVoluntariaPreview.solicitud.nombre || 'N/A'}</dd>
+                <dt>Código</dt><dd>{bajaVoluntariaPreview.solicitud.codigo || 'N/A'}</dd>
+                <dt>Último día</dt>
+                <dd>{formatDate(bajaVoluntariaPreview.solicitud.fecha_ultimo_dia_trabajo || bajaVoluntariaPreview.solicitud.fecha_inicio)}</dd>
+                <dt>Preaviso</dt>
+                <dd>
+                  {bajaVoluntariaPreview.solicitud.dias_preaviso !== null && bajaVoluntariaPreview.solicitud.dias_preaviso !== undefined
+                    ? `${bajaVoluntariaPreview.solicitud.dias_preaviso} días`
+                    : 'N/A'}
+                </dd>
+              </dl>
             </div>
 
             {/* Preview PDF */}
@@ -16689,38 +15951,30 @@ export default function SolicitudesPage() {
             )}
 
             {/* Butoane */}
-            <div className="flex gap-4 justify-end pt-4 border-t border-gray-200">
+            <div className="app-modal__actions">
               <button
+                type="button"
                 onClick={() => {
                   if (bajaVoluntariaPreview.pdfUrl) {
                     URL.revokeObjectURL(bajaVoluntariaPreview.pdfUrl);
                   }
                   setBajaVoluntariaPreview({ isOpen: false, solicitud: null, pdfUrl: null });
                 }}
-                className="px-6 py-2.5 border-2 border-gray-300 hover:border-gray-400 rounded-lg font-semibold transition-colors duration-200"
+                className="app-modal__btn"
               >
                 Cerrar
               </button>
               <button
+                type="button"
                 onClick={() => {
                   if (bajaVoluntariaPreview.solicitud) {
                     handleApproveBajaVoluntaria(bajaVoluntariaPreview.solicitud);
                   }
                 }}
                 disabled={isOperationLoading('approve')}
-                className="px-6 py-2.5 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg font-semibold shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="app-modal__btn app-modal__btn--primary"
               >
-                {isOperationLoading('approve') ? (
-                  <>
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                    Aprobando...
-                  </>
-                ) : (
-                  <>
-                    <span className="text-xl">✅</span>
-                    Aprobar y Enviar a Gestoria
-                  </>
-                )}
+                {isOperationLoading('approve') ? 'Aprobando...' : 'Aprobar y Enviar a Gestoria'}
               </button>
             </div>
           </div>
@@ -16807,7 +16061,7 @@ export default function SolicitudesPage() {
                           });
                         }}
                         disabled={isOperationLoading('convertir-tipo')}
-                        className="w-full px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-lg font-semibold shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        className="solicitud-admin-btn solicitud-admin-btn--primary text-sm whitespace-nowrap"
                       >
                         {isOperationLoading('convertir-tipo') ? (
                           <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
@@ -16855,7 +16109,7 @@ export default function SolicitudesPage() {
                           <button
                             onClick={() => handleConvertirTipo('Permiso Retribuido')}
                             disabled={isOperationLoading('convertir-tipo') || !convertirTipoModal.fechaInicio}
-                            className="w-full px-4 py-2.5 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg font-semibold shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            className="solicitud-admin-btn solicitud-admin-btn--success text-sm whitespace-nowrap"
                           >
                             {isOperationLoading('convertir-tipo') ? (
                               <>
@@ -16875,7 +16129,7 @@ export default function SolicitudesPage() {
                       <button
                         onClick={() => handleConvertirTipo('Ausencias justificada')}
                         disabled={isOperationLoading('convertir-tipo')}
-                        className="w-full px-4 py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-white rounded-lg font-semibold shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        className="solicitud-admin-btn solicitud-admin-btn--warn text-sm whitespace-nowrap"
                       >
                         {isOperationLoading('convertir-tipo') ? (
                           <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
@@ -16890,7 +16144,7 @@ export default function SolicitudesPage() {
                       <button
                         onClick={() => handleConvertirTipo('Ausencia Injustificada')}
                         disabled={isOperationLoading('convertir-tipo')}
-                        className="w-full px-4 py-3 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-lg font-semibold shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        className="solicitud-admin-btn solicitud-admin-btn--danger text-sm whitespace-nowrap"
                       >
                         {isOperationLoading('convertir-tipo') ? (
                           <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
@@ -16912,7 +16166,7 @@ export default function SolicitudesPage() {
                       <button
                         onClick={() => handleConvertirTipo('Ausencia Injustificada')}
                         disabled={isOperationLoading('convertir-tipo')}
-                        className="w-full px-4 py-3 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-lg font-semibold shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        className="solicitud-admin-btn solicitud-admin-btn--danger text-sm whitespace-nowrap"
                       >
                         {isOperationLoading('convertir-tipo') ? (
                           <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
@@ -16927,7 +16181,7 @@ export default function SolicitudesPage() {
                       <button
                         onClick={() => handleConvertirTipo('Ausencia Justificada')}
                         disabled={isOperationLoading('convertir-tipo')}
-                        className="w-full px-4 py-3 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700 text-white rounded-lg font-semibold shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        className="solicitud-admin-btn solicitud-admin-btn--warn text-sm whitespace-nowrap"
                       >
                         {isOperationLoading('convertir-tipo') ? (
                           <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
@@ -16942,7 +16196,7 @@ export default function SolicitudesPage() {
                       <button
                         onClick={() => handleConvertirTipo('Asuntos Propios')}
                         disabled={isOperationLoading('convertir-tipo')}
-                        className="w-full px-4 py-3 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-lg font-semibold shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        className="solicitud-admin-btn solicitud-admin-btn--primary text-sm whitespace-nowrap"
                       >
                         {isOperationLoading('convertir-tipo') ? (
                           <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
@@ -17041,7 +16295,7 @@ export default function SolicitudesPage() {
             <button
               onClick={handleUpdateDuracion}
               disabled={isOperationLoading('update-duracion') || !editarDuracionModal.duracion}
-              className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white rounded-lg font-semibold shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="solicitud-admin-btn solicitud-admin-btn--warn text-sm whitespace-nowrap"
             >
               {isOperationLoading('update-duracion') ? (
                 <>
@@ -17069,20 +16323,21 @@ export default function SolicitudesPage() {
         }}
         title="Bloquear periodos para vacaciones"
         size="md"
+        showCloseButton={false}
       >
         <div className="space-y-4">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
             Las fechas dentro de estos periodos no se podrán solicitar como vacaciones. Puedes bloquear meses enteros con los checkboxes o intervalos concretos abajo.
           </p>
           {canAccessAllTabs && (
-            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200">
-              <h4 className="text-sm font-semibold text-gray-800 mb-1">Disponibilidad de vacaciones (mismo grupo, mismo día)</h4>
-              <p className="text-xs text-gray-600 mb-2">
+            <div className="app-card app-card--pad">
+              <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">Disponibilidad de vacaciones (mismo grupo, mismo día)</h4>
+              <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
                 Cuántas personas del mismo grupo pueden estar de vacaciones a la vez: porcentaje del tamaño del grupo (mínimo 1). Se aplica en el calendario y al aprobar solicitudes.
               </p>
               <div className="flex flex-wrap items-end gap-2">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Porcentaje (%)</label>
+                  <label className="app-modal__label">Porcentaje (%)</label>
                   <input
                     type="number"
                     min={1}
@@ -17090,7 +16345,7 @@ export default function SolicitudesPage() {
                     step={0.5}
                     value={vacacionPctDraft}
                     onChange={(e) => setVacacionPctDraft(e.target.value)}
-                    className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    className="app-modal__input w-28"
                   />
                 </div>
                 <button
@@ -17118,22 +16373,21 @@ export default function SolicitudesPage() {
                       setSavingVacacionPct(false);
                     }
                   }}
-                  className="px-4 py-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-900 text-white text-sm disabled:opacity-50"
+                  className="app-modal__btn app-modal__btn--primary text-sm disabled:opacity-50"
                 >
                   {savingVacacionPct ? 'Guardando…' : 'Guardar porcentaje'}
                 </button>
               </div>
             </div>
           )}
-          {/* Bloquear por mes entero: año + 12 checkboxes */}
-          <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
-            <h4 className="text-sm font-semibold text-gray-800 mb-2">Bloquear mes entero</h4>
+          <div className="app-card app-card--pad">
+            <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">Bloquear mes entero</h4>
             <div className="flex items-center gap-3 mb-3">
-              <label className="text-xs font-medium text-gray-600">Año:</label>
+              <label className="app-modal__label mb-0">Año:</label>
               <select
                 value={blockedPeriodsYear}
                 onChange={(e) => setBlockedPeriodsYear(Number(e.target.value))}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                className="app-modal__input text-sm"
               >
                 {[new Date().getFullYear(), new Date().getFullYear() + 1, new Date().getFullYear() + 2].map((y) => (
                   <option key={y} value={y}>{y}</option>
@@ -17292,23 +16546,24 @@ export default function SolicitudesPage() {
         }}
         title="Bloquear periodos para Asuntos Propios"
         size="md"
+        showCloseButton={false}
       >
         <div className="space-y-4">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
             Las fechas dentro de estos periodos no se podrán solicitar como Asuntos Propios. Puedes bloquear meses enteros con los checkboxes o intervalos concretos abajo (solo afecta a Asuntos Propios, no a vacaciones).
           </p>
           {canAccessAllTabs && (
-            <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 space-y-3">
+            <div className="app-card app-card--pad space-y-3">
               <div>
-                <h4 className="text-sm font-semibold text-gray-800 mb-1">
+                <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">
                   Límite diario (toda la empresa)
                 </h4>
-                <p className="text-xs text-gray-600 mb-2">
+                <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
                   Máximo de personas con Asunto Propio el mismo día. Los empleados ven «poca disponibilidad» en amarillo sin cifras en el calendario.
                 </p>
                 <div className="flex flex-wrap items-end gap-2">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Personas / día</label>
+                    <label className="app-modal__label">Personas / día</label>
                     <input
                       type="number"
                       min={1}
@@ -17316,7 +16571,7 @@ export default function SolicitudesPage() {
                       step={1}
                       value={apMaxPersonasDraft}
                       onChange={(e) => setApMaxPersonasDraft(e.target.value)}
-                      className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      className="app-modal__input w-24"
                     />
                   </div>
                   <button
@@ -17344,22 +16599,22 @@ export default function SolicitudesPage() {
                         setSavingApMaxPersonas(false);
                       }
                     }}
-                    className="px-4 py-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-900 text-white text-sm disabled:opacity-50"
+                    className="app-modal__btn app-modal__btn--primary text-sm disabled:opacity-50"
                   >
                     {savingApMaxPersonas ? 'Guardando…' : 'Guardar límite'}
                   </button>
                 </div>
               </div>
-              <div className="border-t border-purple-200 pt-3">
-                <h4 className="text-sm font-semibold text-gray-800 mb-1">
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
+                <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">
                   Días por empleado / año (toda la empresa)
                 </h4>
-                <p className="text-xs text-gray-600 mb-2">
+                <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">
                   Cupo anual de Asuntos Propios igual para todos. El derecho a solicitarlo se activa por grupo en Access Matrix.
                 </p>
                 <div className="flex flex-wrap items-end gap-2">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Días / año</label>
+                    <label className="app-modal__label">Días / año</label>
                     <input
                       type="number"
                       min={0}
@@ -17367,7 +16622,7 @@ export default function SolicitudesPage() {
                       step={1}
                       value={apDiasAnualesDraft}
                       onChange={(e) => setApDiasAnualesDraft(e.target.value)}
-                      className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      className="app-modal__input w-24"
                     />
                   </div>
                   <button
@@ -17572,15 +16827,16 @@ export default function SolicitudesPage() {
         }}
         title="Crear Solicitud para Empleado"
         size="lg"
+        showCloseButton={false}
       >
-        <div className="space-y-6">
-          {/* Selector de angajat */}
+        <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="app-modal__label" htmlFor="manager-empleado-search">
               Seleccionar Empleado <span className="text-red-500">*</span>
             </label>
             <div className="relative">
               <input
+                id="manager-empleado-search"
                 type="text"
                 value={managerEmpleadoSearch}
                 onChange={(e) => {
@@ -17589,10 +16845,10 @@ export default function SolicitudesPage() {
                 }}
                 onFocus={() => setManagerShowEmpleadoDropdown(true)}
                 placeholder="Buscar por nombre, código o email..."
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                className="app-modal__input w-full"
               />
               {managerShowEmpleadoDropdown && managerEmpleadoOptions.length > 0 && (
-                <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                <div className="solicitud-admin-filter__dropdown absolute z-50 w-full mt-1 max-h-60 overflow-y-auto">
                   {managerEmpleadoOptions.map((emp) => (
                     <button
                       key={emp.codigo || emp.email}
@@ -17602,43 +16858,42 @@ export default function SolicitudesPage() {
                         setManagerEmpleadoSearch(emp.name);
                         setManagerShowEmpleadoDropdown(false);
                       }}
-                      className="w-full text-left px-4 py-3 hover:bg-indigo-50 transition-colors border-b border-gray-100 last:border-b-0"
+                      className="solicitud-admin-filter__option w-full text-left"
                     >
-                      <div className="font-medium text-gray-900">{emp.name}</div>
-                      <div className="text-sm text-gray-500">{emp.codigo} • {emp.email}</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">{emp.name}</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">{emp.codigo} • {emp.email}</div>
                     </button>
                   ))}
                 </div>
               )}
             </div>
             {managerSelectedEmpleado && (
-              <div className="mt-2 p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium text-indigo-900">{managerSelectedEmpleado.name}</div>
-                    <div className="text-sm text-indigo-700">{managerSelectedEmpleado.codigo} • {managerSelectedEmpleado.email}</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setManagerSelectedEmpleado(null);
-                      setManagerEmpleadoSearch('');
-                    }}
-                    className="text-indigo-600 hover:text-indigo-800"
-                  >
-                    ✕
-                  </button>
+              <div className="mt-2 app-card app-card--pad flex items-center justify-between gap-2">
+                <div>
+                  <div className="font-medium text-gray-900 dark:text-gray-100">{managerSelectedEmpleado.name}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">{managerSelectedEmpleado.codigo} • {managerSelectedEmpleado.email}</div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setManagerSelectedEmpleado(null);
+                    setManagerEmpleadoSearch('');
+                  }}
+                  className="app-modal__btn text-sm py-1 px-2"
+                  aria-label="Quitar empleado"
+                >
+                  ✕
+                </button>
               </div>
             )}
           </div>
 
-          {/* Tip solicitare */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="app-modal__label" htmlFor="manager-tipo">
               Tipo de Solicitud <span className="text-red-500">*</span>
             </label>
             <select
+              id="manager-tipo"
               value={managerTipo}
               onChange={(e) => {
                 setManagerTipo(e.target.value);
@@ -17646,7 +16901,7 @@ export default function SolicitudesPage() {
                 setManagerFechaFin('');
                 setManagerFechaUltimoDiaTrabajo('');
               }}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              className="app-modal__input w-full"
             >
               <option value="Asuntos Propios">📅 Asuntos Propios</option>
               <option value="Vacaciones">🏖️ Vacaciones</option>
@@ -17656,92 +16911,82 @@ export default function SolicitudesPage() {
             </select>
           </div>
 
-          {/* Date - doar pentru tipuri care necesită date */}
           {managerTipo !== 'BAJA_VOLUNTARIA' && (
             <>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="app-modal__label" htmlFor="manager-fecha-inicio">
                   Fecha Inicio <span className="text-red-500">*</span>
                 </label>
                 <input
+                  id="manager-fecha-inicio"
                   type="date"
                   value={managerFechaInicio}
                   onChange={(e) => setManagerFechaInicio(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="app-modal__input w-full"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="app-modal__label" htmlFor="manager-fecha-fin">
                   Fecha Fin <span className="text-red-500">*</span>
                 </label>
                 <input
+                  id="manager-fecha-fin"
                   type="date"
                   value={managerFechaFin}
                   onChange={(e) => setManagerFechaFin(e.target.value)}
                   min={managerFechaInicio}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="app-modal__input w-full"
                 />
               </div>
             </>
           )}
 
-          {/* Fecha último día de trabajo pentru BAJA_VOLUNTARIA */}
           {managerTipo === 'BAJA_VOLUNTARIA' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="app-modal__label" htmlFor="manager-fecha-ultimo">
                 Último Día de Trabajo <span className="text-red-500">*</span>
               </label>
               <input
+                id="manager-fecha-ultimo"
                 type="date"
                 value={managerFechaUltimoDiaTrabajo}
                 onChange={(e) => setManagerFechaUltimoDiaTrabajo(e.target.value)}
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                className="app-modal__input w-full"
               />
             </div>
           )}
 
-          {/* Motivo */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="app-modal__label" htmlFor="manager-motivo">
               Motivo <span className="text-gray-500 text-xs">(opcional)</span>
             </label>
             <textarea
+              id="manager-motivo"
               value={managerMotivo}
               onChange={(e) => setManagerMotivo(e.target.value)}
               rows={4}
               placeholder="Describe el motivo de la solicitud (opcional)..."
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              className="app-modal__input w-full resize-none"
             />
           </div>
 
-          {/* Checkbox Aprobar automáticamente */}
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
               id="manager-auto-approve"
               checked={managerAutoApprove}
               onChange={(e) => setManagerAutoApprove(e.target.checked)}
-              className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+              className="w-4 h-4 rounded border-gray-300"
             />
-            <label htmlFor="manager-auto-approve" className="text-sm font-medium text-gray-700">
+            <label htmlFor="manager-auto-approve" className="text-sm font-medium text-gray-700 dark:text-gray-300">
               Aprobar automáticamente
             </label>
           </div>
 
-          {/* Mesaje de eroare/succes */}
-          {errorMsg && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-              {errorMsg}
-            </div>
-          )}
-          {successMsg && (
-            <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-              {successMsg}
-            </div>
-          )}
+          {errorMsg && <AlertBanner variant="error">{errorMsg}</AlertBanner>}
+          {successMsg && <AlertBanner variant="success">{successMsg}</AlertBanner>}
 
-          {/* Butoane */}
-          <div className="flex gap-4 justify-end pt-4 border-t border-gray-200">
+          <div className="app-modal__actions">
             <button
               type="button"
               onClick={() => {
@@ -17751,7 +16996,7 @@ export default function SolicitudesPage() {
                 setSuccessMsg('');
               }}
               disabled={isOperationLoading('submit-manager')}
-              className="px-6 py-2.5 border-2 border-gray-300 hover:border-gray-400 rounded-lg font-semibold transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="app-modal__btn"
             >
               Cancelar
             </button>
@@ -17759,19 +17004,9 @@ export default function SolicitudesPage() {
               type="button"
               onClick={handleAddManagerSolicitud}
               disabled={isOperationLoading('submit-manager') || !managerSelectedEmpleado}
-              className="px-6 py-2.5 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white rounded-lg font-semibold shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="app-modal__btn app-modal__btn--primary"
             >
-              {isOperationLoading('submit-manager') ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  Creando...
-                </>
-              ) : (
-                <>
-                  <span>💾</span>
-                  <span>Crear Solicitud</span>
-                </>
-              )}
+              {isOperationLoading('submit-manager') ? 'Creando...' : 'Crear Solicitud'}
             </button>
           </div>
         </div>

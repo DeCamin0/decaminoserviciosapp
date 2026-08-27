@@ -2,14 +2,16 @@ import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContextBase';
 import activityLogger from '../utils/activityLogger';
-import { Button, Card, Input, Select, Modal, Notification } from '../components/ui';
+import { Button, Input, Select, Modal, Notification, PageHeader, AlertBanner, SegmentedControl } from '../components/ui';
 import { useApi } from '../hooks/useApi';
 import { routes } from '../utils/routes.js';
 import ScheduleEditor from '../components/ScheduleEditor';
-import Back3DButton from '../components/Back3DButton';
+import CuadrantesMobileMatrix from './cuadrantes-admin/CuadrantesMobileMatrix';
+import CuadrantesFestivosList from './cuadrantes-admin/CuadrantesFestivosList';
+import CuadrantesMulticentroMobile from './cuadrantes-admin/CuadrantesMulticentroMobile';
 import { toMinutes } from '../types/schedule';
 import { calculateCuadranteHours } from '../utils/cuadrante-hours-helper';
-import { Loader2, RotateCcw, Pencil, Trash2, Plus, Copy } from 'lucide-react';
+import { Loader2, RotateCcw, Plus, RefreshCw, Upload, MapPin, User, Clock, ChevronLeft, ChevronRight, Calendar, Settings2, Save, ArrowLeft, Eye } from 'lucide-react';
 
 const FESTIVOS_ENDPOINT = routes.getFestivos;
 const CREATE_FESTIVO_ENDPOINT = routes.createFestivo;
@@ -1046,6 +1048,25 @@ export default function CuadrantesPage() {
   }, [selectedMesAno, selectedMonth, selectedYear]);
   const [editedCuadrantes, setEditedCuadrantes] = useState({}); // Para trackear modificările
   const [hasChanges, setHasChanges] = useState(false); // Para afișa butonul de salvare
+
+  const mobileMatrixRows = useMemo(() => (
+    cuadrantesLista
+      .filter((cuadrante) => !selectedMesAno || cuadrante.LUNA === selectedMesAno)
+      .map((cuadrante, index) => {
+        const identificator = getCuadranteIdentificator(cuadrante) || String(index);
+        const zile = [];
+        for (let i = 1; i <= daysInMonthListaCuadrantes; i++) {
+          const ziKey = `ZI_${i}`;
+          const editKey = `${identificator}_${i}`;
+          zile.push(
+            editedCuadrantes[editKey] !== undefined
+              ? editedCuadrantes[editKey]
+              : (cuadrante[ziKey] || '')
+          );
+        }
+        return { cuadrante, zile, identificator, index };
+      })
+  ), [cuadrantesLista, selectedMesAno, daysInMonthListaCuadrantes, editedCuadrantes]);
   const [showEditModal, setShowEditModal] = useState(false); // Para modal de editare
   const [editingDay, setEditingDay] = useState(null); // {cuadranteIndex, dayNumber, currentValue, empleado, codigo, centro}
   const [availableShifts, setAvailableShifts] = useState([]); // Turnurile disponibile din cuadrante
@@ -1293,6 +1314,15 @@ export default function CuadrantesPage() {
   const emailLogat = authUser?.['CORREO ELECTRONICO'] || '';
   // isManager is now calculated in backend (/api/me) and includes Manager, Supervisor, Developer, Admin
   const isManager = authUser?.isManager || false;
+
+  const cuadrantesTabs = useMemo(() => [
+    { id: 'generar', label: 'Generar Cuadrante', shortLabel: 'Generar' },
+    { id: 'lista_cuadrantes', label: 'Lista Cuadrantes', shortLabel: 'Lista' },
+    { id: 'lista_horarios', label: 'Lista Horarios', shortLabel: 'Horarios' },
+    { id: 'horarios', label: 'Crear Horario', shortLabel: 'Crear' },
+    { id: 'festivos', label: 'Festivos', shortLabel: 'Festivos' },
+    { id: 'horario_multicentro', label: 'Horario Multicentro', shortLabel: 'Multi' },
+  ], []);
 
   const festivosToDisplay = useMemo(() => {
     const monthFilter =
@@ -3635,124 +3665,106 @@ export default function CuadrantesPage() {
     setEditNote('');
   };
 
+  const handleSaveMulticentroHorarioRow = useCallback(async (horario) => {
+    if (!horario?.id) {
+      showToast('error', 'No se puede guardar: falta id del registro');
+      return;
+    }
+    setSavingMulticentroListId(horario.id);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const updateData = {};
+      for (let zi = 1; zi <= 31; zi++) {
+        const baseZi = String(horario[`ZI_${zi}`] ?? horario[`zi_${zi}`] ?? '');
+        const mergedZi =
+          multicentroListEdits[horario.id]?.[zi] !== undefined
+            ? multicentroListEdits[horario.id][zi]
+            : baseZi;
+        const t = String(mergedZi).trim();
+        updateData[`ZI_${zi}`] = t === '' || t.toUpperCase() === 'LIBRE' ? null : t;
+      }
+      const updateResponse = await fetch(`${routes.updateHorarioMulticentro}/${horario.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify(updateData),
+      });
+      if (!updateResponse.ok) {
+        throw new Error(`HTTP error! status: ${updateResponse.status}`);
+      }
+      const mes = horario.LUNA || horario.luna || selectedMonthHorariosMulticentro;
+      const codigo = horario.CODIGO || horario.codigo;
+      const refreshResponse = await fetch(
+        `${routes.getHorarioMulticentro}?mes=${mes}${codigo ? `&codigo=${codigo}` : ''}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: token ? `Bearer ${token}` : '',
+          },
+        },
+      );
+      if (refreshResponse.ok) {
+        const refreshData = await refreshResponse.json();
+        if (refreshData.success && Array.isArray(refreshData.horarios)) {
+          setHorariosMulticentroList(refreshData.horarios);
+          setMulticentroListEdits((prev) => {
+            const next = { ...prev };
+            delete next[horario.id];
+            return next;
+          });
+          showToast('success', 'Horario multicentro guardado');
+        }
+      }
+    } catch (error) {
+      console.error('Error guardando horario multicentro:', error);
+      showToast('error', `Error al guardar: ${error.message}`);
+    } finally {
+      setSavingMulticentroListId(null);
+    }
+  }, [multicentroListEdits, selectedMonthHorariosMulticentro, showToast]);
+
   return (
-    <div className="space-y-6">
-      {toast && (
-        <div
-          className={
-            `flex items-start gap-3 rounded-xl border p-4 shadow-sm transition-colors ${
-              toast.type === 'success'
-                ? 'border-green-200 bg-green-50 text-green-900'
-                : toast.type === 'error'
-                ? 'border-red-200 bg-red-50 text-red-900'
-                : toast.type === 'warning'
-                ? 'border-yellow-200 bg-yellow-50 text-yellow-900'
-                : 'border-blue-200 bg-blue-50 text-blue-900'
-            }`
-          }
-          role="status"
-          aria-live="polite"
+    <div className="app-page cuadrantes-admin">
+      {toast ? (
+        <AlertBanner
+          variant={toast.type === 'error' ? 'danger' : toast.type === 'warning' ? 'warning' : toast.type === 'success' ? 'success' : 'info'}
+          title={toast.type === 'success' ? 'Listo' : toast.type === 'error' ? 'Error' : toast.type === 'warning' ? 'Atención' : 'Info'}
+          compact
         >
-          <span className="text-lg">{toast.type === 'success' ? '✅' : toast.type === 'error' ? '⚠️' : 'ℹ️'}</span>
-          <div>
-            <p className="font-medium leading-snug">{toast.message}</p>
-          </div>
-        </div>
-      )}
-      {/* Header cu buton regresar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Back3DButton 
-            to="/inicio"
-            title="Regresar a Inicio"
-          />
-        <div>
-          <h1 className="text-2xl font-bold text-red-600">
-            Cuadrantes
-          </h1>
-          <p className="text-gray-600">
-            Gestiona los horarios de trabajo para empleados
-          </p>
-        </div>
-        </div>
-      </div>
+          {toast.message}
+        </AlertBanner>
+      ) : null}
 
-      {/* Tabs */}
-      <Card>
-        <div className="flex gap-4 mb-6">
-          <button
-            onClick={() => setActiveTab('generar')}
-            className={`px-6 py-3 rounded-lg font-bold transition-colors ${
-              activeTab === 'generar'
-                ? 'bg-red-600 text-white'
-                : 'bg-white text-red-600 border border-red-600 hover:bg-red-50'
-            }`}
-          >
-            Generar Cuadrante
-          </button>
-          <button
-            onClick={() => setActiveTab('lista_cuadrantes')}
-            className={`px-6 py-3 rounded-lg font-bold transition-colors ${
-              activeTab === 'lista_cuadrantes'
-                ? 'bg-red-600 text-white'
-                : 'bg-white text-red-600 border border-red-600 hover:bg-red-50'
-            }`}
-          >
-            Lista Cuadrantes
-          </button>
-          <button
-            onClick={() => setActiveTab('lista_horarios')}
-            className={`px-6 py-3 rounded-lg font-bold transition-colors ${
-              activeTab === 'lista_horarios'
-                ? 'bg-red-600 text-white'
-                : 'bg-white text-red-600 border border-red-600 hover:bg-red-50'
-            }`}
-          >
-            Lista Horarios
-          </button>
-          <button
-            onClick={() => setActiveTab('horarios')}
-            className={`px-6 py-3 rounded-lg font-bold transition-colors ${
-              activeTab === 'horarios'
-                ? 'bg-red-600 text-white'
-                : 'bg-white text-red-600 border border-red-600 hover:bg-red-50'
-            }`}
-          >
-            Crear Horario
-          </button>
-          <button
-            onClick={() => setActiveTab('festivos')}
-            className={`px-6 py-3 rounded-lg font-bold transition-colors ${
-              activeTab === 'festivos'
-                ? 'bg-red-600 text-white'
-                : 'bg-white text-red-600 border border-red-600 hover:bg-red-50'
-            }`}
-          >
-            Festivos
-          </button>
-          <button
-            onClick={() => setActiveTab('horario_multicentro')}
-            className={`px-6 py-3 rounded-lg font-bold transition-colors ${
-              activeTab === 'horario_multicentro'
-                ? 'bg-red-600 text-white'
-                : 'bg-white text-red-600 border border-red-600 hover:bg-red-50'
-            }`}
-          >
-            Horario Multicentro
-          </button>
-        </div>
+      <PageHeader
+        title="Cuadrantes"
+        subtitle="Gestiona los horarios de trabajo para empleados"
+        backTo="/inicio"
+        backTitle="Regresar a Inicio"
+      />
 
+      <SegmentedControl
+        items={cuadrantesTabs}
+        value={activeTab === 'preview' ? 'generar' : activeTab}
+        onChange={setActiveTab}
+        layout="grid"
+      />
+
+      {activeTab === 'preview' && cuadrantePreview.length > 0 ? (
+        <AlertBanner variant="info" title="Modo Preview">
+          Vista previa de cuadrantes generados — {MONTHS[selectedMonth]} {selectedYear}
+          {selectedCentro ? ` · ${selectedCentro}` : ''}. Revisa y guarda o vuelve a Generar.
+        </AlertBanner>
+      ) : null}
+
+      <div className="app-card app-card--pad cuadrantes-tab-panel">
         {activeTab === 'generar' && (
           <div className="space-y-6">
-            {/* Configurare lună și centru */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div>
-                <label
-                  htmlFor="generar-mes"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Mes
-                </label>
+            <div className="cuadrantes-generar-filters cuadrantes-generar-filters--wide app-card app-card--pad">
+              <div className="cuadrantes-filter-field">
+                <label htmlFor="generar-mes">Mes</label>
                 <select
                   id="generar-mes"
                   name="mes"
@@ -3765,7 +3777,7 @@ export default function CuadrantesPage() {
                       console.error('Invalid month value:', e.target.value);
                     }
                   }}
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full"
                 >
                   {MONTHS.map((month, index) => (
                     <option key={month} value={index}>
@@ -3775,13 +3787,8 @@ export default function CuadrantesPage() {
                 </select>
               </div>
               
-              <div className="relative">
-                <label
-                  htmlFor="generar-centro"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Centro
-                </label>
+              <div className="relative cuadrantes-filter-field">
+                <label htmlFor="generar-centro">Centro</label>
                 <div className="relative">
                   <input
                     id="generar-centro"
@@ -3804,19 +3811,21 @@ export default function CuadrantesPage() {
                       setTimeout(() => setCentroDropdownOpen(false), 200);
                     }}
                     placeholder="Buscar o escribir centro..."
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    className="app-picker-input"
                   />
                   {centroDropdownOpen && filteredCentros.length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                    <div className="cuadrantes-picker-dropdown">
                       {filteredCentros.map(centro => (
                         <div
                           key={centro}
+                          role="option"
+                          tabIndex={0}
                           onClick={() => {
                             setSelectedCentro(centro);
                             setCentroSearchTerm(centro);
                             setCentroDropdownOpen(false);
                           }}
-                          className="p-2 hover:bg-red-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                          className={`cuadrantes-picker-option${selectedCentro === centro ? ' is-active' : ''}`}
                         >
                       {centro}
                         </div>
@@ -3824,26 +3833,21 @@ export default function CuadrantesPage() {
                     </div>
                   )}
                   {centroDropdownOpen && filteredCentros.length === 0 && centroSearchTerm && (
-                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg p-2 text-gray-500">
+                    <div className="cuadrantes-picker-dropdown p-2 text-gray-500 text-sm">
                       No se encontraron centros
                     </div>
                   )}
                 </div>
               </div>
               
-              <div>
-                <label
-                  htmlFor="generar-grupo"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  👥 Grupo
-                </label>
+              <div className="cuadrantes-filter-field">
+                <label htmlFor="generar-grupo">Grupo</label>
                 <select
                   id="generar-grupo"
                   name="grupo"
                   value={selectedGrupo}
                   onChange={(e) => setSelectedGrupo(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full"
                 >
                   <option value="">Todos los grupos</option>
                   {grupos.map(grupo => (
@@ -3854,28 +3858,24 @@ export default function CuadrantesPage() {
                 </select>
               </div>
               
-              <div>
-                <label
-                  htmlFor="generar-year"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Año
-                </label>
-                <div className="flex items-center gap-2">
+              <div className="cuadrantes-filter-field">
+                <label htmlFor="generar-year">Año</label>
+                <div className="cuadrantes-month-nav">
                   <button
                     type="button"
-                    className="px-3 py-2 rounded-lg border border-gray-300 hover:bg-gray-50"
+                    className="cuadrantes-month-nav__btn"
                     onClick={() => setSelectedMonth(m => (m === 0 ? 11 : m - 1)) || setSelectedYear(y => (selectedMonth === 0 ? y - 1 : y))}
                     title="Mes anterior"
+                    aria-label="Mes anterior"
                   >
-                    ←
+                    <ChevronLeft className="w-4 h-4" aria-hidden />
                   </button>
                   <select
                     id="generar-year"
                     name="year"
                     value={selectedYear} 
                     onChange={(e) => setSelectedYear(Number(e.target.value))}
-                    className="p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    className="flex-1"
                   >
                     {Array.from({ length: 5 }, (_, i) => {
                       const year = new Date().getFullYear() - 2 + i;
@@ -3886,31 +3886,25 @@ export default function CuadrantesPage() {
                   </select>
                   <button
                     type="button"
-                    className="px-3 py-2 rounded-lg border border-gray-300 hover:bg-gray-50"
+                    className="cuadrantes-month-nav__btn"
                     onClick={() => setSelectedMonth(m => (m === 11 ? 0 : m + 1)) || setSelectedYear(y => (selectedMonth === 11 ? y + 1 : y))}
                     title="Mes siguiente"
+                    aria-label="Mes siguiente"
                   >
-                    →
+                    <ChevronRight className="w-4 h-4" aria-hidden />
                   </button>
                 </div>
               </div>
             </div>
 
-
-            {/* Selector de EMPLEADO - NUEVO */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <label
-                htmlFor="generar-empleado"
-                className="block text-sm font-medium text-gray-700 mb-2"
-              >
-                👤 Empleado
-              </label>
+            <div className="app-card app-card--pad cuadrantes-filter-field">
+              <label htmlFor="generar-empleado">Empleado</label>
               <select
                 id="generar-empleado"
                 name="empleado"
                 value={selectedEmpleado}
                 onChange={(e) => setSelectedEmpleado(e.target.value)}
-                className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 font-medium"
+                className="w-full"
               >
                 <option value="">Todos los empleados ({angajatiFiltrati.length})</option>
                 {angajatiFiltrati.map(emp => (
@@ -3921,33 +3915,20 @@ export default function CuadrantesPage() {
               </select>
               
               {angajatiFiltrati.length === 0 && (
-                <p className="text-sm text-gray-500 mt-2">
-                  ℹ️ Selecciona un Centro para ver los empleados disponibles
-                </p>
+                <AlertBanner variant="info" compact className="mt-2">
+                  Selecciona un Centro para ver los empleados disponibles
+                </AlertBanner>
               )}
             </div>
 
-            {/* DEBUG: Mostrar información de filtrado */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-              <h4 className="font-bold text-blue-900 mb-2">📊 Debug Información:</h4>
-              <div className="text-sm text-blue-800 space-y-1">
-                <p><strong>Total empleados cargados:</strong> {angajati.length}</p>
-                <p><strong>Centro seleccionado:</strong> {selectedCentro || 'Ninguno'}</p>
-                <p><strong>Grupo seleccionado:</strong> {selectedGrupo || 'Ninguno'} {selectedGrupo === '' ? '(Todos los grupos)' : ''}</p>
-                <p><strong>Empleados filtrados:</strong> {angajatiFiltrati.length}</p>
-                {angajatiFiltrati.length === 0 && selectedCentro && (
-                  <p className="text-red-600 font-bold mt-2">
-                    ⚠️ No hay empleados con CENTRO TRABAJO = &quot;{selectedCentro}&quot;
-                  </p>
-                )}
-              </div>
-            </div>
-
             {/* Herramientas de generación avanzada */}
-            <Card className="border border-gray-200 p-4 shadow-sm">
+            <div className="app-card app-card--pad">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-800">⚙️ Generador avanzado</h3>
+                  <h3 className="text-base font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+                    <Settings2 className="w-4 h-4" aria-hidden />
+                    Generador avanzado
+                  </h3>
                   <p className="text-sm text-gray-500">
                     Personaliza la secuencia de turnos y los horarios base. Usa formato <span className="font-mono">&quot;2xT1,2xT2,2xLIBRE&quot;</span> para las secuencias o define un patrón semanal rápido.
                   </p>
@@ -4091,10 +4072,10 @@ export default function CuadrantesPage() {
                   Completar celdas aplicará el patrón semanal. Si se deja vacío se seguirá usando la rotación o la secuencia personalizada.
                 </p>
               </div>
-            </Card>
+            </div>
 
             {/* Buton Import Excel - vizibil oricând */}
-            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-end gap-3 mb-6">
+            <div className="cuadrantes-excel-zone flex flex-col sm:flex-row sm:items-end sm:justify-end gap-3 mb-6">
               <div className="flex flex-col gap-1 sm:mr-auto">
                 <label htmlFor="excel-format-cuadrantes" className="text-sm font-medium text-gray-700">
                   Formato Excel
@@ -4141,7 +4122,12 @@ export default function CuadrantesPage() {
                   }
                 }}
               >
-                {uploadingExcel ? 'Cargando...' : '📥 Importar desde Excel'}
+                {uploadingExcel ? 'Cargando...' : (
+                  <>
+                    <Upload className="w-4 h-4" aria-hidden />
+                    <span>Importar desde Excel</span>
+                  </>
+                )}
               </Button>
             </div>
 
@@ -4165,7 +4151,7 @@ export default function CuadrantesPage() {
                   };
                   
                   return (
-                    <Card key={id} className="p-4">
+                    <div key={id} className="cuadrantes-employee-config app-card app-card--pad">
                       <div className={`${isManager ? 'flex items-center gap-4 mb-4' : 'flex items-center justify-between'}`}>
                         <h4 className="font-bold text-gray-800 min-w-[120px]">
                           {(() => {
@@ -4187,7 +4173,7 @@ export default function CuadrantesPage() {
                                   htmlFor={`empleado-${id}-dia1`}
                                   className="block text-sm font-semibold text-gray-700"
                                 >
-                                  📅 Día 1
+                                  Día 1
                                 </label>
                               <select
                                 id={`empleado-${id}-dia1`}
@@ -4201,8 +4187,8 @@ export default function CuadrantesPage() {
                                 }}
                                   className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
                               >
-                                  <option value="M">🟢 Trabajo</option>
-                                  <option value="L">🔴 Libre</option>
+                                  <option value="M">Trabajo</option>
+                                  <option value="L">Libre</option>
                               </select>
                               </div>
 
@@ -4211,7 +4197,7 @@ export default function CuadrantesPage() {
                                   htmlFor={`empleado-${id}-rotacion`}
                                   className="block text-sm font-semibold text-gray-700"
                                 >
-                                  🔄 Tipo de Rotación
+                                  Tipo de Rotación
                                 </label>
                                 <select
                                   id={`empleado-${id}-rotacion`}
@@ -4239,7 +4225,7 @@ export default function CuadrantesPage() {
                                   htmlFor={`empleado-${id}-etapa`}
                                   className="block text-sm font-semibold text-gray-700"
                                 >
-                                  🎯 Etapa de Rotación Actual
+                                  Etapa de Rotación Actual
                                 </label>
                                 <div className="flex items-center gap-3">
                                   <div className="flex-1">
@@ -4298,7 +4284,7 @@ export default function CuadrantesPage() {
                                   htmlFor={`empleado-${id}-horario-horas`}
                                   className="block text-sm font-semibold text-gray-700"
                                 >
-                                  ⏰ Configuración de Horario
+                                  Configuración de Horario
                                 </label>
                                 <div className="grid grid-cols-2 gap-3">
                                   <div>
@@ -4372,7 +4358,7 @@ export default function CuadrantesPage() {
                           </div>
                         )}
                       </div>
-                    </Card>
+                    </div>
                   );
                 })}
                 
@@ -4388,7 +4374,7 @@ export default function CuadrantesPage() {
                     {loading ? 'Se está generando...' : (isManager ? 'Generar Cuadrante' : 'Ver Programa')}
                   </Button>
                   {/* Debug info */}
-                  <div className="text-xs text-gray-500 mt-2">
+                  <div className="text-xs text-gray-500 mt-2 cuadrantes-debug">
                     Debug: loading={loading.toString()}, selectedCentro={selectedCentro || 'none'}, 
                     angajatiFiltrati={angajatiFiltrati.length}, centros={centros.length}, 
                     isManager={isManager.toString()}, authUser={authUser ? 'logged' : 'not logged'}
@@ -4404,8 +4390,9 @@ export default function CuadrantesPage() {
         {activeTab === 'lista_horarios' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-gray-800">Horarios creados</h3>
+              <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">Horarios creados</h3>
               <button
+                type="button"
                 onClick={async () => {
                   try {
                     const res = await import('../api/schedules');
@@ -4413,7 +4400,6 @@ export default function CuadrantesPage() {
                     const r = await listSchedules(callApi);
                     if (r.success) {
                       setHorariosLista(Array.isArray(r.data) ? r.data : []);
-                      // opțional: feedback discret prin schimbarea butonului
                     } else {
                       console.warn(r.message || 'Error al listar horarios');
                     }
@@ -4422,23 +4408,12 @@ export default function CuadrantesPage() {
                     console.warn('No se pudo conectar con el servidor');
                   }
                 }}
-                className="group relative w-12 h-12 rounded-2xl transition-all duration-500 transform hover:scale-110 hover:-translate-y-1 shadow-xl hover:shadow-blue-500/50 overflow-hidden"
-                style={{
-                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%)',
-                  boxShadow: '0 10px 25px rgba(59, 130, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.2)'
-                }}
+                className="solicitud-admin-btn"
                 title="Actualizar lista"
+                aria-label="Actualizar lista"
               >
-                {/* Glow effect */}
-                <div className="absolute inset-0 bg-blue-400 opacity-0 group-hover:opacity-40 blur-xl transition-all duration-500"></div>
-                
-                {/* Shimmer effect */}
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-                
-                {/* Icon con animație de rotire */}
-                <div className="relative flex items-center justify-center h-full">
-                  <span className="text-2xl transform group-hover:rotate-180 transition-transform duration-500">🔄</span>
-                </div>
+                <RefreshCw className="w-4 h-4" aria-hidden />
+                <span className="hidden sm:inline">Actualizar</span>
               </button>
             </div>
 
@@ -4738,147 +4713,28 @@ export default function CuadrantesPage() {
               </div>
             </div>
 
-          {festivosError && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
-              {festivosError}
-            </div>
-          )}
+          {festivosError ? (
+            <AlertBanner variant="warning" title="Aviso">{festivosError}</AlertBanner>
+          ) : null}
 
-          <Card>
+          <div className="app-card app-card--pad">
             {festivosLoading ? (
               <div className="py-12 text-center text-gray-600">
-                <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-b-2 border-red-600"></div>
+                <Loader2 className="mx-auto mb-4 h-10 w-10 animate-spin text-gray-400" aria-hidden />
                 Cargando calendario festivo...
               </div>
-            ) : festivosToDisplay.length === 0 ? (
-              <div className="py-12 text-center text-gray-500">
-                No se han encontrado festivos para el año seleccionado.
-              </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-semibold text-gray-700">
-                        Fecha
-                      </th>
-                      <th className="px-4 py-3 text-left font-semibold text-gray-700">
-                        Día
-                      </th>
-                      <th className="px-4 py-3 text-left font-semibold text-gray-700">
-                        Festividad
-                      </th>
-                      <th className="px-4 py-3 text-left font-semibold text-gray-700">
-                        Ámbito / Comunidad
-                      </th>
-                      <th className="px-4 py-3 text-left font-semibold text-gray-700">
-                        Observaciones
-                      </th>
-                      <th className="px-4 py-3 text-right font-semibold text-gray-700">
-                        Acciones
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {festivosToDisplay.map((festivo) => {
-                      const dateObj = new Date(festivo.date);
-                      const formattedDate = Number.isNaN(dateObj.getTime())
-                        ? festivo.date
-                        : dateObj.toLocaleDateString('es-ES', {
-                            day: '2-digit',
-                            month: '2-digit',
-                            year: 'numeric',
-                          });
-                      const formattedWeekday = Number.isNaN(dateObj.getTime())
-                        ? '-'
-                        : dateObj.toLocaleDateString('es-ES', {
-                            weekday: 'long',
-                          });
-
-                      return (
-                        <tr
-                          key={festivo.id}
-                          className={festivo.active === 0 ? 'opacity-60' : ''}
-                        >
-                          <td className="px-4 py-3 font-medium text-gray-800">
-                            {formattedDate}
-                          </td>
-                          <td className="px-4 py-3 capitalize text-gray-600">
-                            {formattedWeekday}
-                          </td>
-                          <td className="px-4 py-3 text-gray-800">
-                            {festivo.name}
-                          </td>
-                          <td className="px-4 py-3 text-gray-600">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span
-                                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${getScopeBadgeClasses(
-                                  festivo.scope,
-                                )}`}
-                              >
-                                {getScopeLabel(festivo.scope)}
-                              </span>
-                              {festivo.ccaa && (
-                                <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
-                                  {CCAA_NAMES[festivo.ccaa] || festivo.ccaa}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {festivo.observedDate && (
-                              <div className="text-xs text-gray-500">
-                                Observado el{' '}
-                                {new Date(festivo.observedDate).toLocaleDateString(
-                                  'es-ES',
-                                  {
-                                    day: '2-digit',
-                                    month: 'long',
-                                  },
-                                )}
-                              </div>
-                            )}
-                            {festivo.notes ? festivo.notes : '—'}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                type="button"
-                                aria-label="Crear para el año siguiente"
-                                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition hover:bg-green-50 hover:text-green-600"
-                                onClick={() => handleCreateFestivoNextYear(festivo)}
-                                title="Crear este festivo para el año siguiente"
-                              >
-                                <Copy className="h-4 w-4" />
-                                <span className="sr-only">Crear para el año siguiente</span>
-                              </button>
-                              <button
-                                type="button"
-                                aria-label="Editar festivo"
-                                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 transition hover:bg-red-50 hover:text-red-600"
-                                onClick={() => openFestivoModal(festivo)}
-                              >
-                                <Pencil className="h-4 w-4" />
-                                <span className="sr-only">Editar festivo</span>
-                              </button>
-                              <Button
-                                variant="outlineDanger"
-                                className="h-9 w-9 rounded-full p-0"
-                                onClick={() => handleFestivoDelete(festivo)}
-                                aria-label="Eliminar festivo"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <CuadrantesFestivosList
+                items={festivosToDisplay}
+                getScopeBadgeClasses={getScopeBadgeClasses}
+                getScopeLabel={getScopeLabel}
+                CCAA_NAMES={CCAA_NAMES}
+                onEdit={(festivo) => openFestivoModal(festivo)}
+                onCopyNextYear={handleCreateFestivoNextYear}
+                onDelete={handleFestivoDelete}
+              />
             )}
-          </Card>
+          </div>
           {festivoModalOpen && festivoForm && (
             <Modal
               isOpen={festivoModalOpen}
@@ -5020,8 +4876,8 @@ export default function CuadrantesPage() {
         {activeTab === 'lista_cuadrantes' && (
           <div className="space-y-6">
             {/* Selectors */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="relative">
+            <div className="cuadrantes-filter-bar app-card app-card--pad">
+              <div className="relative cuadrantes-filter-field">
                 <label
                   htmlFor="lista-centro"
                   className="block text-sm font-semibold text-gray-700 mb-2"
@@ -5051,20 +4907,22 @@ export default function CuadrantesPage() {
                       setTimeout(() => setCentroDropdownOpenLista(false), 200);
                     }}
                     placeholder="Buscar o escribir centro..."
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    className="app-picker-input"
                   />
                   {centroDropdownOpenLista && filteredCentrosLista.length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-auto">
+                    <div className="cuadrantes-picker-dropdown">
                       {filteredCentrosLista.map(centro => (
                         <div
                           key={centro}
+                          role="option"
+                          tabIndex={0}
                           onClick={() => {
                             setSelectedCentro(centro);
                             setSelectedEmpleado('');
                             setCentroSearchTermLista(centro);
                             setCentroDropdownOpenLista(false);
                           }}
-                          className="p-3 hover:bg-red-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                          className={`cuadrantes-picker-option${selectedCentro === centro ? ' is-active' : ''}`}
                         >
                       {centro}
                         </div>
@@ -5072,14 +4930,14 @@ export default function CuadrantesPage() {
                     </div>
                   )}
                   {centroDropdownOpenLista && filteredCentrosLista.length === 0 && centroSearchTermLista && (
-                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-3 text-gray-500">
+                    <div className="cuadrantes-picker-dropdown p-3 text-gray-500 text-sm">
                       No se encontraron centros
                     </div>
                   )}
                 </div>
             </div>
               
-              <div>
+              <div className="cuadrantes-filter-field">
                 <label
                   htmlFor="lista-empleado"
                   className="block text-sm font-semibold text-gray-700 mb-2"
@@ -5091,7 +4949,7 @@ export default function CuadrantesPage() {
                   name="listaEmpleado"
                   value={selectedEmpleado}
                   onChange={(e) => setSelectedEmpleado(e.target.value)}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full"
                   disabled={!selectedCentro}
                 >
                   <option value="">Selecciona un empleado...</option>
@@ -5106,7 +4964,7 @@ export default function CuadrantesPage() {
                 </select>
           </div>
 
-              <div>
+              <div className="cuadrantes-filter-field">
                 <label
                   htmlFor="lista-mes-ano"
                   className="block text-sm font-semibold text-gray-700 mb-2"
@@ -5119,7 +4977,7 @@ export default function CuadrantesPage() {
                     name="listaMesAno"
                     value={selectedMesAno}
                     onChange={(e) => setSelectedMesAno(e.target.value)}
-                    className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    className="flex-1"
                   >
                   <option value="">Todos los meses</option>
                   {(() => {
@@ -5175,9 +5033,11 @@ export default function CuadrantesPage() {
                 </select>
                 {selectedMesAno && (
                   <button
+                    type="button"
                     onClick={() => setSelectedMesAno('')}
-                    className="px-3 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 text-sm"
+                    className="solicitud-admin-btn min-h-[44px]"
                     title="Limpiar filtro de mes/año"
+                    aria-label="Limpiar filtro de mes/año"
                   >
                     ✕
                   </button>
@@ -5188,9 +5048,13 @@ export default function CuadrantesPage() {
             
             {/* Cuadrantes List */}
             <div className="space-y-4">
-              {/* Botón para cargar cuadrantes */}
-              <div className="flex gap-4">
-                <button
+              <div className="cuadrantes-toolbar">
+                <div className="cuadrantes-toolbar__primary">
+                <Button
+                  type="button"
+                  variant="primary"
+                  disabled={!selectedCentro || loading}
+                  loading={loading}
                   onClick={async () => {
                     if (!selectedCentro) {
                       alert('Por favor selecciona un centro de trabajo');
@@ -5306,31 +5170,25 @@ export default function CuadrantesPage() {
                       setLoading(false);
                     }
                   }}
-                  disabled={!selectedCentro || loading}
-                  className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
                 >
                   {loading ? 'Cargando...' : 'Cargar Cuadrantes'}
-                </button>
+                </Button>
+                </div>
                 
                 {selectedCentro && (
-                  <div className="text-sm text-gray-600 flex items-center">
-                    📍 Centro: <span className="font-semibold ml-1">{selectedCentro}</span>
+                  <div className="cuadrantes-context">
+                    <span><MapPin className="w-3.5 h-3.5 inline -mt-0.5" aria-hidden /> Centro: <strong>{selectedCentro}</strong></span>
                     {selectedEmpleado && (
-                      <>
-                        <span className="mx-2">•</span>
-                        👤 Empleado: <span className="font-semibold ml-1">
+                      <span><User className="w-3.5 h-3.5 inline -mt-0.5" aria-hidden /> Empleado: <strong>
                           {angajatiFiltrati.find(emp => (emp['CODIGO'] || emp.id) === selectedEmpleado)?.['NOMBRE / APELLIDOS'] || selectedEmpleado}
-                        </span>
-                      </>
+                        </strong></span>
                     )}
                   </div>
                 )}
               </div>
               
               {error && (
-                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg">
-                  {error}
-                </div>
+                <AlertBanner variant="danger" title="Error">{error}</AlertBanner>
               )}
               
               {cuadrantesLista.length > 0 && (
@@ -5341,11 +5199,11 @@ export default function CuadrantesPage() {
                   </h3>
                   
                   {/* Secțiune pentru gestionarea turelor */}
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-blue-600 text-lg">🕐</span>
-                        <h4 className="text-md font-bold text-gray-800">
+                  <div className="cuadrantes-shifts-panel">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Clock className="w-4 h-4 text-blue-600" aria-hidden />
+                        <h4 className="text-md font-bold text-gray-800 dark:text-gray-100">
                           Gestionar Turnos (T1, T2, T3)
                         </h4>
                         <span className="text-sm text-gray-600">
@@ -5426,11 +5284,29 @@ export default function CuadrantesPage() {
                   
                   {/* Modal pentru editarea orelor turei */}
                   {editingShift && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-                        <h3 className="text-lg font-bold mb-4">
-                          Editar Horas del Turno: {editingShift.type}
-                        </h3>
+                    <Modal
+                      isOpen={Boolean(editingShift)}
+                      onClose={() => setEditingShift(null)}
+                      title={`Editar Horas del Turno: ${editingShift.type}`}
+                      size="sm"
+                      showCloseButton={false}
+                      footer={(
+                        <div className="flex gap-2 justify-end w-full">
+                          <Button type="button" variant="secondary" onClick={() => setEditingShift(null)}>
+                            Cancelar
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="primary"
+                            onClick={() => {
+                              handleUpdateShiftHours(editingShift.shift, editingShift.start, editingShift.end);
+                            }}
+                          >
+                            Aplicar a Todas las Apariții
+                          </Button>
+                        </div>
+                      )}
+                    >
                         <div className="space-y-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -5440,7 +5316,7 @@ export default function CuadrantesPage() {
                               type="time"
                               value={editingShift.start}
                               onChange={(e) => setEditingShift({...editingShift, start: e.target.value})}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
                             />
                           </div>
                           <div>
@@ -5451,7 +5327,7 @@ export default function CuadrantesPage() {
                               type="time"
                               value={editingShift.end}
                               onChange={(e) => setEditingShift({...editingShift, end: e.target.value})}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[44px]"
                             />
                           </div>
                           <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
@@ -5459,59 +5335,54 @@ export default function CuadrantesPage() {
                             <br />
                             <strong>Nuevo turno:</strong> {editingShift.type} {editingShift.start}-{editingShift.end}
                           </div>
-                          <div className="flex gap-2 justify-end">
-                            <button
-                              onClick={() => setEditingShift(null)}
-                              className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
-                            >
-                              Cancelar
-                            </button>
-                            <button
-                              onClick={() => {
-                                handleUpdateShiftHours(editingShift.shift, editingShift.start, editingShift.end);
-                              }}
-                              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                            >
-                              Aplicar a Todas las Apariții
-                            </button>
-                          </div>
                         </div>
-                      </div>
-                    </div>
+                    </Modal>
                   )}
                   
                   {/* Buton de salvare (apare când sunt modificări) */}
                   {hasChanges && (
-                    <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                      <div className="flex items-center justify-between">
+                    <div className="mb-4 cuadrantes-unsaved-bar">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div className="flex items-center gap-2">
-                          <span className="text-yellow-600">⚠️</span>
-                          <span className="text-yellow-800 font-medium">Tienes cambios sin guardar</span>
+                          <span className="cuadrantes-badge cuadrantes-badge--draft">Sin guardar</span>
+                          <span className="text-yellow-800 dark:text-yellow-200 font-medium text-sm">Tienes cambios sin guardar</span>
                         </div>
                         <div className="flex gap-2">
-                          <button
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
                             onClick={() => {
                               setEditedCuadrantes({});
                               setHasChanges(false);
                             }}
-                            className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-medium"
                           >
                             Cancelar
-                          </button>
-                          <button
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="primary"
+                            size="sm"
                             onClick={handleSaveChanges}
                             disabled={loading}
-                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 font-medium"
+                            loading={loading}
                           >
                             {loading ? 'Guardando...' : 'Guardar Cambios'}
-                          </button>
+                          </Button>
                         </div>
                       </div>
                     </div>
                   )}
 
-                  {/* Tabel consolidat cu toți angajații */}
-                  <div className="bg-white rounded-lg border border-gray-200 p-6">
+                  <CuadrantesMobileMatrix
+                    rows={mobileMatrixRows}
+                    daysInMonth={daysInMonthListaCuadrantes}
+                    onEditDay={handleEditDay}
+                    isMulticentro={isCuadranteMarcaMulticentro}
+                  />
+
+                  {/* Tabel consolidat cu toți angajații — desktop */}
+                  <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 p-4 md:p-6 cuadrantes-matrix-wrap">
                     <div className="mb-4 pb-4 border-b border-gray-200">
                       <h4 className="text-lg font-bold text-gray-800">
                         Cuadrantes Consolidados - {selectedCentro}
@@ -5522,7 +5393,7 @@ export default function CuadrantesPage() {
                       </div>
                     </div>
                     
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto cuadrantes-matrix-desktop">
                       <table className="w-full border-collapse border border-gray-300">
                         <thead>
                           <tr className="bg-gray-50">
@@ -5898,40 +5769,27 @@ export default function CuadrantesPage() {
 
         {activeTab === 'horario_multicentro' && (
           <div className="space-y-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-              <h3 className="text-xl font-bold text-blue-900 mb-2">
-                📋 Horario Multicentro
-              </h3>
-              <p className="text-blue-800">
-                Importa horarios especiales para empleados que trabajan en múltiples centros, o{' '}
-                <strong>crea un registro manual</strong> con el editor de días (turno u horas) más abajo, o importa Excel.
-              </p>
-              <p className="text-sm text-blue-700 mt-2">
-                <strong>Formato Excel esperado:</strong> Nome empleado (Row 2), Luna (Row 3), 
-                Header: CLIENTE, HORARIO, SERVICIO, Nº DE HORAS, 1-31 (Row 4), 
-                Date: Centro + Turno + Ore pe zile (Row 5+)
-              </p>
+            <AlertBanner variant="info" title="Horario Multicentro">
+              Importa horarios para empleados en múltiples centros, crea un registro manual con el editor de días, o importa Excel.
+            </AlertBanner>
+            <div className="cuadrantes-callout text-sm text-gray-600 dark:text-gray-400">
+              <strong>Formato Excel:</strong> Nombre empleado (fila 2), Luna (fila 3), cabecera CLIENTE, HORARIO, SERVICIO, Nº DE HORAS, días 1–31 (fila 4+).
             </div>
 
-            {/* Selectori pentru Lună și Angajat */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div>
-                <label htmlFor="horario-multicentro-mes" className="block text-sm font-medium text-gray-700 mb-2">
-                  📅 Mes
-                </label>
+            <div className="cuadrantes-filter-bar app-card app-card--pad">
+              <div className="cuadrantes-filter-field">
+                <label htmlFor="horario-multicentro-mes">Mes</label>
                 <input
                   id="horario-multicentro-mes"
                   type="month"
                   value={selectedMonthHorariosMulticentro}
                   onChange={(e) => setSelectedMonthHorariosMulticentro(e.target.value)}
-                  className="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full"
                 />
               </div>
               
-              <div className="relative">
-                <label htmlFor="horario-multicentro-empleado" className="block text-sm font-medium text-gray-700 mb-2">
-                  👤 Empleado (opcional - puedes escribir o seleccionar)
-                </label>
+              <div className="relative cuadrantes-filter-field">
+                <label htmlFor="horario-multicentro-empleado">Empleado (opcional)</label>
                 <div className="relative">
                   <input
                     id="horario-multicentro-empleado"
@@ -6417,14 +6275,30 @@ export default function CuadrantesPage() {
 
               return (
                 <div className="space-y-6">
-                  <h3 className="text-lg font-bold text-gray-800">
-                    📊 Horarios Multicentro agrupados por Centro ({Object.keys(groupedByCentro).length} centros)
+                  <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">
+                    Horarios agrupados por Centro ({Object.keys(groupedByCentro).length})
                   </h3>
+
+                  <CuadrantesMulticentroMobile
+                    groupedByCentro={groupedByCentro}
+                    daysInMonth={daysInMonthHorariosMulticentro}
+                    multicentroListEdits={multicentroListEdits}
+                    savingMulticentroListId={savingMulticentroListId}
+                    calculaOreDinFormat={calculaOreDinFormat}
+                    onDayChange={(rowId, day, value) => {
+                      if (rowId == null) return;
+                      setMulticentroListEdits((prev) => ({
+                        ...prev,
+                        [rowId]: { ...(prev[rowId] || {}), [day]: value },
+                      }));
+                    }}
+                    onSaveRow={handleSaveMulticentroHorarioRow}
+                  />
                   
                   {Object.entries(groupedByCentro).map(([centro, horarios]) => (
-                    <div key={centro} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                      <div className="bg-blue-600 text-white px-6 py-3 font-bold text-lg">
-                        🏢 {centro} ({horarios.length} horario{horarios.length !== 1 ? 's' : ''})
+                    <div key={centro} className="cuadrantes-multicentro-desktop app-card overflow-hidden">
+                      <div className="px-4 py-3 font-bold text-base border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                        {centro} ({horarios.length} horario{horarios.length !== 1 ? 's' : ''})
                       </div>
                       
                       <div className="overflow-x-auto">
@@ -6532,86 +6406,7 @@ export default function CuadrantesPage() {
                                           rowId == null ||
                                           savingMulticentroListId === rowId
                                         }
-                                        onClick={async () => {
-                                          if (!horario.id) {
-                                            showToast(
-                                              'error',
-                                              'No se puede guardar: falta id del registro',
-                                            );
-                                            return;
-                                          }
-                                          setSavingMulticentroListId(horario.id);
-                                          try {
-                                            const token = localStorage.getItem('auth_token');
-                                            const updateData = {};
-                                            for (let zi = 1; zi <= 31; zi++) {
-                                              const baseZi = String(
-                                                horario[`ZI_${zi}`] ?? horario[`zi_${zi}`] ?? '',
-                                              );
-                                              const mergedZi =
-                                                multicentroListEdits[horario.id]?.[zi] !== undefined
-                                                  ? multicentroListEdits[horario.id][zi]
-                                                  : baseZi;
-                                              const t = String(mergedZi).trim();
-                                              updateData[`ZI_${zi}`] =
-                                                t === '' || t.toUpperCase() === 'LIBRE' ? null : t;
-                                            }
-                                            const updateResponse = await fetch(
-                                              `${routes.updateHorarioMulticentro}/${horario.id}`,
-                                              {
-                                                method: 'PUT',
-                                                headers: {
-                                                  'Content-Type': 'application/json',
-                                                  Authorization: token ? `Bearer ${token}` : '',
-                                                },
-                                                body: JSON.stringify(updateData),
-                                              },
-                                            );
-                                            if (!updateResponse.ok) {
-                                              throw new Error(
-                                                `HTTP error! status: ${updateResponse.status}`,
-                                              );
-                                            }
-                                            const mes =
-                                              horario.LUNA ||
-                                              horario.luna ||
-                                              selectedMonthHorariosMulticentro;
-                                            const codigo = horario.CODIGO || horario.codigo;
-                                            const refreshResponse = await fetch(
-                                              `${routes.getHorarioMulticentro}?mes=${mes}${codigo ? `&codigo=${codigo}` : ''}`,
-                                              {
-                                                method: 'GET',
-                                                headers: {
-                                                  'Content-Type': 'application/json',
-                                                  Authorization: token ? `Bearer ${token}` : '',
-                                                },
-                                              },
-                                            );
-                                            if (refreshResponse.ok) {
-                                              const refreshData = await refreshResponse.json();
-                                              if (
-                                                refreshData.success &&
-                                                Array.isArray(refreshData.horarios)
-                                              ) {
-                                                setHorariosMulticentroList(refreshData.horarios);
-                                                setMulticentroListEdits((prev) => {
-                                                  const next = { ...prev };
-                                                  delete next[horario.id];
-                                                  return next;
-                                                });
-                                                showToast('success', 'Horario multicentro guardado');
-                                              }
-                                            }
-                                          } catch (error) {
-                                            console.error('Error guardando horario multicentro:', error);
-                                            showToast(
-                                              'error',
-                                              `Error al guardar: ${error.message}`,
-                                            );
-                                          } finally {
-                                            setSavingMulticentroListId(null);
-                                          }
-                                        }}
+                                        onClick={() => handleSaveMulticentroHorarioRow(horario)}
                                         className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs rounded"
                                         title="Guardar cambios de esta fila"
                                       >
@@ -6748,7 +6543,12 @@ export default function CuadrantesPage() {
                   }
                 }}
               >
-                {uploadingExcelMulticentro ? 'Cargando...' : '📥 Importar Horario Multicentro desde Excel'}
+                {uploadingExcelMulticentro ? 'Cargando...' : (
+                  <>
+                    <Upload className="w-4 h-4" aria-hidden />
+                    <span>Importar Horario Multicentro</span>
+                  </>
+                )}
               </Button>
             </div>
           </div>
@@ -6756,52 +6556,60 @@ export default function CuadrantesPage() {
 
         {activeTab === 'preview' && cuadrantePreview.length > 0 && (
           <div className="space-y-6">
-            {/* Avertizare pentru luna existentă */}
-            {lunaExistenta && (
-              <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4">
-                <div className="flex items-center gap-3">
-                  <span className="text-yellow-600 text-2xl">⚠️</span>
-                  <div className="flex-1">
-                    <h3 className="text-yellow-800 font-bold text-lg mb-2">
-                      ¡Atención! El mes {MONTHS[selectedMonth]} {selectedYear} ya está guardado en el sistema.
-                    </h3>
-                    <p className="text-yellow-700 mb-3">
-                      Si guardas de nuevo, sobrescribirás los datos existentes.
-                    </p>
-                    <div className="flex gap-3">
-                      <Button
-                        onClick={() => setShowExistentPreview(!showExistentPreview)}
-                        variant="secondary"
-                        size="sm"
-                        className="bg-yellow-600 hover:bg-yellow-700 text-white"
-                      >
-                        {showExistentPreview ? 'Ocultar' : 'Ver'} cuadrantes existentes
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          if (confirm('¿Seguro que quieres sobrescribir los cuadrantes existentes? Esta acción no se puede deshacer.')) {
-                            handleSalveaza();
-                          }
-                        }}
-                        variant="primary"
-                        size="sm"
-                        className="bg-red-600 hover:bg-red-700"
-                      >
-                        Sobrescribir cuadrantes
-                      </Button>
-                    </div>
-                  </div>
+            <div className="cuadrantes-preview-banner">
+              <div className="cuadrantes-preview-toolbar">
+                <div>
+                  <p className="text-sm font-bold flex items-center gap-2">
+                    <Eye className="w-4 h-4" aria-hidden />
+                    Preview — {MONTHS[selectedMonth]} {selectedYear}
+                  </p>
+                  <p className="text-xs text-gray-600 mt-1">{selectedCentro || 'Sin centro'}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={() => setActiveTab('generar')} variant="secondary" size="sm">
+                    <ArrowLeft className="w-4 h-4 mr-1" aria-hidden />
+                    Volver a Generar
+                  </Button>
+                  <Button onClick={handleSalveaza} variant="primary" size="sm" disabled={loading} loading={loading}>
+                    <Save className="w-4 h-4 mr-1" aria-hidden />
+                    {loading ? 'Guardando…' : 'Guardar Mes'}
+                  </Button>
+                  <Button onClick={handleGenerarAn} variant="secondary" size="sm" disabled={loading} loading={loading}>
+                    <Calendar className="w-4 h-4 mr-1" aria-hidden />
+                    {loading ? 'Generando…' : 'Generar Todo el Año'}
+                  </Button>
                 </div>
               </div>
+            </div>
+
+            {lunaExistenta && (
+              <AlertBanner variant="warning" title={`Mes ya guardado — ${MONTHS[selectedMonth]} ${selectedYear}`}>
+                Si guardas de nuevo, sobrescribirás los datos existentes.
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <Button onClick={() => setShowExistentPreview(!showExistentPreview)} variant="secondary" size="sm">
+                    {showExistentPreview ? 'Ocultar' : 'Ver'} cuadrantes existentes
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      if (confirm('¿Seguro que quieres sobrescribir los cuadrantes existentes? Esta acción no se puede deshacer.')) {
+                        handleSalveaza();
+                      }
+                    }}
+                    variant="primary"
+                    size="sm"
+                  >
+                    Sobrescribir cuadrantes
+                  </Button>
+                </div>
+              </AlertBanner>
             )}
 
-            {/* Preview pentru cuadrantele existente */}
             {lunaExistenta && showExistentPreview && cuadranteExistente.length > 0 && (
-              <Card>
-                <h3 className="text-lg font-bold text-yellow-800 mb-4">
-                  Cuadrantes existentes en el sistema - {MONTHS[selectedMonth]} {selectedYear}
+              <div className="app-card app-card--pad">
+                <h3 className="text-base font-bold mb-4">
+                  Cuadrantes existentes — {MONTHS[selectedMonth]} {selectedYear}
                 </h3>
-                <div className="overflow-x-auto">
+                <div className="cuadrantes-preview-table-wrap overflow-x-auto">
                   <table className="w-full border-collapse border border-gray-300">
                     <thead>
                       <tr>
@@ -6874,46 +6682,10 @@ export default function CuadrantesPage() {
                     </tbody>
                   </table>
                 </div>
-              </Card>
+              </div>
             )}
 
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-red-600">
-                Preview - {MONTHS[selectedMonth]} {selectedYear} - {selectedCentro}
-              </h3>
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => setActiveTab('generar')}
-                  variant="secondary"
-                  size="sm"
-                >
-                  ← Atrás
-                </Button>
-                <Button
-                  onClick={handleSalveaza}
-                  variant="primary"
-                  size="sm"
-                  disabled={loading}
-                  loading={loading}
-                  className="bg-green-600 hover:bg-green-700"
-                >
-                  {loading ? 'Se está guardando...' : '💾 Guardar Mes'}
-                </Button>
-                <Button
-                  onClick={handleGenerarAn}
-                  variant="primary"
-                  size="sm"
-                  disabled={loading}
-                  loading={loading}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  {loading ? 'Se está generando...' : '📅 Generar Todo el Año'}
-                </Button>
-              </div>
-            </div>
-
-            {/* Tabel preview */}
-            <div className="overflow-x-auto">
+            <div className="cuadrantes-preview-table-wrap overflow-x-auto">
               <table className="w-full border-collapse border border-gray-300">
                 <thead>
                   <tr>
@@ -6937,8 +6709,8 @@ export default function CuadrantesPage() {
                       </th>
                       );
                     })}
-                    <th className="border border-gray-300 bg-blue-50 text-blue-600 font-bold p-3 text-center">
-                      ⏱️ Total Horas
+                    <th className="border border-gray-300 bg-gray-50 font-bold p-3 text-center">
+                      Total Horas
                     </th>
                   </tr>
                 </thead>
@@ -7188,22 +6960,27 @@ export default function CuadrantesPage() {
             )}
           </div>
         )}
-      </Card>
+      </div>
 
       {/* Modal para editar */}
       {showEditModal && selectedCell && !editingDay && !editingSchedule && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-            <h3 className="text-lg font-bold text-red-600 mb-4">
-              Editar Día {selectedCell?.day} - {selectedCell?.employee}
-            </h3>
-            
+        <Modal
+          isOpen
+          onClose={handleCancelEdit}
+          title={`Editar Día ${selectedCell?.day} — ${selectedCell?.employee}`}
+          size="md"
+          className="app-modal--form"
+          showCloseButton={false}
+          footer={(
+            <div className="flex gap-3 justify-end w-full">
+              <Button onClick={handleCancelEdit} variant="secondary" size="sm">Cancelar</Button>
+              <Button onClick={handleSaveEdit} variant="primary" size="sm">Guardar</Button>
+            </div>
+          )}
+        >
             <div className="space-y-4">
               <div>
-                <label
-                  htmlFor="edit-dia-turno"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
+                <label htmlFor="edit-dia-turno" className="block text-sm font-medium text-gray-700 mb-2">
                   Turno:
                 </label>
                 <select 
@@ -7211,7 +6988,7 @@ export default function CuadrantesPage() {
                   name="editDiaTurno"
                   value={editValue} 
                   onChange={(e) => setEditValue(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  className="w-full min-h-[44px] text-base"
                 >
                   {(() => {
                     // Extrage toate turele unice din întregul cuadrant (toți angajații)
@@ -7249,49 +7026,21 @@ export default function CuadrantesPage() {
                 </select>
               </div>
             </div>
-            
-            <div className="flex gap-3 justify-end mt-6">
-              <Button
-                onClick={handleCancelEdit}
-                variant="secondary"
-                size="sm"
-              >
-                Cancelar
-              </Button>
-              
-              <Button
-                onClick={handleSaveEdit}
-                variant="primary"
-                size="sm"
-                className="bg-red-600 hover:bg-red-700"
-              >
-                Guardar
-              </Button>
-            </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
-      {/* Modal pentru editarea orarului */}
       {showEditModal && editingSchedule && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-6xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-2xl font-bold text-red-600">
-                  Editar Horario: {editingSchedule.nombre}
-                </h3>
-                <button
-                  onClick={() => {
-                    setShowEditModal(false);
-                    setEditingSchedule(null);
-                  }}
-                  className="text-gray-500 hover:text-gray-700 text-2xl"
-                >
-                  ×
-                </button>
-              </div>
-              
+        <Modal
+          isOpen
+          onClose={() => {
+            setShowEditModal(false);
+            setEditingSchedule(null);
+          }}
+          title={`Editar Horario: ${editingSchedule.nombre}`}
+          size="xl"
+          className="app-modal--form"
+          showCloseButton
+        >
               <ScheduleEditor
                 centros={horariosCentros}
                 grupos={horariosGrupos}
@@ -7324,24 +7073,50 @@ export default function CuadrantesPage() {
                   alert(`Error al actualizar horario: ${error}`);
                 }}
               />
-            </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
-      {/* Modal pentru editarea zilelor */}
       {showEditModal && editingDay && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">
-              Editar Día {editingDay.dayNumber} - {editingDay.empleado}
-            </h3>
-            
-            <div className="mb-4">
-              <label
-                htmlFor="edit-cuadrante-turno"
-                className="block text-sm font-medium text-gray-700 mb-2"
+        <Modal
+          isOpen
+          onClose={() => {
+            setShowEditModal(false);
+            setEditingDay(null);
+            setSelectedEmpleadoForDay('');
+            setEmpleadoForDaySearch('');
+            setShowEmpleadoForDayDropdown(false);
+          }}
+          title={`Editar Día ${editingDay.dayNumber} — ${editingDay.empleado}`}
+          size="md"
+          className="app-modal--form"
+          showCloseButton={false}
+          footer={(
+            <div className="flex gap-3 justify-end w-full">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditingDay(null);
+                  setSelectedEmpleadoForDay('');
+                  setEmpleadoForDaySearch('');
+                  setShowEmpleadoForDayDropdown(false);
+                }}
               >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => handleSaveDayEdit(editingDay.currentValue)}
+              >
+                Guardar
+              </Button>
+            </div>
+          )}
+        >
+            <div className="mb-4">
+              <label htmlFor="edit-cuadrante-turno" className="block text-sm font-medium text-gray-700 mb-2">
                 Turno:
               </label>
               <select
@@ -7349,7 +7124,7 @@ export default function CuadrantesPage() {
                 name="editCuadranteTurno"
                 value={editingDay.currentValue}
                 onChange={(e) => setEditingDay(prev => ({ ...prev, currentValue: e.target.value }))}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                className="w-full min-h-[44px] text-base"
               >
                 {availableShifts.map((shift, index) => (
                   <option key={index} value={shift}>
@@ -7456,35 +7231,13 @@ export default function CuadrantesPage() {
                   </button>
                 )}
               </div>
+            </div>
               {selectedEmpleadoForDay && (
-                <p className="mt-2 text-sm text-blue-600">
-                  ℹ️ Se creará un horario multicentro para el empleado seleccionado
-                </p>
+                <AlertBanner variant="info" compact className="mt-2">
+                  Se creará un horario multicentro para el empleado seleccionado
+                </AlertBanner>
               )}
-            </div>
-            
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => {
-                  setShowEditModal(false);
-                  setEditingDay(null);
-                  setSelectedEmpleadoForDay('');
-                  setEmpleadoForDaySearch('');
-                  setShowEmpleadoForDayDropdown(false);
-                }}
-                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-medium"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => handleSaveDayEdit(editingDay.currentValue)}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium"
-              >
-                Guardar
-              </button>
-            </div>
-          </div>
-        </div>
+        </Modal>
       )}
       
       {/* Componenta de Notificări Moderne */}
@@ -7499,17 +7252,8 @@ export default function CuadrantesPage() {
 
       {/* Modal Preview Excel Cuadrantes */}
       {showExcelPreviewModal && excelPreviewData && createPortal(
-        <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4" 
-          style={{ 
-            position: 'fixed', 
-            top: 0, 
-            left: 0, 
-            right: 0, 
-            bottom: 0,
-            margin: 0,
-            padding: '1rem'
-          }}
+        <div
+          className="app-modal-overlay"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setShowExcelPreviewModal(false);
@@ -7519,23 +7263,36 @@ export default function CuadrantesPage() {
             }
           }}
         >
-          <div className="bg-white rounded-2xl max-w-[95vw] w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-2xl font-bold text-gray-900">
-                    📋 Verificación de Cuadrantes desde Excel
-                  </h3>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Revisa los cuadrantes importados antes de confirmar la subida
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {excelPreviewData.cuadrantes?.length || 0} cuadrantes procesados
-                  </p>
-                  <p className="text-xs text-gray-600 mt-1 font-medium">
-                    📅 Mes: {MONTHS[selectedMonth]} {selectedYear} | Centro: {selectedCentro || 'N/A'}
+          <div
+            className="app-modal app-modal--form cuadrantes-excel-modal"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="app-modal__header">
+              <h2 className="app-modal__title">Verificación de Cuadrantes desde Excel</h2>
+              <button
+                type="button"
+                className="app-modal__close"
+                onClick={() => {
+                  setShowExcelPreviewModal(false);
+                  setExcelPreviewData(null);
+                  setSelectedForHorarioMulticentro(new Set());
+                  setSelectedForRescriere(new Set());
+                }}
+                aria-label="Cerrar"
+              >
+                ×
+              </button>
+            </div>
+            <div className="app-modal__body">
+              <div className="cuadrantes-excel-modal-meta space-y-1 mb-3">
+                  <p>Revisa los cuadrantes importados antes de confirmar la subida</p>
+                  <p>{excelPreviewData.cuadrantes?.length || 0} cuadrantes procesados</p>
+                  <p className="font-medium">
+                    Mes: {MONTHS[selectedMonth]} {selectedYear} | Centro: {selectedCentro || 'N/A'}
                     {excelPreviewData.excelFormatUsed ? (
-                      <span className="ml-2 text-indigo-700">
+                      <span className="ml-2">
                         | Formato:{' '}
                         {{
                           turno_horas_tabla: 'Tabla Turno/Horas',
@@ -7545,42 +7302,12 @@ export default function CuadrantesPage() {
                       </span>
                     ) : null}
                   </p>
-                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5 mt-2 max-w-3xl">
-                    <strong>Un campo por día en el sistema:</strong> la columna <strong>Turno</strong> es lo que se guarda (puede incluir varios tramos con <code className="bg-white px-0.5 rounded"> / </code>).
-                    Si el Excel tiene <strong>dos pares Turno+Horas por día</strong> (o cabecera <strong>HE, HS, HE, HS</strong> por día), el import los une en un solo valor por día.
-                    <strong> Horas</strong> es la suma calculada de ese texto (no son dos celdas independientes en la base de datos).
-                    <span className="block mt-1">
-                      <strong>Celdas unidas (nombre):</strong> si <strong>Nombre / TRABAJADOR</strong> queda vacío en filas con turno <strong>M</strong> o <strong>T</strong>, el import reutiliza el empleado de la fila anterior (típico en Excel con celdas fusionadas).
-                    </span>
-                    <span className="block mt-1">
-                      <strong>Fila HS sin M/T:</strong> si la columna <strong>TURNO</strong> está vacía en la fila de <strong>HS</strong> (después de una fila con <strong>M</strong> o <strong>T</strong>), se asigna a la misma banda mañana/tarde (plantilla Bosquepino).
-                    </span>
-                    <span className="block mt-1">
-                      <strong>Castillo Oropesa (bloque tarde sin M/T):</strong> cuando ya hay un par <strong>HE+HS</strong> en mañana, las filas siguientes con <strong>TURNO</strong> vacío y <strong>HE/HS</strong> se tratan como <strong>tarde</strong> hasta que aparezca <strong>T</strong> explícito (no se mezclan con M).
-                    </span>
-                    <span className="block mt-1">
-                      <strong>Turno compartido (2+2 HE/HS):</strong> si en la misma banda <strong>M</strong> o <strong>T</strong> hay <strong>varias filas HE</strong> y el mismo número de <strong>HS</strong>, se leen <strong>todas las parejas</strong> y se guardan en un solo día separadas por <strong> / </strong> (ej. mañana + tarde + noche en columnas del mismo día). Bosquepino sigue siendo <strong>una pareja</strong> por banda.
-                    </span>
-                    <span className="block mt-1">
-                      <strong>Celdas unidas (horas):</strong> si la fila <strong>HS</strong> está vacía: (1) si <strong>HE</strong> trae un rango o dos horas en texto, se usan; (2) si solo hay <strong>una</strong> hora de entrada y hay dos filas M/T (HE+HS), se asume salida <strong>+8 h</strong> para formar el intervalo guardado.
-                    </span>
-                  </p>
-                </div>
-                <button
-                onClick={() => {
-                  setShowExcelPreviewModal(false);
-                  setExcelPreviewData(null);
-                  setSelectedForHorarioMulticentro(new Set());
-                  setSelectedForRescriere(new Set());
-                }}
-                className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
-                >
-                  ✕
-                </button>
               </div>
-            </div>
-
-            <div className="p-6 overflow-y-auto flex-1">
+              <AlertBanner variant="warning" compact title="Importación">
+                    Un campo por día en el sistema: la columna Turno es lo que se guarda (puede incluir varios tramos con /).
+                    Si el Excel tiene dos pares Turno+Horas por día, el import los une en un solo valor por día.
+              </AlertBanner>
+              <div className="cuadrantes-excel-preview-scroll mt-3">
               {excelPreviewData.cuadrantes && excelPreviewData.cuadrantes.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm border-collapse">
@@ -7842,21 +7569,27 @@ export default function CuadrantesPage() {
               ) : (
                 <p className="text-gray-500">No hay cuadrantes para mostrar</p>
               )}
+              </div>
             </div>
 
-            <div className="p-6 border-t border-gray-200 flex gap-3 justify-end">
-              <button
+            <div className="app-modal__footer flex gap-3 justify-end">
+              <Button
+                type="button"
+                variant="secondary"
                 onClick={() => {
                   setShowExcelPreviewModal(false);
                   setExcelPreviewData(null);
                   setSelectedForHorarioMulticentro(new Set());
                   setSelectedForRescriere(new Set());
                 }}
-                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
               >
                 Cancelar
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                loading={savingExcel}
+                disabled={savingExcel || !excelPreviewData.cuadrantes || excelPreviewData.cuadrantes.length === 0}
                 onClick={async () => {
                   if (!excelPreviewData.cuadrantes || excelPreviewData.cuadrantes.length === 0) {
                     showToast('warning', 'No hay cuadrantes para guardar');
@@ -8021,8 +7754,6 @@ export default function CuadrantesPage() {
                     setSavingExcel(false);
                   }
                 }}
-                disabled={savingExcel || !excelPreviewData.cuadrantes || excelPreviewData.cuadrantes.length === 0}
-                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {savingExcel ? 'Guardando...' : (() => {
                   const cuadrantesParaGuardar = excelPreviewData.cuadrantes.filter(c => {
@@ -8032,9 +7763,9 @@ export default function CuadrantesPage() {
                     }
                     return true;
                   });
-                  return `✅ Confirmar y Guardar (${cuadrantesParaGuardar.length}${cuadrantesParaGuardar.length !== excelPreviewData.cuadrantes.length ? ` de ${excelPreviewData.cuadrantes.length}` : ''})`;
+                  return `Confirmar y Guardar (${cuadrantesParaGuardar.length}${cuadrantesParaGuardar.length !== excelPreviewData.cuadrantes.length ? ` de ${excelPreviewData.cuadrantes.length}` : ''})`;
                 })()}
-              </button>
+              </Button>
             </div>
           </div>
         </div>,
@@ -8043,17 +7774,8 @@ export default function CuadrantesPage() {
 
       {/* Modal Preview Excel Horario Multicentro */}
       {showExcelPreviewModalMulticentro && excelPreviewDataMulticentro && createPortal(
-        <div 
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4" 
-          style={{ 
-            position: 'fixed', 
-            top: 0, 
-            left: 0, 
-            right: 0, 
-            bottom: 0,
-            margin: 0,
-            padding: '1rem'
-          }}
+        <div
+          className="app-modal-overlay"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setShowExcelPreviewModalMulticentro(false);
@@ -8061,27 +7783,34 @@ export default function CuadrantesPage() {
             }
           }}
         >
-          <div 
-            className="bg-white rounded-xl shadow-2xl max-w-[95vw] max-h-[95vh] flex flex-col"
-            style={{ width: '95vw', height: '95vh' }}
+          <div
+            className="app-modal app-modal--form cuadrantes-excel-modal"
+            role="dialog"
+            aria-modal="true"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-2xl font-bold text-gray-900">
-                    📋 Verificación de Horarios Multicentro desde Excel
-                  </h3>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Revisa los horarios importados antes de confirmar la subida
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {excelPreviewDataMulticentro.horarios?.length || 0} horarios procesados
-                  </p>
+            <div className="app-modal__header">
+              <h2 className="app-modal__title">Verificación Horarios Multicentro desde Excel</h2>
+              <button
+                type="button"
+                className="app-modal__close"
+                onClick={() => {
+                  setShowExcelPreviewModalMulticentro(false);
+                  setExcelPreviewDataMulticentro(null);
+                }}
+                aria-label="Cerrar"
+              >
+                ×
+              </button>
+            </div>
+            <div className="app-modal__body">
+              <div className="cuadrantes-excel-modal-meta space-y-1 mb-3">
+                  <p>Revisa los horarios importados antes de confirmar la subida</p>
+                  <p>{excelPreviewDataMulticentro.horarios?.length || 0} horarios procesados</p>
                   {excelPreviewDataMulticentro.horarios && excelPreviewDataMulticentro.horarios.length > 0 && (
                     <>
-                      <p className="text-xs text-gray-600 mt-1 font-medium">
-                        📅 Mes: {excelPreviewDataMulticentro.horarios[0].LUNA || 'N/A'} | 
+                      <p className="text-xs font-medium mt-1">
+                        Mes: {excelPreviewDataMulticentro.horarios[0].LUNA || 'N/A'} | 
                         Empleado: {excelPreviewDataMulticentro.horarios[0].NOMBRE || 'N/A'}
                       </p>
                       {(() => {
@@ -8132,20 +7861,8 @@ export default function CuadrantesPage() {
                       })()}
                     </>
                   )}
-                </div>
-                <button
-                  onClick={() => {
-                    setShowExcelPreviewModalMulticentro(false);
-                    setExcelPreviewDataMulticentro(null);
-                  }}
-                  className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
-                >
-                  ✕
-                </button>
               </div>
-            </div>
-
-            <div className="p-6 overflow-y-auto flex-1">
+              <div className="cuadrantes-excel-preview-scroll">
               {excelPreviewDataMulticentro.horarios && excelPreviewDataMulticentro.horarios.length > 0 ? (() => {
                 // Filtrează rândurile cu 0 ore dacă opțiunea este activată
                 const horariosAFiltrar = excludeHorariosCon0Horas ? excelPreviewDataMulticentro.horarios.filter(h => {
@@ -8310,19 +8027,25 @@ export default function CuadrantesPage() {
                   No se encontraron horarios en el Excel
                 </div>
               )}
+              </div>
             </div>
 
-            <div className="p-6 border-t border-gray-200 flex gap-3 justify-end">
-              <button
+            <div className="app-modal__footer flex gap-3 justify-end">
+              <Button
+                type="button"
+                variant="secondary"
                 onClick={() => {
                   setShowExcelPreviewModalMulticentro(false);
                   setExcelPreviewDataMulticentro(null);
                 }}
-                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
               >
                 Cancelar
-              </button>
-              <button
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                loading={savingExcelMulticentro}
+                disabled={savingExcelMulticentro || !excelPreviewDataMulticentro.horarios || excelPreviewDataMulticentro.horarios.length === 0}
                 onClick={async () => {
                   if (!excelPreviewDataMulticentro.horarios || excelPreviewDataMulticentro.horarios.length === 0) {
                     showToast('warning', 'No hay horarios para guardar');
@@ -8399,8 +8122,6 @@ export default function CuadrantesPage() {
                     setSavingExcelMulticentro(false);
                   }
                 }}
-                disabled={savingExcelMulticentro || !excelPreviewDataMulticentro.horarios || excelPreviewDataMulticentro.horarios.length === 0}
-                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {savingExcelMulticentro ? 'Guardando...' : (() => {
                   const horariosAFiltrar = excludeHorariosCon0Horas ? excelPreviewDataMulticentro.horarios.filter(h => {
@@ -8416,9 +8137,9 @@ export default function CuadrantesPage() {
                     }
                     return totalHoras > 0;
                   }) : excelPreviewDataMulticentro.horarios;
-                  return `✅ Confirmar y Guardar (${horariosAFiltrar.length}${excludeHorariosCon0Horas && excelPreviewDataMulticentro.horarios.length > horariosAFiltrar.length ? ` de ${excelPreviewDataMulticentro.horarios.length}` : ''})`;
+                  return `Confirmar y Guardar (${horariosAFiltrar.length}${excludeHorariosCon0Horas && excelPreviewDataMulticentro.horarios.length > horariosAFiltrar.length ? ` de ${excelPreviewDataMulticentro.horarios.length}` : ''})`;
                 })()}
-              </button>
+              </Button>
             </div>
           </div>
         </div>,

@@ -425,6 +425,8 @@ export const routes = {
     `${BACKEND_BASE}/api/v2/presupuestos/${id}/lineas/${lineaId}/opciones/orden`,
   v2PresupuestoDigitales: (id) =>
     `${BACKEND_BASE}/api/v2/presupuestos/${id}/servicios-digitales`,
+  v2PresupuestoDescuentoFidelidad: (id) =>
+    `${BACKEND_BASE}/api/v2/presupuestos/${id}/descuento-fidelidad`,
   v2PresupuestoLineaContenido: (id, lineaId) =>
     `${BACKEND_BASE}/api/v2/presupuestos/${id}/lineas/${lineaId}/contenido`,
   v2PresupuestoLineaContenidoRestaurar: (id, lineaId) =>

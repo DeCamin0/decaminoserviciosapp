@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Card, Button, Input } from '../components/ui';
+import { Card, Button, Input, PageHeader, SegmentedControl } from '../components/ui';
 import ConfirmModal from '../components/ui/ConfirmModal';
 import {
   ProductListItem,
@@ -9,16 +9,25 @@ import {
   extractRecentProductIdsFromPedidos,
   sumQtyForProduct,
   lineasAfterSetProductQty,
+  PedidosStatusBadge,
+  PedidosLoadingState,
+  PedidosEmptyState,
+  pedidosItemsPreview,
+  PedidoRowActions,
   type PedidoCatalogProduct,
 } from '../components/pedidos';
 import { useAuth } from '../contexts/AuthContextBase';
 import { useAdminApi } from '../hooks/useAdminApi';
 import { routes } from '../utils/routes';
-import { Link, Navigate } from 'react-router';
+import { Navigate } from 'react-router';
 import { isDemoMode } from '../utils/demo';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 import { config } from '../config/env';
 import heic2any from 'heic2any';
+import {
+  ShoppingCart, ClipboardList, Lock, Package, FileText, Smartphone,
+  RefreshCw, Send, Loader2, Trash2, CheckCircle2, XCircle, AlertTriangle, Info, Plus, Pencil,
+} from 'lucide-react';
 import {
   parseLimiteGastoCliente,
   pedidoLimiteExcedidoFlags,
@@ -269,17 +278,18 @@ const ToastComponent: React.FC<{ toast: Toast; onClose: (id: string) => void }> 
   };
 
   const getIcon = () => {
+    const cls = 'w-5 h-5 shrink-0';
     switch (toast.type) {
       case 'success':
-        return '✅';
+        return <CheckCircle2 className={cls} aria-hidden />;
       case 'error':
-        return '❌';
+        return <XCircle className={cls} aria-hidden />;
       case 'warning':
-        return '⚠️';
+        return <AlertTriangle className={cls} aria-hidden />;
       case 'info':
-        return 'ℹ️';
+        return <Info className={cls} aria-hidden />;
       default:
-        return '📢';
+        return <Info className={cls} aria-hidden />;
     }
   };
 
@@ -291,7 +301,7 @@ const ToastComponent: React.FC<{ toast: Toast; onClose: (id: string) => void }> 
     >
       <div className={`border rounded-xl shadow-lg p-4 ${getToastStyles()}`}>
         <div className="flex items-start gap-3">
-          <div className="text-xl">{getIcon()}</div>
+          <div className="shrink-0">{getIcon()}</div>
           <div className="flex-1">
             <div className="font-semibold text-sm">{toast.title}</div>
             <div className="text-sm opacity-90 mt-1">{toast.message}</div>
@@ -384,7 +394,7 @@ const getDemoProductos = () => [
 const PedidosPage: React.FC = () => {
   const { user } = useAuth();
   const { getPermissions } = useAdminApi();
-  const [activeTab, setActiveTab] = useState<'nuevo-pedido' | 'permisos' | 'catalogo' | 'notas'>('nuevo-pedido');
+  const [activeTab, setActiveTab] = useState<'nuevo-pedido' | 'gestionar-pedidos' | 'permisos' | 'catalogo' | 'notas'>('nuevo-pedido');
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [userPermissions, setUserPermissions] = useState<UserPermissions>(null);
   const [loadingPermissions, setLoadingPermissions] = useState(true);
@@ -571,6 +581,48 @@ const PedidosPage: React.FC = () => {
     return false;
   }, [canAccessAllTabs, canAccessMisPedidos, hasPedidosPermissionOld, hasFieldPermission, hasGenericPermission]);
 
+  const pedidosTabItems = useMemo(() => {
+    const items = [
+      {
+        id: 'nuevo-pedido',
+        label: 'Nuevo Pedido',
+        shortLabel: 'Nuevo',
+        icon: <ShoppingCart className="w-4 h-4" aria-hidden />,
+      },
+    ];
+    if (canAccessAllTabs || canAccessMisPedidos) {
+      items.push({
+        id: 'gestionar-pedidos',
+        label: canAccessAllTabs ? 'Gestionar Pedidos' : 'Mis Pedidos',
+        shortLabel: canAccessAllTabs ? 'Gestionar' : 'Mis',
+        icon: <ClipboardList className="w-4 h-4" aria-hidden />,
+      });
+    }
+    if (canAccessAllTabs) {
+      items.push(
+        {
+          id: 'permisos',
+          label: 'Permisos por Comunidad',
+          shortLabel: 'Permisos',
+          icon: <Lock className="w-4 h-4" aria-hidden />,
+        },
+        {
+          id: 'catalogo',
+          label: 'Catálogo',
+          shortLabel: 'Catálogo',
+          icon: <Package className="w-4 h-4" aria-hidden />,
+        },
+        {
+          id: 'notas',
+          label: 'Notas',
+          shortLabel: 'Notas',
+          icon: <FileText className="w-4 h-4" aria-hidden />,
+        },
+      );
+    }
+    return items;
+  }, [canAccessAllTabs, canAccessMisPedidos]);
+
   // Dacă nu are acces, redirect la inicio
   if (!loadingPermissions && !hasAccess) {
     console.warn('🚫 [PedidosPage] Access denied - redirecting to /inicio');
@@ -578,188 +630,60 @@ const PedidosPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-7xl mx-auto">
-      {/* Banner cu instrucțiuni pentru utilizatorii cu acces limitat */}
-      {/* Se afișează pentru utilizatorii care au pedidos-empleados dar NU au pedidos-admin */}
+    <div className="pedidos-page app-page">
       {(() => {
-        // Banner-ul apare pentru utilizatorii cu acces limitat (pedidos-empleados, fără acces complet)
         const shouldShow = !canAccessAllTabs && (hasPedidosEmpleadosPermission || hasPedidosPermissionOld || canAccessMisPedidos);
-        console.log('📝 [PedidosPage] Banner check:', { 
-          canAccessAllTabs, 
-          hasPedidosEmpleadosPermission,
-          hasPedidosPermissionOld,
-          canAccessMisPedidos,
-          shouldShow 
-        });
         return shouldShow ? <BannerNotasInstrucciones /> : null;
       })()}
-      
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center gap-4 mb-4">
-          <Link 
-            to="/dashboard" 
-            className="group flex items-center gap-2 text-red-600 hover:text-red-700 transition-colors duration-200"
-          >
-            <div className="relative">
-              <div className="absolute inset-0 bg-red-100 rounded-full blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-              <div className="relative w-8 h-8 bg-red-500 rounded-full flex items-center justify-center shadow-md hover:shadow-lg transform hover:scale-110 transition-all duration-200">
-                <span className="text-white font-bold text-sm">←</span>
-              </div>
-            </div>
-            <span className="text-sm font-medium">Volver a Inicio</span>
-          </Link>
-        </div>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Pedidos</h1>
-            <p className="text-gray-600">Gestiona pedidos y permisos de productos</p>
-          </div>
-          <button 
+
+      <PageHeader
+        title="Pedidos"
+        subtitle="Gestiona pedidos y permisos de productos"
+        backTo="/dashboard"
+        backTitle="Volver a Inicio"
+        actions={(
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="min-h-[44px]"
             onClick={() => {
-              // Date relevante pentru pagina de pedidos
               const tabNames = {
                 'nuevo-pedido': 'Nuevo Pedido',
-                'permisos': 'Permisos',
-                'catalogo': 'Catálogo'
+                'gestionar-pedidos': 'Gestionar Pedidos',
+                permisos: 'Permisos',
+                catalogo: 'Catálogo',
+                notas: 'Notas',
               };
-              
               const pageData = {
                 additionalInfo: [
                   `[TAB ACTIVO] ${tabNames[activeTab] || activeTab}`,
                   canAccessAllTabs ? '[PERMISOS] Acceso completo' : '[PERMISOS] Acceso limitado',
                 ].filter(Boolean),
               };
-              
               const message = buildErrorReportMessage({
                 authUser: user,
-                pageName: "Pedidos",
+                pageName: 'Pedidos',
                 pageData,
               });
-              
               openWhatsAppErrorReport(message);
             }}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg"
           >
-            <span className="text-lg">📱</span>
-            <span>Reportar error</span>
-          </button>
-        </div>
-      </div>
+            <Smartphone className="w-4 h-4" aria-hidden />
+            Reportar error
+          </Button>
+        )}
+      />
 
-        {/* Tabs */}
-        <Card className="mb-6">
-          <div className="flex flex-wrap gap-3 p-4">
-            <button
-              onClick={() => setActiveTab('nuevo-pedido')}
-              className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                activeTab === 'nuevo-pedido'
-                  ? 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-red-200'
-                  : 'bg-white text-red-600 border-2 border-red-200 hover:border-red-400 hover:bg-red-50'
-              }`}
-            >
-              <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                activeTab === 'nuevo-pedido' 
-                  ? 'bg-red-400 opacity-30 blur-md animate-pulse' 
-                  : 'bg-red-400 opacity-0 group-hover:opacity-20 blur-md'
-              }`}></div>
-              <div className="relative flex items-center gap-2">
-                <span className="text-xl">🛒</span>
-                <span>Nuevo Pedido</span>
-              </div>
-            </button>
-            
-            {/* Tab-uri restricționate pentru manageri, admini și developeri */}
-            {/* Tab "Gestionar Pedidos" apare pentru canAccessAllTabs SAU canAccessMisPedidos */}
-            {(canAccessAllTabs || canAccessMisPedidos) && (
-              <>
-                <button
-                  onClick={() => setActiveTab('gestionar-pedidos')}
-                  className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                    activeTab === 'gestionar-pedidos'
-                      ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200'
-                      : 'bg-white text-purple-600 border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50'
-                  }`}
-                >
-                  <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                    activeTab === 'gestionar-pedidos' 
-                      ? 'bg-purple-400 opacity-30 blur-md animate-pulse' 
-                      : 'bg-purple-400 opacity-0 group-hover:opacity-20 blur-md'
-                  }`}></div>
-                  <div className="relative flex items-center gap-2">
-                    <span className="text-xl">📋</span>
-                    <span>{canAccessAllTabs ? 'Gestionar Pedidos' : 'Mis Pedidos'}</span>
-                  </div>
-                </button>
-                
-                {/* Tab-uri doar pentru acces complet (canAccessAllTabs) */}
-                {canAccessAllTabs && (
-                  <>
-                    <button
-                      onClick={() => setActiveTab('permisos')}
-                      className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                        activeTab === 'permisos'
-                          ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-200'
-                          : 'bg-white text-blue-600 border-2 border-blue-200 hover:border-blue-400 hover:bg-blue-50'
-                      }`}
-                    >
-                      <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                        activeTab === 'permisos' 
-                          ? 'bg-blue-400 opacity-30 blur-md animate-pulse' 
-                          : 'bg-blue-400 opacity-0 group-hover:opacity-20 blur-md'
-                      }`}></div>
-                      <div className="relative flex items-center gap-2">
-                        <span className="text-xl">🔒</span>
-                        <span>Permisos por Comunidad</span>
-                      </div>
-                    </button>
-                    
-                    <button
-                      onClick={() => setActiveTab('catalogo')}
-                      className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                        activeTab === 'catalogo'
-                          ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-green-200'
-                          : 'bg-white text-green-600 border-2 border-green-200 hover:border-green-400 hover:bg-green-50'
-                      }`}
-                    >
-                      <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                        activeTab === 'catalogo' 
-                          ? 'bg-green-400 opacity-30 blur-md animate-pulse' 
-                          : 'bg-green-400 opacity-0 group-hover:opacity-20 blur-md'
-                      }`}></div>
-                      <div className="relative flex items-center gap-2">
-                        <span className="text-xl">📦</span>
-                        <span>Catálogo</span>
-                      </div>
-                    </button>
-                    
-                    <button
-                      onClick={() => setActiveTab('notas')}
-                      className={`group relative px-6 py-3 rounded-xl font-bold transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl ${
-                        activeTab === 'notas'
-                          ? 'bg-gradient-to-r from-purple-500 to-purple-600 text-white shadow-purple-200'
-                          : 'bg-white text-purple-600 border-2 border-purple-200 hover:border-purple-400 hover:bg-purple-50'
-                      }`}
-                    >
-                      <div className={`absolute inset-0 rounded-xl transition-all duration-300 ${
-                        activeTab === 'notas' 
-                          ? 'bg-purple-400 opacity-30 blur-md animate-pulse' 
-                          : 'bg-purple-400 opacity-0 group-hover:opacity-20 blur-md'
-                      }`}></div>
-                      <div className="relative flex items-center gap-2">
-                        <span className="text-xl">📝</span>
-                        <span>Notas</span>
-                      </div>
-                    </button>
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        </Card>
+      <SegmentedControl
+        items={pedidosTabItems}
+        value={activeTab}
+        onChange={setActiveTab}
+        layout={pedidosTabItems.length > 3 ? 'grid' : 'row'}
+        className="pedidos-page__tabs"
+      />
 
-        {/* Content */}
+      <div className="pedidos-page__content">
         {activeTab === 'nuevo-pedido' ? (
           <TabNuevoPedido addToast={addToast} canAccessAllTabs={canAccessAllTabs} />
         ) : (canAccessAllTabs || canAccessMisPedidos) && activeTab === 'gestionar-pedidos' ? (
@@ -3683,40 +3607,6 @@ const TabGestionarPedidos: React.FC<{
     }
   };
 
-  const getEstadoColor = (estado: string) => {
-    switch (estado?.toLowerCase()) {
-      case 'aprobado':
-        return 'bg-green-100 text-green-800 border-green-300';
-      case 'rechazado':
-        return 'bg-red-100 text-red-800 border-red-300';
-      case 'pendiente':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-      case 'enviado':
-        return 'bg-blue-100 text-blue-800 border-blue-300';
-      case 'entregado':
-        return 'bg-emerald-100 text-emerald-800 border-emerald-300';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-300';
-    }
-  };
-
-  const getEstadoTexto = (estado: string) => {
-    switch (estado?.toLowerCase()) {
-      case 'aprobado':
-        return '✅ Aprobado';
-      case 'rechazado':
-        return '❌ Rechazado';
-      case 'pendiente':
-        return '⏳ Pendiente';
-      case 'enviado':
-        return '📦 Enviado';
-      case 'entregado':
-        return '📬 Entregado';
-      default:
-        return estado || '—';
-    }
-  };
-
   // Lista aprobados según filtros actuales (lo que ves en pantalla)
   const pedidosAprobadosFiltrados = useMemo(
     () => pedidosFiltrados.filter(p => p.estado === 'aprobado'),
@@ -4021,164 +3911,148 @@ const TabGestionarPedidos: React.FC<{
 
   return (
     <div className="space-y-6">
-      {/* Filtre și header */}
-      <Card>
-        <div className="p-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <h2 className="text-2xl font-bold text-gray-800">Gestionar Pedidos</h2>
-              <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-semibold">
-                {pedidosFiltrados.length} {pedidosFiltrados.length === 1 ? 'pedido' : 'pedidos'}
-                {pedidosFiltrados.length !== pedidos.length && (
-                  <span className="text-gray-500 ml-1">
-                    (de {pedidos.length} total)
-                  </span>
-                )}
-              </span>
-            </div>
-            
-            <div className="flex items-center gap-4 flex-wrap">
-              <label className="text-sm font-medium text-gray-700">Filtrar por estado:</label>
-              <select
-                value={filtroEstado}
-                onChange={(e) => setFiltroEstado(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-              >
-                <option value="all">Todos</option>
-                <option value="pendiente">Pendientes</option>
-                <option value="aprobado">Aprobados</option>
-                <option value="rechazado">Rechazados</option>
-                <option value="enviado">Enviados</option>
-                <option value="entregado">Entregados</option>
-              </select>
-
-              <label className="text-sm font-medium text-gray-700">Filtrar por centro:</label>
-              <select
-                value={filtroCentro}
-                onChange={(e) => setFiltroCentro(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 min-w-[200px]"
-                title="Agrupado por ID o NIF del cliente; correcciones de nombre no duplican el centro."
-              >
-                <option value="all">Todos</option>
-                {opcionesCentroFiltro.map(({ value, label }) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-
-              <label className="text-sm font-medium text-gray-700">Filtrar por año:</label>
-              <select
-                value={filtroAn}
-                onChange={(e) => setFiltroAn(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-              >
-                <option value="all">Todos</option>
-                {Array.from(new Set(pedidos.map(p => {
-                  if (!p.fecha) return null;
-                  const date = new Date(p.fecha);
-                  return date.getFullYear().toString();
-                }).filter(Boolean))).sort((a, b) => (b || '').localeCompare(a || '')).map(an => (
-                  <option key={an} value={an}>{an}</option>
-                ))}
-              </select>
-              
+      {/* Filtre */}
+      <section className="app-card app-card--pad pedidos-filters">
+        <div className="pedidos-filters__head">
+          <div>
+            <h2 className="pedidos-section-title">Gestionar Pedidos</h2>
+            <p className="pedidos-filters__count">
+              {pedidosFiltrados.length} {pedidosFiltrados.length === 1 ? 'pedido' : 'pedidos'}
+              {pedidosFiltrados.length !== pedidos.length ? (
+                <span className="text-gray-500"> (de {pedidos.length} total)</span>
+              ) : null}
+            </p>
+          </div>
+          <div className="pedidos-filters__actions">
+            <Button type="button" onClick={loadPedidos} variant="secondary" size="sm" disabled={loading} className="min-h-[44px]">
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : <RefreshCw className="w-4 h-4" aria-hidden />}
+              Actualizar
+            </Button>
+            {pedidosAprobadosFiltrados.length > 0 ? (
               <Button
-                onClick={loadPedidos}
+                type="button"
+                onClick={abrirSeleccionEnvio}
                 variant="primary"
+                size="sm"
                 disabled={loading}
+                className="min-h-[44px]"
+                title="Elige qué pedidos aprobados (de la lista filtrada) enviar al proveedor"
               >
-                {loading ? '🔄 Cargando...' : '🔄 Actualizar'}
+                <Send className="w-4 h-4" aria-hidden />
+                Enviar ({pedidosAprobadosFiltrados.length})
               </Button>
-
-              {pedidosAprobadosFiltrados.length > 0 && (
-                <Button
-                  onClick={abrirSeleccionEnvio}
-                  className="bg-green-600 hover:bg-green-700 text-white"
-                  disabled={loading}
-                  title="Elige qué pedidos aprobados (de la lista filtrada) enviar al proveedor: urgentes, periódicos, etc."
-                >
-                  📤 Seleccionar pedidos a enviar ({pedidosAprobadosFiltrados.length})
-                </Button>
-              )}
-            </div>
+            ) : null}
           </div>
         </div>
-      </Card>
+        <div className="pedidos-filters-grid">
+          <label className="pedidos-filter-field">
+            <span className="pedidos-filter-field__label">Estado</span>
+            <select
+              value={filtroEstado}
+              onChange={(e) => setFiltroEstado(e.target.value)}
+              className="pedidos-input"
+            >
+              <option value="all">Todos</option>
+              <option value="pendiente">Pendientes</option>
+              <option value="aprobado">Aprobados</option>
+              <option value="rechazado">Rechazados</option>
+              <option value="enviado">Enviados</option>
+              <option value="entregado">Entregados</option>
+            </select>
+          </label>
+          <label className="pedidos-filter-field">
+            <span className="pedidos-filter-field__label">Centro</span>
+            <select
+              value={filtroCentro}
+              onChange={(e) => setFiltroCentro(e.target.value)}
+              className="pedidos-input"
+              title="Agrupado por ID o NIF del cliente"
+            >
+              <option value="all">Todos</option>
+              {opcionesCentroFiltro.map(({ value, label }) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="pedidos-filter-field">
+            <span className="pedidos-filter-field__label">Año</span>
+            <select
+              value={filtroAn}
+              onChange={(e) => setFiltroAn(e.target.value)}
+              className="pedidos-input"
+            >
+              <option value="all">Todos</option>
+              {Array.from(new Set(pedidos.map((p) => {
+                if (!p.fecha) return null;
+                return new Date(p.fecha).getFullYear().toString();
+              }).filter(Boolean))).sort((a, b) => (b || '').localeCompare(a || '')).map((an) => (
+                <option key={an} value={an}>{an}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </section>
 
       {/* Lista de pedidos */}
       {loading ? (
-        <Card>
-          <div className="p-12 text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Cargando pedidos...</p>
-          </div>
-        </Card>
+        <PedidosLoadingState />
       ) : pedidosFiltrados.length === 0 ? (
-        <Card>
-          <div className="p-12 text-center">
-            <div className="text-6xl mb-4">📦</div>
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">No hay pedidos</h3>
-            <p className="text-gray-500">No se encontraron pedidos con los filtros seleccionados.</p>
-          </div>
-        </Card>
+        <PedidosEmptyState />
       ) : (
-        <div className="space-y-4">
+        <div className="pedidos-list">
           {pedidosFiltrados.map((pedido) => (
-            <Card key={pedido.pedido_uid} className="overflow-hidden">
-              <div className="p-6">
-                {/* Header del pedido */}
-                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4 pb-4 border-b">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-lg font-bold text-gray-800">Pedido: {pedido.pedido_uid}</h3>
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${getEstadoColor(pedido.estado)}`}>
-                        {getEstadoTexto(pedido.estado)}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600">
-                      <div><strong>Empleado:</strong> {pedido.empleado?.nombre || 'N/A'}</div>
-                      <div>
-                        <strong>Comunidad:</strong> {pedido.comunidad?.nombre || 'N/A'}
-                        {pedido.comunidad?.direccion && (
-                          <div className="mt-1 text-xs text-gray-500">
-                            📍 {pedido.comunidad.direccion}
-                            {pedido.comunidad.codigo_postal && `, ${pedido.comunidad.codigo_postal}`}
-                            {pedido.comunidad.localidad && `, ${pedido.comunidad.localidad}`}
-                            {pedido.comunidad.provincia && `, ${pedido.comunidad.provincia}`}
-                          </div>
-                        )}
-                      </div>
-                      <div><strong>Fecha:</strong> {formatDate(pedido.fecha)}</div>
-                      <div><strong>Total:</strong> <span className="font-bold text-purple-600">{formatMoney(pedido.total)}</span></div>
+            <article key={pedido.pedido_uid} className="app-card pedidos-list-row">
+              <div className="pedidos-list-row__head">
+                <div className="min-w-0">
+                  <p className="pedidos-list-row__id">{pedido.pedido_uid}</p>
+                  <p className="pedidos-list-row__meta">
+                    {pedido.empleado?.nombre || 'N/A'} · {pedido.comunidad?.nombre || 'N/A'} · {formatDate(pedido.fecha)}
+                  </p>
+                  <p className="pedidos-list-row__items-preview">{pedidosItemsPreview(pedido.items)}</p>
+                </div>
+                <div className="pedidos-list-row__aside">
+                  <PedidosStatusBadge estado={pedido.estado} compact />
+                  <p className="pedidos-list-row__total">{formatMoney(pedido.total)}</p>
+                </div>
+              </div>
+              <div className="pedidos-list-row__body">
+                    <div className="pedidos-detail-meta">
+                      {pedido.comunidad?.direccion ? (
+                        <div className="md:col-span-2 text-xs text-gray-500">
+                          {pedido.comunidad.direccion}
+                          {pedido.comunidad.codigo_postal && `, ${pedido.comunidad.codigo_postal}`}
+                          {pedido.comunidad.localidad && `, ${pedido.comunidad.localidad}`}
+                          {pedido.comunidad.provincia && `, ${pedido.comunidad.provincia}`}
+                        </div>
+                      ) : null}
                       {pedido.fecha_envio && (
                         <div><strong>Fecha de Envío:</strong> {formatDateOnly(pedido.fecha_envio)}</div>
                       )}
                       {pedido.aprobado_por && (
                         <div className="text-green-600">
-                          <strong>✅ Aprobado por:</strong> {pedido.aprobado_por}
+                          <span className="pedidos-detail-meta__label pedidos-detail-meta__label--ok">Aprobado por:</span> {pedido.aprobado_por}
                           {pedido.aprobado_en && ` el ${formatDate(pedido.aprobado_en)}`}
                         </div>
                       )}
                       {pedido.rechazado_por && (
                         <div className="text-red-600">
-                          <strong>❌ Rechazado por:</strong> {pedido.rechazado_por}
+                          <span className="pedidos-detail-meta__label pedidos-detail-meta__label--err">Rechazado por:</span> {pedido.rechazado_por}
                           {pedido.rechazado_en && ` el ${formatDate(pedido.rechazado_en)}`}
                         </div>
                       )}
                       {(pedido.horario_entrega || (pedido.comunidad?.id && horariosEntrega[String(pedido.comunidad.id)])) && (
                         <div>
-                          <strong>🕐 Horario Entrega:</strong> <span className="text-blue-600 font-medium">{pedido.horario_entrega || horariosEntrega[String(pedido.comunidad?.id)]}</span>
+                          <span className="pedidos-detail-meta__label">Horario entrega:</span> <span className="text-blue-600 font-medium">{pedido.horario_entrega || horariosEntrega[String(pedido.comunidad?.id)]}</span>
                         </div>
                       )}
                       {pedido.telefono_entrega && (
                         <div>
-                          <strong>📞 Teléfono Entrega:</strong> <span className="text-blue-600 font-medium">{pedido.telefono_entrega}</span>
+                          <span className="pedidos-detail-meta__label">Teléfono entrega:</span> <span className="text-blue-600 font-medium">{pedido.telefono_entrega}</span>
                         </div>
                       )}
                       {(pedido.direccion_envio || pedido.codigo_postal_envio || pedido.localidad_envio || pedido.provincia_envio) && (
                         <div className="md:col-span-2">
-                          <strong>📍 Dirección de Envío:</strong>
+                          <span className="pedidos-detail-meta__label">Dirección de envío:</span>
                           <div className="mt-1 text-xs text-blue-600 font-medium">
                             {pedido.direccion_envio || ''}
                             {pedido.codigo_postal_envio && `, ${pedido.codigo_postal_envio}`}
@@ -4188,7 +4062,7 @@ const TabGestionarPedidos: React.FC<{
                         </div>
                       )}
                     </div>
-                    <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="pedidos-notas-block">
                       {pedidoEditando === pedido.pedido_uid ? (
                         <div>
                           <div className="flex items-center justify-between mb-2">
@@ -4198,7 +4072,7 @@ const TabGestionarPedidos: React.FC<{
                               className="bg-green-600 hover:bg-green-700 text-white"
                               size="sm"
                             >
-                              💾 Guardar Nota
+                              Guardar nota
                             </Button>
                           </div>
                           <textarea
@@ -4222,30 +4096,9 @@ const TabGestionarPedidos: React.FC<{
                         </div>
                       )}
                     </div>
-                  </div>
-                  
+
                   {/* Butoane de acțiune */}
-                  <div className="flex flex-col gap-2">
-                    {(() => {
-                      const noEditable = pedido.estado === 'enviado' || pedido.estado === 'entregado';
-                      return (
-                        <Button
-                          onClick={() => {
-                            if (noEditable) return;
-                            setPedidoEditando(pedidoEditando === pedido.pedido_uid ? null : pedido.pedido_uid);
-                            if (pedidoSeleccionado !== pedido.pedido_uid) {
-                              setPedidoSeleccionado(pedido.pedido_uid);
-                            }
-                          }}
-                          disabled={noEditable}
-                          title={noEditable ? 'No se puede editar un pedido ya enviado al proveedor' : undefined}
-                          className={noEditable ? 'bg-gray-400 cursor-not-allowed text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'}
-                          size="sm"
-                        >
-                          {pedidoEditando === pedido.pedido_uid ? '❌ Cancelar Edición' : '✏️ Editar'}
-                        </Button>
-                      );
-                    })()}
+                  <div className="flex flex-col gap-2 mt-3">
                     {(pedido.estado === 'pendiente' ||
                       (pedidoEditando === pedido.pedido_uid && pedido.estado === 'aprobado')) && (
                         <div className="mb-2">
@@ -4266,7 +4119,7 @@ const TabGestionarPedidos: React.FC<{
                                   [pedido.pedido_uid]: e.target.value
                                 }));
                               }}
-                              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--primary-color,#E53935)] focus:border-[var(--primary-color,#E53935)]"
                               min={
                                 pedido.estado === 'aprobado'
                                   ? undefined
@@ -4279,7 +4132,7 @@ const TabGestionarPedidos: React.FC<{
                               size="sm"
                               disabled={!fechasEnvio[pedido.pedido_uid] && !pedido.fecha_envio}
                             >
-                              💾 Guardar
+                              Guardar
                             </Button>
                           </div>
                         </div>
@@ -4289,7 +4142,7 @@ const TabGestionarPedidos: React.FC<{
                       <>
                         <div className="mb-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
                           <label className="block text-xs font-medium text-gray-700 mb-2">
-                            📍 Dirección de Envío{' '}
+                            Dirección de envío{' '}
                             {pedido.estado === 'aprobado'
                               ? '(añade o corrige teléfono de envío si faltaba)'
                               : '(Opcional)'}
@@ -4540,85 +4393,72 @@ const TabGestionarPedidos: React.FC<{
                               className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                               size="sm"
                             >
-                              💾 Guardar Dirección de Envío
+                              Guardar Dirección de Envío
                             </Button>
                           </div>
                         </div>
                       </>
                     )}
                     {pedido.estado === 'pendiente' && (
-                      <>
+                      <div className="pedidos-approve-row">
                         <Button
+                          type="button"
                           onClick={() => updateEstado(pedido.pedido_uid, 'aprobado')}
-                          className="bg-green-600 hover:bg-green-700 text-white"
+                          variant="primary"
                           size="sm"
+                          className="pedidos-approve-row__approve"
                         >
-                          ✅ Aprobar
+                          Aprobar
                         </Button>
                         <Button
+                          type="button"
                           onClick={() => updateEstado(pedido.pedido_uid, 'rechazado')}
-                          className="bg-red-600 hover:bg-red-700 text-white"
+                          variant="danger"
                           size="sm"
                         >
-                          ❌ Rechazar
+                          Rechazar
                         </Button>
-                      </>
+                      </div>
                     )}
-                    {(pedido.estado?.toLowerCase() === 'aprobado' || pedido.estado?.toLowerCase() === 'enviado' || pedido.estado?.toLowerCase() === 'entregado') && (
-                      <Button
-                        onClick={() => {
-                          if (pedido.estado?.toLowerCase() === 'entregado') {
-                            setPedidoViendoAlbaran(pedido.pedido_uid);
-                          } else {
-                            setPedidoCargandoAlbaran(pedido.pedido_uid);
-                          }
-                        }}
-                        className="bg-green-600 hover:bg-green-700 text-white"
-                        size="sm"
-                      >
-                        📄 {pedido.estado?.toLowerCase() === 'entregado' ? 'Ver Albarán' : 'Cargar Albarán'}
-                      </Button>
-                    )}
-                    {pedido.estado?.toLowerCase() === 'entregado' && (
-                      <Button
-                        onClick={() => setPedidoCargandoAlbaran(pedido.pedido_uid)}
-                        className="bg-white border-2 border-green-600 text-green-800 hover:bg-green-50"
-                        size="sm"
-                        title="Subir más documentos de albarán"
-                      >
-                        ➕ Añadir albarán
-                      </Button>
-                    )}
-                    <Button
-                      onClick={() => setCopiaConfirmPedido(pedido)}
-                      disabled={copiandoPedidoUid === pedido.pedido_uid}
-                      className="bg-purple-600 hover:bg-purple-700 text-white"
-                      size="sm"
-                      title="Crear un pedido nuevo con los mismos productos y comunidad"
-                    >
-                      {copiandoPedidoUid === pedido.pedido_uid
-                        ? '⏳ Copiando...'
-                        : '📋 Crear por copia'}
-                    </Button>
-                    <Button
-                      onClick={() => setPedidoSeleccionado(
-                        pedidoSeleccionado === pedido.pedido_uid ? null : pedido.pedido_uid
+                    <PedidoRowActions
+                      detallesOpen={pedidoSeleccionado === pedido.pedido_uid}
+                      isEditing={pedidoEditando === pedido.pedido_uid}
+                      noEditable={pedido.estado === 'enviado' || pedido.estado === 'entregado'}
+                      showAlbaran={
+                        pedido.estado?.toLowerCase() === 'aprobado'
+                        || pedido.estado?.toLowerCase() === 'enviado'
+                        || pedido.estado?.toLowerCase() === 'entregado'
+                      }
+                      albaranLabel={
+                        pedido.estado?.toLowerCase() === 'entregado'
+                          ? 'Ver albarán'
+                          : 'Cargar albarán'
+                      }
+                      showAnadirAlbaran={pedido.estado?.toLowerCase() === 'entregado'}
+                      copiando={copiandoPedidoUid === pedido.pedido_uid}
+                      onToggleDetalles={() => setPedidoSeleccionado(
+                        pedidoSeleccionado === pedido.pedido_uid ? null : pedido.pedido_uid,
                       )}
-                      variant="outline"
-                      size="sm"
-                    >
-                      {pedidoSeleccionado === pedido.pedido_uid ? '👁️ Ocultar' : '👁️ Ver Detalles'}
-                    </Button>
-                    <Button
-                      onClick={() => setDeleteConfirmUid(pedido.pedido_uid)}
-                      className="bg-red-600 hover:bg-red-700 text-white"
-                      size="sm"
-                      title="Eliminar pedido permanentemente"
-                    >
-                      🗑️ Borrar
-                    </Button>
+                      onEditar={() => {
+                        const noEditable = pedido.estado === 'enviado' || pedido.estado === 'entregado';
+                        if (noEditable) return;
+                        setPedidoEditando(pedidoEditando === pedido.pedido_uid ? null : pedido.pedido_uid);
+                        if (pedidoSeleccionado !== pedido.pedido_uid) {
+                          setPedidoSeleccionado(pedido.pedido_uid);
+                        }
+                      }}
+                      onAlbaran={() => {
+                        if (pedido.estado?.toLowerCase() === 'entregado') {
+                          setPedidoViendoAlbaran(pedido.pedido_uid);
+                        } else {
+                          setPedidoCargandoAlbaran(pedido.pedido_uid);
+                        }
+                      }}
+                      onAnadirAlbaran={() => setPedidoCargandoAlbaran(pedido.pedido_uid)}
+                      onCopia={() => setCopiaConfirmPedido(pedido)}
+                      onBorrar={() => setDeleteConfirmUid(pedido.pedido_uid)}
+                    />
                   </div>
-                </div>
 
                 {/* Detalii produse (expandable) */}
                 {pedidoSeleccionado === pedido.pedido_uid && (
@@ -4637,14 +4477,14 @@ const TabGestionarPedidos: React.FC<{
                             className="bg-blue-600 hover:bg-blue-700 text-white"
                             size="sm"
                           >
-                            ➕ Añadir Producto
+                            Añadir producto
                           </Button>
                           <Button
                             onClick={() => guardarCambios(pedido.pedido_uid)}
                             className="bg-green-600 hover:bg-green-700 text-white"
                             size="sm"
                           >
-                            💾 Guardar Cambios
+                            Guardar Cambios
                           </Button>
                         </div>
                       )}
@@ -4725,7 +4565,7 @@ const TabGestionarPedidos: React.FC<{
                                         className="bg-blue-600 hover:bg-blue-700 text-white mt-1"
                                         size="sm"
                                       >
-                                        ➕ Añadir
+                                        Añadir
                                       </Button>
                                     </div>
                                   </div>
@@ -4899,8 +4739,10 @@ const TabGestionarPedidos: React.FC<{
                                     }}
                                     className="bg-red-600 hover:bg-red-700 text-white"
                                     size="sm"
+                                    aria-label="Eliminar línea"
+                                    title="Eliminar línea"
                                   >
-                                    🗑️
+                                    <Trash2 className="w-4 h-4" aria-hidden />
                                   </Button>
                                 </td>
                               )}
@@ -4928,14 +4770,14 @@ const TabGestionarPedidos: React.FC<{
                   </div>
                 )}
               </div>
-            </Card>
+            </article>
           ))}
         </div>
       )}
 
       {/* Paso 1: selección de pedidos aprobados a enviar */}
       {mostrarSeleccionEnvio && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="pedidos-modal-overlay fixed inset-0 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-xl">
             <div className="mb-4 pb-4 border-b">
               <h2 className="text-xl font-bold text-gray-800">
@@ -4945,7 +4787,7 @@ const TabGestionarPedidos: React.FC<{
                 Solo se listan los pedidos <strong>aprobados</strong> que coinciden con los filtros actuales (estado, centro, año).
                 Desmarca los que no quieras enviar ahora (por ejemplo deja los periódicos para más tarde).
               </p>
-              <p className="text-sm text-purple-700 mt-2 font-medium">
+              <p className="text-sm text-gray-700 mt-2 font-medium">
                 Seleccionados:{' '}
                 {pedidosAprobadosFiltrados.filter(p => uidsSeleccionadosEnvio[p.pedido_uid]).length}{' '}
                 de {pedidosAprobadosFiltrados.length}
@@ -5035,7 +4877,7 @@ const TabGestionarPedidos: React.FC<{
 
       {/* Modal de Preview pentru Envio */}
       {mostrarPreviewEnvio && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="pedidos-modal-overlay fixed inset-0 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between mb-4 pb-4 border-b">
               <h2 className="text-2xl font-bold text-gray-800">
@@ -5072,7 +4914,7 @@ const TabGestionarPedidos: React.FC<{
                         <div><strong>Inspector:</strong> {pedido.aprobado_por}</div>
                       )}
                       <div className="col-span-2">
-                        <strong>📍 Dirección de Envío:</strong>{' '}
+                        <span className="pedidos-detail-meta__label">Dirección de envío:</span>{' '}
                         {(pedido.direccion_envio || pedido.codigo_postal_envio || pedido.localidad_envio || pedido.provincia_envio) ? (
                           <span>
                             {pedido.direccion_envio || ''}
@@ -5091,7 +4933,7 @@ const TabGestionarPedidos: React.FC<{
                         )}
                       </div>
                       <div className="col-span-2">
-                        <strong>📞 Teléfono (envío):</strong>{' '}
+                        <span class="pedidos-detail-meta__label">Teléfono (envío):</span>{' '}
                         <span>{(pedido as { telefono_entrega?: string }).telefono_entrega || 'No especificado'}</span>
                       </div>
                     </div>
@@ -5147,7 +4989,7 @@ const TabGestionarPedidos: React.FC<{
                 className="bg-green-600 hover:bg-green-700 text-white"
                 disabled={loading}
               >
-                {loading ? '⏳ Enviando...' : '📤 Enviar y Generar Excel'}
+                {loading ? 'Enviando…' : 'Enviar y generar Excel'}
               </Button>
             </div>
           </div>
@@ -5156,7 +4998,7 @@ const TabGestionarPedidos: React.FC<{
 
       {/* Modal pentru Excel și trimitere la provider */}
       {mostrarModalExcel && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="pedidos-modal-overlay fixed inset-0 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between mb-4 pb-4 border-b">
               <h2 className="text-2xl font-bold text-gray-800">
@@ -5257,14 +5099,14 @@ const TabGestionarPedidos: React.FC<{
                   value={mensajeProveedor}
                   onChange={(e) => setMensajeProveedor(e.target.value)}
                   placeholder="Escribe un mensaje que se enviará junto con el pedido al proveedor..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--primary-color,#E53935)] focus:border-[var(--primary-color,#E53935)]"
                   rows={4}
                 />
               </div>
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <p className="text-sm text-blue-800">
-                  <strong>📋 Nota:</strong> El Excel ha sido generado con éxito. Puedes descargarlo para verificar antes de enviarlo al proveedor.
+                  <strong>Nota:</strong> El Excel ha sido generado con éxito. Puedes descargarlo para verificar antes de enviarlo al proveedor.
                   {mensajeProveedor && (
                     <span className="block mt-2">
                       <strong>Mensaje que se enviará:</strong> &quot;{mensajeProveedor}&quot;
@@ -5281,7 +5123,7 @@ const TabGestionarPedidos: React.FC<{
                 variant="outline"
                 disabled={!excelBlob}
               >
-                📥 Descargar Excel
+                Descargar Excel
               </Button>
               <Button
                 onClick={() => {
@@ -5299,7 +5141,7 @@ const TabGestionarPedidos: React.FC<{
                 className="bg-green-600 hover:bg-green-700 text-white"
                 disabled={enviandoProveedor || !excelBlob}
               >
-                {enviandoProveedor ? '⏳ Enviando...' : '📤 Enviar a Proveedor y Marcar como Enviado'}
+                {enviandoProveedor ? 'Enviando…' : 'Enviar a proveedor y marcar como enviado'}
               </Button>
             </div>
           </div>
@@ -5308,10 +5150,10 @@ const TabGestionarPedidos: React.FC<{
 
       {/* Modal Ver Albarán (vizualizare când pedido ya entregado) */}
       {pedidoViendoAlbaran && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+        <div className="pedidos-modal-overlay fixed inset-0 flex items-center justify-center z-50 p-4">
+          <div className="pedidos-modal-panel bg-white rounded-lg max-w-4xl w-full max-h-[90vh] flex flex-col">
             <div className="flex justify-between items-center p-4 border-b">
-              <h2 className="text-xl font-bold text-gray-800">📄 Ver Albarán</h2>
+              <h2 className="text-xl font-bold text-gray-800">Ver albarán</h2>
               <button
                 onClick={() => {
                   if (albaranViewBlobUrlRef.current) {
@@ -5401,7 +5243,7 @@ const TabGestionarPedidos: React.FC<{
                       if (isHeic && !albaranViewPreviewUrl) {
                         return (
                           <div className="p-8 text-center">
-                            <p className="text-gray-600 mb-2">📄 <strong>{albaranViewName}</strong></p>
+                            <p className="text-gray-600 mb-2"><strong>{albaranViewName}</strong></p>
                             <p className="text-sm text-gray-500 mb-4">
                               Vista previa no disponible para este formato (p. ej. HEIC). Use el botón <strong>Descargar</strong> para ver el archivo en su dispositivo.
                             </p>
@@ -5410,7 +5252,7 @@ const TabGestionarPedidos: React.FC<{
                               download={albaranViewName}
                               className="inline-flex items-center px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium"
                             >
-                              📥 Descargar albarán
+                              Descargar albarán
                             </a>
                           </div>
                         );
@@ -5439,14 +5281,14 @@ const TabGestionarPedidos: React.FC<{
                       download={albaranViewName}
                       className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-gray-700 bg-white hover:bg-gray-50"
                     >
-                      📥 Descargar
+                      Descargar
                     </a>
                     <Button
                       onClick={() => setAlbaranDeleteConfirm(true)}
                       disabled={albaranViewDeleting || albaranViewSelectedId == null}
                       className="bg-red-600 hover:bg-red-700 text-white"
                     >
-                      {albaranViewDeleting ? '⏳ Eliminando...' : '🗑️ Borrar albarán'}
+                      {albaranViewDeleting ? 'Eliminando…' : 'Borrar albarán'}
                     </Button>
                     <Button
                       onClick={() => {
@@ -5478,10 +5320,10 @@ const TabGestionarPedidos: React.FC<{
 
       {/* Modal upload albarán (firma) */}
       {pedidoCargandoAlbaran && (
-        <div className="fixed inset-0 z-[10060] flex items-end landscape:items-center justify-center bg-black/50 p-0 landscape:p-2 sm:p-4">
-          <div className="bg-white rounded-t-2xl landscape:rounded-lg sm:rounded-lg shadow-xl max-w-2xl landscape:max-w-4xl w-full max-h-[min(92dvh,100%)] landscape:max-h-[min(96dvh,100%)] flex flex-col overflow-hidden">
+        <div className="pedidos-modal-overlay pedidos-modal-overlay--sheet fixed inset-0 z-[10060] flex items-end landscape:items-center justify-center p-0 landscape:p-2 sm:p-4">
+          <div className="pedidos-modal-panel pedidos-modal-panel--sheet bg-white rounded-t-2xl landscape:rounded-lg sm:rounded-lg max-w-2xl landscape:max-w-4xl w-full max-h-[min(92dvh,100%)] landscape:max-h-[min(96dvh,100%)] flex flex-col overflow-hidden">
             <div className="flex-shrink-0 flex justify-between items-center gap-3 px-4 sm:px-6 pt-4 sm:pt-6 pb-3 border-b border-gray-100">
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-800">📄 Cargar Albarán</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-800">Cargar albarán</h2>
               <button
                 type="button"
                 onClick={() => {
@@ -5561,7 +5403,7 @@ const TabGestionarPedidos: React.FC<{
                     Subiendo...
                   </>
                 ) : (
-                  '📤 Subir albarán(es)'
+                  'Subir albarán(es)'
                 )}
               </Button>
               <Button
@@ -6183,7 +6025,7 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
                   variant="outline"
                   className="text-green-600 border-green-200 hover:bg-green-50"
                 >
-                  ✅ Permitir Todos
+                  Permitir todos
                 </Button>
                 <Button
                   onClick={() => {
@@ -6201,7 +6043,7 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
                   variant="outline"
                   className="text-red-600 border-red-200 hover:bg-red-50"
                 >
-                  ❌ Denegar Todos
+                  Denegar todos
                 </Button>
               </div>
             </div>
@@ -6730,7 +6572,7 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
               variant="primary"
               className="flex items-center gap-2"
             >
-              <span>➕</span>
+              <Plus className="w-4 h-4" aria-hidden />
               Agregar Producto
             </Button>
           </div>
@@ -6818,10 +6660,10 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
                       <img 
                         src={producto.imagen} 
                         alt={producto.descripcion}
-                        className="w-full h-full object-contain p-2 group-hover:scale-105 transition-transform duration-300"
+                        className="w-full h-full object-contain p-2 "
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+                      <div className="w-full h-full flex items-center justify-center bg-gray-50">
                         <div className="text-center">
                           <div className="text-4xl text-gray-300 mb-2">📷</div>
                           <span className="text-gray-400 text-sm">Sin imagen</span>
@@ -6864,7 +6706,8 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
                         variant="outline"
                         className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:border-blue-300"
                       >
-                        <span className="mr-1">✏️</span>
+                        
+                        <Pencil className="w-4 h-4 mr-1" aria-hidden />
                         Editar
                       </Button>
                       <Button
@@ -6872,8 +6715,10 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
                         size="sm"
                         variant="outline"
                         className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                        aria-label="Eliminar producto"
+                        title="Eliminar producto"
                       >
-                        🗑️
+                        <Trash2 className="w-4 h-4" aria-hidden />
                       </Button>
                     </div>
                   </div>
@@ -6892,7 +6737,7 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
 
       {/* Modal pentru editare produs */}
       {editingProduct && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="pedidos-modal-overlay fixed inset-0 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
             <h3 className="text-lg font-semibold mb-4">Editar Producto</h3>
             
@@ -6955,7 +6800,7 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
                 {editingImageDeleted && !editingImagePreview && (
                   <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
                     <p className="text-sm text-red-600 font-medium">
-                      🗑️ Imagen marcada para eliminar
+                      Imagen marcada para eliminar
                     </p>
                     <p className="text-xs text-red-500 mt-1">
                       La imagen se eliminará al guardar los cambios
@@ -7028,7 +6873,7 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
                 variant="primary"
                 className="flex-1"
               >
-                💾 Guardar
+                Guardar
               </Button>
               <Button
                 onClick={() => {
@@ -7039,7 +6884,7 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
                 variant="outline"
                 className="flex-1"
               >
-                ❌ Cancelar
+                Cancelar
               </Button>
             </div>
           </div>
@@ -7048,7 +6893,7 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
 
       {/* Modal pentru adăugare produs */}
       {showAddForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="pedidos-modal-overlay fixed inset-0 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
             <h3 className="text-lg font-semibold mb-4">Agregar Nuevo Producto</h3>
             
@@ -7144,7 +6989,7 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
                     Agregando...
                   </>
                 ) : (
-                  '➕ Agregar'
+                  'Agregar'
                 )}
               </Button>
               <Button
@@ -7157,7 +7002,7 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
                 className="flex-1"
                 disabled={addingProduct}
               >
-                ❌ Cancelar
+                Cancelar
               </Button>
             </div>
           </div>
@@ -7414,7 +7259,7 @@ const TabNotas: React.FC<{
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-gray-800">Notas</h2>
             <Button onClick={handleNewNota} variant="primary">
-              ➕ Añadir Nota Nueva
+              Añadir Nota Nueva
             </Button>
           </div>
         </div>
@@ -7479,14 +7324,14 @@ const TabNotas: React.FC<{
                     variant="outline"
                     className="flex-1"
                   >
-                    ✏️ Editar
+                    Editar
                   </Button>
                   <Button
                     onClick={() => handleDeleteNota(nota.id)}
                     variant="outline"
                     className="flex-1 text-red-600 hover:bg-red-50"
                   >
-                    🗑️ Eliminar
+                    Eliminar
                   </Button>
                 </div>
               </div>
@@ -7497,7 +7342,7 @@ const TabNotas: React.FC<{
 
       {/* Modal creare/editare */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="pedidos-modal-overlay fixed inset-0 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <h3 className="text-xl font-bold mb-4">
@@ -7524,7 +7369,7 @@ const TabNotas: React.FC<{
                     value={formData.contenido}
                     onChange={(e) => setFormData({ ...formData, contenido: e.target.value })}
                     placeholder="Escribe el contenido de la nota..."
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[var(--primary-color,#E53935)] focus:border-[var(--primary-color,#E53935)]"
                     rows={6}
                   />
                 </div>
@@ -7656,12 +7501,12 @@ const BannerNotasInstrucciones: React.FC = () => {
   return (
     <div className="mb-6 space-y-4">
       {notas.map((nota) => (
-        <Card key={nota.id} className="border-l-4 border-purple-500 bg-gradient-to-r from-purple-50 to-white shadow-lg">
-          <div className="p-6">
-            <div className="flex items-start gap-4">
+        <Card key={nota.id} className="app-card app-card--pad pedidos-nota-banner border-l-4 border-[var(--primary-color)]">
+          <div className="p-4 sm:p-5">
+            <div className="flex items-start gap-3">
               <div className="flex-shrink-0">
-                <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
-                  <span className="text-2xl">📝</span>
+                <div className="w-10 h-10 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center">
+                  <FileText className="w-5 h-5 text-gray-600 dark:text-gray-300" aria-hidden />
                 </div>
               </div>
               <div className="flex-1">

@@ -2,6 +2,8 @@ import PDFDocument from 'pdfkit';
 import * as fs from 'fs';
 import * as path from 'path';
 import { formatJornadaLines } from '../emit/jornada.util';
+import { applyDescuentoFidelidadToTotales } from '../emit/descuento-fidelidad.util';
+import { normalizeTotales } from '../emit/totales.util';
 
 export type PdfV2BuildInput = {
   mode: 'BORRADOR' | 'EMITIDO';
@@ -77,6 +79,15 @@ export type PdfV2BuildInput = {
   };
   /** When true, document has exclusive alternatives — do not imply a single global total. */
   totalesAmbiguo?: boolean;
+  /** Legacy «Descuento por fidelidad» % (0–100). Applied per opción in economic table. */
+  descuentoFidelidadPct?: number;
+  /** Pre-discount document totals (optional; for footer note). */
+  totalesBrutos?: {
+    mensualidad_sin_iva: number;
+    mensualidad_con_iva: number;
+    anualidad_sin_iva: number;
+    anualidad_con_iva: number;
+  } | null;
   serviciosDigitales?: Array<{
     nombre: string;
     precio_referencia_mensual: number;
@@ -485,11 +496,14 @@ export async function buildPresupuestoV2Pdf(
   doc.font('Helvetica').fontSize(11);
   const fechaTxt =
     input.mode === 'EMITIDO' && input.emittedAt
-      ? `Fecha de emisión: ${new Date(input.emittedAt).toLocaleDateString('es-ES', {
-          day: 'numeric',
-          month: 'long',
-          year: 'numeric',
-        })}`
+      ? `Fecha de emisión: ${new Date(input.emittedAt).toLocaleDateString(
+          'es-ES',
+          {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+          },
+        )}`
       : 'Documento no oficial · sin número asignado';
   doc.text(fechaTxt, 50, yCursor, { width: pageW - 100, align: 'center' });
   if (validez > 0 && input.mode === 'EMITIDO') {
@@ -603,7 +617,9 @@ export async function buildPresupuestoV2Pdf(
     doc.text(String(line));
   }
   if (c.observaciones_documento) {
-    doc.fillColor('#4B5563').text(`Observaciones: ${c.observaciones_documento}`);
+    doc
+      .fillColor('#4B5563')
+      .text(`Observaciones: ${c.observaciones_documento}`);
     doc.fillColor('#111827');
   }
   doc.moveDown(1);
@@ -619,9 +635,11 @@ export async function buildPresupuestoV2Pdf(
 
   input.lineas.forEach((linea, idx) => {
     ensureSpaceLocal(40);
-    const titulo =
-      linea.contenido_comercial?.titulo_comercial || linea.nombre;
-    doc.font('Helvetica-Bold').fontSize(11).text(`${idx + 1}. ${titulo}`);
+    const titulo = linea.contenido_comercial?.titulo_comercial || linea.nombre;
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(11)
+      .text(`${idx + 1}. ${titulo}`);
     const cfg = commercialConfigLines(linea);
     if (cfg.length) {
       doc
@@ -635,7 +653,7 @@ export async function buildPresupuestoV2Pdf(
   });
 
   // Detalle comercial por servicio (jornada / tareas / periódicos)
-  input.lineas.forEach((linea, idx) => {
+  input.lineas.forEach((linea, _idx) => {
     const cc = linea.contenido_comercial || {};
     const titulo = cc.titulo_comercial || linea.nombre;
     const tareasAux = cc.tareas_auxiliares || [];
@@ -680,7 +698,11 @@ export async function buildPresupuestoV2Pdf(
 
     if (jornadaLines.length) {
       ensureSpaceLocal(55);
-      doc.font('Helvetica-Bold').fontSize(11).fillColor(brandColor).text('Jornada');
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(11)
+        .fillColor(brandColor)
+        .text('Jornada');
       doc.moveDown(0.2);
       doc.font('Helvetica').fontSize(9).fillColor('#111827');
       for (const jl of jornadaLines) {
@@ -693,7 +715,11 @@ export async function buildPresupuestoV2Pdf(
     const writeBulletSection = (heading: string, items: string[]) => {
       if (!items.length) return;
       ensureSpaceLocal(36);
-      doc.font('Helvetica-Bold').fontSize(11).fillColor(brandColor).text(heading);
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(11)
+        .fillColor(brandColor)
+        .text(heading);
       doc.moveDown(0.2);
       doc.font('Helvetica').fontSize(9).fillColor('#111827');
       for (const item of items) {
@@ -721,7 +747,11 @@ export async function buildPresupuestoV2Pdf(
         return;
       }
       ensureSpaceLocal(36);
-      doc.font('Helvetica-Bold').fontSize(11).fillColor(brandColor).text(heading);
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(11)
+        .fillColor(brandColor)
+        .text(heading);
       doc.moveDown(0.2);
       if (plain.length) {
         doc.font('Helvetica').fontSize(9).fillColor('#111827');
@@ -732,7 +762,11 @@ export async function buildPresupuestoV2Pdf(
       }
       for (const [gTitle, gItems] of groups) {
         ensureSpaceLocal(28);
-        doc.font('Helvetica-Bold').fontSize(9).fillColor('#374151').text(gTitle);
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(9)
+          .fillColor('#374151')
+          .text(gTitle);
         doc.moveDown(0.15);
         doc.font('Helvetica').fontSize(9).fillColor('#111827');
         for (const item of gItems) {
@@ -746,18 +780,13 @@ export async function buildPresupuestoV2Pdf(
 
     if (cc.operativa?.length) writeBulletSection('Operativa', cc.operativa);
     if (tareasAux.length) {
-      // Combined: split operativa vs mantenimiento if seeded with both blocks
-      const mid = Math.ceil(tareasAux.length / 2);
       const looksLikeFullLegacy = tareasAux.length >= 10;
       if (looksLikeFullLegacy) {
         writeBulletSection(
           'Auxiliares de Servicios — Funciones principales',
           tareasAux.slice(0, 8),
         );
-        writeBulletSection(
-          'Mantenimiento',
-          tareasAux.slice(8),
-        );
+        writeBulletSection('Mantenimiento', tareasAux.slice(8));
       } else {
         writeBulletSection('Tareas de Auxiliar de Servicios', tareasAux);
       }
@@ -785,12 +814,17 @@ export async function buildPresupuestoV2Pdf(
       doc.moveDown(0.35);
     }
     if (cc.condiciones_especificas?.length) {
-      writeBulletSection('Condiciones del servicio', cc.condiciones_especificas);
+      writeBulletSection(
+        'Condiciones del servicio',
+        cc.condiciones_especificas,
+      );
     }
   });
 
   // Servicios digitales (document-level)
-  const digitales = (input.serviciosDigitales || []).filter((d) => d && d.activo !== false);
+  const digitales = (input.serviciosDigitales || []).filter(
+    (d) => d && d.activo !== false,
+  );
   if (digitales.length) {
     ensureSpaceLocal(70);
     doc
@@ -852,6 +886,7 @@ export async function buildPresupuestoV2Pdf(
 
   let y = tableTop + 24;
   doc.fillColor('#111827').font('Helvetica').fontSize(9);
+  const dtoPct = Number(input.descuentoFidelidadPct) || 0;
 
   const writeSectionHeading = (title: string) => {
     ensureSpaceLocal(28);
@@ -919,12 +954,10 @@ export async function buildPresupuestoV2Pdf(
     const prefix = opts.pricePrefix || '';
     doc.font('Helvetica').fontSize(9);
     if (pending) {
-      doc
-        .fillColor('#B45309')
-        .text('Pendiente de cálculo', colMen.x + 4, y, {
-          width: colMen.w - 8,
-          align: 'right',
-        });
+      doc.fillColor('#B45309').text('Pendiente de cálculo', colMen.x + 4, y, {
+        width: colMen.w - 8,
+        align: 'right',
+      });
       doc.text('—', colAn.x + 4, y, {
         width: colAn.w - 8,
         align: 'right',
@@ -955,6 +988,62 @@ export async function buildPresupuestoV2Pdf(
     });
     doc.fillColor('#111827').fontSize(9);
     y += 14;
+
+    if (dtoPct > 0) {
+      const applied = applyDescuentoFidelidadToTotales(
+        normalizeTotales({
+          mensualidad_sin_iva: mSin,
+          mensualidad_con_iva: mCon,
+          anualidad_sin_iva: aSin,
+          anualidad_con_iva: aCon,
+        }),
+        dtoPct,
+      );
+      ensureSpaceLocal(48);
+      if (doc.y > y) y = doc.y;
+      doc
+        .fillColor('#B45309')
+        .font('Helvetica')
+        .fontSize(8)
+        .text(`Descuento por fidelidad (${dtoPct}%)`, colDesc.x + 4, y, {
+          width: colDesc.w - 8,
+        });
+      doc.text(
+        `${money(-applied.descuento.mensualidad_sin_iva)} € + IVA`,
+        colMen.x + 4,
+        y,
+        { width: colMen.w - 8, align: 'right' },
+      );
+      doc.text(
+        `${money(-applied.descuento.anualidad_sin_iva)} € + IVA`,
+        colAn.x + 4,
+        y,
+        { width: colAn.w - 8, align: 'right' },
+      );
+      y += 12;
+      const suf = String(label || 'opción').slice(0, 36);
+      doc
+        .fillColor('#065F46')
+        .font('Helvetica-Bold')
+        .fontSize(8)
+        .text(`TOTAL neto (incl. dto.) — ${suf}`, colDesc.x + 4, y, {
+          width: colDesc.w - 8,
+        });
+      doc.text(
+        `${money(applied.neto.mensualidad_sin_iva)} € + IVA`,
+        colMen.x + 4,
+        y,
+        { width: colMen.w - 8, align: 'right' },
+      );
+      doc.text(
+        `${money(applied.neto.anualidad_sin_iva)} € + IVA`,
+        colAn.x + 4,
+        y,
+        { width: colAn.w - 8, align: 'right' },
+      );
+      doc.fillColor('#111827').font('Helvetica').fontSize(9);
+      y += 14;
+    }
   };
 
   for (const linea of input.lineas) {
@@ -975,9 +1064,11 @@ export async function buildPresupuestoV2Pdf(
             },
           ];
 
-    doc.font('Helvetica-Bold').text(String(linea.nombre).slice(0, 55), colDesc.x + 4, y, {
-      width: colDesc.w - 8,
-    });
+    doc
+      .font('Helvetica-Bold')
+      .text(String(linea.nombre).slice(0, 55), colDesc.x + 4, y, {
+        width: colDesc.w - 8,
+      });
     y += 12;
 
     const sections = groupOpcionesForPdfPresentation(opcionesRaw);
@@ -1075,30 +1166,43 @@ export async function buildPresupuestoV2Pdf(
       y,
     );
   } else {
+    if (dtoPct > 0 && input.totalesBrutos) {
+      doc
+        .font('Helvetica')
+        .fontSize(8)
+        .fillColor('#6B7280')
+        .text(
+          `Descuento por fidelidad ${dtoPct}% aplicado sobre la oferta (bruto mensual s/IVA: ${money(input.totalesBrutos.mensualidad_sin_iva)} €).`,
+          left,
+          y,
+          { width: contentW },
+        );
+      y += 16;
+    }
     doc
       .font('Helvetica-Bold')
       .fontSize(10)
       .fillColor('#111827')
       .text(
-        `Total mensual sin IVA: ${money(input.totales.mensualidad_sin_iva)} €`,
+        `Total mensual sin IVA${dtoPct > 0 ? ' (neto)' : ''}: ${money(input.totales.mensualidad_sin_iva)} €`,
         left,
         y,
       );
     y += 14;
     doc.text(
-      `Total mensual con IVA: ${money(input.totales.mensualidad_con_iva)} €`,
+      `Total mensual con IVA${dtoPct > 0 ? ' (neto)' : ''}: ${money(input.totales.mensualidad_con_iva)} €`,
       left,
       y,
     );
     y += 14;
     doc.text(
-      `Total anual sin IVA: ${money(input.totales.anualidad_sin_iva)} €`,
+      `Total anual sin IVA${dtoPct > 0 ? ' (neto)' : ''}: ${money(input.totales.anualidad_sin_iva)} €`,
       left,
       y,
     );
     y += 14;
     doc.text(
-      `Total anual con IVA: ${money(input.totales.anualidad_con_iva)} €`,
+      `Total anual con IVA${dtoPct > 0 ? ' (neto)' : ''}: ${money(input.totales.anualidad_con_iva)} €`,
       left,
       y,
     );
@@ -1211,7 +1315,8 @@ export async function buildPresupuestoV2Pdf(
   // Append service-specific conditions once (summary)
   const extraSvc: string[] = [];
   for (const linea of input.lineas) {
-    for (const cnd of linea.contenido_comercial?.condiciones_especificas || []) {
+    for (const cnd of linea.contenido_comercial?.condiciones_especificas ||
+      []) {
       extraSvc.push(
         `${linea.contenido_comercial?.titulo_comercial || linea.nombre}: ${cnd}`,
       );

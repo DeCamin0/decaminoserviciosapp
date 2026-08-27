@@ -4,7 +4,9 @@ import {
 } from '../config/config-catalog';
 
 /** Stable JSON for comparing plantilla vs working copy. */
-export function contenidoFingerprint(c: ContenidoComercial | null | undefined): string {
+export function contenidoFingerprint(
+  c: ContenidoComercial | null | undefined,
+): string {
   const n = normalizeContenidoComercial(c || {}, '');
   const sortedPeriodicos = [...(n.servicios_periodicos || [])]
     .map((p, i) => ({
@@ -13,7 +15,10 @@ export function contenidoFingerprint(c: ContenidoComercial | null | undefined): 
       descripcion: p.descripcion || null,
       orden: p.orden ?? i,
     }))
-    .sort((a, b) => (a.orden || 0) - (b.orden || 0) || a.nombre.localeCompare(b.nombre));
+    .sort(
+      (a, b) =>
+        (a.orden || 0) - (b.orden || 0) || a.nombre.localeCompare(b.nombre),
+    );
   return JSON.stringify({
     titulo_comercial: n.titulo_comercial || null,
     descripcion_comercial: n.descripcion_comercial || null,

@@ -6,7 +6,6 @@ import {
 } from './jornada.util';
 import {
   DEFAULT_VECINDARIO,
-  resolveAllDigitales,
   resolveServicioDigital,
   sumDigitalesCobrables,
 } from './digitales.util';

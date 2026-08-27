@@ -7,19 +7,19 @@ import Back3DButton from '../components/Back3DButton';
 import {
   MotorInputsForm,
   ResultadoBreakdown,
-  money,
 } from './presupuestos-v2/MotorCalcForms';
 import {
   summarizeServicioInputs,
   clienteDisplayLines,
   mergeClienteWorking,
+  moneyEs as money,
 } from './presupuestos-v2/v2UiHelpers';
 import PresupuestosV2ConfigPanel from './presupuestos-v2/PresupuestosV2ConfigPanel';
 import {
   JornadaEditor,
   DigitalesEditor,
-  formatJornadaPreview,
 } from './presupuestos-v2/JornadaDigitalesEditors';
+import { formatJornadaPreview } from './presupuestos-v2/JornadaDigitalesEditors.utils';
 import { ContenidoLineaEditor } from './presupuestos-v2/ContenidoLineaEditor';
 
 function authHeaders() {
@@ -190,7 +190,7 @@ export default function PresupuestosV2Page() {
       }
     };
     run();
-  }, [tab, loadLista, loadCatalogos]);
+  }, [tab, loadLista, loadCatalogos, flashErr]);
 
   const serviciosActivos = useMemo(
     () => (servicios || []).filter((s) => s.activo !== false),
@@ -413,6 +413,23 @@ export default function PresupuestosV2Page() {
       });
       hydrateEditor(res.data);
       flashOk('Servicios digitales guardados');
+    } catch (e) {
+      flashErr(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveDescuentoFidelidad = async (pct) => {
+    if (!draft?.id || draft.estado === 'EMITIDO') return;
+    setLoading(true);
+    try {
+      const res = await apiJson(routes.v2PresupuestoDescuentoFidelidad(draft.id), {
+        method: 'PUT',
+        body: JSON.stringify({ descuento_fidelidad_pct: pct }),
+      });
+      hydrateEditor(res.data);
+      flashOk('Descuento por fidelidad guardado');
     } catch (e) {
       flashErr(e.message);
     } finally {
@@ -1537,6 +1554,7 @@ export default function PresupuestosV2Page() {
                             <MotorInputsForm
                               codigoMotor={motor}
                               inputs={inputs}
+                              resultado={resultado}
                               onChange={(next) =>
                                 setLineInputs((prev) => ({
                                   ...prev,
@@ -1544,9 +1562,9 @@ export default function PresupuestosV2Page() {
                                 }))
                               }
                             />
-                            <div className="border-t border-slate-100 pt-3">
+                            <div className="border-t border-slate-200 pt-3 mt-1">
                               <h5 className="text-sm font-medium text-slate-700 mb-2">
-                                Resultado
+                                Resultado de la oferta
                               </h5>
                               <ResultadoBreakdown
                                 resultado={resultado}
@@ -1561,6 +1579,66 @@ export default function PresupuestosV2Page() {
                 </div>
               );
             })}
+            <div className="bg-white border border-amber-200 rounded-2xl p-4 space-y-2">
+              <h4 className="text-sm font-medium text-slate-800">
+                Descuento por fidelidad sobre la oferta económica
+              </h4>
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="text-sm text-slate-700">
+                  Porcentaje (0–100 %, admite decimales ej. 7,5)
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.01}
+                    disabled={draft.estado === 'EMITIDO'}
+                    className="mt-1 block w-28 border border-slate-200 rounded-lg px-2 py-1.5 bg-white disabled:bg-slate-50"
+                    defaultValue={
+                      draft.descuento_fidelidad_pct ??
+                      totalesDocumento?.descuento_fidelidad_pct ??
+                      0
+                    }
+                    key={`dto-${draft.id}-${draft.descuento_fidelidad_pct ?? 0}`}
+                    onBlur={(e) => {
+                      const raw = String(e.target.value ?? '').trim().replace(',', '.');
+                      const next = raw === '' ? 0 : Number(raw);
+                      const prev = Number(draft.descuento_fidelidad_pct) || 0;
+                      if (!Number.isFinite(next) || next === prev) return;
+                      saveDescuentoFidelidad(next);
+                    }}
+                  />
+                </label>
+                {Number(totalesDocumento?.descuento_fidelidad_pct) > 0 &&
+                  totalesDocumento?.totales_brutos && (
+                    <p className="text-xs text-slate-600">
+                      Bruto mensual s/IVA:{' '}
+                      <strong>
+                        {money(totalesDocumento.totales_brutos.mensualidad_sin_iva)} €
+                      </strong>
+                      {' · '}
+                      Descuento:{' '}
+                      <strong>
+                        {money(
+                          totalesDocumento.descuento_fidelidad?.mensualidad_sin_iva,
+                        )}{' '}
+                        €
+                      </strong>
+                      {' · '}
+                      Neto:{' '}
+                      <strong>
+                        {money(totalesDocumento.totales_sin_alternativas?.mensualidad_sin_iva)}{' '}
+                        €
+                      </strong>
+                    </p>
+                  )}
+              </div>
+              <p className="text-xs text-slate-500">
+                Se aplica sobre cada línea/opción de la propuesta económica (PDF
+                incluido). No modifica las fórmulas de cálculo internas. No afecta
+                a servicios digitales (tienen su propio descuento).
+              </p>
+            </div>
+
             <DigitalesEditor
               items={draft.servicios_digitales || draft.servicios_digitales_json || []}
               disabled={draft.estado === 'EMITIDO'}
@@ -1576,7 +1654,11 @@ export default function PresupuestosV2Page() {
                 ) : null}
                 {calcTotales && (
                   <p className="mt-1 text-slate-700">
-                    Total componentes no ambiguos (mensual s/IVA):{' '}
+                    Total componentes no ambiguos (mensual s/IVA
+                    {Number(totalesDocumento?.descuento_fidelidad_pct) > 0
+                      ? ', neto tras fidelidad'
+                      : ''}
+                    ):{' '}
                     <strong>{money(calcTotales.mensualidad_sin_iva)} €</strong>
                   </p>
                 )}

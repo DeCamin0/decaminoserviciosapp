@@ -7,4 +7,8 @@ export { default as LoadingSpinner } from './LoadingSpinner';
 export { default as Badge } from './Badge';
 export { default as Separator } from './Separator';
 export { default as Notification } from './Notification';
+export { default as PageHeader } from './PageHeader';
+export { default as AlertBanner } from './AlertBanner';
+export { default as SegmentedControl } from './SegmentedControl';
+export { default as ConfirmModal } from './ConfirmModal';
  

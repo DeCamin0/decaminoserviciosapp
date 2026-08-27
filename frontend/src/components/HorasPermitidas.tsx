@@ -444,15 +444,7 @@ const HorasPermitidas: React.FC<HorasPermitidasProps> = ({ setNotification }) =>
   };
 
   return (
-    <div
-      style={{
-        borderRadius: isMobile ? 8 : 12,
-        boxShadow: "0 8px 24px rgba(0,0,0,0.04)",
-        padding: isMobile ? 8 : 24,
-        backgroundColor: 'white',
-        border: '1px solid #e5e7eb'
-      }}
-    >
+    <div className="app-card app-card--pad fichaje-panel">
       <div style={{ marginBottom: isMobile ? 12 : 16 }}>
         <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'flex-start', marginBottom: 8, gap: isMobile ? 8 : 0 }}>
           <div>

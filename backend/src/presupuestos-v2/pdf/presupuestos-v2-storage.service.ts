@@ -1,4 +1,8 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import { StorageService } from '../../storage/storage.service';
 import { buildObjectKey } from '../../storage/object-key.util';
@@ -101,8 +105,6 @@ export class PresupuestosV2StorageService {
 
   async getPdf(storageKey: string): Promise<Buffer> {
     const obj = await this.storage.get(storageKey);
-    return Buffer.isBuffer(obj.body)
-      ? obj.body
-      : Buffer.from(obj.body as any);
+    return Buffer.isBuffer(obj.body) ? obj.body : Buffer.from(obj.body as any);
   }
 }

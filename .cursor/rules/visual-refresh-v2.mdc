@@ -1,0 +1,45 @@
+---
+description: Stare Visual Refresh V2 — de unde reluăm, ce e închis, ce nu atingem.
+alwaysApply: true
+---
+
+# Visual Refresh V2 — checkpoint
+
+Citește detaliile în: `docs/CHECKPOINT_2026-08-18-VISUAL-REFRESH-V2.md`
+
+## Închis — NU mai modifica
+- **Inicio** `/inicio` (`DashboardPage`) — referință vizuală
+- **Registro de Jornada / Fichaje** `/fichaje` — CERRADO după Val 0–3.1
+- **Solicitudes** `/solicitudes` — CERRADO (employee + admin)
+- **Datos Personales** `/datos` (`DatosPage`) — CERRADO DEFINITIVO
+- **Aprobaciones** `/aprobaciones` (`AprobacionesPage`) — CERRADO
+- **Documentos** `/documentos` (`DocumentosPage`) — CERRADO
+- **Comunicados** `/comunicados` (`ComunicadosPage`, `ComunicadoDetailPage`, `ComunicadoCreatePage`) — CERRADO
+- **Mis Tareas** `/mis-tareas` (`MisTareasPage`) — CERRADO
+- **Tareas** `/tareas` (`TareasPage`, manager) — CERRADO
+- **Mi Horario** `/cuadrantes-empleado` (`CuadrantesEmpleadoPage`) — CERRADO
+- **Empleados** `/empleados` (`EmpleadosPage`) — CERRADO DEFINITIVO
+- **Documentos Empleados** `/documentos-empleados` (`DocumentosEmpleadosPage`) — **CERRADO DEFINITIVO**
+- **Cuadrantes Admin / Manager** `/cuadrantes` (`CuadrantesPage`) — **CERRADO DEFINITIVO**
+- **Inspecciones** `/inspecciones` (`InspeccionesPage`, `InspectionList`, `InspectionForm`) — **CERRADO DEFINITIVO**
+- **Mis Inspecciones** `/mis-inspecciones` (`MisInspeccionesPage`) — **CERRADO DEFINITIVO**
+- **Pedidos Admin** `/pedidos` (`PedidosPage`) — **CERRADO DEFINITIVO**
+- **Pedidos Empleado** `/empleado-pedidos` (`EmpleadoPedidosPage`) — **CERRADO DEFINITIVO**
+- **Salón de la Fama** `/hall-of-fame` (`HallOfFamePage`) — **CERRADO**
+- **Clientes** `/clientes` (`ClientesPage`, `ClienteDetallePage`, `clientes/*`) — **CERRADO**
+
+## Următorul (doar după „Aprobat”)
+- **Presupuestos V2** — ultimul modul din roadmap; nu începe fără aprobare explicită.
+
+## Notă
+- **Documentos SELF** (`DocumentosPage`) — referință preview/upload; nu modifica.
+
+## Scope
+- Doar UI/UX. Fără logică, API, backend, DB, auth, permissions, payload-uri.
+- Reuse kit: `frontend/src/styles/app-ui.css`, `PageHeader`, `AlertBanner`, `SegmentedControl`, `app-modal*`, pattern `.app-picker*`, liste compacte ca Fichaje.
+- Nu crea toast/Input globale acum. Nu atinge Presupuestos legacy.
+
+## Proces
+- Explain-first până la Aprobat / Aplică / Implementează.
+- Română. Start: „salut alecu”.
+- Pagină cu pagină → QA → CERRADO.

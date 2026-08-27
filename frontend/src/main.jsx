@@ -105,6 +105,7 @@ import { BrowserRouter } from 'react-router'
 import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
+import './styles/app-ui.css'
 import './i18n' // Side-effect import pentru inițializare
 import { handleBrowserExtensionErrors } from './utils/errorHandler'
 import { isDemoMode } from './utils/demo'

@@ -182,7 +182,10 @@ describe('Presupuestos V2 PDF builder smoke', () => {
       numero: null,
       emittedAt: null,
       validezDias: 60,
-      company: { legal_name: 'De Camino Servicios Auxiliares S.L.', cif: 'B123' },
+      company: {
+        legal_name: 'De Camino Servicios Auxiliares S.L.',
+        cif: 'B123',
+      },
       brand: {
         nombre: 'De Camino',
         config: {
@@ -271,7 +274,11 @@ describe('Presupuestos V2 PDF builder smoke', () => {
             {
               etiqueta: '30h/semana',
               seleccion_tipo: 'EXCLUSIVE',
-              jornada: { horas_semana: 30, festivos_incluidos: false, tramos: [] },
+              jornada: {
+                horas_semana: 30,
+                festivos_incluidos: false,
+                tramos: [],
+              },
               totales: t(2200),
               resultado: { totales: t(2200) },
             },

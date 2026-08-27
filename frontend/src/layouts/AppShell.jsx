@@ -53,7 +53,7 @@ const AppShell = ({ isMobile, children }) => {
 
   return (
     <div
-      className={`min-h-screen flex flex-col relative bg-gray-50 dark:bg-gray-900 transition-colors ${
+      className={`min-h-screen min-h-[100dvh] flex flex-col relative bg-gray-50 dark:bg-gray-900 transition-colors overflow-x-hidden ${
         isMobile ? '' : 'overflow-hidden'
       }`}
       style={{
@@ -172,7 +172,7 @@ const AppShell = ({ isMobile, children }) => {
       )}
 
       {isMobile ? (
-        <header className="sticky top-0 z-50 bg-white/80 dark:bg-gray-800/80 backdrop-blur border-b border-gray-200 dark:border-gray-700 relative">
+        <header className="sticky top-0 z-50 bg-white/80 dark:bg-gray-800/80 backdrop-blur border-b border-gray-200 dark:border-gray-700 relative safe-area-top">
           <div
             className="flex items-center justify-between px-4 py-3 landscape:max-md:py-2"
             style={{
@@ -247,7 +247,7 @@ const AppShell = ({ isMobile, children }) => {
           </div>
         </header>
       ) : (
-        <header className="sticky top-0 z-50 bg-white/80 dark:bg-gray-800/80 backdrop-blur border-b border-gray-200 dark:border-gray-700 relative">
+        <header className="sticky top-0 z-50 bg-white/80 dark:bg-gray-800/80 backdrop-blur border-b border-gray-200 dark:border-gray-700 relative safe-area-top">
           <div
             className="flex items-center min-h-[clamp(56px,6vh,72px)]"
             style={{
@@ -349,7 +349,7 @@ const AppShell = ({ isMobile, children }) => {
       <main
         className={
           isMobile
-            ? 'flex-1 relative z-10 pb-20 landscape:max-md:pb-16'
+            ? 'flex-1 relative z-10 app-main-mobile'
             : 'flex-1 relative z-10'
         }
       >

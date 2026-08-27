@@ -58,4 +58,6 @@ export interface StorageConfig {
   endpoint: string;
   region: string;
   publicBaseUrl: string;
+  /** Comma-separated Cloudflare edge IPs when local DNS returns blocked R2 API IPs. */
+  connectViaEdgeIps: string;
 }

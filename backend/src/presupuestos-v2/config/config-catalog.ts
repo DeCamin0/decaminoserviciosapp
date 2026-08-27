@@ -266,9 +266,10 @@ export function normalizeServiciosPeriodicos(
       periodicidad: String(row?.periodicidad || '').trim(),
       descripcion:
         row?.descripcion != null ? String(row.descripcion).trim() : null,
-      orden: row?.orden != null && Number.isFinite(Number(row.orden))
-        ? Number(row.orden)
-        : i,
+      orden:
+        row?.orden != null && Number.isFinite(Number(row.orden))
+          ? Number(row.orden)
+          : i,
     }))
     .filter((r) => r.nombre)
     .sort((a, b) => (a.orden || 0) - (b.orden || 0));

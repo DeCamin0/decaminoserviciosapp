@@ -5,14 +5,19 @@ import { DigitalesEditor } from './JornadaDigitalesEditors';
 import { motorLabel, slugifyCodigo } from './v2UiHelpers';
 
 function BrandLogoPreview({ brandId, bust, hasLogo }) {
+  const fetchKey = `${brandId}:${bust}:${hasLogo}`;
   const [url, setUrl] = useState(null);
+  const [syncKey, setSyncKey] = useState(fetchKey);
+  if (fetchKey !== syncKey) {
+    setSyncKey(fetchKey);
+    setUrl(null);
+  }
+
   useEffect(() => {
+    if (!hasLogo) return undefined;
+
     let revoked = false;
     let objectUrl = null;
-    if (!hasLogo) {
-      setUrl(null);
-      return undefined;
-    }
     (async () => {
       try {
         const token = localStorage.getItem('auth_token');
@@ -36,7 +41,7 @@ function BrandLogoPreview({ brandId, bust, hasLogo }) {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [brandId, bust, hasLogo]);
-  if (!url) {
+  if (!hasLogo || !url) {
     return (
       <div className="h-16 w-28 border border-dashed rounded-xl flex items-center justify-center text-xs text-slate-400">
         Sin logo

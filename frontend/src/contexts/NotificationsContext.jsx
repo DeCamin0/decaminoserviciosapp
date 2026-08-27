@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useAuth } from './AuthContextBase';
 import { config } from '../config/env';
+import { parseNotificationData } from '../utils/notificationNavigation';
 import {
   requestNotificationPermission,
   isNotificationPermissionGranted,
@@ -75,7 +76,7 @@ export const NotificationsProvider = ({ children }) => {
               content: n.message,
               timestamp: n.createdAt,
               read: n.read,
-              data: n.data,
+              data: parseNotificationData(n.data),
             }));
             
             setNotifications(formattedNotifications);

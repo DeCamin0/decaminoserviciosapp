@@ -12,14 +12,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CalculadoraV2Service } from './calculadora/calculadora-v2.service';
 import { EmitirV2Service } from './emit/emitir-v2.service';
 import { getMotorDefinition, mergeInputs } from './calculadora/motor-registry';
-import {
-  ClienteOverrides,
-} from './emit/cliente.util';
+import { ClienteOverrides } from './emit/cliente.util';
 import { normalizeContenidoComercial } from './config/config-catalog';
-import {
-  computeDocumentTotales,
-  deepCloneJson,
-} from './emit/totales.util';
+import { computeDocumentTotales, deepCloneJson } from './emit/totales.util';
 import {
   applyJornadaToMotorInputs,
   normalizeJornada,
@@ -30,6 +25,10 @@ import {
   resolveAllDigitales,
   sumDigitalesCobrables,
 } from './emit/digitales.util';
+import {
+  applyDescuentoFidelidadToTotales,
+  clampDescuentoFidelidadPct,
+} from './emit/descuento-fidelidad.util';
 import {
   cloneContenidoFromPlantilla,
   isContenidoPersonalizado,
@@ -300,7 +299,10 @@ export class PresupuestosV2Service implements OnModuleInit {
     activo?: boolean;
     orden?: number;
     defaults_json?: Prisma.InputJsonValue;
-    contenido_comercial_json?: Prisma.InputJsonValue | Record<string, unknown> | null;
+    contenido_comercial_json?:
+      | Prisma.InputJsonValue
+      | Record<string, unknown>
+      | null;
   }) {
     const codigo = String(dto.codigo_interno || '')
       .trim()
@@ -338,7 +340,8 @@ export class PresupuestosV2Service implements OnModuleInit {
           activo: dto.activo !== false,
           orden: dto.orden ?? 0,
           defaults_json: dto.defaults_json ?? undefined,
-          contenido_comercial_json: contenido as unknown as Prisma.InputJsonValue,
+          contenido_comercial_json:
+            contenido as unknown as Prisma.InputJsonValue,
         },
         include: { motor: true },
       });
@@ -361,7 +364,10 @@ export class PresupuestosV2Service implements OnModuleInit {
       activo?: boolean;
       orden?: number;
       defaults_json?: Prisma.InputJsonValue | null;
-      contenido_comercial_json?: Prisma.InputJsonValue | Record<string, unknown> | null;
+      contenido_comercial_json?:
+        | Prisma.InputJsonValue
+        | Record<string, unknown>
+        | null;
     },
   ) {
     const current = await this.getServicio(id);
@@ -396,12 +402,11 @@ export class PresupuestosV2Service implements OnModuleInit {
         ...(dto.orden !== undefined && { orden: dto.orden }),
         ...(dto.defaults_json !== undefined && {
           defaults_json:
-            dto.defaults_json === null
-              ? Prisma.JsonNull
-              : dto.defaults_json,
+            dto.defaults_json === null ? Prisma.JsonNull : dto.defaults_json,
         }),
         ...(contenido !== undefined && {
-          contenido_comercial_json: contenido as unknown as Prisma.InputJsonValue,
+          contenido_comercial_json:
+            contenido as unknown as Prisma.InputJsonValue,
         }),
       },
       include: { motor: true },
@@ -434,9 +439,7 @@ export class PresupuestosV2Service implements OnModuleInit {
 
     const clienteIds = [
       ...new Set(
-        rows
-          .map((r) => r.cliente_id)
-          .filter((id): id is number => id != null),
+        rows.map((r) => r.cliente_id).filter((id): id is number => id != null),
       ),
     ];
     const clientes =
@@ -461,7 +464,8 @@ export class PresupuestosV2Service implements OnModuleInit {
       root_id: r.root_id,
       parent_numero: r.parent?.numero || null,
       cliente_id: r.cliente_id,
-      cliente_nombre: r.cliente_id != null ? nombreById.get(r.cliente_id) ?? null : null,
+      cliente_nombre:
+        r.cliente_id != null ? (nombreById.get(r.cliente_id) ?? null) : null,
       company: r.company,
       brand: r.brand,
       created_by: r.created_by,
@@ -475,9 +479,7 @@ export class PresupuestosV2Service implements OnModuleInit {
         codigo_motor: s.servicio.codigo_motor,
         orden: s.orden,
       })),
-      totales:
-        (r.totales_emitidos_json as any) ||
-        null,
+      totales: (r.totales_emitidos_json as any) || null,
       emitted_at: r.emitted_at,
       identificador_ui:
         r.numero ||
@@ -565,8 +567,7 @@ export class PresupuestosV2Service implements OnModuleInit {
         version_motor: s.version_motor,
         inputs_json: primary?.inputs_json ?? s.inputs_json,
         resultado_json: primary?.resultado_json ?? s.resultado_json,
-        params_usados_json:
-          primary?.params_usados_json ?? s.params_usados_json,
+        params_usados_json: primary?.params_usados_json ?? s.params_usados_json,
         calculated_at: primary?.calculated_at ?? s.calculated_at,
         opciones: opciones.map((o) => ({
           id: o.id,
@@ -574,7 +575,10 @@ export class PresupuestosV2Service implements OnModuleInit {
           orden: o.orden,
           seleccion_tipo: o.seleccion_tipo,
           descripcion_local: o.descripcion_local,
-          jornada_json: normalizeJornada((o as any).jornada_json) || (o as any).jornada_json || null,
+          jornada_json:
+            normalizeJornada((o as any).jornada_json) ||
+            (o as any).jornada_json ||
+            null,
           codigo_motor: o.codigo_motor,
           version_motor: o.version_motor,
           inputs_json: o.inputs_json,
@@ -591,7 +595,8 @@ export class PresupuestosV2Service implements OnModuleInit {
           categoria: s.servicio.categoria,
           codigo_motor: s.servicio.codigo_motor,
           defaults_json: s.servicio.defaults_json,
-          contenido_comercial_json: (s.servicio as any).contenido_comercial_json,
+          contenido_comercial_json: (s.servicio as any)
+            .contenido_comercial_json,
           activo: s.servicio.activo,
           orden: s.servicio.orden,
         },
@@ -647,9 +652,17 @@ export class PresupuestosV2Service implements OnModuleInit {
           );
     const digitalesResolved = resolveAllDigitales(digitalesWorking);
     const digCob = sumDigitalesCobrables(digitalesWorking);
+    const dtoPct = clampDescuentoFidelidadPct(
+      (r as any).descuento_fidelidad_pct,
+    );
+    const fidelidad = applyDescuentoFidelidadToTotales(
+      totalesDocumento.totales_sin_alternativas,
+      dtoPct,
+    );
 
     return {
       ...r,
+      descuento_fidelidad_pct: dtoPct,
       cliente_nombre,
       identificador_ui: identificadorUi,
       parent_numero: parentNumero,
@@ -657,6 +670,11 @@ export class PresupuestosV2Service implements OnModuleInit {
       revisado_por: revisadoPor.map((a) => a.payload_json),
       totales_documento: {
         ...totalesDocumento,
+        totales: fidelidad.neto,
+        totales_sin_alternativas: fidelidad.neto,
+        totales_brutos: fidelidad.bruto,
+        descuento_fidelidad: fidelidad.descuento,
+        descuento_fidelidad_pct: dtoPct,
         digitales_cobrables: digCob,
       },
       servicios_digitales: digitalesResolved,
@@ -708,7 +726,9 @@ export class PresupuestosV2Service implements OnModuleInit {
     await this.ensureDefaultCompanyBrandSerie();
 
     if (!Array.isArray(dto.servicio_ids) || dto.servicio_ids.length === 0) {
-      throw new BadRequestException('Seleccione al menos un servicio comercial');
+      throw new BadRequestException(
+        'Seleccione al menos un servicio comercial',
+      );
     }
 
     let brand =
@@ -775,8 +795,7 @@ export class PresupuestosV2Service implements OnModuleInit {
         servicios: {
           create: servicios.map((s) => {
             const inputs = this.initialInputsForServicio(s);
-            const version =
-              getMotorDefinition(s.codigo_motor)?.version || '1';
+            const version = getMotorDefinition(s.codigo_motor)?.version || '1';
             const contenido = cloneContenidoFromPlantilla(
               (s as any).contenido_comercial_json,
               s.nombre,
@@ -946,8 +965,7 @@ export class PresupuestosV2Service implements OnModuleInit {
               resultado_json:
                 (old?.resultado_json as Prisma.InputJsonValue) ?? undefined,
               params_usados_json:
-                (old?.params_usados_json as Prisma.InputJsonValue) ??
-                undefined,
+                (old?.params_usados_json as Prisma.InputJsonValue) ?? undefined,
               calculated_at: old?.calculated_at ?? undefined,
             },
           });
@@ -997,9 +1015,7 @@ export class PresupuestosV2Service implements OnModuleInit {
                 version_motor: version,
                 inputs_json: deepCloneJson(inputs) as Prisma.InputJsonValue,
                 resultado_json: old?.resultado_json
-                  ? (deepCloneJson(
-                      old.resultado_json,
-                    ) as Prisma.InputJsonValue)
+                  ? (deepCloneJson(old.resultado_json) as Prisma.InputJsonValue)
                   : undefined,
                 params_usados_json: old?.params_usados_json
                   ? (deepCloneJson(
@@ -1093,10 +1109,7 @@ export class PresupuestosV2Service implements OnModuleInit {
         let inputsBase: Record<string, unknown>;
         if (overrideByOpcion.has(op.id)) {
           inputsBase = overrideByOpcion.get(op.id)!;
-        } else if (
-          overrideByServicio.has(svc.id) &&
-          opciones.length === 1
-        ) {
+        } else if (overrideByServicio.has(svc.id) && opciones.length === 1) {
           inputsBase = overrideByServicio.get(svc.id)!;
         } else {
           inputsBase = (op.inputs_json as Record<string, unknown>) || {};
@@ -1213,7 +1226,8 @@ export class PresupuestosV2Service implements OnModuleInit {
         opciones: { where: { activo: true }, orderBy: { orden: 'asc' } },
       },
     });
-    if (!line) throw new NotFoundException('Línea de presupuesto no encontrada');
+    if (!line)
+      throw new NotFoundException('Línea de presupuesto no encontrada');
     if (line.presupuesto.estado !== 'BORRADOR') {
       throw new BadRequestException(
         'Presupuesto EMITIDO: no se pueden modificar inputs ni cálculo',
@@ -1274,10 +1288,7 @@ export class PresupuestosV2Service implements OnModuleInit {
     return this.getPresupuesto(presupuestoId);
   }
 
-  private async assertBorradorLine(
-    presupuestoId: number,
-    lineaId: number,
-  ) {
+  private async assertBorradorLine(presupuestoId: number, lineaId: number) {
     const line = await this.prisma.v2PresupuestoServicio.findFirst({
       where: { id: lineaId, presupuesto_id: presupuestoId },
       include: {
@@ -1286,7 +1297,8 @@ export class PresupuestosV2Service implements OnModuleInit {
         opciones: { where: { activo: true }, orderBy: { orden: 'asc' } },
       },
     });
-    if (!line) throw new NotFoundException('Servicio del presupuesto no encontrado');
+    if (!line)
+      throw new NotFoundException('Servicio del presupuesto no encontrado');
     if (line.presupuesto.estado !== 'BORRADOR') {
       throw new BadRequestException(
         'Presupuesto EMITIDO: no se pueden modificar opciones',
@@ -1425,8 +1437,9 @@ export class PresupuestosV2Service implements OnModuleInit {
       ({} as Record<string, unknown>);
     if (dto.inputs) {
       inputsBase = mergeInputs(
-        getMotorDefinition(op.presupuestoServicio.servicio.codigo_motor)
-          ?.defaultInputs() || {},
+        getMotorDefinition(
+          op.presupuestoServicio.servicio.codigo_motor,
+        )?.defaultInputs() || {},
         (op.presupuestoServicio.servicio.defaults_json as Record<
           string,
           unknown
@@ -1488,7 +1501,8 @@ export class PresupuestosV2Service implements OnModuleInit {
     await this.prisma.v2Presupuesto.update({
       where: { id: presupuestoId },
       data: {
-        servicios_digitales_json: normalized as unknown as Prisma.InputJsonValue,
+        servicios_digitales_json:
+          normalized as unknown as Prisma.InputJsonValue,
         updated_by: this.codigoOf(user),
       },
     });
@@ -1501,11 +1515,38 @@ export class PresupuestosV2Service implements OnModuleInit {
     return this.getPresupuesto(presupuestoId);
   }
 
-  async deleteOpcion(
+  async updateDescuentoFidelidad(
     user: AuthUser,
     presupuestoId: number,
-    opcionId: number,
+    pctRaw: unknown,
   ) {
+    const p = await this.prisma.v2Presupuesto.findUnique({
+      where: { id: presupuestoId },
+    });
+    if (!p) throw new NotFoundException('Presupuesto V2 no encontrado');
+    if (p.estado !== 'BORRADOR') {
+      throw new BadRequestException(
+        'Presupuesto EMITIDO: no se puede modificar el descuento por fidelidad',
+      );
+    }
+    const pct = clampDescuentoFidelidadPct(pctRaw);
+    await this.prisma.v2Presupuesto.update({
+      where: { id: presupuestoId },
+      data: {
+        descuento_fidelidad_pct: pct,
+        updated_by: this.codigoOf(user),
+      } as any,
+    });
+    await this.emitirService.audit(
+      presupuestoId,
+      'descuento_fidelidad_updated',
+      { descuento_fidelidad_pct: pct },
+      this.codigoOf(user),
+    );
+    return this.getPresupuesto(presupuestoId);
+  }
+
+  async deleteOpcion(user: AuthUser, presupuestoId: number, opcionId: number) {
     const op = await this.prisma.v2PresupuestoServicioOpcion.findUnique({
       where: { id: opcionId },
       include: {
@@ -1665,12 +1706,17 @@ export class PresupuestosV2Service implements OnModuleInit {
           cliente_overrides_json:
             (source.cliente_overrides_json as Prisma.InputJsonValue) ??
             ({} as Prisma.InputJsonValue),
-          servicios_digitales_json: (deepCloneJson(
-            source.snapshot_servicios_digitales_json ||
-              source.servicios_digitales_json ||
-              digitalesFromBrandConfig(source.brand?.config_json),
-          ) as Prisma.InputJsonValue) ?? Prisma.JsonNull,
-        },
+          servicios_digitales_json:
+            (deepCloneJson(
+              source.snapshot_servicios_digitales_json ||
+                source.servicios_digitales_json ||
+                digitalesFromBrandConfig(source.brand?.config_json),
+            ) as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+          descuento_fidelidad_pct: clampDescuentoFidelidadPct(
+            (source as any).descuento_fidelidad_pct ??
+              (source.snapshot_economico_json as any)?.descuento_fidelidad_pct,
+          ),
+        } as any,
       });
 
       for (const s of source.servicios) {
@@ -1698,9 +1744,7 @@ export class PresupuestosV2Service implements OnModuleInit {
               getMotorDefinition(liveSvc.codigo_motor)?.version ||
               s.version_motor ||
               '1',
-            inputs_json: deepCloneJson(
-              s.inputs_json,
-            ) as Prisma.InputJsonValue,
+            inputs_json: deepCloneJson(s.inputs_json) as Prisma.InputJsonValue,
             contenido_comercial_json:
               contenido as unknown as Prisma.InputJsonValue,
           },
@@ -1798,8 +1842,7 @@ export class PresupuestosV2Service implements OnModuleInit {
     await this.prisma.v2PresupuestoServicio.update({
       where: { id: lineaId },
       data: {
-        contenido_comercial_json:
-          contenido as unknown as Prisma.InputJsonValue,
+        contenido_comercial_json: contenido as unknown as Prisma.InputJsonValue,
       },
     });
     await this.prisma.v2Presupuesto.update({
@@ -1831,8 +1874,7 @@ export class PresupuestosV2Service implements OnModuleInit {
     await this.prisma.v2PresupuestoServicio.update({
       where: { id: lineaId },
       data: {
-        contenido_comercial_json:
-          contenido as unknown as Prisma.InputJsonValue,
+        contenido_comercial_json: contenido as unknown as Prisma.InputJsonValue,
       },
     });
     await this.prisma.v2Presupuesto.update({

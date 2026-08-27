@@ -37,16 +37,19 @@ export function formatNumeroSerie(opts: {
  * Resolve next sequence for a series row (in-memory). Caller must persist atomically.
  * Returns updated series fields + formatted number.
  */
-export function allocateNextNumero(serie: {
-  id: number;
-  codigo: string;
-  prefijo: string;
-  formato: string;
-  padding: number;
-  reset_anual: boolean;
-  anio_actual: number | null;
-  siguiente_numero: number;
-}, now = new Date()): {
+export function allocateNextNumero(
+  serie: {
+    id: number;
+    codigo: string;
+    prefijo: string;
+    formato: string;
+    padding: number;
+    reset_anual: boolean;
+    anio_actual: number | null;
+    siguiente_numero: number;
+  },
+  now = new Date(),
+): {
   nextAnio: number;
   nextSiguiente: number;
   snapshot: SerieNumeracionSnapshot;
