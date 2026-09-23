@@ -28,13 +28,21 @@ function InspectionMeta({ icon: Icon, label, value }) {
   );
 }
 
-function MaterialesDocs({ inspection, materialesDocumentos, onLoadDocs, onDownloadDoc }) {
+function MaterialesDocs({
+  inspection,
+  materialesDocumentos,
+  onLoadDocs,
+  onDownloadDoc,
+  compact = false,
+}) {
   if (inspection.type !== 'entrega-materiales') return null;
   const docs = materialesDocumentos[inspection.id];
 
   return (
-    <div className="inspecciones-materiales-docs">
-      <p className="inspecciones-materiales-docs__title">Documentos</p>
+    <div className={`inspecciones-materiales-docs${compact ? ' inspecciones-materiales-docs--compact' : ''}`}>
+      {!compact ? (
+        <p className="inspecciones-materiales-docs__title">Documentos</p>
+      ) : null}
       {docs?.length ? (
         <div className="inspecciones-materiales-docs__list">
           {docs.map((doc) => (
@@ -43,6 +51,7 @@ function MaterialesDocs({ inspection, materialesDocumentos, onLoadDocs, onDownlo
               type="button"
               className="inspecciones-materiales-docs__item"
               onClick={() => onDownloadDoc(doc.doc_id, doc.nombre_archivo || '')}
+              title={doc.nombre_archivo || `Documento ${doc.material_index + 1}`}
             >
               <FileText className="w-4 h-4 shrink-0" aria-hidden />
               <span className="truncate">{doc.nombre_archivo || `Documento ${doc.material_index + 1}`}</span>
@@ -191,6 +200,7 @@ export default function InspectionsAdminList({
               <th>Trabajador</th>
               <th>Centro</th>
               <th>Estado</th>
+              <th>Documentos</th>
               <th className="text-right">Acciones</th>
             </tr>
           </thead>
@@ -210,6 +220,19 @@ export default function InspectionsAdminList({
                   <td>{inspection.trabajador || '—'}</td>
                   <td className="max-w-[160px] truncate">{inspection.centro || '—'}</td>
                   <td><span className={status.className}>{status.label}</span></td>
+                  <td className="max-w-[220px] align-top">
+                    {inspection.type === 'entrega-materiales' ? (
+                      <MaterialesDocs
+                        inspection={inspection}
+                        materialesDocumentos={materialesDocumentos}
+                        onLoadDocs={onLoadDocs}
+                        onDownloadDoc={onDownloadDoc}
+                        compact
+                      />
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
                   <td>
                     <div className="inspecciones-table-actions">
                       {inspection.isSolicitud ? (

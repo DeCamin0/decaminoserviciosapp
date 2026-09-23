@@ -1,0 +1,30 @@
+---
+description: Backlog — închidere automată vacanțe (restante an → an următor)
+alwaysApply: true
+---
+
+# Backlog: Cierre año vacaciones (viitor)
+
+**Status:** amânat — de reluat când Alecu dă detalii + **Aprobat**.
+
+## Ce vrem
+Calcul automat al zilelor de vacanță **restante la sfârșitul anului** pentru angajații **ACTIVO**, pe fiecare client (Decamino + HERA), și scriere în `VACACIONES_RESTANTES_ANO_ANTERIOR`.
+
+## Context existent (nu reinventăm)
+- Saldo deja: `generados + VACACIONES_RESTANTES_ANO_ANTERIOR − consumidos`
+- Update manual: `VacacionesService.updateRestantesAnoAnterior` + UI Solicitudes
+- Stats: `obtenerEstadisticasTodos`
+
+## Soluție schițată (recomandat)
+1. Preview + buton admin „Cerrar año” (dry-run → confirm)
+2. Apoi cron 1 ian Europe/Madrid
+3. Opțional: audit/CSV snapshot; AP de obicei **fără** carry
+
+## De clarificat înainte de implementare
+- Plafon carry? (fără max / max N zile)
+- Consumidos = toate aprobate din an vs doar disfrutados până la 31.12
+- Idempotență dacă job-ul rulează de 2× pe același an
+- Aplicare pe ambele tenant DB (Decamino + HERA)
+
+## Detalii
+Vezi: `docs/BACKLOG-VACACIONES-CIERRE-ANIO.md`

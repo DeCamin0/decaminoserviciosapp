@@ -1,6 +1,7 @@
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import AppShell from './AppShell';
 import ErrorReportNoAssistantModal from '../components/ErrorReportNoAssistantModal';
+import DocumentsObligationGate from '../components/DocumentsObligationGate';
 
 /**
  * ResponsiveLayout - un singur AppShell stabil.
@@ -14,6 +15,7 @@ const ResponsiveLayout = ({ children }) => {
     <>
       <AppShell isMobile={isMobile}>{children}</AppShell>
       <ErrorReportNoAssistantModal />
+      <DocumentsObligationGate />
     </>
   );
 };

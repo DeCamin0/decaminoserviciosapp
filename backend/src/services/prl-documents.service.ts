@@ -25,7 +25,8 @@ type PrlDocumentType =
   | 'ACTA_INFORMATIVA'
   | 'ENTREGA_EPIS'
   | 'RENUNCIA_RM'
-  | 'MANUAL_TEST';
+  | 'MANUAL_TEST'
+  | 'CERTIFICADO';
 
 @Injectable()
 export class PrlDocumentsService {
@@ -281,6 +282,14 @@ export class PrlDocumentsService {
   private detectarTipoDocumento(nombreArchivo: string): PrlDocumentType {
     const nombre = nombreArchivo.toUpperCase();
 
+    if (
+      nombre.includes('CERTIFICADO') ||
+      (nombre.includes('ART') && nombre.includes('18')) ||
+      (nombre.includes('INFORMACION') && nombre.includes('RECIBIDA')) ||
+      (nombre.includes('INFORMACIÓN') && nombre.includes('RECIBIDA'))
+    ) {
+      return 'CERTIFICADO';
+    }
     if (nombre.includes('ACTA') && nombre.includes('INFORMATIVA')) {
       return 'ACTA_INFORMATIVA';
     }
@@ -313,7 +322,8 @@ export class PrlDocumentsService {
       tipo === 'ACTA_INFORMATIVA' ||
       tipo === 'ENTREGA_EPIS' ||
       tipo === 'RENUNCIA_RM' ||
-      tipo === 'MANUAL_TEST' // Manual trebuie semnat după autoevaluare
+      tipo === 'MANUAL_TEST' || // Manual trebuie semnat după autoevaluare
+      tipo === 'CERTIFICADO'
     );
   }
 

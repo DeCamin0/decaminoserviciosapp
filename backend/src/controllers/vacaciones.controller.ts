@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Put,
   Param,
   Body,
@@ -127,13 +128,23 @@ export class VacacionesController {
    * GET /api/vacaciones/estadisticas/export-excel
    * Exporta estadísticas de vacaciones y asuntos propios a Excel
    */
-  @Get('estadisticas/export-excel')
-  async exportEstadisticasExcel(@Res() res: any, @CurrentUser() user: any) {
+  /**
+   * POST /api/vacaciones/estadisticas/export-excel
+   * Body opcional: { codigos?: string[] } — dacă e setat, exportă doar acei angajați (ordinea din array).
+   */
+  @Post('estadisticas/export-excel')
+  async exportEstadisticasExcel(
+    @Res() res: any,
+    @CurrentUser() user: any,
+    @Body() body?: { codigos?: string[] },
+  ) {
     try {
       this.logger.log(
-        `📊 Export estadísticas Excel request - requested by: ${user?.CODIGO || user?.codigo}`,
+        `📊 Export estadísticas Excel request - requested by: ${user?.CODIGO || user?.codigo}, codigos=${body?.codigos?.length ?? 'all'}`,
       );
-      const buffer = await this.vacacionesService.exportEstadisticasExcel();
+      const buffer = await this.vacacionesService.exportEstadisticasExcel(
+        body?.codigos,
+      );
 
       res.set({
         'Content-Type':
@@ -152,16 +163,22 @@ export class VacacionesController {
   }
 
   /**
-   * GET /api/vacaciones/estadisticas/export-pdf
-   * Exporta estadísticas de vacaciones y asuntos propios a PDF
+   * POST /api/vacaciones/estadisticas/export-pdf
+   * Body opcional: { codigos?: string[] } — dacă e setat, exportă doar acei angajați (ordinea din array).
    */
-  @Get('estadisticas/export-pdf')
-  async exportEstadisticasPDF(@Res() res: any, @CurrentUser() user: any) {
+  @Post('estadisticas/export-pdf')
+  async exportEstadisticasPDF(
+    @Res() res: any,
+    @CurrentUser() user: any,
+    @Body() body?: { codigos?: string[] },
+  ) {
     try {
       this.logger.log(
-        `📊 Export estadísticas PDF request - requested by: ${user?.CODIGO || user?.codigo}`,
+        `📊 Export estadísticas PDF request - requested by: ${user?.CODIGO || user?.codigo}, codigos=${body?.codigos?.length ?? 'all'}`,
       );
-      const buffer = await this.vacacionesService.exportEstadisticasPDF();
+      const buffer = await this.vacacionesService.exportEstadisticasPDF(
+        body?.codigos,
+      );
 
       res.set({
         'Content-Type': 'application/pdf',

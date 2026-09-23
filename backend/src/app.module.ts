@@ -38,6 +38,7 @@ import { FichajeRegularizacionService } from './services/fichaje-regularizacion.
 import { CuadrantesController } from './controllers/cuadrantes.controller';
 import { CuadrantesService } from './services/cuadrantes.service';
 import { TelegramService } from './services/telegram.service';
+import { SecurityAlertService } from './services/security-alert.service';
 import { BajasMedicasController } from './controllers/bajas-medicas.controller';
 import { BajasMedicasService } from './services/bajas-medicas.service';
 import { HorasAsignadasController } from './controllers/horas-asignadas.controller';
@@ -70,12 +71,15 @@ import { DocumentosOficialesController } from './controllers/documentos-oficiale
 import { DocumentosOficialesService } from './services/documentos-oficiales.service';
 import { DocumentosSolicitadosController } from './controllers/documentos-solicitados.controller';
 import { DocumentosSolicitadosService } from './services/documentos-solicitados.service';
+import { DocumentoObligationController } from './controllers/documento-obligation.controller';
+import { DocumentoObligationService } from './services/documento-obligation.service';
 import { InspeccionesController } from './controllers/inspecciones.controller';
 import { InspeccionesService } from './services/inspecciones.service';
 import { HorariosController } from './controllers/horarios.controller';
 import { HorariosService } from './services/horarios.service';
 import { FestivosController } from './controllers/festivos.controller';
 import { FestivosService } from './services/festivos.service';
+import { FestivosSyncCronService } from './services/festivos-sync-cron.service';
 import { GeocodingController } from './controllers/geocoding.controller';
 import { GeocodingService } from './services/geocoding.service';
 import { EstadisticasController } from './controllers/estadisticas.controller';
@@ -208,6 +212,7 @@ import { PresupuestosV2Module } from './presupuestos-v2/presupuestos-v2.module';
     DocumentosController,
     DocumentosOficialesController,
     DocumentosSolicitadosController,
+    DocumentoObligationController,
     InspeccionesController,
     HorariosController,
     FestivosController,
@@ -249,6 +254,7 @@ import { PresupuestosV2Module } from './presupuestos-v2/presupuestos-v2.module';
     FichajeRegularizacionService,
     CuadrantesService,
     TelegramService,
+    SecurityAlertService,
     BajasMedicasService,
     HorasAsignadasService,
     HorasPermitidasService,
@@ -264,10 +270,12 @@ import { PresupuestosV2Module } from './presupuestos-v2/presupuestos-v2.module';
     DocumentosService,
     DocumentosOficialesService,
     DocumentosSolicitadosService,
+    DocumentoObligationService,
     InspeccionesService,
     InspeccionesMaterialesStorageService,
     HorariosService,
     FestivosService,
+    FestivosSyncCronService,
     GeocodingService,
     ClientesService,
     EstadisticasService,

@@ -251,6 +251,7 @@ export class PrlDocumentsController {
         'ENTREGA_EPIS',
         'RENUNCIA_RM',
         'MANUAL_TEST',
+        'CERTIFICADO',
       ];
 
       if (!tiposValidos.includes(tipoDocumento)) {

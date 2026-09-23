@@ -350,6 +350,24 @@ model DocumentosSolicitados {
   @@map("documentos_solicitados")
 }
 
+/// Evidență modal documente obligatorii: apariții + Más tarde (soft→hard după 3).
+model DocumentoObligationSnooze {
+  id               Int       @id @default(autoincrement())
+  codigo_empleado  String    @unique(map: "uq_documento_obligation_codigo") @map("codigo_empleado") @db.VarChar(50)
+  apariciones      Int       @default(0)
+  snooze_count     Int       @default(0) @map("snooze_count")
+  last_shown_at    DateTime? @map("last_shown_at") @db.DateTime(0)
+  last_snooze_at   DateTime? @map("last_snooze_at") @db.DateTime(0)
+  hard_locked_at   DateTime? @map("hard_locked_at") @db.DateTime(0)
+  resolved_at      DateTime? @map("resolved_at") @db.DateTime(0)
+  created_at       DateTime  @default(now()) @map("created_at") @db.DateTime(0)
+  updated_at       DateTime  @updatedAt @map("updated_at") @db.DateTime(0)
+
+  @@index([snooze_count], map: "idx_documento_obligation_snooze_count")
+  @@index([hard_locked_at], map: "idx_documento_obligation_hard")
+  @@map("documento_obligation_snooze")
+}
+
 model CatologoProductos {
   id                      Int                 @id @default(autoincrement())
   N_mero_de_art_culo      String              @map("Número de artículo") @db.VarChar(50)
@@ -1914,6 +1932,7 @@ enum PrlDocumentType {
   ENTREGA_EPIS            // 3) Entrega de EPIs (requiere firma)
   RENUNCIA_RM             // 4) Renuncia RM (requiere firma solo si rechaza)
   MANUAL_TEST             // 5) Manual + Test (completar test + certificado)
+  CERTIFICADO             // 6) Certificado (Art. 18 / info recibida — requiere firma)
 }
 
 enum PrlDocumentStatus {

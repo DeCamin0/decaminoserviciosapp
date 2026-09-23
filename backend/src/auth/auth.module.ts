@@ -9,6 +9,8 @@ import { AuthController } from '../controllers/auth.controller';
 import { PasswordResetService } from '../services/password-reset.service';
 import { EmailService } from '../services/email.service';
 import { EmpleadoGrupoScopeService } from '../services/empleado-grupo-scope.service';
+import { TelegramService } from '../services/telegram.service';
+import { SecurityAlertService } from '../services/security-alert.service';
 
 @Module({
   imports: [
@@ -31,7 +33,9 @@ import { EmpleadoGrupoScopeService } from '../services/empleado-grupo-scope.serv
     PasswordResetService,
     EmailService,
     EmpleadoGrupoScopeService,
+    TelegramService,
+    SecurityAlertService,
   ],
-  exports: [AuthService, JwtModule],
+  exports: [AuthService, JwtModule, SecurityAlertService],
 })
 export class AuthModule {}
