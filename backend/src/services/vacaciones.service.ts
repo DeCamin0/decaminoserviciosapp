@@ -810,9 +810,36 @@ export class VacacionesService {
     }
   }
 
-  async exportEstadisticasExcel(): Promise<Buffer> {
+  /**
+   * Filtrează și păstrează ordinea din `codigos` (lista afișată pe UI).
+   * Fără codigos / gol → toate.
+   */
+  private filterEstadisticasByCodigos<T extends { codigo: string }>(
+    estadisticas: T[],
+    codigos?: string[],
+  ): T[] {
+    if (!codigos || codigos.length === 0) {
+      return estadisticas;
+    }
+    const byCode = new Map(
+      estadisticas.map((e) => [String(e.codigo).trim(), e]),
+    );
+    const out: T[] = [];
+    for (const raw of codigos) {
+      const key = String(raw || '').trim();
+      if (!key) continue;
+      const row = byCode.get(key);
+      if (row) out.push(row);
+    }
+    return out;
+  }
+
+  async exportEstadisticasExcel(codigos?: string[]): Promise<Buffer> {
     try {
-      const estadisticas = await this.obtenerEstadisticasTodos();
+      const estadisticas = this.filterEstadisticasByCodigos(
+        await this.obtenerEstadisticasTodos(),
+        codigos,
+      );
 
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Estadísticas Solicitudes');
@@ -832,6 +859,11 @@ export class VacacionesService {
           width: 20,
         },
         { header: 'VAC. RESTANTES', key: 'vac_restantes', width: 15 },
+        {
+          header: 'VAC. REST. ANUALES',
+          key: 'vac_rest_anuales',
+          width: 16,
+        },
         { header: 'ASUNTOS ANUALES', key: 'asuntos_anuales', width: 15 },
         { header: 'ASUNTOS CONSUMIDOS', key: 'asuntos_consumidos', width: 18 },
         { header: 'ASUNTOS RESTANTES', key: 'asuntos_restantes', width: 18 },
@@ -847,6 +879,10 @@ export class VacacionesService {
 
       // Add data
       estadisticas.forEach((emp) => {
+        const restAnuales =
+          (Number(emp.vacaciones.dias_anuales) || 0) +
+          (Number(emp.vacaciones.dias_restantes_ano_anterior) || 0) -
+          (Number(emp.vacaciones.dias_consumidos_aprobados) || 0);
         worksheet.addRow({
           codigo: emp.codigo,
           nombre: emp.nombre,
@@ -857,6 +893,7 @@ export class VacacionesService {
           vac_disfrutados: emp.vacaciones.dias_disfrutados_aprobados,
           vac_rest_ano_pasado: emp.vacaciones.dias_restantes_ano_anterior,
           vac_restantes: emp.vacaciones.dias_restantes.toFixed(1),
+          vac_rest_anuales: restAnuales.toFixed(1),
           asuntos_anuales: emp.asuntos_propios.dias_anuales,
           asuntos_consumidos: emp.asuntos_propios.dias_consumidos_aprobados,
           asuntos_restantes: emp.asuntos_propios.dias_restantes.toFixed(1),
@@ -877,15 +914,18 @@ export class VacacionesService {
     }
   }
 
-  async exportEstadisticasPDF(): Promise<Buffer> {
+  async exportEstadisticasPDF(codigos?: string[]): Promise<Buffer> {
     try {
-      const estadisticas = await this.obtenerEstadisticasTodos();
+      const estadisticas = this.filterEstadisticasByCodigos(
+        await this.obtenerEstadisticasTodos(),
+        codigos,
+      );
 
       return new Promise((resolve, reject) => {
         const doc = new PDFDocument({
           size: 'A4',
           layout: 'landscape',
-          margin: 50,
+          margin: 40,
         });
 
         const buffers: Buffer[] = [];
@@ -898,9 +938,14 @@ export class VacacionesService {
 
         // Title
         doc
-          .fontSize(18)
+          .fontSize(16)
           .text('Estadísticas de Solicitudes', { align: 'center' });
-        doc.moveDown();
+        doc
+          .fontSize(9)
+          .fillColor('#555555')
+          .text(`${estadisticas.length} empleado(s)`, { align: 'center' });
+        doc.fillColor('#000000');
+        doc.moveDown(0.8);
 
         // Table headers
         const headers = [
@@ -911,68 +956,76 @@ export class VacacionesService {
           'VAC. GEN.',
           'VAC. CONS.',
           'VAC. DISFR.',
-          'VAC. REST. AÑO PASADO',
+          'VAC. REST. AÑO PAS.',
           'VAC. REST.',
-          'ASUNT. ANUALES',
+          'VAC. REST. ANUAL.',
+          'ASUNT. ANUAL.',
           'ASUNT. CONS.',
           'ASUNT. REST.',
         ];
-        const colWidths = [50, 120, 80, 60, 60, 60, 60, 80, 60, 70, 70, 70];
-        const startY = doc.y;
-        let currentY = startY;
+        const colWidths = [48, 110, 70, 48, 48, 48, 48, 58, 48, 58, 52, 52, 52];
+        const left = doc.page.margins.left;
+        const pageBottom = doc.page.height - doc.page.margins.bottom - 16;
+        const rowH = 14;
+        let currentY = doc.y;
 
-        // Draw header
-        doc.fontSize(7).font('Helvetica-Bold');
-        let x = 50;
-        headers.forEach((header, i) => {
-          doc.text(header, x, currentY, { width: colWidths[i], align: 'left' });
-          x += colWidths[i];
-        });
-        currentY += 20;
-
-        // Draw rows
-        doc.font('Helvetica');
-        estadisticas.forEach((emp) => {
-          if (currentY > 700) {
-            doc.addPage();
-            currentY = 50;
-            // Redraw headers on new page
-            x = 50;
-            doc.font('Helvetica-Bold');
-            headers.forEach((header, i) => {
-              doc.text(header, x, currentY, {
-                width: colWidths[i],
-                align: 'left',
-              });
-              x += colWidths[i];
+        const drawHeaderRow = () => {
+          let x = left;
+          doc.fontSize(6).font('Helvetica-Bold');
+          headers.forEach((header, i) => {
+            doc.text(header, x, currentY, {
+              width: colWidths[i],
+              align: 'left',
+              lineBreak: false,
             });
-            currentY += 20;
-            doc.font('Helvetica');
+            x += colWidths[i];
+          });
+          currentY += rowH + 4;
+          doc.font('Helvetica');
+        };
+
+        drawHeaderRow();
+
+        // Draw rows — lineBreak:false evita 400+ pagini (bug PDFKit)
+        estadisticas.forEach((emp) => {
+          if (currentY + rowH > pageBottom) {
+            doc.addPage();
+            currentY = doc.page.margins.top;
+            drawHeaderRow();
           }
+
+          const restAnuales =
+            (Number(emp.vacaciones.dias_anuales) || 0) +
+            (Number(emp.vacaciones.dias_restantes_ano_anterior) || 0) -
+            (Number(emp.vacaciones.dias_consumidos_aprobados) || 0);
 
           const row = [
             emp.codigo || '-',
-            (emp.nombre || '-').substring(0, 30),
-            (emp.grupo || '-').substring(0, 20),
+            (emp.nombre || '-').substring(0, 28),
+            (emp.grupo || '-').substring(0, 18),
             emp.vacaciones.dias_anuales.toString(),
             emp.vacaciones.dias_generados_hasta_hoy.toFixed(1),
             emp.vacaciones.dias_consumidos_aprobados.toString(),
             emp.vacaciones.dias_disfrutados_aprobados.toString(),
             emp.vacaciones.dias_restantes_ano_anterior.toString(),
             emp.vacaciones.dias_restantes.toFixed(1),
+            restAnuales.toFixed(1),
             emp.asuntos_propios.dias_anuales.toString(),
             emp.asuntos_propios.dias_consumidos_aprobados.toString(),
             emp.asuntos_propios.dias_restantes.toFixed(1),
           ];
 
-          x = 50;
+          let x = left;
+          doc.fontSize(6);
           row.forEach((cell, i) => {
-            doc
-              .fontSize(6)
-              .text(cell, x, currentY, { width: colWidths[i], align: 'left' });
+            doc.text(String(cell), x, currentY, {
+              width: colWidths[i],
+              align: 'left',
+              lineBreak: false,
+            });
             x += colWidths[i];
           });
-          currentY += 15;
+          currentY += rowH;
         });
 
         doc.end();

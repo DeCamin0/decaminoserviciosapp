@@ -8,8 +8,10 @@ import QuickAccessOrb from '../components/QuickAccessOrb';
 import { useAdminApi } from '../hooks/useAdminApi';
 import { useComunicadosApi } from '../hooks/useComunicadosApi';
 import SendNotificationModal from '../components/SendNotificationModal';
+import { getBirthdayGreeting } from '../utils/birthdayGreeting';
 import {
   BarChart3,
+  Cake,
   Calendar,
   CheckCircle,
   ClipboardCheck,
@@ -88,6 +90,9 @@ const InicioPage = () => {
   const [contactoPendientesOpen, setContactoPendientesOpen] = useState(false);
   const [contactoPendientes, setContactoPendientes] = useState([]);
   const [contactoPendientesLoading, setContactoPendientesLoading] = useState(false);
+  const [obligationEvidenceOpen, setObligationEvidenceOpen] = useState(false);
+  const [obligationEvidence, setObligationEvidence] = useState([]);
+  const [obligationEvidenceLoading, setObligationEvidenceLoading] = useState(false);
   /** Con datos completos: vista compacta; true = mostrar formulario para editar */
   const [ceEditMode, setCeEditMode] = useState(false);
   /** Resumen guardado: acordeón cerrado por defecto */
@@ -141,6 +146,11 @@ const InicioPage = () => {
     userCorreoElectronico || 
     'Utilizator',
     [userNombre, userNombreApellidos, userEmpleadoNombre, userNameField, userEmail, userCorreoElectronico]
+  );
+
+  const birthdayGreeting = useMemo(
+    () => getBirthdayGreeting(empleadoCompleto || user, userName),
+    [empleadoCompleto, user, userName],
   );
   
   // Debug: log pentru a vedea ce câmpuri există (doar o dată când user se schimbă)
@@ -2372,7 +2382,7 @@ const InicioPage = () => {
           >
             <div>
               <p className="dashboard-admin__title">Herramientas de administración</p>
-              <p className="dashboard-admin__hint">Campaña Renta y Contacto de emergencia</p>
+              <p className="dashboard-admin__hint">Campaña Renta, Contacto de emergencia y Documentos obligación</p>
             </div>
             <ChevronDown
               className={`h-5 w-5 shrink-0 text-gray-500 transition-transform ${adminToolsOpen ? 'rotate-180' : ''}`}
@@ -2602,12 +2612,95 @@ const InicioPage = () => {
                   </>
                 )}
               </section>
+
+              <section className="dashboard-admin__zone">
+                <h4 className="dashboard-admin__zone-title">Documentos obligación</h4>
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-sm text-gray-700 dark:text-gray-200">
+                    Evidencia de apariciones del modal y «Más tarde» (soft → hard).
+                  </p>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const next = !obligationEvidenceOpen;
+                      setObligationEvidenceOpen(next);
+                      if (!next) return;
+                      setObligationEvidenceLoading(true);
+                      try {
+                        const token = localStorage.getItem('auth_token');
+                        const res = await fetch(routes.documentosObligationAdmin, {
+                          headers: {
+                            'Content-Type': 'application/json',
+                            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                          },
+                        });
+                        const data = await res.json().catch(() => ({}));
+                        setObligationEvidence(Array.isArray(data?.items) ? data.items : []);
+                      } catch {
+                        setObligationEvidence([]);
+                      } finally {
+                        setObligationEvidenceLoading(false);
+                      }
+                    }}
+                    className="text-sm font-semibold text-primary-700 underline hover:text-primary-900 dark:text-primary-300"
+                  >
+                    {obligationEvidenceOpen ? 'Ocultar evidencia' : 'Ver evidencia'}
+                  </button>
+                </div>
+                {obligationEvidenceOpen && (
+                  <div className="mt-3 max-h-72 overflow-auto rounded-lg border border-gray-200 bg-white dark:border-gray-600 dark:bg-gray-900">
+                    {obligationEvidenceLoading ? (
+                      <p className="p-3 text-sm text-gray-500">Cargando…</p>
+                    ) : obligationEvidence.length === 0 ? (
+                      <p className="p-3 text-sm text-gray-500">Sin registros todavía.</p>
+                    ) : (
+                      <table className="min-w-full text-left text-sm">
+                        <thead className="bg-gray-50 text-xs font-semibold uppercase text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                          <tr>
+                            <th className="px-3 py-2">Código</th>
+                            <th className="px-3 py-2">Apariciones</th>
+                            <th className="px-3 py-2">Más tarde</th>
+                            <th className="px-3 py-2">Estado</th>
+                            <th className="px-3 py-2">Última</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                          {obligationEvidence.map((row) => (
+                            <tr key={row.codigo_empleado}>
+                              <td className="px-3 py-2 font-medium">{row.codigo_empleado}</td>
+                              <td className="px-3 py-2">{row.apariciones}</td>
+                              <td className="px-3 py-2">
+                                {row.snooze_count}/{row.snooze_max}
+                              </td>
+                              <td className="px-3 py-2">
+                                {row.resolved_at
+                                  ? 'Resuelto'
+                                  : row.hard_locked
+                                    ? 'Hard'
+                                    : 'Soft'}
+                              </td>
+                              <td className="px-3 py-2 text-xs text-gray-500">
+                                {row.last_snooze_at || row.last_shown_at
+                                  ? new Date(
+                                      row.last_snooze_at || row.last_shown_at,
+                                    ).toLocaleString('es-ES', {
+                                      dateStyle: 'short',
+                                      timeStyle: 'short',
+                                    })
+                                  : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+              </section>
             </div>
           )}
         </div>
       )}
-
-      {/* Campaña Renta – banner / acciones para empleados (fuera del accordion admin) */}
       {!rentaCampanaLoading &&
         rentaCampanaStatus?.enabled === true &&
         !rentaUsuarioRespondio && (
@@ -2922,32 +3015,49 @@ const InicioPage = () => {
       <div className="dashboard-welcome">
         <div className="dashboard-welcome__inner">
           <div className="dashboard-welcome__avatar-wrap">
-            <div className="dashboard-welcome__avatar">
-              {loadingAvatar ? (
-                <div className="flex h-full w-full items-center justify-center">
-                  <div className="h-7 w-7 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                </div>
-              ) : avatarUrl ? (
-                <img
-                  src={avatarUrl}
-                  alt={userName}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <span className="text-2xl font-bold uppercase text-white">
-                  {userName?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
-                </span>
-              )}
+            <div className="dashboard-welcome__avatar-block">
+              <div className="dashboard-welcome__avatar">
+                {loadingAvatar ? (
+                  <div className="flex h-full w-full items-center justify-center">
+                    <div className="h-7 w-7 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  </div>
+                ) : avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt={userName}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="text-2xl font-bold uppercase text-white">
+                    {userName?.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() || '?'}
+                  </span>
+                )}
+              </div>
+              <Link to="/datos" className="dashboard-welcome__profile-link">
+                Ver perfil
+              </Link>
             </div>
-            <Link to="/datos" className="dashboard-welcome__profile-link">
-              Ver perfil
-            </Link>
+            {birthdayGreeting && (
+              <p
+                className="dashboard-welcome__birthday-pill"
+                role="status"
+                aria-label="Feliz cumpleaños"
+              >
+                <Cake className="dashboard-welcome__birthday-pill-icon" aria-hidden />
+                <span>¡Feliz cumpleaños!</span>
+              </p>
+            )}
           </div>
 
           <div className="dashboard-welcome__content space-y-3">
             <h1 className="dashboard-welcome__title">
               ¡Bienvenido, {userName}!
             </h1>
+            {birthdayGreeting && (
+              <p className="dashboard-welcome__birthday-wish" role="status">
+                {birthdayGreeting.wish}
+              </p>
+            )}
             {!rentaCampanaLoading &&
               rentaCampanaStatus?.enabled === true &&
               rentaCampanaStatus?.solicited === true && (

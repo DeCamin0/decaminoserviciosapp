@@ -4,9 +4,11 @@ import {
   Post,
   Query,
   Body,
+  Req,
   UseGuards,
   Logger,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { FestivosService } from '../services/festivos.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -18,13 +20,42 @@ export class FestivosController {
 
   constructor(private readonly festivosService: FestivosService) {}
 
+  private assertAdminOrDeveloper(req: any) {
+    const grupo = req?.user?.GRUPO || req?.user?.grupo;
+    const ok =
+      grupo === 'Admin' ||
+      grupo === 'Developer' ||
+      grupo === 'Manager' ||
+      grupo === 'Supervisor';
+    if (!ok) {
+      throw new ForbiddenException(
+        'Solo Admin / Developer / Manager / Supervisor pueden sincronizar festivos.',
+      );
+    }
+  }
+
+  private parseSyncYears(query: any, body?: any): number[] | undefined {
+    const raw = query?.years ?? query?.year ?? body?.years ?? body?.year;
+    if (raw === undefined || raw === null || raw === '') return undefined;
+    const parts = Array.isArray(raw)
+      ? raw
+      : String(raw)
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+    const years = parts
+      .map((y) => parseInt(String(y), 10))
+      .filter((y) => !isNaN(y) && y >= 2000 && y <= 2100);
+    return years.length ? years : undefined;
+  }
+
   /**
    * Endpoint principal pentru gestionarea zilelor festive
-   * Suportă acțiuni: get, nueva fiesta, edit, delete
+   * Suportă acțiuni: get, nueva fiesta, edit, delete, sincronizar
    * Compatibil cu formatul n8n (query params) - acceptă și GET pentru create/edit pentru compatibilitate
    */
   @Get()
-  async handleFestivos(@Query() query: any) {
+  async handleFestivos(@Query() query: any, @Req() req: any) {
     try {
       const accion = query.accion;
 
@@ -46,6 +77,22 @@ export class FestivosController {
 
         const festivos = await this.festivosService.getFestivos(year);
         return festivos;
+      }
+
+      // SYNC - Nacional + Comunidad de Madrid (calendariosnacionales)
+      if (
+        accion === 'sincronizar' ||
+        accion === 'sync' ||
+        accion === 'importar'
+      ) {
+        this.assertAdminOrDeveloper(req);
+        const years = this.parseSyncYears(query);
+        const result = await this.festivosService.syncFromCalendariosNacionales(
+          {
+            years,
+          },
+        );
+        return result;
       }
 
       // CREATE - Creare zi festivă nouă (acceptă și GET pentru compatibilitate cu n8n)
@@ -135,7 +182,11 @@ export class FestivosController {
    * Compatibil cu formatul n8n (query params)
    */
   @Post()
-  async handleFestivosPost(@Query() query: any, @Body() body: any) {
+  async handleFestivosPost(
+    @Query() query: any,
+    @Body() body: any,
+    @Req() req: any,
+  ) {
     try {
       const accion = query.accion || body.accion;
 
@@ -144,6 +195,22 @@ export class FestivosController {
       }
 
       this.logger.log(`📋 Festivos POST request - accion: ${accion}`);
+
+      // SYNC - Nacional + Comunidad de Madrid
+      if (
+        accion === 'sincronizar' ||
+        accion === 'sync' ||
+        accion === 'importar'
+      ) {
+        this.assertAdminOrDeveloper(req);
+        const years = this.parseSyncYears(query, body);
+        const result = await this.festivosService.syncFromCalendariosNacionales(
+          {
+            years,
+          },
+        );
+        return result;
+      }
 
       // CREATE - Creare zi festivă nouă
       if (accion === 'nueva fiesta') {

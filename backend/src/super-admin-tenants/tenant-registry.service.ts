@@ -198,7 +198,7 @@ export class TenantRegistryService {
     meta: { api_public_url?: string | null; environment?: string | null },
   ): Promise<void> {
     const sets: string[] = [];
-    const vals: unknown[] = [];
+    const vals: (string | null)[] = [];
     if (meta.api_public_url !== undefined) {
       sets.push('api_public_url = ?');
       vals.push(meta.api_public_url);

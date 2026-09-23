@@ -14,13 +14,14 @@ import { useAuth } from '../contexts/AuthContextBase';
 import { useLoadingState } from '../hooks/useLoadingState';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 import { LoadingSpinner, PageHeader, AlertBanner, SegmentedControl } from '../components/ui';
+import { SolicitudCalendarSection } from '../components/solicitudes';
 import Modal from '../components/ui/Modal';
 import { useApi } from '../hooks/useApi';
 import { useAdminApi } from '../hooks/useAdminApi';
 import { routes } from '../utils/routes.js';
 import { API_ENDPOINTS } from '../utils/constants.js';
 import activityLogger from '../utils/activityLogger';
-import { ChevronLeft, ChevronRight, Edit, Trash2, RefreshCw, Lock, Unlock, Eye, Check, X, Download } from 'lucide-react';
+import { Edit, Trash2, RefreshCw, Lock, Unlock, Eye, Check, X, Download, Search, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { usePolling } from '../hooks/usePolling';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 import { config } from '../config/env.js';
@@ -42,6 +43,100 @@ const DEFAULT_ASUNTOS_PROPIOS_DIAS_ANUALES = 6;
 function isTipoAsuntoPropio(tipo) {
   const t = String(tipo || '').trim().toLowerCase();
   return t === 'asunto propio' || t === 'asuntos propios';
+}
+
+/** Căutare Estadísticas: fără diacritice, lowercase. */
+function normalizeEstadisticasSearch(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function getVacConsumidos(emp) {
+  return Number(emp?.vacaciones?.dias_consumidos_aprobados) || 0;
+}
+
+function getVacRestantes(emp) {
+  return Number(emp?.vacaciones?.dias_restantes) || 0;
+}
+
+/** Anuales + Rest. año pasado − Consumidos (sold teoretic pe an; nu înlocuiește dias_restantes/devengo). */
+function getVacRestantesAnuales(emp) {
+  const anuales = Number(emp?.vacaciones?.dias_anuales) || 0;
+  const anoPasado = Number(emp?.vacaciones?.dias_restantes_ano_anterior) || 0;
+  const consumidos = Number(emp?.vacaciones?.dias_consumidos_aprobados) || 0;
+  return anuales + anoPasado - consumidos;
+}
+
+function getVacAnuales(emp) {
+  return Number(emp?.vacaciones?.dias_anuales) || 0;
+}
+
+function getApConsumidos(emp) {
+  return Number(emp?.asuntos_propios?.dias_consumidos_aprobados) || 0;
+}
+
+function getApRestantes(emp) {
+  return Number(emp?.asuntos_propios?.dias_restantes) || 0;
+}
+
+/** ≥50% din zilele anuale consumate (sau din generados dacă anuales=0). */
+function hasVacMitadOMas(emp) {
+  const consum = getVacConsumidos(emp);
+  const anuales = getVacAnuales(emp);
+  const generados = Number(emp?.vacaciones?.dias_generados_hasta_hoy) || 0;
+  const base = anuales > 0 ? anuales : generados;
+  if (base <= 0) return false;
+  return consum >= base * 0.5;
+}
+
+function getEstadisticasSortValue(emp, key) {
+  switch (key) {
+    case 'nombre':
+      return String(emp?.nombre || '');
+    case 'codigo':
+      return String(emp?.codigo || '');
+    case 'grupo':
+      return String(emp?.grupo || '');
+    case 'vac_anuales':
+      return Number(emp?.vacaciones?.dias_anuales) || 0;
+    case 'vac_generados':
+      return Number(emp?.vacaciones?.dias_generados_hasta_hoy) || 0;
+    case 'vac_consumidos':
+      return Number(emp?.vacaciones?.dias_consumidos_aprobados) || 0;
+    case 'vac_disfrutados':
+      return Number(emp?.vacaciones?.dias_disfrutados_aprobados) || 0;
+    case 'vac_rest_ano_pasado':
+      return Number(emp?.vacaciones?.dias_restantes_ano_anterior) || 0;
+    case 'vac_restantes':
+      return Number(emp?.vacaciones?.dias_restantes) || 0;
+    case 'vac_rest_anuales':
+      return getVacRestantesAnuales(emp);
+    case 'ap_anuales':
+      return Number(emp?.asuntos_propios?.dias_anuales) || 0;
+    case 'ap_consumidos':
+      return Number(emp?.asuntos_propios?.dias_consumidos_aprobados) || 0;
+    case 'ap_restantes':
+      return Number(emp?.asuntos_propios?.dias_restantes) || 0;
+    default:
+      return '';
+  }
+}
+
+const ESTADISTICAS_SORT_TEXT_KEYS = new Set(['nombre', 'codigo', 'grupo']);
+
+function compareEstadisticasSort(a, b, key, dir) {
+  const va = getEstadisticasSortValue(a, key);
+  const vb = getEstadisticasSortValue(b, key);
+  let cmp = 0;
+  if (ESTADISTICAS_SORT_TEXT_KEYS.has(key)) {
+    cmp = String(va).localeCompare(String(vb), 'es', { sensitivity: 'base', numeric: true });
+  } else {
+    cmp = Number(va) - Number(vb);
+  }
+  return dir === 'desc' ? -cmp : cmp;
 }
 
 /** Parámetro TIPO en URL/API: la UI usa «Asuntos Propios» pero el backend guarda «Asunto Propio». */
@@ -1928,6 +2023,14 @@ export default function SolicitudesPage() {
   // Estadísticas states
   const [estadisticas, setEstadisticas] = useState([]);
   const [estadisticasLoading, setEstadisticasLoading] = useState(false);
+  const [estadisticasSearch, setEstadisticasSearch] = useState('');
+  const [estadisticasVacFilter, setEstadisticasVacFilter] = useState('todos'); // todos|sin|parcial|agotadas|mitad
+  const [estadisticasApFilter, setEstadisticasApFilter] = useState('todos'); // todos|sin|parcial|agotados
+  const [estadisticasGrupoFilter, setEstadisticasGrupoFilter] = useState([]); // multi-select grupuri
+  /** 'solo' = doar grupurile selectate; 'excluir' = toți în afară de ele */
+  const [estadisticasGrupoMode, setEstadisticasGrupoMode] = useState('solo');
+  /** Multi-sort max 2: [{ key, dir: 'asc'|'desc' }] */
+  const [estadisticasSort, setEstadisticasSort] = useState([]);
   const [editingRestantes, setEditingRestantes] = useState({}); // { codigo: value }
   const [editingVacacionesAnuales, setEditingVacacionesAnuales] = useState({}); // { codigo: value }
   const [editingAsuntosPropiosAnuales, setEditingAsuntosPropiosAnuales] = useState({}); // { codigo: value }
@@ -2192,20 +2295,9 @@ export default function SolicitudesPage() {
     return new Date(year, month + 1, 0).getDate();
   };
 
-  const getFirstDayOfMonth = (year, month) => {
-    return new Date(year, month, 1).getDay();
-  };
-
   const isDateSelected = (date) => {
     const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
     return selectedDates.includes(dateStr);
-  };
-
-  const isDateOccupied = (date) => {
-    // This function is now deprecated - we use dateAvailability instead
-    // Keep it for backward compatibility but it shouldn't be used for Vacaciones
-    const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
-    return occupiedDates.includes(dateStr);
   };
 
   /** 6 Dic – 6 Ene (empleada), aplicable a Vacaciones y Asuntos Propios. */
@@ -4485,16 +4577,27 @@ export default function SolicitudesPage() {
     try {
       const token = localStorage.getItem('auth_token');
       const url = routes.exportVacacionesEstadisticasExcel;
-      
+      const codigos = (estadisticasVista || [])
+        .map((e) => e.codigo)
+        .filter(Boolean);
+
+      if (codigos.length === 0) {
+        alert('No hay empleados en la lista filtrada para exportar.');
+        return;
+      }
+
       const response = await fetch(url, {
-        method: 'GET',
+        method: 'POST',
         headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
+          Authorization: token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json',
+          Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
+        body: JSON.stringify({ codigos }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.message || 'Error al exportar');
       }
 
@@ -4517,16 +4620,27 @@ export default function SolicitudesPage() {
     try {
       const token = localStorage.getItem('auth_token');
       const url = routes.exportVacacionesEstadisticasPDF;
-      
+      const codigos = (estadisticasVista || [])
+        .map((e) => e.codigo)
+        .filter(Boolean);
+
+      if (codigos.length === 0) {
+        alert('No hay empleados en la lista filtrada para exportar.');
+        return;
+      }
+
       const response = await fetch(url, {
-        method: 'GET',
+        method: 'POST',
         headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
+          Authorization: token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json',
+          Accept: 'application/pdf',
         },
+        body: JSON.stringify({ codigos }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.message || 'Error al exportar');
       }
 
@@ -9172,6 +9286,162 @@ export default function SolicitudesPage() {
     return { list, summary };
   }, [estadisticas]);
 
+  /** Grupos uniques pentru filtrul Estadísticas. */
+  const estadisticasGrupos = useMemo(() => {
+    const set = new Set();
+    (estadisticas || []).forEach((emp) => {
+      const g = String(emp?.grupo || '').trim();
+      if (g) set.add(g);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'));
+  }, [estadisticas]);
+
+  /** Lista filtrată (search + vac + AP + grupo) pentru tab Estadísticas. */
+  const estadisticasFiltradas = useMemo(() => {
+    const q = normalizeEstadisticasSearch(estadisticasSearch);
+    return (estadisticas || []).filter((emp) => {
+      if (q) {
+        const hay = normalizeEstadisticasSearch(
+          `${emp.nombre || ''} ${emp.codigo || ''} ${emp.grupo || ''}`,
+        );
+        if (!hay.includes(q)) return false;
+      }
+
+      if (estadisticasGrupoFilter.length > 0) {
+        const g = String(emp.grupo || '').trim();
+        const inSelected = estadisticasGrupoFilter.includes(g);
+        if (estadisticasGrupoMode === 'excluir') {
+          if (inSelected) return false;
+        } else if (!inSelected) {
+          return false;
+        }
+      }
+
+      const vacConsum = getVacConsumidos(emp);
+      const vacRest = getVacRestantes(emp);
+      if (estadisticasVacFilter === 'sin') {
+        if (vacConsum > 0) return false;
+      } else if (estadisticasVacFilter === 'parcial') {
+        if (!(vacConsum > 0 && vacRest > 0.01)) return false;
+      } else if (estadisticasVacFilter === 'agotadas') {
+        if (!(vacConsum > 0 && vacRest <= 0.01)) return false;
+      } else if (estadisticasVacFilter === 'mitad') {
+        if (!hasVacMitadOMas(emp)) return false;
+      }
+
+      const apConsum = getApConsumidos(emp);
+      const apRest = getApRestantes(emp);
+      if (estadisticasApFilter === 'sin') {
+        if (apConsum > 0) return false;
+      } else if (estadisticasApFilter === 'parcial') {
+        if (!(apConsum > 0 && apRest > 0.01)) return false;
+      } else if (estadisticasApFilter === 'agotados') {
+        if (!(apConsum > 0 && apRest <= 0.01)) return false;
+      }
+
+      return true;
+    });
+  }, [
+    estadisticas,
+    estadisticasSearch,
+    estadisticasVacFilter,
+    estadisticasApFilter,
+    estadisticasGrupoFilter,
+    estadisticasGrupoMode,
+  ]);
+
+  /** Filtrat + sort (până la 2 coloane). */
+  const estadisticasVista = useMemo(() => {
+    const list = [...estadisticasFiltradas];
+    if (!estadisticasSort.length) return list;
+    list.sort((a, b) => {
+      for (const rule of estadisticasSort) {
+        const cmp = compareEstadisticasSort(a, b, rule.key, rule.dir);
+        if (cmp !== 0) return cmp;
+      }
+      return 0;
+    });
+    return list;
+  }, [estadisticasFiltradas, estadisticasSort]);
+
+  const toggleEstadisticasSort = useCallback((key) => {
+    setEstadisticasSort((prev) => {
+      const idx = prev.findIndex((s) => s.key === key);
+      if (idx >= 0) {
+        const cur = prev[idx];
+        if (cur.dir === 'asc') {
+          const next = [...prev];
+          next[idx] = { key, dir: 'desc' };
+          return next;
+        }
+        return prev.filter((s) => s.key !== key);
+      }
+      if (prev.length === 0) return [{ key, dir: 'asc' }];
+      if (prev.length === 1) return [...prev, { key, dir: 'asc' }];
+      return [prev[0], { key, dir: 'asc' }];
+    });
+  }, []);
+
+  const estadisticasFiltersActive =
+    Boolean(estadisticasSearch.trim()) ||
+    estadisticasVacFilter !== 'todos' ||
+    estadisticasApFilter !== 'todos' ||
+    Boolean(estadisticasGrupoFilter.length) ||
+    estadisticasSort.length > 0;
+
+  const clearEstadisticasFilters = useCallback(() => {
+    setEstadisticasSearch('');
+    setEstadisticasVacFilter('todos');
+    setEstadisticasApFilter('todos');
+    setEstadisticasGrupoFilter([]);
+    setEstadisticasGrupoMode('solo');
+    setEstadisticasSort([]);
+  }, []);
+
+  const toggleEstadisticasGrupo = useCallback((grupo) => {
+    setEstadisticasGrupoFilter((prev) =>
+      prev.includes(grupo) ? prev.filter((g) => g !== grupo) : [...prev, grupo],
+    );
+  }, []);
+
+  const renderEstadisticasSortTh = useCallback(
+    (key, label, className = '', opts = {}) => {
+      const ruleIdx = estadisticasSort.findIndex((s) => s.key === key);
+      const rule = ruleIdx >= 0 ? estadisticasSort[ruleIdx] : null;
+      const Icon = !rule ? ArrowUpDown : rule.dir === 'asc' ? ArrowUp : ArrowDown;
+      const titleBase = opts.title || `Ordenar por ${label}`;
+      const title =
+        ruleIdx === 0
+          ? `${titleBase} (1.º criterio)`
+          : ruleIdx === 1
+            ? `${titleBase} (2.º criterio)`
+            : `${titleBase}. Clic en otra columna = 2.º criterio.`;
+      return (
+        <th
+          className={className}
+          aria-sort={rule ? (rule.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+        >
+          <button
+            type="button"
+            onClick={() => toggleEstadisticasSort(key)}
+            title={title}
+            className={`inline-flex w-full items-center gap-0.5 rounded px-0.5 py-0.5 font-inherit text-inherit hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 dark:hover:bg-white/10 ${
+              opts.align === 'center' ? 'justify-center text-center' : 'justify-start text-left'
+            }`}
+            style={rule ? { color: PRIMARY_COLOR } : undefined}
+          >
+            <span className="whitespace-nowrap">{label}</span>
+            <Icon className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
+            {ruleIdx >= 0 && (
+              <span className="text-[9px] font-bold opacity-80">{ruleIdx + 1}</span>
+            )}
+          </button>
+        </th>
+      );
+    },
+    [estadisticasSort, toggleEstadisticasSort],
+  );
+
   const vacationControlEmpleadosFiltrados = useMemo(() => {
     let list = vacationControlUso.list;
     if (selectedUser !== 'ALL') {
@@ -13380,19 +13650,250 @@ export default function SolicitudesPage() {
               </AlertBanner>
             ) : (
               <>
+              <div className="mb-4 space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+                <div className="relative">
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                    aria-hidden
+                  />
+                  <input
+                    type="search"
+                    value={estadisticasSearch}
+                    onChange={(e) => setEstadisticasSearch(e.target.value)}
+                    placeholder="Buscar por nombre, código o grupo…"
+                    className="app-modal__input w-full pl-9"
+                    aria-label="Buscar en estadísticas"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 sm:w-16">
+                    Vacaciones
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { id: 'todos', label: 'Todas' },
+                      { id: 'sin', label: 'Sin usar' },
+                      { id: 'parcial', label: 'Parcial' },
+                      { id: 'agotadas', label: 'Agotadas' },
+                      { id: 'mitad', label: 'Mitad o más' },
+                    ].map((opt) => {
+                      const active = estadisticasVacFilter === opt.id;
+                      return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setEstadisticasVacFilter(opt.id)}
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+                          active
+                            ? 'border-transparent text-white'
+                            : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'
+                        }`}
+                        style={active ? { backgroundColor: PRIMARY_COLOR } : undefined}
+                      >
+                        {opt.label}
+                      </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 sm:w-16">
+                    AP
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { id: 'todos', label: 'Todos' },
+                      { id: 'sin', label: 'Sin usar' },
+                      { id: 'parcial', label: 'Parcial' },
+                      { id: 'agotados', label: 'Agotados' },
+                    ].map((opt) => {
+                      const active = estadisticasApFilter === opt.id;
+                      return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setEstadisticasApFilter(opt.id)}
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+                          active
+                            ? 'border-transparent text-white'
+                            : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'
+                        }`}
+                        style={active ? { backgroundColor: PRIMARY_COLOR } : undefined}
+                      >
+                        {opt.label}
+                      </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="flex min-w-0 flex-1 flex-col gap-2 sm:max-w-lg">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                      Grupo
+                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[
+                        { id: 'solo', label: 'Solo' },
+                        { id: 'excluir', label: 'Excluir' },
+                      ].map((opt) => {
+                        const active = estadisticasGrupoMode === opt.id;
+                        const enabled = estadisticasGrupoFilter.length > 0;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setEstadisticasGrupoMode(opt.id)}
+                            disabled={!enabled}
+                            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                              active
+                                ? 'border-transparent text-white'
+                                : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'
+                            }`}
+                            style={active && enabled ? { backgroundColor: PRIMARY_COLOR } : undefined}
+                            title={
+                              opt.id === 'excluir'
+                                ? 'Ocultar los grupos seleccionados'
+                                : 'Mostrar solo los grupos seleccionados'
+                            }
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div
+                      className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50/80 p-2 dark:border-gray-600 dark:bg-gray-800/60"
+                      role="group"
+                      aria-label="Seleccionar grupos"
+                    >
+                      {estadisticasGrupos.length === 0 ? (
+                        <p className="px-1 text-[11px] text-gray-500">Sin grupos</p>
+                      ) : (
+                        <div className="flex flex-col gap-0.5">
+                          {estadisticasGrupos.map((g) => {
+                            const checked = estadisticasGrupoFilter.includes(g);
+                            return (
+                              <label
+                                key={g}
+                                className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-white dark:hover:bg-gray-700 ${
+                                  checked ? 'bg-white font-semibold dark:bg-gray-700' : 'text-gray-700 dark:text-gray-200'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleEstadisticasGrupo(g)}
+                                  className="h-3.5 w-3.5 shrink-0 rounded border-gray-300"
+                                />
+                                <span className="min-w-0 truncate">{g}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    {estadisticasGrupoFilter.length > 0 && (
+                      <p className="text-[11px] text-gray-500">
+                        {estadisticasGrupoMode === 'excluir' ? 'Excluyendo' : 'Solo'}:{' '}
+                        {estadisticasGrupoFilter.join(', ')}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                      Mostrando{' '}
+                      <strong>{estadisticasFiltradas.length}</strong> de{' '}
+                      <strong>{estadisticas.length}</strong>
+                      {estadisticasSort.length > 0 && (
+                        <span className="ml-1 text-gray-500">
+                          · orden: {estadisticasSort.length} col.
+                        </span>
+                      )}
+                    </span>
+                    {estadisticasFiltersActive && (
+                      <button
+                        type="button"
+                        onClick={clearEstadisticasFilters}
+                        className="solicitud-admin-btn"
+                      >
+                        Limpiar filtros
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {estadisticasFiltradas.length === 0 ? (
+                <AlertBanner variant="info" title="Sin resultados">
+                  <p className="mb-2">Ningún empleado coincide con la búsqueda o los filtros.</p>
+                  {estadisticasFiltersActive && (
+                    <button
+                      type="button"
+                      onClick={clearEstadisticasFilters}
+                      className="solicitud-admin-btn solicitud-admin-btn--primary"
+                    >
+                      Limpiar filtros
+                    </button>
+                  )}
+                </AlertBanner>
+              ) : (
+              <>
               <div className="md:hidden solicitud-admin-mobile-list">
-                {estadisticas.map((emp) => (
+                {estadisticasVista.map((emp) => (
                   <div key={emp.codigo} className="solicitud-admin-mobile-card app-card app-card--pad">
                     <div className="solicitud-admin-mobile-card__head">
                       <h4 className="solicitud-admin-mobile-card__title">{emp.nombre}</h4>
                       <span className="solicitud-row__meta">{emp.codigo}</span>
                     </div>
                     <p className="text-xs text-gray-600 mb-2">{emp.grupo || '—'}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
+                      Vacaciones
+                    </p>
+                    <dl className="solicitud-admin-kv mb-2">
+                      <dt>Anuales</dt>
+                      <dd>{emp.vacaciones?.dias_anuales ?? '—'}</dd>
+                      <dt>Generados</dt>
+                      <dd>
+                        {emp.vacaciones?.dias_generados_hasta_hoy != null
+                          ? Number(emp.vacaciones.dias_generados_hasta_hoy).toFixed(1)
+                          : '—'}
+                      </dd>
+                      <dt>Consumidos</dt>
+                      <dd>{emp.vacaciones?.dias_consumidos_aprobados ?? '—'}</dd>
+                      <dt>Disfrutadas</dt>
+                      <dd>{emp.vacaciones?.dias_disfrutados_aprobados ?? '—'}</dd>
+                      <dt>Rest. año pasado</dt>
+                      <dd>
+                        {emp.vacaciones?.dias_restantes_ano_anterior != null
+                          ? Number(emp.vacaciones.dias_restantes_ano_anterior).toFixed(1)
+                          : '—'}
+                      </dd>
+                      <dt>Restantes</dt>
+                      <dd>
+                        {emp.vacaciones?.dias_restantes != null
+                          ? Number(emp.vacaciones.dias_restantes).toFixed(1)
+                          : '—'}
+                      </dd>
+                      <dt title="Anuales + Rest. año pasado − Consumidos">Rest. anuales</dt>
+                      <dd>{getVacRestantesAnuales(emp).toFixed(1)}</dd>
+                    </dl>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
+                      Asuntos propios
+                    </p>
                     <dl className="solicitud-admin-kv">
-                      <dt>Vac. restantes</dt><dd>{emp.vacaciones?.dias_restantes ?? '—'}</dd>
-                      <dt>Vac. consumidos</dt><dd>{emp.vacaciones?.dias_consumidos ?? '—'}</dd>
-                      <dt>AP restantes</dt><dd>{emp.asuntos_propios?.dias_restantes ?? '—'}</dd>
-                      <dt>AP consumidos</dt><dd>{emp.asuntos_propios?.dias_consumidos ?? '—'}</dd>
+                      <dt>Anuales</dt>
+                      <dd>{emp.asuntos_propios?.dias_anuales ?? '—'}</dd>
+                      <dt>Consumidos</dt>
+                      <dd>{emp.asuntos_propios?.dias_consumidos_aprobados ?? '—'}</dd>
+                      <dt>Restantes</dt>
+                      <dd>
+                        {emp.asuntos_propios?.dias_restantes != null
+                          ? Number(emp.asuntos_propios.dias_restantes).toFixed(1)
+                          : '—'}
+                      </dd>
                     </dl>
                   </div>
                 ))}
@@ -13401,10 +13902,22 @@ export default function SolicitudesPage() {
                 <table className="min-w-full w-full text-xs sm:text-sm">
                   <thead>
                     <tr className="bg-gray-100 dark:bg-gray-800">
-                      <th className="px-4 py-2 text-left font-bold sticky left-0 bg-gray-100 dark:bg-gray-800 z-10">Empleado</th>
-                      <th className="px-4 py-2 text-left font-bold">Código</th>
-                      <th className="px-4 py-2 text-left font-bold">Grupo</th>
-                      <th className="px-3 py-2 text-center font-bold border-l border-gray-200" colSpan={6}>
+                      {renderEstadisticasSortTh(
+                        'nombre',
+                        'Empleado',
+                        'px-4 py-2 text-left font-bold sticky left-0 bg-gray-100 dark:bg-gray-800 z-10',
+                      )}
+                      {renderEstadisticasSortTh(
+                        'codigo',
+                        'Código',
+                        'px-4 py-2 text-left font-bold',
+                      )}
+                      {renderEstadisticasSortTh(
+                        'grupo',
+                        'Grupo',
+                        'px-4 py-2 text-left font-bold',
+                      )}
+                      <th className="px-3 py-2 text-center font-bold border-l border-gray-200" colSpan={7}>
                         Vacaciones
                       </th>
                       <th className="px-3 py-2 text-center font-bold border-l border-gray-200" colSpan={3}>
@@ -13415,19 +13928,79 @@ export default function SolicitudesPage() {
                       <th className="px-4 py-1 text-xs font-medium sticky left-0 bg-gray-50 dark:bg-gray-900 z-10" />
                       <th className="px-4 py-1 text-xs font-medium" />
                       <th className="px-4 py-1 text-xs font-medium" />
-                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium border-l border-gray-200`}>Anuales</th>
-                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Generados</th>
-                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Consumidos</th>
-                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`} title="Días de vacaciones aprobadas cuya fecha ya ha pasado">Disfrutadas</th>
-                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Rest. Año Pasado</th>
-                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Restantes</th>
-                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium border-l border-gray-200`}>Anuales</th>
-                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Consumidos</th>
-                      <th className={`${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`}>Restantes</th>
+                      {renderEstadisticasSortTh(
+                        'vac_anuales',
+                        'Anuales',
+                        `${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium border-l border-gray-200`,
+                        { align: 'center' },
+                      )}
+                      {renderEstadisticasSortTh(
+                        'vac_generados',
+                        'Generados',
+                        `${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`,
+                        { align: 'center' },
+                      )}
+                      {renderEstadisticasSortTh(
+                        'vac_consumidos',
+                        'Consumidos',
+                        `${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`,
+                        { align: 'center' },
+                      )}
+                      {renderEstadisticasSortTh(
+                        'vac_disfrutados',
+                        'Disfrutadas',
+                        `${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`,
+                        {
+                          align: 'center',
+                          title: 'Días de vacaciones aprobadas cuya fecha ya ha pasado',
+                        },
+                      )}
+                      {renderEstadisticasSortTh(
+                        'vac_rest_ano_pasado',
+                        'Rest. Año Pasado',
+                        `${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`,
+                        { align: 'center' },
+                      )}
+                      {renderEstadisticasSortTh(
+                        'vac_restantes',
+                        'Restantes',
+                        `${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`,
+                        {
+                          align: 'center',
+                          title: 'Devengo: Generados + Rest. año pasado − Consumidos',
+                        },
+                      )}
+                      {renderEstadisticasSortTh(
+                        'vac_rest_anuales',
+                        'Rest. anuales',
+                        `${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`,
+                        {
+                          align: 'center',
+                          title: 'Anuales + Rest. año pasado − Consumidos (saldo del año)',
+                        },
+                      )}
+                      {renderEstadisticasSortTh(
+                        'ap_anuales',
+                        'Anuales',
+                        `${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium border-l border-gray-200`,
+                        { align: 'center' },
+                      )}
+                      {renderEstadisticasSortTh(
+                        'ap_consumidos',
+                        'Consumidos',
+                        `${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`,
+                        { align: 'center' },
+                      )}
+                      {renderEstadisticasSortTh(
+                        'ap_restantes',
+                        'Restantes',
+                        `${isMobile ? 'px-1.5 py-1 text-[9px]' : 'px-4 py-2 text-xs'} font-medium`,
+                        { align: 'center' },
+                      )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {estadisticas.map((emp, idx) => (
+                    {estadisticasVista.map((emp, idx) => (
                       <tr 
                         key={emp.codigo} 
                         className={`hover:bg-gray-50 transition-colors ${
@@ -13639,6 +14212,18 @@ export default function SolicitudesPage() {
                         }`}>
                           {emp.vacaciones.dias_restantes.toFixed(1)}
                         </td>
+                        <td
+                          className={`${isMobile ? 'px-1.5 py-2 text-[10px]' : 'px-4 py-4 text-sm'} text-center font-semibold ${
+                            getVacRestantesAnuales(emp) < 5
+                              ? 'text-red-600'
+                              : getVacRestantesAnuales(emp) < 10
+                                ? 'text-orange-600'
+                                : 'text-green-600'
+                          }`}
+                          title="Anuales + Rest. año pasado − Consumidos"
+                        >
+                          {getVacRestantesAnuales(emp).toFixed(1)}
+                        </td>
                         <td className={`${isMobile ? 'px-1.5 py-2 text-[10px]' : 'px-4 py-4 text-sm'} text-center border-l-2 border-gray-200`}>
                           {editingAsuntosPropiosAnuales[emp.codigo] !== undefined ? (
                             <input
@@ -13742,7 +14327,7 @@ export default function SolicitudesPage() {
                   <button
                     type="button"
                     onClick={handleExportEstadisticasExcel}
-                    disabled={estadisticasLoading || estadisticas.length === 0}
+                    disabled={estadisticasLoading || estadisticasVista.length === 0}
                     className="solicitud-admin-btn"
                   >
                     Exportar Excel
@@ -13750,13 +14335,15 @@ export default function SolicitudesPage() {
                   <button
                     type="button"
                     onClick={handleExportEstadisticasPDF}
-                    disabled={estadisticasLoading || estadisticas.length === 0}
+                    disabled={estadisticasLoading || estadisticasVista.length === 0}
                     className="solicitud-admin-btn"
                   >
                     Exportar PDF
                   </button>
                 </div>
               </div>
+              </>
+              )}
               </>
             )}
           </div>
@@ -13991,630 +14578,38 @@ export default function SolicitudesPage() {
                 )}
 
                 {/* Período Solicitado - Calendar for Vacaciones or Asuntos Propios */}
-                {tipo === 'Vacaciones' && (
-                  <>
-                    {/* Recomandare pentru mobil să rotească telefonul */}
-                    {isMobile && (
-                      <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl">📱</span>
-                          <p className="text-sm font-medium text-blue-800">
-                            💡 Recomendación: Rota tu teléfono a horizontal para una mejor experiencia con el calendario
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                    {/* Calendar for Vacaciones */}
-                  <div className="app-card app-card--pad solicitud-form__section">
-                    {/* Header con icono 3D */}
-                    <div className="solicitud-form__section-head">
-                      <h3 className="solicitud-form__section-title">Selecciona tus Vacaciones</h3>
-                      
-                      {/* Month Navigation */}
-                      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                        <button
-                          onClick={() => navigateMonth('prev')}
-                          className="w-10 h-10 bg-white border border-blue-300 rounded-lg flex items-center justify-center hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 shadow-sm hover:shadow-md"
-                        >
-                          <ChevronLeft className="w-5 h-5 text-blue-600" />
-                        </button>
-                        
-                        <div className="bg-white border border-blue-300 rounded-lg px-4 py-2 shadow-sm min-w-[140px] text-center">
-                          <div className="text-lg font-bold text-blue-600">
-                            {monthNames[calendarMonth]} {calendarYear}
-                          </div>
-                        </div>
-                        
-                        <button
-                          onClick={() => navigateMonth('next')}
-                          className="w-10 h-10 bg-white border border-blue-300 rounded-lg flex items-center justify-center hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 shadow-sm hover:shadow-md"
-                        >
-                          <ChevronRight className="w-5 h-5 text-blue-600" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Calendar Grid */}
-                    <div className="bg-white rounded-xl border border-blue-200 shadow-lg sm:overflow-hidden">
-                      <div className="overflow-x-auto sm:overflow-visible" style={{ WebkitOverflowScrolling: 'touch' }}>
-                        <div className="w-full min-w-[280px] sm:min-w-[420px]">
-                          {/* Days of week header */}
-                          <div className="grid grid-cols-7 bg-gradient-to-r from-blue-50 to-blue-100 border-b border-blue-200">
-                            {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(day => (
-                              <div key={day} className="p-2 sm:p-3 text-center text-[11px] sm:text-sm font-bold text-blue-700 border-r border-blue-200 last:border-r-0">
-                                {day}
-                              </div>
-                            ))}
-                          </div>
-                          
-                          {/* Calendar days */}
-                          <div className="grid grid-cols-7">
-                            {/* Empty cells for days before month starts */}
-                            {Array.from({ length: getFirstDayOfMonth(calendarYear, calendarMonth) }).map((_, index) => (
-                              <div key={`empty-${index}`} className="h-12 border-r border-b border-gray-100 last:border-r-0"></div>
-                            ))}
-                            
-                            {/* Days of the month */}
-                            {Array.from({ length: getDaysInMonth(calendarYear, calendarMonth) }, (_, i) => i + 1).map(day => {
-                              const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                              const today = new Date();
-                              const currentDate = new Date(dateStr);
-                              const isToday = currentDate.toDateString() === today.toDateString();
-                              const isPast = editingSolicitud === null && currentDate < today;
-                              // Ignorăm perioada de blocare când se editează o solicitare
-                              const isEditingVacacionesOrAsuntoPropio = editingSolicitud !== null && 
-                                (tipo === 'Vacaciones' || tipo === 'Asunto Propio' || tipo === 'Asuntos Propios');
-                              const isBlocked = isEditingVacacionesOrAsuntoPropio ? false : isInHolidayBlockPeriod(dateStr);
-                              const availability = dateAvailability[dateStr];
-                              const isFull = availability && availability.isFull;
-                              const isLowAvailability = availability && availability.available <= 1 && availability.available > 0;
-                              // For Vacaciones and Asuntos Propios, we don't use isDateOccupied anymore - we use availability logic instead
-                              const isOccupied = (tipo !== 'Vacaciones' && !isTipoAsuntoPropio(tipo)) ? isDateOccupied(day) : false;
-                              
-                              return (
-                              <button
-                                key={day}
-                                  onClick={() => !isDateDisabled(day) && toggleDate(day)}
-                                  disabled={isDateDisabled(day)}
-                                  className={`h-10 sm:h-12 border-r border-b border-gray-100 last:border-r-0 transition-all duration-200 relative ${
-                                  isDateSelected(day)
-                                    ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white font-bold shadow-lg'
-                                      : isBlocked
-                                      ? 'bg-gradient-to-br from-orange-200 to-orange-300 text-orange-800 cursor-not-allowed'
-                                      : isFull
-                                      ? 'bg-gradient-to-br from-purple-200 to-purple-300 text-purple-800 cursor-not-allowed'
-                                      : isOccupied
-                                      ? 'bg-gradient-to-br from-red-100 to-red-200 text-red-700 cursor-not-allowed'
-                                      : isLowAvailability
-                                      ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 text-yellow-800 hover:bg-yellow-300'
-                                      : isToday
-                                      ? 'bg-gradient-to-br from-green-100 to-green-200 text-green-800 font-semibold hover:bg-green-300'
-                                      : isPast
-                                      ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
-                                      : 'text-gray-700 hover:bg-blue-50 hover:text-blue-600'
-                                  }`}
-                                  title={
-                                    isBlocked
-                                      ? 'Período bloqueado: 6 Dic - 6 Ene (Empleada)'
-                                      : isFull
-                                      ? `Sin disponibilidad (${availability?.occupied}/${availability?.total} ocupados)`
-                                      : isOccupied
-                                      ? 'Fecha ocupada por otra solicitud' 
-                                      : isLowAvailability
-                                      ? `Poca disponibilidad: ${availability?.available}/${availability?.total} libres`
-                                      : availability && availability.available > 0
-                                      ? `Disponibilidad: ${availability?.available}/${availability?.total} libres`
-                                      : isPast 
-                                      ? 'No se pueden seleccionar fechas pasadas' 
-                                      : isToday 
-                                      ? 'Hoy' 
-                                      : ''
-                                  }
-                              >
-                                <span className="text-xs sm:text-sm">{day}</span>
-                                  {isBlocked && (
-                                    <span className="absolute top-1 right-1 text-xs">🔒</span>
-                                  )}
-                                  {isFull && !isBlocked && (
-                                    <span className="absolute top-1 right-1 text-xs">🈵</span>
-                                  )}
-                                  {isLowAvailability && !isBlocked && !isFull && (
-                                    <span className="absolute top-1 right-1 text-xs">⚠️</span>
-                                  )}
-                                  {isOccupied && !isBlocked && !isFull && (
-                                    <span className="absolute top-1 right-1 text-xs">🚫</span>
-                                  )}
-                                  {availability && !isOccupied && !isBlocked && (
-                                    <span className="absolute bottom-1 right-1 text-xs font-bold" style={{ fontSize: '9px' }}>
-                                      {availability.available}/{availability.total}
-                                    </span>
-                                  )}
-                              </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Loading indicator */}
-                    {isOperationLoading('occupiedDates') && (
-                      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                        <p className="text-sm font-medium text-blue-800 flex items-center">
-                          <span className="animate-spin mr-2">⏳</span>
-                          Cargando fechas ocupadas...
-                        </p>
-                      </div>
-                    )}
-                    
-                    {/* Availability info for Vacaciones and Asuntos Propios - Only for managers */}
-                    {editingSolicitud === null && isManager && !isOperationLoading('occupiedDates') && (tipo === 'Vacaciones' || tipo === 'Asunto Propio' || tipo === 'Asuntos Propios') && Object.keys(dateAvailability).length > 0 && (
-                      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <p className="text-sm font-medium text-blue-800 mb-2">
-                              📊 Disponibilidad del Grupo
-                            </p>
-                            {(() => {
-                              const firstDate = Object.keys(dateAvailability)[0];
-                              const firstAvailability = dateAvailability[firstDate];
-                              return (
-                                <div className="text-xs text-blue-600 space-y-1">
-                                  <p><strong>Grupo:</strong> {firstAvailability.group || 'N/A'}</p>
-                                  <p><strong>Centro:</strong> {firstAvailability.center || 'No definido'}</p>
-                                  <p><strong>Límite por fecha:</strong> {firstAvailability.total} personas</p>
-                                </div>
-                              );
-                            })()}
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-blue-800 mb-2">
-                              📅 Resumen del Grupo
-                            </p>
-                            {(() => {
-                              const firstDate = Object.keys(dateAvailability)[0];
-                              const firstAvailability = dateAvailability[firstDate];
-                              
-                              // Calculate totals from allUsers if available, otherwise use fallback
-                              const currentUserCenter = firstAvailability.center || '';
-                              const currentUserGroup = authUser?.['GRUPO'] || authUser?.grupo || '';
-                              const normalizedCurrentUserGroup = normalizeGroup(currentUserGroup);
-                              
-                              let totalInGroup = 0;
-                              let totalInCenter = 0;
-                              
-                              if (allUsers && allUsers.length > 0) {
-                                // Calculate totals from allUsers
-                                totalInGroup = allUsers.filter(user => {
-                                  const userGroup = user['GRUPO'] || user.grupo || '';
-                                  const normalizedUserGroup = normalizeGroup(userGroup);
-                                  return normalizedUserGroup === normalizedCurrentUserGroup;
-                                }).length;
-                              
-                              // Helper function to get center from user (same logic as in calculateDateAvailability)
-                              const getUserCenter = (user) => {
-                                if (!user) return '';
-                                // First, check the exact key used in DatosPage
-                                if (user['CENTRO TRABAJO'] && String(user['CENTRO TRABAJO']).trim()) {
-                                  return String(user['CENTRO TRABAJO']).trim();
-                                }
-                                const preferredKeys = [
-                                  'CENTRO DE TRABAJO',
-                                  'centro de trabajo',
-                                  'CENTRO_DE_TRABAJO',
-                                  'centroDeTrabajo',
-                                  'centro_trabajo',
-                                  'CENTRO',
-                                  'centro',
-                                  'CENTER',
-                                  'center',
-                                  'DEPARTAMENTO',
-                                  'departamento'
-                                ];
-                                for (const k of preferredKeys) {
-                                  if (user[k] && String(user[k]).trim()) {
-                                    return String(user[k]).trim();
-                                  }
-                                }
-                                // Heurística: primer campo cuyo nombre contiene 'centro' o 'trabajo'
-                                try {
-                                  const allKeys = Object.keys(user || {});
-                                  const key = allKeys.find(key => {
-                                    const lk = key.toLowerCase();
-                                    return (lk.includes('centro') || lk.includes('trabajo') || lk.includes('depart')) && String(user[key]).trim();
-                                  });
-                                  if (key) {
-                                    return String(user[key]).trim();
-                                  }
-                                } catch (e) {
-                                  console.warn('Error in getUserCenter heuristics:', e);
-                                }
-                                return '';
-                              };
-                              
-                                totalInCenter = allUsers.filter(user => {
-                                const userCenter = getUserCenter(user);
-                                return userCenter && currentUserCenter && userCenter === currentUserCenter;
-                              }).length;
-                              } else {
-                                // Fallback: use maxAllowed to estimate group size if allUsers is not loaded
-                                // maxAllowed is calculated as percentage of groupSize, so we can reverse it
-                                // For Vacaciones: maxAllowed = Math.ceil(groupSize * percentage), so groupSize ≈ maxAllowed / percentage
-                                const percentage = vacacionesDisponibilidadPct / 100;
-                                const estimatedGroupSize = Math.ceil(firstAvailability.maxAllowed / percentage);
-                                totalInGroup = estimatedGroupSize;
-                                totalInCenter = 'N/A'; // Can't calculate without allUsers
-                              }
-                              
-                              return (
-                                <div className="text-xs text-blue-600 space-y-1">
-                                  <p><strong>Total empleados en centro:</strong> {totalInCenter !== 'N/A' ? totalInCenter : 'Calculando...'}</p>
-                                  <p><strong>Total empleados en grupo:</strong> {totalInGroup}</p>
-                                  <p><strong>Límite per grup:</strong> {firstAvailability.total} personas</p>
-                                </div>
-                              );
-                            })()}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                    </div>
-                  </>
-                )}
-                
-                {/* Elemente comune pentru Vacaciones și Asuntos Propios */}
                 {(tipo === 'Vacaciones' || tipo === 'Asuntos Propios') && (
-                  <>
-                    {!isOperationLoading('occupiedDates') && tipo !== 'Vacaciones' && occupiedDates.length > 0 && (
-                      <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                        <p className="text-sm font-medium text-red-800">
-                          🚫 {occupiedDates.length} días ocupados este mes
-                        </p>
-                        <p className="text-xs text-red-600 mt-1">
-                          Las fechas en rojo están ocupadas por otras solicitudes
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Calendar Legend */}
-                    {editingSolicitud === null && (
-                    <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                      <h4 className="text-sm font-bold text-gray-800 mb-2">Leyenda del Calendario:</h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 bg-gradient-to-br from-blue-500 to-blue-600 rounded"></div>
-                          <span className="text-gray-700">Días seleccionados</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 bg-gradient-to-br from-green-100 to-green-200 rounded"></div>
-                          <span className="text-gray-700">Hoy</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 bg-gradient-to-br from-purple-200 to-purple-300 rounded"></div>
-                          <span className="text-gray-700">Sin disponibilidad</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 bg-gradient-to-br from-yellow-100 to-yellow-200 rounded"></div>
-                          <span className="text-gray-700">Poca disponibilidad</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 bg-gradient-to-br from-red-100 to-red-200 rounded"></div>
-                          <span className="text-gray-700">Ocupado por otras solicitudes</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 bg-gradient-to-br from-orange-200 to-orange-300 rounded"></div>
-                          <span className="text-gray-700">Bloqueado (Empleada)</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 bg-gray-50 rounded"></div>
-                          <span className="text-gray-700">Fechas pasadas</span>
-                        </div>
-                      </div>
-                      {/* Reglas de Disponibilidad - Only for managers */}
-                      {isManager && (
-                      <div className="mt-3 p-2 bg-blue-50 rounded border border-blue-200">
-                        <p className="text-xs text-blue-700 font-medium">
-                          📊 Reglas de Disponibilidad:
-                        </p>
-                        <p className="text-xs text-blue-600 mt-1">
-                            • {tipo === 'Vacaciones' ? `${vacacionesDisponibilidadPct}%` : '20%'} del grupo puede estar {tipo === 'Vacaciones' ? 'de vacaciones' : 'en asuntos propios'} durante todo el año
-                        </p>
-                      </div>
-                      )}
-                    </div>
-                    )}
-                    
-                    {/* Selected dates info */}
-                    {selectedDates.length > 0 && (
-                      <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                        <p className="text-sm font-medium text-green-800">
-                          📅 Días seleccionados: {fechaInicio && fechaFin ? calculateDays(fechaInicio, fechaFin) : selectedDates.length} días
-                        </p>
-                        <p className="text-xs text-green-600 mt-1">
-                          Desde: {fechaInicio} hasta: {fechaFin}
-                        </p>
-                      </div>
-                    )}
-                    {/* Avertisment când intervalul include zile ocupate (sin disponibilidad) */}
-                    {occupiedDaysInRange.length > 0 && (
-                      <div className="mt-4 p-3 bg-amber-50 border border-amber-300 rounded-lg">
-                        <p className="text-sm font-medium text-amber-800">
-                          ⚠️ No puedes incluir en el intervalo días ya ocupados
-                        </p>
-                        <p className="text-xs text-amber-700 mt-1">
-                          Los siguientes días están ocupados por otras solicitudes o sin disponibilidad: {occupiedDaysInRange.join(', ')}. Elige solo días disponibles o cambia el rango.
-                        </p>
-                        <p className="text-xs text-amber-600 mt-1">
-                          No se podrá enviar la solicitud hasta que el rango no incluya días ocupados.
-                        </p>
-                      </div>
-                    )}
-                  </>
-                )}
-                
-                {/* Calendar for Asuntos Propios - separate conditional */}
-                {tipo === 'Asuntos Propios' && (
-                  <>
-                    {/* Recomandare pentru mobil să rotească telefonul */}
-                    {isMobile && (
-                      <div className="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl">📱</span>
-                          <p className="text-sm font-medium text-purple-800">
-                            💡 Recomendación: Rota tu teléfono a horizontal para una mejor experiencia con el calendario
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                    {/* Calendar for Asuntos Propios */}
-                    <div className="app-card app-card--pad solicitud-form__section">
-                    {/* Header con icono 3D */}
-                    <div className="solicitud-form__section-head">
-                      <h3 className="solicitud-form__section-title">Selecciona tus Asuntos Propios</h3>
-
-                      {/* Month Navigation */}
-                      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                        <button
-                          onClick={() => navigateMonth('prev')}
-                          className="w-10 h-10 bg-white border border-purple-300 rounded-lg flex items-center justify-center hover:bg-purple-50 hover:border-purple-400 transition-all duration-200 shadow-sm hover:shadow-md"
-                        >
-                          <ChevronLeft className="w-5 h-5 text-purple-600" />
-                        </button>
-                        
-                        <div className="bg-white border border-purple-300 rounded-lg px-4 py-2 shadow-sm min-w-[140px] text-center">
-                          <div className="text-lg font-bold text-purple-600">
-                            {monthNames[calendarMonth]} {calendarYear}
-                          </div>
-                      </div>
-
-                        <button
-                          onClick={() => navigateMonth('next')}
-                          className="w-10 h-10 bg-white border border-purple-300 rounded-lg flex items-center justify-center hover:bg-purple-50 hover:border-purple-400 transition-all duration-200 shadow-sm hover:shadow-md"
-                        >
-                          <ChevronRight className="w-5 h-5 text-purple-600" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Calendar Grid */}
-                    <div className="bg-white rounded-xl border border-purple-200 shadow-lg sm:overflow-hidden">
-                      <div className="overflow-x-auto sm:overflow-visible" style={{ WebkitOverflowScrolling: 'touch' }}>
-                        <div className="w-full min-w-[280px] sm:min-w-[420px]">
-                          {/* Days of week header */}
-                          <div className="grid grid-cols-7 bg-gradient-to-r from-purple-50 to-purple-100 border-b border-purple-200">
-                            {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(day => (
-                              <div
-                                key={day}
-                                className="p-2 sm:p-3 text-center text-[11px] sm:text-sm font-bold text-purple-700 border-r border-purple-200 last:border-r-0"
-                              >
-                                {day}
-                              </div>
-                            ))}
-                          </div>
-                          {/* Calendar days */}
-                          <div className="grid grid-cols-7">
-                            {/* Empty cells for days before month starts */}
-                            {Array.from({ length: getFirstDayOfMonth(calendarYear, calendarMonth) }).map((_, index) => (
-                              <div
-                                key={`empty-${index}`}
-                                className="h-10 sm:h-12 border-r border-b border-gray-100 last:border-r-0"
-                              ></div>
-                            ))}
-                            {/* Days of the month */}
-                            {Array.from({ length: getDaysInMonth(calendarYear, calendarMonth) }, (_, i) => i + 1).map(day => {
-                              const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                              const today = new Date();
-                              const currentDate = new Date(dateStr);
-                              const isToday = currentDate.toDateString() === today.toDateString();
-                              const isPast = editingSolicitud === null && currentDate < today;
-                              // Ignorăm perioada de blocare când se editează o solicitare
-                              const isEditingVacacionesOrAsuntoPropio = editingSolicitud !== null && 
-                                (tipo === 'Vacaciones' || tipo === 'Asunto Propio' || tipo === 'Asuntos Propios');
-                              const isBlocked = isEditingVacacionesOrAsuntoPropio
-                                ? false
-                                : isInAsuntoPropioCalendarBlock(dateStr);
-                              const availability = dateAvailability[dateStr];
-                              const isFull = availability && availability.isFull;
-                              const isLowAvailability = availability && availability.available <= 1 && availability.available > 0;
-                              // For Asuntos Propios, we don't use isDateOccupied - we use availability logic
-                              const isOccupied = false;
-                              return (
-                                <button
-                                  key={day}
-                                  onClick={() => !isDateDisabled(day) && toggleDate(day)}
-                                  disabled={isDateDisabled(day)}
-                                  className={`h-10 sm:h-12 border-r border-b border-gray-100 last:border-r-0 transition-all duration-200 relative ${
-                                    isDateSelected(day)
-                                      ? 'bg-gradient-to-br from-purple-500 to-purple-600 text-white font-bold shadow-lg'
-                                      : isBlocked
-                                      ? 'bg-gradient-to-br from-orange-200 to-orange-300 text-orange-800 cursor-not-allowed'
-                                      : isFull
-                                      ? 'bg-gradient-to-br from-purple-200 to-purple-300 text-purple-800 cursor-not-allowed'
-                                      : isLowAvailability
-                                      ? 'bg-gradient-to-br from-yellow-100 to-yellow-200 text-yellow-800 hover:bg-yellow-200'
-                                      : isOccupied
-                                      ? 'bg-gradient-to-br from-red-100 to-red-200 text-red-800 cursor-not-allowed'
-                                      : isPast
-                                      ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
-                                      : isToday
-                                      ? 'bg-gradient-to-br from-green-100 to-green-200 text-green-800 hover:bg-green-200'
-                                      : 'bg-white text-gray-700 hover:bg-purple-50 hover:text-purple-800'
-                                  }`}
-                                  title={
-                                    isPast
-                                      ? 'Fecha pasada'
-                                      : isBlocked
-                                      ? 'Bloqueado (Empleada)'
-                                      : isFull
-                                      ? (canAccessAllTabs
-                                          ? `Sin disponibilidad (${availability?.occupied ?? 0}/${availability?.maxAllowed ?? 1})`
-                                          : 'Sin disponibilidad para Asuntos Propios en esta fecha')
-                                      : isLowAvailability
-                                      ? (canAccessAllTabs
-                                          ? `Poca disponibilidad (${availability?.available ?? 0}/${availability?.maxAllowed ?? 1})`
-                                          : 'Poca disponibilidad: quedan pocos cupos para este día')
-                                      : isOccupied
-                                      ? 'Ocupado por otras solicitudes'
-                                      : isToday
-                                      ? 'Hoy'
-                                      : availability
-                                      ? (canAccessAllTabs
-                                          ? `Disponible (${availability.available}/${availability.maxAllowed})`
-                                          : 'Disponible')
-                                      : 'Disponible'
-                                  }
-                                >
-                                  <div className="flex flex-col items-center justify-center h-full">
-                                    <span className="text-xs sm:text-sm font-medium">{day}</span>
-                                    {availability && (
-                                      <span className="text-[10px] sm:text-xs opacity-75">
-                                        {isFull
-                                          ? '🈵'
-                                          : isLowAvailability
-                                            ? '⚠️'
-                                            : canAccessAllTabs
-                                              ? availability.available
-                                              : ''}
-                                      </span>
-                                    )}
-                                  </div>
-                                  {/* Icons overlay */}
-                                  <div className="absolute top-1 right-1">
-                                    {isBlocked && <span className="text-xs">🔒</span>}
-                                    {isFull && !isBlocked && <span className="text-xs">🈵</span>}
-                                    {isLowAvailability && !isBlocked && !isFull && <span className="text-xs">⚠️</span>}
-                                    {isOccupied && !isBlocked && !isFull && <span className="text-xs">🚫</span>}
-                                    {isToday && !isBlocked && !isFull && !isOccupied && <span className="text-xs">📍</span>}
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Availability info for Asuntos Propios */}
-                    {editingSolicitud === null && Object.keys(dateAvailability).length > 0 && (
-                      <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                        <p className="text-sm font-medium text-purple-800">
-                          📊 Disponibilidad de Asuntos Propios
-                        </p>
-                        {canAccessAllTabs ? (
-                          <>
-                            <p className="text-xs text-purple-600 mt-1">
-                              Total empleados en grupo: {Object.values(dateAvailability)[0]?.groupSize ?? 0}
-                            </p>
-                            <p className="text-xs text-purple-600">
-                              Límite permitido: {Object.values(dateAvailability)[0]?.maxAllowed ?? 0} personas
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-xs text-purple-600 mt-1">
-                            El calendario indica si el día está disponible; en amarillo hay poca disponibilidad. El cupo diario lo gestiona la empresa y no se muestra el número exacto.
-                          </p>
-                        )}
-                        <p className="text-xs text-purple-600">
-                          Días disponibles: {totalAsuntoPropioDays}/{asuntosPropiosDiasAnuales} días (anual)
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Calendar Legend for Asuntos Propios */}
-                    {editingSolicitud === null && (
-                    <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                      <div className="flex justify-between items-center mb-2">
-                        <h4 className="text-sm font-bold text-gray-800">Leyenda del Calendario:</h4>
-                        <div className="text-xs font-medium text-purple-600 bg-purple-100 px-2 py-1 rounded">
-                          Días disponibles: {totalAsuntoPropioDays}/{asuntosPropiosDiasAnuales} días (anual)
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 bg-gradient-to-br from-purple-500 to-purple-600 rounded"></div>
-                          <span className="text-gray-700">Días seleccionados</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 bg-gradient-to-br from-green-100 to-green-200 rounded"></div>
-                          <span className="text-gray-700">Hoy</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 bg-gradient-to-br from-purple-200 to-purple-300 rounded"></div>
-                          <span className="text-gray-700">Sin disponibilidad</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 bg-gradient-to-br from-yellow-100 to-yellow-200 rounded"></div>
-                          <span className="text-gray-700">Poca disponibilidad</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 bg-gradient-to-br from-orange-200 to-orange-300 rounded"></div>
-                          <span className="text-gray-700">Bloqueado (Empleada)</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-4 h-4 bg-gray-50 rounded"></div>
-                          <span className="text-gray-700">Fechas pasadas</span>
-                        </div>
-                      </div>
-                      <div className="mt-3 p-2 bg-purple-50 rounded border border-purple-200">
-                        <p className="text-xs text-purple-700 font-medium">
-                          📊 Reglas para Asuntos Propios:
-                        </p>
-                        <p className="text-xs text-purple-600 mt-1">
-                          • Máximo {asuntosPropiosDiasAnuales} días por persona por año
-                        </p>
-                        <p className="text-xs text-purple-600">
-                          {canAccessAllTabs ? (
-                            <>• Máximo {asuntosPropiosMaxPorDia} personas por día en total (se configura en «Bloquear Asuntos Propios»)</>
-                          ) : (
-                            <>• Cupo diario a nivel empresa (el número no se muestra en el calendario)</>
-                          )}
-                        </p>
-                        <p className="text-xs text-purple-600">
-                          • Máximo 1 persona del mismo centro por día
-                        </p>
-                        <p className="text-xs text-purple-600">
-                          • Máximo {asuntosPropiosDiasAnuales} días consecutivos
-                        </p>
-                        <p className="text-xs text-purple-600">
-                          • Mínimo 5 días de adelanto
-                        </p>
-                      </div>
-                    </div>
-                    )}
-                    
-                    {/* Selected dates info */}
-                    {selectedDates.length > 0 && (
-                      <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                        <p className="text-sm font-medium text-green-800">
-                          📅 Días seleccionados: {fechaInicio && fechaFin ? calculateDays(fechaInicio, fechaFin) : selectedDates.length} días
-                        </p>
-                        <p className="text-xs text-green-600 mt-1">
-                          Desde: {fechaInicio} hasta: {fechaFin}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                  </>
+                  <SolicitudCalendarSection
+                    tipo={tipo}
+                    calendarYear={calendarYear}
+                    calendarMonth={calendarMonth}
+                    monthNames={monthNames}
+                    onPrevMonth={() => navigateMonth('prev')}
+                    onNextMonth={() => navigateMonth('next')}
+                    isDateSelected={isDateSelected}
+                    isDateDisabled={isDateDisabled}
+                    onToggleDate={toggleDate}
+                    isInHolidayBlockPeriod={isInHolidayBlockPeriod}
+                    isInAsuntoPropioCalendarBlock={isInAsuntoPropioCalendarBlock}
+                    dateAvailability={dateAvailability}
+                    editingSolicitud={editingSolicitud}
+                    isManager={isManager}
+                    canAccessAllTabs={canAccessAllTabs}
+                    loadingOccupiedDates={isOperationLoading('occupiedDates')}
+                    vacacionesDisponibilidadPct={vacacionesDisponibilidadPct}
+                    asuntosPropiosDiasAnuales={asuntosPropiosDiasAnuales}
+                    asuntosPropiosMaxPorDia={asuntosPropiosMaxPorDia}
+                    totalAsuntoPropioDays={totalAsuntoPropioDays}
+                    selectedDates={selectedDates}
+                    fechaInicio={fechaInicio}
+                    fechaFin={fechaFin}
+                    calculateDays={calculateDays}
+                    occupiedDaysInRange={occupiedDaysInRange}
+                    occupiedDatesCount={occupiedDates.length}
+                    authUser={authUser}
+                    allUsers={allUsers}
+                    normalizeGroup={normalizeGroup}
+                  />
                 )}
 
                 {/* Input date pentru Permiso Retribuido */}

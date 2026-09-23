@@ -1,18 +1,38 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContextBase';
 import { Button, Card, Modal, Input } from '../components/ui';
 import Notification from '../components/ui/Notification';
 import Back3DButton from '../components/Back3DButton';
 import PRLAutoevaluacionResultModal from '../components/PRLAutoevaluacionResultModal';
 import { routes } from '../utils/routes';
+import { Search, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 
 const TIPOS_DOCUMENTO = [
   { value: 'EVALUACION_RIESGOS', label: 'Evaluación de Riesgos Laborales', requiereFirma: false },
   { value: 'ACTA_INFORMATIVA', label: 'Acta Informativa del Puesto', requiereFirma: true },
+  { value: 'CERTIFICADO', label: 'Certificado (Art. 18 / Información recibida)', requiereFirma: true },
   { value: 'ENTREGA_EPIS', label: 'Entrega de EPIs', requiereFirma: true },
   { value: 'RENUNCIA_RM', label: 'Renuncia Reconocimiento Médico (solo si rechaza RM)', requiereFirma: true },
   { value: 'MANUAL_TEST', label: 'Manual del Puesto + Test', requiereFirma: true },
 ];
+
+function normalizeMatrixSearch(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function countDocsByEstado(empleado, estado) {
+  const docs = empleado?.documentos || [];
+  if (estado === 'SIN_DOC') {
+    return TIPOS_DOCUMENTO.filter(
+      (t) => !docs.some((d) => d.tipo_documento === t.value),
+    ).length;
+  }
+  return docs.filter((d) => d.estado === estado).length;
+}
 
 export default function PRLDocumentosPage() {
   const { authToken } = useAuth();
@@ -28,6 +48,12 @@ export default function PRLDocumentosPage() {
   // Estados para matrix/tabla
   const [empleadosConDocumentos, setEmpleadosConDocumentos] = useState([]);
   const [matrixLoading, setMatrixLoading] = useState(false);
+  const [matrixSearch, setMatrixSearch] = useState('');
+  const [matrixGruposSelected, setMatrixGruposSelected] = useState([]);
+  const [matrixGrupoMode, setMatrixGrupoMode] = useState('solo'); // solo | excluir
+  const [matrixEstadoFilter, setMatrixEstadoFilter] = useState('todos'); // todos|PENDIENTE|FIRMADO|SIN_DOC
+  /** Multi-sort max 2: [{ key: 'nombre'|'grupo'|'pendientes'|'firmados', dir }] */
+  const [matrixSort, setMatrixSort] = useState([]);
 
   // Modal states
   const [showUploadZipModal, setShowUploadZipModal] = useState(false);
@@ -468,6 +494,139 @@ export default function PRLDocumentosPage() {
     }
   }, [activeTab, cargarMatrixEmpleados]);
 
+  const matrixGrupos = useMemo(() => {
+    const set = new Set();
+    (empleadosConDocumentos || []).forEach((e) => {
+      const g = String(e.grupo_nombre || '').trim();
+      if (g) set.add(g);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'));
+  }, [empleadosConDocumentos]);
+
+  const matrixFiltrados = useMemo(() => {
+    const q = normalizeMatrixSearch(matrixSearch);
+    return (empleadosConDocumentos || []).filter((emp) => {
+      if (q) {
+        const hay = normalizeMatrixSearch(
+          `${emp.empleado_nombre || ''} ${emp.empleado_id || ''} ${emp.grupo_nombre || ''}`,
+        );
+        if (!hay.includes(q)) return false;
+      }
+      if (matrixGruposSelected.length > 0) {
+        const g = String(emp.grupo_nombre || '').trim();
+        const inSelected = matrixGruposSelected.includes(g);
+        if (matrixGrupoMode === 'excluir') {
+          if (inSelected) return false;
+        } else if (!inSelected) {
+          return false;
+        }
+      }
+      if (matrixEstadoFilter === 'PENDIENTE') {
+        if (countDocsByEstado(emp, 'PENDIENTE') === 0) return false;
+      } else if (matrixEstadoFilter === 'FIRMADO') {
+        if (countDocsByEstado(emp, 'FIRMADO') === 0) return false;
+      } else if (matrixEstadoFilter === 'SIN_DOC') {
+        if (countDocsByEstado(emp, 'SIN_DOC') === 0) return false;
+      }
+      return true;
+    });
+  }, [
+    empleadosConDocumentos,
+    matrixSearch,
+    matrixGruposSelected,
+    matrixGrupoMode,
+    matrixEstadoFilter,
+  ]);
+
+  const matrixVista = useMemo(() => {
+    const list = [...matrixFiltrados];
+    if (!matrixSort.length) return list;
+    list.sort((a, b) => {
+      for (const rule of matrixSort) {
+        let va;
+        let vb;
+        if (rule.key === 'nombre') {
+          va = String(a.empleado_nombre || '');
+          vb = String(b.empleado_nombre || '');
+        } else if (rule.key === 'grupo') {
+          va = String(a.grupo_nombre || '');
+          vb = String(b.grupo_nombre || '');
+        } else if (rule.key === 'pendientes') {
+          va = countDocsByEstado(a, 'PENDIENTE');
+          vb = countDocsByEstado(b, 'PENDIENTE');
+        } else if (rule.key === 'firmados') {
+          va = countDocsByEstado(a, 'FIRMADO');
+          vb = countDocsByEstado(b, 'FIRMADO');
+        } else {
+          continue;
+        }
+        let cmp =
+          typeof va === 'number'
+            ? va - vb
+            : va.localeCompare(vb, 'es', { sensitivity: 'base', numeric: true });
+        if (rule.dir === 'desc') cmp = -cmp;
+        if (cmp !== 0) return cmp;
+      }
+      return 0;
+    });
+    return list;
+  }, [matrixFiltrados, matrixSort]);
+
+  const toggleMatrixSort = useCallback((key) => {
+    setMatrixSort((prev) => {
+      const idx = prev.findIndex((s) => s.key === key);
+      if (idx >= 0) {
+        if (prev[idx].dir === 'asc') {
+          const next = [...prev];
+          next[idx] = { key, dir: 'desc' };
+          return next;
+        }
+        return prev.filter((s) => s.key !== key);
+      }
+      if (prev.length === 0) return [{ key, dir: 'asc' }];
+      if (prev.length === 1) return [...prev, { key, dir: 'asc' }];
+      return [prev[0], { key, dir: 'asc' }];
+    });
+  }, []);
+
+  const toggleMatrixGrupo = useCallback((grupo) => {
+    setMatrixGruposSelected((prev) =>
+      prev.includes(grupo) ? prev.filter((g) => g !== grupo) : [...prev, grupo],
+    );
+  }, []);
+
+  const clearMatrixFilters = useCallback(() => {
+    setMatrixSearch('');
+    setMatrixGruposSelected([]);
+    setMatrixGrupoMode('solo');
+    setMatrixEstadoFilter('todos');
+    setMatrixSort([]);
+  }, []);
+
+  const matrixFiltersActive =
+    Boolean(matrixSearch.trim()) ||
+    matrixGruposSelected.length > 0 ||
+    matrixEstadoFilter !== 'todos' ||
+    matrixSort.length > 0;
+
+  const renderMatrixSortBtn = (key, label) => {
+    const ruleIdx = matrixSort.findIndex((s) => s.key === key);
+    const rule = ruleIdx >= 0 ? matrixSort[ruleIdx] : null;
+    const Icon = !rule ? ArrowUpDown : rule.dir === 'asc' ? ArrowUp : ArrowDown;
+    return (
+      <button
+        type="button"
+        onClick={() => toggleMatrixSort(key)}
+        className="inline-flex items-center gap-0.5 font-semibold hover:underline"
+        title={`Ordenar por ${label}`}
+      >
+        <span>{label}</span>
+        <Icon className="h-3.5 w-3.5 opacity-70" aria-hidden />
+        {ruleIdx >= 0 && <span className="text-[9px] font-bold">{ruleIdx + 1}</span>}
+      </button>
+    );
+  };
+
   const getEstadoColor = (estado, requiereFirma) => {
     if (!requiereFirma) {
       return 'bg-gray-100 text-gray-700'; // Informativo
@@ -575,12 +734,144 @@ export default function PRLDocumentosPage() {
                 <p className="mt-4 text-gray-600">Cargando matrix...</p>
               </div>
             ) : (
+              <>
+              <div className="mb-4 space-y-3 rounded-xl border border-gray-200 bg-gray-50/80 p-3">
+                <div className="relative">
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                    aria-hidden
+                  />
+                  <input
+                    type="search"
+                    value={matrixSearch}
+                    onChange={(e) => setMatrixSearch(e.target.value)}
+                    placeholder="Buscar por nombre, código o grupo…"
+                    className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm"
+                    aria-label="Buscar en matrix PRL"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 sm:w-14">
+                    Estado
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { id: 'todos', label: 'Todos' },
+                      { id: 'PENDIENTE', label: 'Con pendiente' },
+                      { id: 'FIRMADO', label: 'Con firmado' },
+                      { id: 'SIN_DOC', label: 'Sin algún doc' },
+                    ].map((opt) => {
+                      const active = matrixEstadoFilter === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setMatrixEstadoFilter(opt.id)}
+                          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+                            active
+                              ? 'border-red-600 bg-red-600 text-white'
+                              : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-100'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex min-w-0 flex-1 flex-col gap-2 sm:max-w-md">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                      Grupo
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { id: 'solo', label: 'Solo' },
+                        { id: 'excluir', label: 'Excluir' },
+                      ].map((opt) => {
+                        const active = matrixGrupoMode === opt.id;
+                        const enabled = matrixGruposSelected.length > 0;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setMatrixGrupoMode(opt.id)}
+                            disabled={!enabled}
+                            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                              active
+                                ? 'border-red-600 bg-red-600 text-white'
+                                : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-100'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="max-h-36 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2">
+                      {matrixGrupos.length === 0 ? (
+                        <p className="text-[11px] text-gray-500">Sin grupos</p>
+                      ) : (
+                        matrixGrupos.map((g) => {
+                          const checked = matrixGruposSelected.includes(g);
+                          return (
+                            <label
+                              key={g}
+                              className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-gray-50 ${
+                                checked ? 'bg-red-50 font-semibold' : 'text-gray-700'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleMatrixGrupo(g)}
+                                className="h-3.5 w-3.5 rounded border-gray-300"
+                              />
+                              <span className="truncate">{g}</span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                    <span className="text-xs font-medium text-gray-600">
+                      Mostrando <strong>{matrixFiltrados.length}</strong> de{' '}
+                      <strong>{empleadosConDocumentos.length}</strong>
+                      {matrixSort.length > 0 && (
+                        <span className="ml-1 text-gray-500">· orden: {matrixSort.length} col.</span>
+                      )}
+                    </span>
+                    {matrixFiltersActive && (
+                      <button
+                        type="button"
+                        onClick={clearMatrixFilters}
+                        className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                      >
+                        Limpiar filtros
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div className="overflow-x-auto">
                 <table className="min-w-full border-collapse border border-gray-300">
                   <thead>
                     <tr className="bg-gray-100">
                       <th className="border border-gray-300 px-4 py-2 text-left font-semibold sticky left-0 bg-gray-100 z-10">
-                        Empleado / Documento
+                        <div className="flex flex-col gap-1">
+                          {renderMatrixSortBtn('nombre', 'Empleado')}
+                          <span className="text-[10px] font-normal text-gray-500">
+                            {renderMatrixSortBtn('grupo', 'Grupo')}
+                            {' · '}
+                            {renderMatrixSortBtn('pendientes', 'Pend.')}
+                            {' · '}
+                            {renderMatrixSortBtn('firmados', 'Firm.')}
+                          </span>
+                        </div>
                       </th>
                       {TIPOS_DOCUMENTO.map((tipo) => (
                         <th
@@ -593,7 +884,7 @@ export default function PRLDocumentosPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {empleadosConDocumentos.map((empleado) => (
+                    {matrixVista.map((empleado) => (
                       <tr key={empleado.empleado_id} className="hover:bg-gray-50">
                         <td className="border border-gray-300 px-4 py-2 sticky left-0 bg-white z-10 font-medium">
                           <div className="font-semibold">{empleado.empleado_nombre}</div>
@@ -651,12 +942,26 @@ export default function PRLDocumentosPage() {
                     ))}
                   </tbody>
                 </table>
-                {empleadosConDocumentos.length === 0 && (
+                {matrixVista.length === 0 && (
                   <div className="text-center py-8 text-gray-500">
-                    No hay empleados con documentos PRL asignados
+                    {empleadosConDocumentos.length === 0
+                      ? 'No hay empleados con documentos PRL asignados'
+                      : 'Ningún empleado coincide con los filtros'}
+                    {matrixFiltersActive && empleadosConDocumentos.length > 0 && (
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          onClick={clearMatrixFilters}
+                          className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                        >
+                          Limpiar filtros
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
+              </>
             )}
           </div>
         </Card>

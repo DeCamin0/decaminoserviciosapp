@@ -16,6 +16,7 @@ import { AuthService } from '../services/auth.service';
 import { PasswordResetService } from '../services/password-reset.service';
 import { EmpleadoGrupoScopeService } from '../services/empleado-grupo-scope.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SecurityAlertService } from '../services/security-alert.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ForgotPasswordRateLimitError } from '../utils/password-reset.util';
@@ -29,6 +30,7 @@ export class AuthController {
     private readonly passwordResetService: PasswordResetService,
     private readonly empleadoGrupoScopeService: EmpleadoGrupoScopeService,
     private readonly prisma: PrismaService,
+    private readonly securityAlertService: SecurityAlertService,
   ) {}
 
   private clientIp(req: any): string {
@@ -45,7 +47,7 @@ export class AuthController {
   }
 
   @Post('login')
-  async login(@Body() loginDto: LoginDto) {
+  async login(@Body() loginDto: LoginDto, @Req() req: any) {
     try {
       console.log('[AuthController] Login request received:', {
         email: loginDto.email,
@@ -58,6 +60,17 @@ export class AuthController {
       );
 
       if (!result.success) {
+        try {
+          this.securityAlertService.recordLoginFailure({
+            email: loginDto.email,
+            ip: this.clientIp(req),
+            reason: result.error,
+          });
+        } catch (alertErr: any) {
+          this.logger.warn(
+            `Security login-fail alert hook failed: ${alertErr?.message || alertErr}`,
+          );
+        }
         throw new HttpException(
           {
             success: false,

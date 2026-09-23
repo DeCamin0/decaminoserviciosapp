@@ -244,6 +244,13 @@ export const routes = {
   getDocumentosSolicitados: (empleadoId) => `${BACKEND_BASE}/api/documentos-solicitados${empleadoId ? `?empleadoId=${empleadoId}` : ''}`,
   createDocumentoSolicitado: `${BACKEND_BASE}/api/documentos-solicitados`,
   marcarDocumentoSolicitadoCompletado: `${BACKEND_BASE}/api/documentos-solicitados/completar`,
+
+  // Documentos obligación (soft → hard + evidență)
+  documentosObligationMe: `${BACKEND_BASE}/api/documentos-obligation/me`,
+  documentosObligationShown: `${BACKEND_BASE}/api/documentos-obligation/shown`,
+  documentosObligationSnooze: `${BACKEND_BASE}/api/documentos-obligation/snooze`,
+  documentosObligationResolve: `${BACKEND_BASE}/api/documentos-obligation/resolve`,
+  documentosObligationAdmin: `${BACKEND_BASE}/api/documentos-obligation/admin`,
   
   // Avatares empleados
   getAvatar: `${BACKEND_BASE}/api/avatar`,
@@ -523,6 +530,8 @@ export const routes = {
   editFestivo: `${BACKEND_BASE}/api/festivos`,
   createFestivo: `${BACKEND_BASE}/api/festivos`,
   deleteFestivo: `${BACKEND_BASE}/api/festivos`,
+  /** Sync Nacional + Comunidad de Madrid (calendariosnacionales) */
+  syncFestivos: `${BACKEND_BASE}/api/festivos`,
   
   // Aprobaciones (Approvals)
   getCambiosPendientes: `${BACKEND_BASE}/api/empleados/cambios-pendientes`,

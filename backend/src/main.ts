@@ -75,7 +75,7 @@ import { AppModule } from './app.module';
 import { json, urlencoded } from 'express';
 import { GlobalExceptionFilter } from './filters/global-exception.filter';
 import { TelegramService } from './services/telegram.service';
-
+import { SecurityAlertService } from './services/security-alert.service';
 /**
  * Lista finală de origini permise pentru CORS.
  * - CORS_ORIGINS / CORS_ORIGIN (separate prin virgulă)
@@ -131,11 +131,12 @@ async function bootstrap() {
     );
   }
 
-  // Global exception filter pentru alerting Telegram
-  // Obținem instanța TelegramService din context
+  // Global exception filter pentru alerting Telegram (+ security 403)
   const telegramService = app.get(TelegramService);
-  app.useGlobalFilters(new GlobalExceptionFilter(telegramService));
-
+  const securityAlertService = app.get(SecurityAlertService);
+  app.useGlobalFilters(
+    new GlobalExceptionFilter(telegramService, securityAlertService),
+  );
   // Trust proxy pentru a extrage corect IP-ul din headers
   // NestJS folosește Express sub hood, deci putem accesa instanța Express
   const expressApp = app.getHttpAdapter().getInstance();

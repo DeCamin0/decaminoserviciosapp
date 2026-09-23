@@ -3294,6 +3294,7 @@ export default function DocumentosPage() {
                   const tipos = {
                     'EVALUACION_RIESGOS': 'Evaluación de Riesgos Laborales',
                     'ACTA_INFORMATIVA': 'Acta Informativa del Puesto',
+                    'CERTIFICADO': 'Certificado (Art. 18 / Información recibida)',
                     'ENTREGA_EPIS': 'Entrega de EPIs',
                     'RENUNCIA_RM': 'Renuncia Reconocimiento Médico',
                     'MANUAL_TEST': 'Manual del Puesto + Test',

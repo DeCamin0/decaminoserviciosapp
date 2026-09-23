@@ -11,12 +11,13 @@ import CuadrantesFestivosList from './cuadrantes-admin/CuadrantesFestivosList';
 import CuadrantesMulticentroMobile from './cuadrantes-admin/CuadrantesMulticentroMobile';
 import { toMinutes } from '../types/schedule';
 import { calculateCuadranteHours } from '../utils/cuadrante-hours-helper';
-import { Loader2, RotateCcw, Plus, RefreshCw, Upload, MapPin, User, Clock, ChevronLeft, ChevronRight, Calendar, Settings2, Save, ArrowLeft, Eye } from 'lucide-react';
+import { Loader2, RotateCcw, Plus, RefreshCw, Upload, MapPin, User, Clock, ChevronLeft, ChevronRight, Calendar, Settings2, Save, ArrowLeft, Eye, CloudDownload } from 'lucide-react';
 
 const FESTIVOS_ENDPOINT = routes.getFestivos;
 const CREATE_FESTIVO_ENDPOINT = routes.createFestivo;
 const EDIT_FESTIVO_ENDPOINT = routes.editFestivo;
 const DELETE_FESTIVO_ENDPOINT = routes.deleteFestivo;
+const SYNC_FESTIVOS_ENDPOINT = routes.syncFestivos;
 
 const MONTHS = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -180,6 +181,7 @@ export default function CuadrantesPage() {
   const [festivosMonthFilter, setFestivosMonthFilter] = useState('all');
   const [festivosData, setFestivosData] = useState([]);
   const [festivosLoading, setFestivosLoading] = useState(false);
+  const [festivosSyncing, setFestivosSyncing] = useState(false);
   const [festivosError, setFestivosError] = useState('');
   const festivosCacheRef = useRef({});
   const [festivoModalOpen, setFestivoModalOpen] = useState(false);
@@ -538,6 +540,11 @@ export default function CuadrantesPage() {
         const clienteCentro = normClienteHm(centro || selectedCentro || 'N/A');
         // Folosim numele complet (NOMBRE / APELLIDOS) dacă există, altfel fallback la NOMBRE
         const nombreCompleto = nuevoEmpleado['NOMBRE / APELLIDOS'] || nuevoEmpleado.NOMBRE_APELLIDOS || nuevoEmpleado.NOMBRE || nuevoEmpleado.nombre || '';
+        const codigoNuevoStr = String(nuevoEmpleado.CODIGO ?? '').trim();
+        if (!codigoNuevoStr) {
+          showToast('error', 'El empleado seleccionado no tiene CODIGO en DatosEmpleados');
+          return;
+        }
         
         // Citește mai întâi orarul existent pentru acest angajat, lună și centru
         let horarioExistente = [];
@@ -570,11 +577,6 @@ export default function CuadrantesPage() {
         
         // Construiește obiectul horario multicentro cu toate zilele
         // HORARIO și SERVICIO sunt generice pentru multicentro (nu depind de tipul de turn specific)
-        const codigoNuevoStr = String(nuevoEmpleado.CODIGO ?? '').trim();
-        if (!codigoNuevoStr) {
-          showToast('error', 'El empleado seleccionado no tiene CODIGO en DatosEmpleados');
-          return;
-        }
         const horarioMulticentro = {
           CODIGO: codigoNuevoStr,
           EMAIL: nuevoEmpleado['CORREO ELECTRONICO'] || nuevoEmpleado.EMAIL || '',
@@ -645,11 +647,13 @@ export default function CuadrantesPage() {
           return;
         }
         
-        showToast('success', `Turno asignado a ${nuevoEmpleado.NOMBRE || nuevoEmpleado.nombre} en horario multicentro`);
+        const nombreParaMarca = nombreCompleto || codigoNuevoStr;
+        showToast('success', `Turno asignado a ${nombreParaMarca} en horario multicentro`);
         
         // Setează ziua cu marcaj special "MC->[NUME_ANGAJAT]" în cuadrantele originale pentru a indica că este în multicentro
         // Folosim "->" în loc de "→" pentru compatibilitate cu encoding-ul bazei de date
-        const nombreCorto = (nuevoEmpleado.NOMBRE || nuevoEmpleado.nombre || '').split(' ').slice(0, 2).join(' '); // Primele 2 cuvinte din nume
+        // Aceeași sursă de nume ca payload-ul (NOMBRE / APELLIDOS), nu doar NOMBRE
+        const nombreCorto = nombreParaMarca.split(/\s+/).filter(Boolean).slice(0, 2).join(' ') || codigoNuevoStr;
         const marcaMulticentro = `MC->${nombreCorto}`;
         setEditedCuadrantes(prev => ({
           ...prev,
@@ -1717,6 +1721,60 @@ export default function CuadrantesPage() {
     },
     [],
   );
+
+  const handleSyncFestivos = useCallback(async () => {
+    const year = festivosYear || new Date().getFullYear();
+    setFestivosSyncing(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-App-Source': 'DeCamino-Web-App',
+      };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const url = `${SYNC_FESTIVOS_ENDPOINT}?accion=sincronizar&years=${encodeURIComponent(
+        `${year},${year + 1}`,
+      )}`;
+      const response = await fetch(url, { method: 'POST', headers });
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        throw new Error(errText || `HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      const t = data?.totals || {};
+      const vs = data?.verificationSummary || {};
+      const mismatchYears = Array.isArray(vs.yearsWithMismatch)
+        ? vs.yearsWithMismatch
+        : [];
+      const yearDetails = Array.isArray(data?.years) ? data.years : [];
+      const fallbackYears = yearDetails
+        .filter((y) => y?.usedFallback)
+        .map((y) => `${y.year}(${y.usedSource})`);
+      const verifyOk = vs.allMatch !== false && mismatchYears.length === 0;
+
+      let msg = `Festivos sync: +${t.inserted || 0} nuevos, ${t.updated || 0} actualizados`;
+      if (fallbackYears.length) {
+        msg += ` · fallback: ${fallbackYears.join(', ')}`;
+      }
+      if (!verifyOk) {
+        msg += ` · aviso verificación años: ${mismatchYears.join(', ')}`;
+        showToast('warning', msg);
+      } else {
+        msg += ' · verificado OK (Madrid OD / Nager)';
+        showToast('success', msg);
+      }
+      await loadFestivos(year, { force: true });
+    } catch (error) {
+      console.error('Error sync festivos:', error);
+      showToast(
+        'error',
+        `Error al sincronizar festivos: ${error?.message || 'desconocido'}`,
+      );
+    } finally {
+      setFestivosSyncing(false);
+    }
+  }, [festivosYear, loadFestivos, showToast]);
 
   const handleCreateFestivoNextYear = useCallback((festivo) => {
     if (!festivo || !festivo.date) {
@@ -4684,14 +4742,30 @@ export default function CuadrantesPage() {
 
               <div className="flex items-end justify-between gap-2">
                 <div className="text-sm text-gray-500">
-                  Consulta los festivos nacionales y autonómicos planificados
-                  para organizar cuadrantes especiales.
+                  Nacional + Comunidad de Madrid. Sync automático mensual o manual.
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
+                    onClick={handleSyncFestivos}
+                    disabled={festivosLoading || festivosSyncing}
+                    className="inline-flex items-center gap-1.5 px-3 py-2"
+                    aria-label="Sincronizar festivos desde API"
+                    title="Sincronizar Nacional + Madrid"
+                  >
+                    {festivosSyncing ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-red-600" />
+                    ) : (
+                      <CloudDownload className="h-4 w-4 text-red-600" />
+                    )}
+                    <span className="text-sm hidden sm:inline">
+                      {festivosSyncing ? 'Sincronizando…' : 'Sincronizar'}
+                    </span>
+                  </Button>
+                  <Button
+                    variant="outline"
                     onClick={() => loadFestivos(festivosYear, { force: true })}
-                    disabled={festivosLoading}
+                    disabled={festivosLoading || festivosSyncing}
                     className="p-2 rounded-full"
                     aria-label="Actualizar festivos"
                   >
