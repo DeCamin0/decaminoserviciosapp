@@ -1988,7 +1988,12 @@ model PrlEmployeeDocument {
   template_id           Int      @map("template_id")
   tipo_documento        PrlDocumentType
   estado                PrlDocumentStatus @default(PENDIENTE)
-  
+  // Snapshot din template la asignare; admin poate schimba per angajat (obligație modal)
+  requiere_firma        Boolean  @default(false) @map("requiere_firma")
+  // Angajatul a solicitat Reconocimiento Médico (în loc să semneze Renuncia)
+  rm_solicitado         Boolean  @default(false) @map("rm_solicitado")
+  rm_solicitado_en      DateTime? @map("rm_solicitado_en") @db.Timestamp(0)
+
   // Documento original (template) — R2 only
   nombre_archivo_original String? @map("nombre_archivo_original") @db.VarChar(255)
   storage_key_original  String   @map("storage_key_original") @db.VarChar(700)
@@ -2029,6 +2034,18 @@ model PrlEmployeeDocument {
   @@index([storage_key_original], map: "idx_prl_emp_doc_storage_key_original")
   @@index([storage_key_firmado], map: "idx_prl_emp_doc_storage_key_firmado")
   @@map("prl_employee_documents")
+}
+
+/// Evidență „procesado” în Matrix PRL (admin + share Ancara)
+model PrlEmpleadoProcesado {
+  empleado_id   String    @id @map("empleado_id") @db.VarChar(50)
+  procesado     Boolean   @default(false)
+  procesado_en  DateTime? @map("procesado_en") @db.Timestamp(0)
+  procesado_por String?   @map("procesado_por") @db.VarChar(100)
+  updated_at    DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  @@index([procesado], map: "idx_prl_emp_procesado_flag")
+  @@map("prl_empleado_procesado")
 }
 
 // Audit log (opcional pentru MVP, dar recomandat pentru conformitate)

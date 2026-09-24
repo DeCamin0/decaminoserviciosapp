@@ -147,6 +147,11 @@ export default function ProveedorDetallePage() {
                   Detalles Proveedor
                 </h1>
                 <p className="text-gray-500 text-sm">{proveedor['NOMBRE O RAZÓN SOCIAL']}</p>
+                {proveedor.NIF ? (
+                  <p className="text-gray-700 text-sm font-medium mt-0.5">
+                    NIF/CIF: <span className="tabular-nums">{proveedor.NIF}</span>
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="flex items-center space-x-3"></div>
@@ -277,6 +282,11 @@ export default function ProveedorDetallePage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-4">
                     <div>
+                      <p className="text-sm text-gray-500">NIF/CIF</p>
+                      <p className="font-medium tabular-nums">{proveedor.NIF || 'N/A'}</p>
+                    </div>
+
+                    <div>
                       <p className="text-sm text-gray-500">Website</p>
                       <p className="font-medium">
                         {proveedor.URL ? (
@@ -367,6 +377,13 @@ export default function ProveedorDetallePage() {
               <div className="p-6">
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">Estadísticas</h3>
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-600">NIF/CIF</span>
+                    <span className="text-sm font-medium text-gray-800 tabular-nums">
+                      {proveedor.NIF || 'N/A'}
+                    </span>
+                  </div>
+
                   <div className="flex items-center justify-between">
                     <span className="text-gray-600">Descuento</span>
                     <Badge className="bg-purple-100 text-purple-800">

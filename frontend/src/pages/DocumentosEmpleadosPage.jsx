@@ -952,11 +952,24 @@ export default function DocumentosEmpleadosPage() {
 
         })
 
-        .map(doc => ({
+        .map(doc => {
+          const docId =
+            doc.doc_id ||
+            doc.documento_id ||
+            doc.documentoId ||
+            doc.document_id ||
+            doc.documentId ||
+            null;
+          // `id` în CarpetasDocumentos = CODIGO angajat; NU doc_id (PK)
+          const empleadoCodigo =
+            doc.empleado_id ||
+            doc.empleadoId ||
+            doc.employee_id ||
+            (doc.id != null && String(doc.id) !== String(docId) ? doc.id : null) ||
+            empleadoId;
 
-          // Priorizar doc_id (câmpul returnat de backend)
-          id: doc.doc_id || doc.id || doc.documento_id || doc.documentoId || doc.document_id || doc.documentId,
-
+          return {
+          id: empleadoCodigo,
           fileName: doc.fileName || doc.nombre_archivo || doc.archivo || doc.nombre || doc.nombreArchivo || doc.file_name || doc.filename || doc.nombre_documento,
 
           fileSize: doc.fileSize || doc.tamaño || doc.size || doc.file_size || doc.tamano || doc.tamanio || doc.filesize || doc.size_bytes,
@@ -967,22 +980,19 @@ export default function DocumentosEmpleadosPage() {
 
           tipo: doc.tipo || doc.tipo_documento || doc.categoria || doc.tipoDocumento || doc.categoria_documento || doc.document_type || doc.type || doc.category,
 
-          // Priorizar doc_id pentru backendId
-          backendId: doc.doc_id || doc.id || doc.documento_id || doc.documentoId || doc.document_id || doc.documentId || null,
+          backendId: docId,
 
-          empleadoId: doc.empleado_id || doc.empleadoId || doc.employee_id || doc.id || empleadoId,
+          empleadoId: empleadoCodigo,
 
           empleadoEmail: doc.empleado_email || doc.empleadoEmail || doc.email || doc.correo_electronico || empleadoEmail,
 
           uploadedBy: doc.uploaded_by || doc.subido_por || doc.uploadedBy || doc.subidoPor || doc.user || doc.usuario || doc.autor || doc.creador,
 
           uploadedDate: doc.uploaded_date || doc.fecha_subida || doc.created_at || doc.fecha_creacion || doc.creation_date || doc.fecha_autor,
-          // Adăugăm câmpurile pentru ID-uri separate - priorizar doc_id
-          doc_id: doc.doc_id || doc.documento_id || doc.documentoId || doc.document_id || doc.documentId,
-          // Păstrăm și câmpul original id pentru compatibilitate
-          originalId: doc.id || doc.doc_id
-
-        }));
+          doc_id: docId,
+          originalId: empleadoCodigo,
+        };
+        });
 
       
 
@@ -3654,6 +3664,58 @@ export default function DocumentosEmpleadosPage() {
     }
   }, []);
 
+  const handleTogglePrlRequiereFirma = useCallback(
+    async (empleado, doc) => {
+      if (!empleado?.CODIGO || !doc?.id) {
+        showNotification('error', 'Error', 'No se pudo identificar el documento PRL');
+        return;
+      }
+
+      const nuevoEstado = !doc.requiere_firma;
+      try {
+        const token = localStorage.getItem('auth_token');
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers.Authorization = `Bearer ${token}`;
+
+        const response = await fetch(
+          routes.prlUpdateRequiereFirmaEmpleado(empleado.CODIGO, doc.id),
+          {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify({ requiereFirma: nuevoEstado }),
+          },
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || `HTTP ${response.status}`);
+        }
+
+        setDocumentosPrl((prev) =>
+          prev.map((d) =>
+            d.id === doc.id ? { ...d, requiere_firma: nuevoEstado } : d,
+          ),
+        );
+
+        showNotification(
+          'success',
+          'Actualizado',
+          nuevoEstado
+            ? 'El documento PRL ahora requiere firma (aparece en el aviso de obligación)'
+            : 'El documento PRL ya no requiere firma (no bloquea la app)',
+        );
+      } catch (error) {
+        console.error('Error actualizando requiere_firma PRL:', error);
+        showNotification(
+          'error',
+          'Error',
+          `No se pudo actualizar: ${error.message}`,
+        );
+      }
+    },
+    [showNotification],
+  );
+
   // Función para descargar documentos normales
 
   const handleDownloadDocument = async (documento) => {
@@ -4631,16 +4693,17 @@ export default function DocumentosEmpleadosPage() {
 
       console.log('🗑️ Borrando documento normal:', documento);
 
-      
-
-      // Preparar datos para enviar en el body
-
+      // Backend: id = CODIGO angajat; opțional doc_id = PK CarpetasDocumentos
+      const empleadoCodigo =
+        documento.empleadoId ||
+        documento.originalId ||
+        selectedEmpleado?.CODIGO ||
+        documento.id;
       const deleteData = {
-
-        id: documento.id,
-
-        filename: documento.fileName || ''
-
+        id: empleadoCodigo,
+        filename: documento.fileName || '',
+        nombre_archivo: documento.fileName || '',
+        doc_id: documento.doc_id || documento.backendId || null,
       };
 
       
@@ -4689,8 +4752,16 @@ export default function DocumentosEmpleadosPage() {
         
 
         // Actualizar lista de documentos normales localmente
-
-        setEmpleadoDocumentos(prev => prev.filter(doc => doc.id !== documento.id));
+        const deletedDocId = documento.doc_id || documento.backendId;
+        setEmpleadoDocumentos(prev => prev.filter(doc => {
+          if (deletedDocId != null && doc.doc_id != null) {
+            return String(doc.doc_id) !== String(deletedDocId);
+          }
+          return !(
+            String(doc.id) === String(documento.id) &&
+            String(doc.fileName || '') === String(documento.fileName || '')
+          );
+        }));
 
         
 
@@ -6707,9 +6778,22 @@ export default function DocumentosEmpleadosPage() {
                                   : 'Pendiente'}
                               </p>
                             )}
-                            {doc.requiere_firma && (
-                              <p>🔏 Requiere firma</p>
-                            )}
+                            <label className="inline-flex items-center gap-2 cursor-pointer select-none mt-1">
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 accent-[var(--primary-color,#CC0000)]"
+                                checked={!!doc.requiere_firma}
+                                onChange={() =>
+                                  handleTogglePrlRequiereFirma(selectedEmpleado, doc)
+                                }
+                              />
+                              <span className="text-xs text-gray-700">
+                                Requiere firma
+                                {doc.requiere_firma
+                                  ? ' (obligatorio / bloquea app)'
+                                  : ' (opcional)'}
+                              </span>
+                            </label>
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-2 flex-shrink-0">

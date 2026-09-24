@@ -272,6 +272,7 @@ export class DocumentosController {
       const result = await this.documentosService.deleteDocumento(
         id,
         nombreArchivo,
+        body.doc_id ?? body.docId ?? body.documentId ?? null,
       );
 
       // Return format matching n8n response

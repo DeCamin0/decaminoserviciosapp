@@ -113,7 +113,10 @@ import { HallOfFameService } from './services/hall-of-fame.service';
 import { EmailIngestionModule } from './email-ingestion/email-ingestion.module';
 import { EmployeeExportService } from './services/employee-export.service';
 import { PrlDocumentsController } from './controllers/prl-documents.controller';
+import { PrlMatrixShareController } from './controllers/prl-matrix-share.controller';
 import { PrlDocumentsService } from './services/prl-documents.service';
+import { PrlMatrixShareService } from './services/prl-matrix-share.service';
+import { PrlMatrixShareGuard } from './auth/prl-matrix-share.guard';
 import { PrlDocumentsStorageService } from './services/prl-documents-storage.service';
 import { DiplomasController } from './controllers/diplomas.controller';
 import { DiplomasService } from './services/diplomas.service';
@@ -225,6 +228,7 @@ import { PresupuestosV2Module } from './presupuestos-v2/presupuestos-v2.module';
     GestoriaController,
     MonitoringController,
     PrlDocumentsController,
+    PrlMatrixShareController,
     DiplomasController,
     CertificadosRetencionesController,
     PedidosNotasController,
@@ -296,6 +300,8 @@ import { PresupuestosV2Module } from './presupuestos-v2/presupuestos-v2.module';
     BajaVoluntariaPdfService,
     EmployeeExportService,
     PrlDocumentsService,
+    PrlMatrixShareService,
+    PrlMatrixShareGuard,
     PrlDocumentsStorageService,
     DiplomasService,
     DiplomasStorageService,

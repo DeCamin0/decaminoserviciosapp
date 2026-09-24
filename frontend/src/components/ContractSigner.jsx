@@ -15,8 +15,10 @@ import {
   buildContratoFirmaDigitalCaptionLines,
 } from '../constants/contratoPdfSignatureLayout';
 
-// Configurare worker PDF.js - folosește configurația centralizată
-import '../config/pdfjs';
+// Configurare worker PDF.js — pe aceeași instanță ca getDocument
+import { ensurePdfJsWorker } from '../config/pdfjs';
+
+ensurePdfJsWorker();
 
 // CSS pentru noul layout
 const dialogStyles = `
@@ -259,8 +261,18 @@ export default function ContractSigner({
       try {
         setLoading(true);
         setError(null);
-        
-        const loadingTask = pdfjsLib.getDocument(pdfUrl);
+
+        ensurePdfJsWorker();
+        if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = import.meta.env.PROD
+            ? '/pdf.worker.min.js'
+            : new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+        }
+
+        const loadingTask = pdfjsLib.getDocument({
+          url: pdfUrl,
+          verbosity: 0,
+        });
         const pdf = await loadingTask.promise;
         
         setPdfDocument(pdf);

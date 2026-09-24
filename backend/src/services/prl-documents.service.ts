@@ -1646,6 +1646,7 @@ export class PrlDocumentsService {
               template_id,
               tipo_documento,
               estado,
+              requiere_firma,
               nombre_archivo_original,
               storage_key_original,
               storage_bucket_original,
@@ -1658,6 +1659,7 @@ export class PrlDocumentsService {
               ${template.id},
               ${this.escapeSql(template.tipo_documento)},
               ${this.escapeSql(estadoInicial)},
+              ${template.requiere_firma === 1 ? 1 : 0},
               ${this.escapeSql(template.nombre_archivo)},
               ${storageKeyOriginalSql},
               ${storageBucketOriginalSql},
@@ -1928,6 +1930,8 @@ export class PrlDocumentsService {
       nombre_archivo_firmado: string | null;
       fecha_firma: Date | null;
       requiere_firma: boolean;
+      rm_solicitado: boolean;
+      rm_solicitado_en: Date | null;
       es_renuncia_rm: boolean;
       es_manual_test: boolean;
       test_completado: boolean;
@@ -1948,6 +1952,8 @@ export class PrlDocumentsService {
           nombre_archivo_firmado: string | null;
           fecha_firma: Date | null;
           requiere_firma: number;
+          rm_solicitado: number;
+          rm_solicitado_en: Date | null;
           es_renuncia_rm: number;
           es_manual_test: number;
           test_completado: number;
@@ -1966,7 +1972,9 @@ export class PrlDocumentsService {
           ed.nombre_archivo_original,
           ed.nombre_archivo_firmado,
           ed.fecha_firma,
-          t.requiere_firma,
+          ed.requiere_firma,
+          ed.rm_solicitado,
+          ed.rm_solicitado_en,
           t.es_renuncia_rm,
           t.es_manual_test,
           ed.test_completado,
@@ -1990,6 +1998,8 @@ export class PrlDocumentsService {
         nombre_archivo_firmado: doc.nombre_archivo_firmado,
         fecha_firma: doc.fecha_firma,
         requiere_firma: doc.requiere_firma === 1,
+        rm_solicitado: doc.rm_solicitado === 1,
+        rm_solicitado_en: doc.rm_solicitado_en,
         es_renuncia_rm: doc.es_renuncia_rm === 1,
         es_manual_test: doc.es_manual_test === 1,
         test_completado: doc.test_completado === 1,
@@ -2157,10 +2167,11 @@ export class PrlDocumentsService {
           empleado_id: string;
           tipo_documento: string;
           estado: string;
+          rm_solicitado: number;
         }>
       >(
         `
-        SELECT id, empleado_id, tipo_documento, estado
+        SELECT id, empleado_id, tipo_documento, estado, rm_solicitado
         FROM prl_employee_documents
         WHERE id = ${documentoId}
           AND empleado_id = ${this.escapeSql(empleadoId)}
@@ -2178,6 +2189,12 @@ export class PrlDocumentsService {
       if (documento[0].tipo_documento !== 'RENUNCIA_RM') {
         throw new BadRequestException(
           'Este documento no es de tipo Renuncia Reconocimiento Médico',
+        );
+      }
+
+      if (documento[0].rm_solicitado === 1) {
+        throw new BadRequestException(
+          'Ya solicitaste el Reconocimiento Médico. No puedes renunciar después.',
         );
       }
 
@@ -2221,6 +2238,216 @@ export class PrlDocumentsService {
       }
       throw new BadRequestException(`Error renunciando a RM: ${error.message}`);
     }
+  }
+
+  /**
+   * Angajatul solicită Reconocimiento Médico (în loc să semneze Renuncia).
+   * Trimite confirmare app+email + email la Noemi.
+   */
+  async solicitarReconocimientoMedico(
+    documentoId: number,
+    empleadoId: string,
+  ): Promise<{ already: boolean }> {
+    try {
+      const documento = await this.prisma.$queryRawUnsafe<
+        Array<{
+          id: number;
+          empleado_id: string;
+          tipo_documento: string;
+          estado: string;
+          rm_solicitado: number;
+          fecha_firma: Date | null;
+        }>
+      >(
+        `
+        SELECT id, empleado_id, tipo_documento, estado, rm_solicitado, fecha_firma
+        FROM prl_employee_documents
+        WHERE id = ${documentoId}
+          AND empleado_id = ${this.escapeSql(empleadoId)}
+        LIMIT 1
+        `,
+      );
+
+      if (!documento || documento.length === 0) {
+        throw new NotFoundException(
+          `Documento ${documentoId} no encontrado o no tienes acceso`,
+        );
+      }
+
+      const doc = documento[0];
+
+      if (doc.tipo_documento !== 'RENUNCIA_RM') {
+        throw new BadRequestException(
+          'Este documento no es de tipo Renuncia Reconocimiento Médico',
+        );
+      }
+
+      if (doc.rm_solicitado === 1) {
+        throw new BadRequestException(
+          'Ya registraste tu solicitud de Reconocimiento Médico',
+        );
+      }
+
+      if (doc.fecha_firma || doc.estado === 'FIRMADO') {
+        throw new BadRequestException(
+          'Ya firmaste la renuncia. No puedes solicitar el Reconocimiento Médico',
+        );
+      }
+
+      if (doc.estado !== 'NO_APLICA' && doc.estado !== 'PENDIENTE') {
+        throw new BadRequestException(
+          `Estado ${doc.estado} no permite solicitar Reconocimiento Médico`,
+        );
+      }
+
+      await this.prisma.$executeRawUnsafe(
+        `
+        UPDATE prl_employee_documents
+        SET rm_solicitado = 1,
+            rm_solicitado_en = CURRENT_TIMESTAMP,
+            estado = 'NO_APLICA',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ${documentoId}
+          AND empleado_id = ${this.escapeSql(empleadoId)}
+        `,
+      );
+
+      await this.crearAuditLog(
+        documentoId,
+        empleadoId,
+        'VISUALIZADO',
+        undefined,
+        undefined,
+        'SOLICITUD_RM',
+      );
+
+      const empleadoRows = await this.prisma.$queryRawUnsafe<
+        Array<{
+          nombre: string | null;
+          dni: string | null;
+          grupo: string | null;
+          email: string | null;
+        }>
+      >(
+        `
+        SELECT
+          \`NOMBRE / APELLIDOS\` AS nombre,
+          \`D.N.I. / NIE\` AS dni,
+          GRUPO AS grupo,
+          \`CORREO ELECTRONICO\` AS email
+        FROM DatosEmpleados
+        WHERE CODIGO = ${this.escapeSql(empleadoId)}
+        LIMIT 1
+        `,
+      );
+
+      const emp = empleadoRows?.[0];
+      const nombre = (emp?.nombre || empleadoId).trim();
+      const dni = (emp?.dni || '—').trim();
+      const grupo = (emp?.grupo || '—').trim();
+      const empleadoEmail = (emp?.email || '').trim();
+      const tenant = this.getCompanyName() || 'Empresa';
+
+      const notifTitle = 'Solicitud de reconocimiento médico registrada';
+      const notifMessage =
+        'Próximamente recibirás día y hora de la cita. Importante: cancelaciones con mínimo 48h; si no avisas o no acudes, se descontarán 55 € de la nómina.';
+
+      try {
+        await this.notificationsService.notifyUser('system', empleadoId, {
+          type: 'info',
+          title: notifTitle,
+          message: notifMessage,
+          data: { kind: 'PRL_RM_SOLICITADO', documentoId },
+        });
+      } catch (notifErr: any) {
+        this.logger.warn(
+          `⚠️ No se pudo crear notificación RM para ${empleadoId}: ${notifErr?.message || notifErr}`,
+        );
+      }
+
+      const employeeHtml = `
+        <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1e293b;">
+          <p>Buenos días,</p>
+          <p>Hemos registrado tu solicitud de <strong>reconocimiento médico</strong>. Próximamente recibirás la confirmación con el <strong>día y la hora</strong> de la cita.</p>
+          <p><strong>Muy importante:</strong> una vez confirmada la cita, cualquier cancelación o modificación debe comunicarse con un <strong>mínimo de 48 horas</strong> de antelación.</p>
+          <p>Si no se avisa con al menos 48 horas o <strong>no se acude a la cita</strong>, el centro médico factura el servicio a la empresa. En ese caso, el importe de la consulta (<strong>55 €</strong>) se descontará de la nómina del mes en curso.</p>
+          <p>Cuando recibas la confirmación, revisa bien día y hora y ten presente el plazo de 48 horas.</p>
+          <p>Gracias por tu colaboración.</p>
+          <p>Saludos,<br>${tenant ? `Equipo ${tenant}` : 'Equipo'}</p>
+        </div>
+      `;
+
+      if (empleadoEmail && this.emailService.isConfigured()) {
+        try {
+          await this.emailService.sendEmail(
+            empleadoEmail,
+            'Confirmación — Solicitud de reconocimiento médico',
+            employeeHtml,
+          );
+        } catch (emailErr: any) {
+          this.logger.warn(
+            `⚠️ Error email confirmación RM a ${empleadoEmail}: ${emailErr?.message || emailErr}`,
+          );
+        }
+      } else {
+        this.logger.warn(
+          `⚠️ Sin email empleado o SMTP no configurado — no se envió confirmación RM a ${empleadoId}`,
+        );
+      }
+
+      const noemiHtml = `
+        <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1e293b;">
+          <p><strong>Solicitud de reconocimiento médico</strong></p>
+          <ul>
+            <li><strong>Nombre:</strong> ${this.escapeHtml(nombre)}</li>
+            <li><strong>DNI/NIE:</strong> ${this.escapeHtml(dni)}</li>
+            <li><strong>Puesto de trabajo (grupo):</strong> ${this.escapeHtml(grupo)}</li>
+            <li><strong>Código empleado:</strong> ${this.escapeHtml(empleadoId)}</li>
+            <li><strong>Cliente/tenant:</strong> ${this.escapeHtml(tenant)}</li>
+          </ul>
+        </div>
+      `;
+
+      if (this.emailService.isConfigured()) {
+        try {
+          await this.emailService.sendEmail(
+            'noemi@ancaraconsulting.es',
+            `Solicitud RM — ${nombre} (${dni})`,
+            noemiHtml,
+          );
+        } catch (noemiErr: any) {
+          this.logger.error(
+            `❌ Error email Noemi RM: ${noemiErr?.message || noemiErr}`,
+          );
+        }
+      }
+
+      this.logger.log(
+        `✅ Empleado ${empleadoId} solicitó RM para documento ${documentoId}`,
+      );
+
+      return { already: false };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error solicitando RM para documento ${documentoId}:`,
+        error,
+      );
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException(`Error solicitando RM: ${error.message}`);
+    }
+  }
+
+  private escapeHtml(value: string): string {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 
   /**
@@ -2973,7 +3200,11 @@ El documento ha sido firmado y guardado correctamente.`;
     Array<{
       empleado_id: string;
       empleado_nombre: string;
+      empleado_dni: string | null;
       grupo_nombre: string;
+      procesado: boolean;
+      procesado_en: Date | null;
+      diplomas_count: number;
       documentos: Array<{
         tipo_documento: PrlDocumentType;
         estado: string;
@@ -2992,6 +3223,7 @@ El documento ha sido firmado y guardado correctamente.`;
         Array<{
           CODIGO: string;
           'NOMBRE / APELLIDOS': string;
+          'D.N.I. / NIE': string | null;
           GRUPO: string;
         }>
       >(
@@ -2999,6 +3231,7 @@ El documento ha sido firmado y guardado correctamente.`;
         SELECT 
           CODIGO,
           \`NOMBRE / APELLIDOS\`,
+          \`D.N.I. / NIE\`,
           \`GRUPO\`
         FROM DatosEmpleados
         WHERE \`ESTADO\` = 'ACTIVO'
@@ -3028,7 +3261,7 @@ El documento ha sido firmado y guardado correctamente.`;
           ed.tipo_documento,
           ed.estado,
           ed.fecha_firma,
-          t.requiere_firma,
+          ed.requiere_firma,
           ed.template_id,
           ed.id,
           ed.test_completado,
@@ -3071,13 +3304,61 @@ El documento ha sido firmado y guardado correctamente.`;
         });
       }
 
+      const procesados = await this.prisma.$queryRawUnsafe<
+        Array<{
+          empleado_id: string;
+          procesado: number;
+          procesado_en: Date | null;
+        }>
+      >(
+        `
+        SELECT empleado_id, procesado, procesado_en
+        FROM prl_empleado_procesado
+        `,
+      );
+
+      const diplomasCount = await this.prisma.$queryRawUnsafe<
+        Array<{ empleado_id: string; cnt: number }>
+      >(
+        `
+        SELECT empleado_id, COUNT(*) AS cnt
+        FROM diplomas
+        GROUP BY empleado_id
+        `,
+      );
+
+      const procesadoMap = new Map<
+        string,
+        { procesado: boolean; procesado_en: Date | null }
+      >();
+      for (const row of procesados) {
+        procesadoMap.set(row.empleado_id, {
+          procesado: row.procesado === 1,
+          procesado_en: row.procesado_en,
+        });
+      }
+
+      const diplomasMap = new Map<string, number>();
+      for (const row of diplomasCount) {
+        diplomasMap.set(row.empleado_id, Number(row.cnt) || 0);
+      }
+
       // Construiește rezultatul final
-      return empleados.map((emp) => ({
-        empleado_id: emp.CODIGO,
-        empleado_nombre: emp['NOMBRE / APELLIDOS'] || 'Sin nombre',
-        grupo_nombre: emp.GRUPO || 'Sin grupo',
-        documentos: documentosMap.get(emp.CODIGO) || [],
-      }));
+      return empleados.map((emp) => {
+        const proc = procesadoMap.get(emp.CODIGO);
+        return {
+          empleado_id: emp.CODIGO,
+          empleado_nombre: emp['NOMBRE / APELLIDOS'] || 'Sin nombre',
+          empleado_dni: emp['D.N.I. / NIE']
+            ? String(emp['D.N.I. / NIE']).trim() || null
+            : null,
+          grupo_nombre: emp.GRUPO || 'Sin grupo',
+          procesado: !!proc?.procesado,
+          procesado_en: proc?.procesado_en || null,
+          diplomas_count: diplomasMap.get(emp.CODIGO) || 0,
+          documentos: documentosMap.get(emp.CODIGO) || [],
+        };
+      });
     } catch (error: any) {
       this.logger.error(
         `❌ Error listando empleados con documentos PRL:`,
@@ -3085,6 +3366,126 @@ El documento ha sido firmado y guardado correctamente.`;
       );
       throw new BadRequestException(
         `Error listando empleados con documentos: ${error.message}`,
+      );
+    }
+  }
+
+
+  /**
+   * Marchează / demarchează angajatul ca „procesado” în Matrix PRL.
+   */
+  async setEmpleadoProcesado(
+    empleadoId: string,
+    procesado: boolean,
+    procesadoPor: string,
+  ): Promise<{ procesado: boolean; procesado_en: Date | null }> {
+    const codigo = String(empleadoId || '').trim();
+    if (!codigo) {
+      throw new BadRequestException('empleadoId es requerido');
+    }
+
+    const emp = await this.prisma.$queryRawUnsafe<Array<{ CODIGO: string }>>(
+      `
+      SELECT CODIGO FROM DatosEmpleados
+      WHERE CODIGO = ${this.escapeSql(codigo)}
+      LIMIT 1
+      `,
+    );
+    if (!emp?.length) {
+      throw new NotFoundException(`Empleado ${codigo} no encontrado`);
+    }
+
+    const por = String(procesadoPor || 'sistema').trim().substring(0, 100);
+    const flag = procesado ? 1 : 0;
+
+    await this.prisma.$executeRawUnsafe(
+      `
+      INSERT INTO prl_empleado_procesado (
+        empleado_id, procesado, procesado_en, procesado_por, updated_at
+      ) VALUES (
+        ${this.escapeSql(codigo)},
+        ${flag},
+        ${flag ? 'CURRENT_TIMESTAMP' : 'NULL'},
+        ${this.escapeSql(por)},
+        CURRENT_TIMESTAMP
+      )
+      ON DUPLICATE KEY UPDATE
+        procesado = ${flag},
+        procesado_en = ${flag ? 'CURRENT_TIMESTAMP' : 'NULL'},
+        procesado_por = ${this.escapeSql(por)},
+        updated_at = CURRENT_TIMESTAMP
+      `,
+    );
+
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ procesado: number; procesado_en: Date | null }>
+    >(
+      `
+      SELECT procesado, procesado_en
+      FROM prl_empleado_procesado
+      WHERE empleado_id = ${this.escapeSql(codigo)}
+      LIMIT 1
+      `,
+    );
+
+    return {
+      procesado: rows[0]?.procesado === 1,
+      procesado_en: rows[0]?.procesado_en || null,
+    };
+  }
+
+  /**
+   * Admin: actualizează requiere_firma pe un document PRL alocat unui angajat (per-asignare).
+   */
+  async updateRequiereFirmaDocumentoEmpleado(
+    documentoId: number,
+    empleadoId: string,
+    requiereFirma: boolean,
+  ): Promise<{ affectedRows: number; message: string }> {
+    try {
+      const codigo = String(empleadoId || '').trim();
+      if (!codigo) {
+        throw new BadRequestException('empleadoId es requerido');
+      }
+
+      const result = await this.prisma.$executeRawUnsafe(
+        `
+        UPDATE prl_employee_documents
+        SET requiere_firma = ${requiereFirma ? 1 : 0},
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ${Number(documentoId)}
+          AND empleado_id = ${this.escapeSql(codigo)}
+        `,
+      );
+
+      const affected = Number(result) || 0;
+      if (affected === 0) {
+        throw new NotFoundException(
+          `Documento PRL ${documentoId} no encontrado para empleado ${codigo}`,
+        );
+      }
+
+      this.logger.log(
+        `✅ requiere_firma actualizado: documento=${documentoId}, empleado=${codigo}, valor=${requiereFirma ? 1 : 0}`,
+      );
+
+      return {
+        affectedRows: affected,
+        message: 'requiere_firma actualizado correctamente.',
+      };
+    } catch (error: any) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      this.logger.error(
+        `❌ Error actualizando requiere_firma documento ${documentoId}:`,
+        error,
+      );
+      throw new BadRequestException(
+        `Error al actualizar requiere_firma: ${error.message}`,
       );
     }
   }

@@ -668,8 +668,21 @@ export const routes = {
   // PRL Documentos
   prlListarGrupos: `${BACKEND_BASE}/api/prl/grupos`,
   prlListarEmpleadosConDocumentos: `${BACKEND_BASE}/api/prl/empleados-con-documentos`,
+  prlMatrixShareLogin: `${BACKEND_BASE}/api/prl/matrix-share/login`,
+  prlMatrixShareMatrix: `${BACKEND_BASE}/api/prl/matrix-share/matrix`,
+  prlMatrixShareMe: `${BACKEND_BASE}/api/prl/matrix-share/me`,
+  prlMatrixShareProcesado: (empleadoId) =>
+    `${BACKEND_BASE}/api/prl/matrix-share/empleados/${encodeURIComponent(empleadoId)}/procesado`,
+  prlMatrixShareDiploma: (empleadoId) =>
+    `${BACKEND_BASE}/api/prl/matrix-share/empleados/${encodeURIComponent(empleadoId)}/diploma`,
+  prlEmpleadoProcesado: (empleadoId) =>
+    `${BACKEND_BASE}/api/prl/empleados/${encodeURIComponent(empleadoId)}/procesado`,
+  diplomasUploadEmpleado: (empleadoId) =>
+    `${BACKEND_BASE}/api/diplomas/empleado/${encodeURIComponent(empleadoId)}/upload`,
   prlDocumentosEmpleado: (empleadoId) =>
     `${BACKEND_BASE}/api/prl/empleados/${encodeURIComponent(empleadoId)}/documentos`,
+  prlUpdateRequiereFirmaEmpleado: (empleadoId, documentoId) =>
+    `${BACKEND_BASE}/api/prl/empleados/${encodeURIComponent(empleadoId)}/documentos/${encodeURIComponent(documentoId)}/requiere-firma`,
   prlDescargarDocumentoEmpleadoAdmin: (empleadoId, documentoId) =>
     `${BACKEND_BASE}/api/prl/empleados/${encodeURIComponent(empleadoId)}/documentos/${documentoId}/descargar`,
   prlDescargarDocumentoFirmadoAdmin: (empleadoId, documentoId) =>
@@ -691,6 +704,7 @@ export const routes = {
   prlDescargarMiDocumento: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/descargar`,
   prlConvertirDocxAHtml: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/convertir-docx-html`,
   prlRenunciarRM: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/renunciar-rm`,
+  prlSolicitarRM: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/solicitar-rm`,
   prlSubirDocumentoFirmado: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/subir-firmado`,
   prlAgregarFirmaADocx: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/agregar-firma-docx`,
   prlDescargarDocumentoFirmado: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/descargar-firmado`,

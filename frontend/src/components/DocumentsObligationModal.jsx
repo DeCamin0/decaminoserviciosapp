@@ -1,6 +1,15 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, FileUp, Lock, PenLine, ClipboardList, LogOut, X } from 'lucide-react';
+import {
+  CheckCircle2,
+  FileUp,
+  Lock,
+  PenLine,
+  ClipboardList,
+  LogOut,
+  X,
+  HeartPulse,
+} from 'lucide-react';
 import ContractSigner from './ContractSigner';
 import PRLDocumentSigner from './PRLDocumentSigner';
 import PRLAutoevaluacionModal from './PRLAutoevaluacionModal';
@@ -27,8 +36,13 @@ async function blobToBase64(blob) {
   return btoa(binary);
 }
 
+function isIosDevice() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent);
+}
+
 /**
  * Modal soft/hard documente obligatorii — acțiuni 100% în modal.
+ * Pe mobil: signerul se deschide pe portal separat (z-index sus), lista se ascunde.
  */
 export default function DocumentsObligationModal({
   open,
@@ -40,6 +54,7 @@ export default function DocumentsObligationModal({
   onSnooze,
   onAfterItemDone,
   onLogout,
+  onSigningChange,
 }) {
   const fileInputRef = useRef(null);
   const [activeSolicitado, setActiveSolicitado] = useState(null);
@@ -47,19 +62,35 @@ export default function DocumentsObligationModal({
   const [error, setError] = useState(null);
   const [busyKey, setBusyKey] = useState(null);
 
-  // Oficial signer
   const [oficialDoc, setOficialDoc] = useState(null);
   const [oficialPdfUrl, setOficialPdfUrl] = useState(null);
 
-  // PRL signer
   const [prlDoc, setPrlDoc] = useState(null);
   const [prlPdfUrl, setPrlPdfUrl] = useState(null);
 
-  // PRL test
   const [prlTestDoc, setPrlTestDoc] = useState(null);
 
   const email =
     user?.['CORREO ELECTRONICO'] || user?.email || user?.EMAIL || '';
+
+  const hasActiveSigner = !!(
+    (oficialDoc && oficialPdfUrl) ||
+    (prlDoc && prlPdfUrl) ||
+    prlTestDoc
+  );
+
+  useEffect(() => {
+    onSigningChange?.(hasActiveSigner);
+    if (hasActiveSigner) {
+      document.body.classList.add('docs-obligation-signing');
+    } else {
+      document.body.classList.remove('docs-obligation-signing');
+    }
+    return () => {
+      document.body.classList.remove('docs-obligation-signing');
+      onSigningChange?.(false);
+    };
+  }, [hasActiveSigner, onSigningChange]);
 
   const closeOficial = useCallback(() => {
     setOficialDoc(null);
@@ -75,7 +106,7 @@ export default function DocumentsObligationModal({
 
   const closePrl = useCallback(() => {
     setPrlDoc(null);
-    if (prlPdfUrl) {
+    if (prlPdfUrl && !String(prlPdfUrl).startsWith('data:')) {
       try {
         URL.revokeObjectURL(prlPdfUrl);
       } catch {
@@ -102,8 +133,7 @@ export default function DocumentsObligationModal({
       if (!res.ok) throw new Error(`Error ${res.status}`);
       const blob = await res.blob();
       if (!blob.size) throw new Error('PDF vacío');
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      const url = isIOS
+      const url = isIosDevice()
         ? `data:application/pdf;base64,${await blobToBase64(blob)}`
         : URL.createObjectURL(blob);
       setOficialDoc(documento);
@@ -134,12 +164,58 @@ export default function DocumentsObligationModal({
       if (!res.ok) throw new Error(`Error ${res.status}`);
       const blob = await res.blob();
       if (!blob.size) throw new Error('Documento vacío');
-      const url = URL.createObjectURL(blob);
+      const useDataUrl = isIosDevice() && !isDocx;
+      const url = useDataUrl
+        ? `data:application/pdf;base64,${await blobToBase64(blob)}`
+        : URL.createObjectURL(blob);
       setPrlDoc({ ...doc, isDocx });
       setPrlPdfUrl(url);
     } catch (e) {
       setError(e.message || 'No se pudo abrir el documento PRL');
     } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const handleSolicitarRm = async (item) => {
+    setError(null);
+    setBusyKey(`${item.key}-quiero`);
+    try {
+      const doc = item.raw;
+      const res = await fetch(routes.prlSolicitarRM(doc.id), {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || `Error ${res.status}`);
+      }
+      await onAfterItemDone?.();
+    } catch (e) {
+      setError(e.message || 'No se pudo registrar la solicitud de RM');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const handleRenunciarYFirmar = async (item) => {
+    setError(null);
+    setBusyKey(`${item.key}-firmar`);
+    try {
+      const doc = item.raw;
+      if (doc.estado === 'NO_APLICA') {
+        const renunciaRes = await fetch(routes.prlRenunciarRM(doc.id), {
+          method: 'POST',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+        });
+        if (!renunciaRes.ok) {
+          const errData = await renunciaRes.json().catch(() => ({}));
+          throw new Error(errData.message || `Error ${renunciaRes.status}`);
+        }
+      }
+      await handleFirmarPrl({ ...item, raw: { ...doc, estado: 'PENDIENTE' } });
+    } catch (e) {
+      setError(e.message || 'No se pudo abrir la renuncia para firmar');
       setBusyKey(null);
     }
   };
@@ -221,9 +297,12 @@ export default function DocumentsObligationModal({
     return <PenLine size={16} aria-hidden />;
   };
 
-  if (!open) return null;
+  // Păstrează signerul activ chiar dacă lista soft se închide momentan
+  if (!open && !hasActiveSigner) return null;
 
-  const modal = (
+  const showList = open && !hasActiveSigner;
+
+  const listModal = showList ? (
     <div
       className="app-modal-overlay docs-obligation-overlay"
       role="presentation"
@@ -232,7 +311,6 @@ export default function DocumentsObligationModal({
         background: hardLocked ? 'rgba(15, 23, 42, 0.72)' : 'rgba(15, 23, 42, 0.45)',
       }}
       onClick={(e) => {
-        // Soft: click outside does nothing (must use Más tarde). Hard: blocked.
         e.stopPropagation();
       }}
     >
@@ -288,15 +366,44 @@ export default function DocumentsObligationModal({
                       <span className="docs-obligation-list__sub">{item.subtitle}</span>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    className="solicitud-admin-btn solicitud-admin-btn--primary"
-                    disabled={!!busyKey || uploading}
-                    onClick={() => handleItemAction(item)}
-                  >
-                    <ActionIcon item={item} />
-                    <span>{busyKey === item.key ? '…' : actionLabel(item)}</span>
-                  </button>
+                  {item.kind === 'prl_rm' ? (
+                    <div className="docs-obligation-list__actions">
+                      <button
+                        type="button"
+                        className="solicitud-admin-btn solicitud-admin-btn--primary"
+                        disabled={!!busyKey || uploading}
+                        onClick={() => handleSolicitarRm(item)}
+                      >
+                        <HeartPulse size={16} aria-hidden />
+                        <span>
+                          {busyKey === `${item.key}-quiero` ? '…' : 'Quiero el RM'}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="solicitud-admin-btn"
+                        disabled={!!busyKey || uploading}
+                        onClick={() => handleRenunciarYFirmar(item)}
+                      >
+                        <PenLine size={16} aria-hidden />
+                        <span>
+                          {busyKey === `${item.key}-firmar`
+                            ? '…'
+                            : 'Renuncio / Firmar'}
+                        </span>
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="solicitud-admin-btn solicitud-admin-btn--primary"
+                      disabled={!!busyKey || uploading}
+                      onClick={() => handleItemAction(item)}
+                    >
+                      <ActionIcon item={item} />
+                      <span>{busyKey === item.key ? '…' : actionLabel(item)}</span>
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -332,7 +439,15 @@ export default function DocumentsObligationModal({
         className="hidden"
         onChange={handleFileChange}
       />
+    </div>
+  ) : null;
 
+  const signerLayer = hasActiveSigner ? (
+    <div
+      className="docs-obligation-signer-layer"
+      role="presentation"
+      onClick={(e) => e.stopPropagation()}
+    >
       {oficialDoc && oficialPdfUrl && (
         <ContractSigner
           pdfUrl={oficialPdfUrl}
@@ -388,7 +503,12 @@ export default function DocumentsObligationModal({
         />
       )}
     </div>
-  );
+  ) : null;
 
-  return createPortal(modal, document.body);
+  return (
+    <>
+      {listModal ? createPortal(listModal, document.body) : null}
+      {signerLayer ? createPortal(signerLayer, document.body) : null}
+    </>
+  );
 }

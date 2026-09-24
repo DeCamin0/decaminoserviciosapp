@@ -55,7 +55,15 @@ export default function InspectionPdfPreviewModal({
             </div>
           ) : previewData?.pdfUrl ? (
             <div className="inspecciones-pdf-modal__frame">
-              {isAndroid || isIOS ? (
+              {previewData.isImage ? (
+                <div className="inspecciones-pdf-modal__image-wrap">
+                  <img
+                    src={previewData.pdfUrl}
+                    alt={previewData.id || 'Vista previa'}
+                    className="inspecciones-pdf-modal__image"
+                  />
+                </div>
+              ) : isAndroid || isIOS ? (
                 <PDFViewerAndroid pdfUrl={previewData.pdfUrl} className="w-full h-full" onClose={handleClose} />
               ) : (
                 <iframe src={previewData.pdfUrl} className="inspecciones-pdf-modal__iframe" title={`Preview ${previewData.id || ''}`} />

@@ -292,6 +292,37 @@ export class DiplomasController {
   }
 
   /**
+   * Upload un singur PDF de diplomă pentru un angajat (din Matrix PRL)
+   */
+  @Post('empleado/:empleadoId/upload')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor('archivo'))
+  async uploadDiplomaEmpleado(
+    @Param('empleadoId') empleadoId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: any,
+  ) {
+    try {
+      const result = await this.diplomasService.uploadDiplomaEmpleado(
+        empleadoId,
+        file,
+        user.userId || user.CODIGO || user.codigo || 'admin',
+      );
+      return {
+        success: true,
+        message: 'Diploma subida correctamente',
+        ...result,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Error upload diploma empleado:`, error);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(`Error subiendo diploma: ${error.message}`);
+    }
+  }
+
+  /**
    * Listează toate diplomas (pentru admin)
    * IMPORTANT: Această rută trebuie să fie definită înaintea rutelor cu parametri dinamici
    */

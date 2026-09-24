@@ -12,8 +12,10 @@ import {
   resolveNombreMaxWidthRatio,
 } from '../constants/prlManualPdfFooterFields.js';
 
-// Configurare worker PDF.js
-import '../config/pdfjs';
+// Configurare worker PDF.js — pe aceeași instanță ca getDocument
+import { ensurePdfJsWorker } from '../config/pdfjs';
+
+ensurePdfJsWorker();
 
 // CSS pentru layout
 const dialogStyles = `
@@ -435,7 +437,14 @@ export default function PRLDocumentSigner({
       try {
         setLoading(true);
         setError(null);
-        
+
+        ensurePdfJsWorker();
+        if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = import.meta.env.PROD
+            ? '/pdf.worker.min.js'
+            : new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+        }
+
         const loadingTask = pdfjsLib.getDocument({
           url: pdfUrl,
           verbosity: 0,

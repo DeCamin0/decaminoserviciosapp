@@ -587,6 +587,7 @@ export class DocumentosService {
   async deleteDocumento(
     id: string | number,
     nombreArchivo: string,
+    docIdOptional?: string | number | null,
   ): Promise<{ success: true; message: string; affectedRows: number }> {
     try {
       // Validate id (can be string for empleado ID)
@@ -606,65 +607,118 @@ export class DocumentosService {
         );
       }
 
+      const nombreTrim = nombreArchivo.trim();
+      const docIdNum =
+        docIdOptional != null && String(docIdOptional).trim() !== ''
+          ? parseInt(String(docIdOptional), 10)
+          : NaN;
+      const hasDocId = Number.isFinite(docIdNum) && docIdNum > 0;
+
+      // Prefer delete by doc_id when provided (avoids FE sending doc_id as empleado id)
+      const selectSql = hasDocId
+        ? `SELECT doc_id, storage_key, id FROM \`CarpetasDocumentos\`
+           WHERE doc_id = ${docIdNum}
+           LIMIT 1`
+        : `SELECT doc_id, storage_key, id FROM \`CarpetasDocumentos\`
+           WHERE id = ${this.escapeSql(idString.trim())}
+             AND TRIM(nombre_archivo) = TRIM(${this.escapeSql(nombreTrim)})
+           LIMIT 1`;
+
       // Obtener doc_id + storage_key antes de borrar
       const docIdRows = await this.prisma.$queryRawUnsafe<
-        Array<{ doc_id: number; storage_key: string | null }>
-      >(
-        `SELECT doc_id, storage_key FROM \`CarpetasDocumentos\`
-         WHERE id = ${this.escapeSql(idString.trim())}
-           AND TRIM(nombre_archivo) = TRIM(${this.escapeSql(nombreArchivo.trim())})
-         LIMIT 1`,
-      );
+        Array<{
+          doc_id: number;
+          storage_key: string | null;
+          id: string;
+        }>
+      >(selectSql);
       const docIdToClear = docIdRows?.[0]?.doc_id;
       const storageKeyToDelete = docIdRows?.[0]?.storage_key;
 
-      // Build DELETE query (matching n8n snapshot logic)
-      // Note: id is String (VarChar(50)) in CarpetasDocumentos, not UNSIGNED INT
-      const query = `
+      const query = hasDocId
+        ? `
+        DELETE FROM \`CarpetasDocumentos\`
+        WHERE doc_id = ${docIdNum}
+        LIMIT 1
+      `
+        : `
         DELETE FROM \`CarpetasDocumentos\`
         WHERE id = ${this.escapeSql(idString.trim())}
-          AND TRIM(nombre_archivo) = TRIM(${this.escapeSql(nombreArchivo.trim())})
+          AND TRIM(nombre_archivo) = TRIM(${this.escapeSql(nombreTrim)})
         LIMIT 1
       `;
 
       this.logger.log(
-        `🗑️ Delete documento request - id: ${idString.trim()}, nombre_archivo: "${nombreArchivo.trim()}"`,
+        `🗑️ Delete documento request - id: ${idString.trim()}, nombre_archivo: "${nombreTrim}"${hasDocId ? `, doc_id: ${docIdNum}` : ''}`,
       );
 
       const result = await this.prisma.$executeRawUnsafe(query);
-      const affectedRows = Number(result) || 0;
+      let affectedRows = Number(result) || 0;
+      let resolvedDocId = docIdToClear;
+      let resolvedStorageKey = storageKeyToDelete;
+
+      // Fallback: FE vechi trimitea doc_id ca `id` (CODIGO angajat greșit)
+      if (affectedRows === 0 && !hasDocId) {
+        const maybeDocId = parseInt(idString.trim(), 10);
+        if (Number.isFinite(maybeDocId) && maybeDocId > 0) {
+          const fallbackRows = await this.prisma.$queryRawUnsafe<
+            Array<{
+              doc_id: number;
+              storage_key: string | null;
+              id: string;
+            }>
+          >(
+            `SELECT doc_id, storage_key, id FROM \`CarpetasDocumentos\`
+             WHERE doc_id = ${maybeDocId}
+               AND TRIM(nombre_archivo) = TRIM(${this.escapeSql(nombreTrim)})
+             LIMIT 1`,
+          );
+          if (fallbackRows?.[0]) {
+            resolvedDocId = fallbackRows[0].doc_id;
+            resolvedStorageKey = fallbackRows[0].storage_key;
+            const fallbackResult = await this.prisma.$executeRawUnsafe(
+              `DELETE FROM \`CarpetasDocumentos\` WHERE doc_id = ${maybeDocId} LIMIT 1`,
+            );
+            affectedRows = Number(fallbackResult) || 0;
+            this.logger.warn(
+              `⚠️ Delete documento: fallback pe doc_id=${maybeDocId} (id trimis era PK, nu CODIGO)`,
+            );
+          }
+        }
+      }
 
       if (affectedRows === 0) {
         throw new NotFoundException(
-          `Documento no encontrado para id="${idString.trim()}" y nombre_archivo="${nombreArchivo.trim()}"`,
+          `Documento no encontrado para id="${idString.trim()}" y nombre_archivo="${nombreTrim}"` +
+            (hasDocId ? ` (doc_id=${docIdNum})` : ''),
         );
       }
 
-      await this.carpetasStorage.deleteObjectIfAny(storageKeyToDelete);
+      await this.carpetasStorage.deleteObjectIfAny(resolvedStorageKey);
 
       // Limpiar referencias en ausencia_justificantes para que no queden doc_id huérfanos
-      if (docIdToClear != null && Number.isFinite(Number(docIdToClear))) {
+      if (resolvedDocId != null && Number.isFinite(Number(resolvedDocId))) {
         try {
           const updateResult = await this.prisma.$executeRawUnsafe(`
             UPDATE \`ausencia_justificantes\`
             SET \`doc_id\` = NULL
-            WHERE \`doc_id\` = ${Number(docIdToClear)}
+            WHERE \`doc_id\` = ${Number(resolvedDocId)}
           `);
           const updatedRefs = Number(updateResult) || 0;
           if (updatedRefs > 0) {
             this.logger.log(
-              `✅ ausencia_justificantes: ${updatedRefs} enlace(s) con doc_id=${docIdToClear} puestos a NULL`,
+              `✅ ausencia_justificantes: ${updatedRefs} enlace(s) con doc_id=${resolvedDocId} puestos a NULL`,
             );
           }
         } catch (linkErr: any) {
           this.logger.warn(
-            `⚠️ No se pudo limpiar ausencia_justificantes (doc_id=${docIdToClear}): ${linkErr.message}`,
+            `⚠️ No se pudo limpiar ausencia_justificantes (doc_id=${resolvedDocId}): ${linkErr.message}`,
           );
         }
       }
 
       this.logger.log(
-        `✅ Documento eliminado: id="${idString.trim()}", nombre_archivo="${nombreArchivo.trim()}"`,
+        `✅ Documento eliminado: id="${idString.trim()}", nombre_archivo="${nombreTrim}", doc_id=${resolvedDocId ?? 'n/a'}`,
       );
 
       return {

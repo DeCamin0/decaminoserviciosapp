@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Calendar,
   Download,
@@ -33,32 +34,107 @@ function MaterialesDocs({
   materialesDocumentos,
   onLoadDocs,
   onDownloadDoc,
+  onPreviewDoc,
+  onDownloadDocs,
   compact = false,
 }) {
-  if (inspection.type !== 'entrega-materiales') return null;
-  const docs = materialesDocumentos[inspection.id];
+  const [selected, setSelected] = useState(() => new Set());
+  const isMateriales = inspection.type === 'entrega-materiales';
+  const docs = isMateriales ? materialesDocumentos[inspection.id] : null;
+  const hasDocs = Array.isArray(docs) && docs.length > 0;
+  const selectedList = hasDocs ? docs.filter((d) => selected.has(d.doc_id)) : [];
+
+  if (!isMateriales) return null;
+
+  const toggleDoc = (docId) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(docId)) next.delete(docId);
+      else next.add(docId);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (!hasDocs) return;
+    setSelected((prev) => {
+      if (prev.size === docs.length) return new Set();
+      return new Set(docs.map((d) => d.doc_id));
+    });
+  };
 
   return (
     <div className={`inspecciones-materiales-docs${compact ? ' inspecciones-materiales-docs--compact' : ''}`}>
       {!compact ? (
         <p className="inspecciones-materiales-docs__title">Documentos</p>
       ) : null}
-      {docs?.length ? (
-        <div className="inspecciones-materiales-docs__list">
-          {docs.map((doc) => (
-            <button
-              key={doc.doc_id}
-              type="button"
-              className="inspecciones-materiales-docs__item"
-              onClick={() => onDownloadDoc(doc.doc_id, doc.nombre_archivo || '')}
-              title={doc.nombre_archivo || `Documento ${doc.material_index + 1}`}
-            >
-              <FileText className="w-4 h-4 shrink-0" aria-hidden />
-              <span className="truncate">{doc.nombre_archivo || `Documento ${doc.material_index + 1}`}</span>
-              <Download className="w-4 h-4 shrink-0" aria-hidden />
-            </button>
-          ))}
-        </div>
+      {hasDocs ? (
+        <>
+          {docs.length > 1 ? (
+            <div className="inspecciones-materiales-docs__bulk">
+              <label className="inspecciones-materiales-docs__check">
+                <input
+                  type="checkbox"
+                  checked={selected.size === docs.length}
+                  onChange={toggleAll}
+                />
+                <span>Todos</span>
+              </label>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={selectedList.length === 0}
+                onClick={() => onDownloadDocs?.(selectedList)}
+              >
+                <Download className="w-3.5 h-3.5" aria-hidden />
+                Descargar ({selectedList.length || 0})
+              </Button>
+            </div>
+          ) : null}
+          <div className="inspecciones-materiales-docs__list">
+            {docs.map((doc) => {
+              const name = doc.nombre_archivo || `Documento ${doc.material_index + 1}`;
+              return (
+                <div key={doc.doc_id} className="inspecciones-materiales-docs__row">
+                  {docs.length > 1 ? (
+                    <input
+                      type="checkbox"
+                      className="inspecciones-materiales-docs__row-check"
+                      checked={selected.has(doc.doc_id)}
+                      onChange={() => toggleDoc(doc.doc_id)}
+                      aria-label={`Seleccionar ${name}`}
+                    />
+                  ) : null}
+                  <FileText className="w-4 h-4 shrink-0 text-gray-500" aria-hidden />
+                  <span className="inspecciones-materiales-docs__name" title={name}>
+                    {name}
+                  </span>
+                  <div className="inspecciones-materiales-docs__row-actions">
+                    <button
+                      type="button"
+                      className="solicitud-admin-btn"
+                      title="Vista previa"
+                      aria-label={`Vista previa ${name}`}
+                      onClick={() => onPreviewDoc?.(doc)}
+                    >
+                      <Eye className="w-3.5 h-3.5" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      className="solicitud-admin-btn"
+                      title="Descargar"
+                      aria-label={`Descargar ${name}`}
+                      onClick={() => onDownloadDoc(doc.doc_id, name)}
+                    >
+                      <Download className="w-3.5 h-3.5" aria-hidden />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
       ) : (
         <Button type="button" variant="secondary" size="sm" onClick={() => onLoadDocs(inspection.id)}>
           Cargar documentos
@@ -100,6 +176,8 @@ function InspectionCard({
   onStartSolicitud,
   onLoadDocs,
   onDownloadDoc,
+  onPreviewDoc,
+  onDownloadDocs,
 }) {
   const status = getInspectionStatusBadge(inspection);
 
@@ -141,6 +219,8 @@ function InspectionCard({
           materialesDocumentos={materialesDocumentos}
           onLoadDocs={onLoadDocs}
           onDownloadDoc={onDownloadDoc}
+          onPreviewDoc={onPreviewDoc}
+          onDownloadDocs={onDownloadDocs}
         />
       </div>
 
@@ -162,6 +242,8 @@ export default function InspectionsAdminList({
   onStartSolicitud,
   onLoadDocs,
   onDownloadDoc,
+  onPreviewDoc,
+  onDownloadDocs,
 }) {
   if (!items.length) {
     return (
@@ -185,12 +267,14 @@ export default function InspectionsAdminList({
             onStartSolicitud={onStartSolicitud}
             onLoadDocs={onLoadDocs}
             onDownloadDoc={onDownloadDoc}
+            onPreviewDoc={onPreviewDoc}
+            onDownloadDocs={onDownloadDocs}
           />
         ))}
       </div>
 
       <div className="inspecciones-desktop-table solicitud-admin-table-wrap">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm inspecciones-admin-table">
           <thead>
             <tr>
               <th>ID</th>
@@ -198,9 +282,9 @@ export default function InspectionsAdminList({
               <th>Fecha</th>
               <th>Inspector</th>
               <th>Trabajador</th>
-              <th>Centro</th>
+              <th className="inspecciones-col-centro">Centro</th>
               <th>Estado</th>
-              <th>Documentos</th>
+              <th className="inspecciones-col-docs">Documentos</th>
               <th className="text-right">Acciones</th>
             </tr>
           </thead>
@@ -209,24 +293,28 @@ export default function InspectionsAdminList({
               const status = getInspectionStatusBadge(inspection);
               return (
                 <tr key={inspection.id}>
-                  <td className="font-medium">{inspection.id}</td>
+                  <td className="font-medium whitespace-nowrap">{inspection.id}</td>
                   <td>
                     <span className={getInspectionTypeBadgeClass(inspection.type)}>
                       {getInspectionTypeLabel(inspection.type)}
                     </span>
                   </td>
-                  <td>{inspection.date}</td>
+                  <td className="whitespace-nowrap">{inspection.date}</td>
                   <td>{inspection.isSolicitud ? 'Pendiente' : (inspection.inspector || '—')}</td>
                   <td>{inspection.trabajador || '—'}</td>
-                  <td className="max-w-[160px] truncate">{inspection.centro || '—'}</td>
+                  <td className="inspecciones-col-centro" title={inspection.centro || ''}>
+                    {inspection.centro || '—'}
+                  </td>
                   <td><span className={status.className}>{status.label}</span></td>
-                  <td className="max-w-[220px] align-top">
+                  <td className="inspecciones-col-docs align-top">
                     {inspection.type === 'entrega-materiales' ? (
                       <MaterialesDocs
                         inspection={inspection}
                         materialesDocumentos={materialesDocumentos}
                         onLoadDocs={onLoadDocs}
                         onDownloadDoc={onDownloadDoc}
+                        onPreviewDoc={onPreviewDoc}
+                        onDownloadDocs={onDownloadDocs}
                         compact
                       />
                     ) : (

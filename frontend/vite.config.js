@@ -526,13 +526,13 @@ export default defineConfig(({ mode, command }) => {
       closeBundle() {
         try {
           const pdfWorkerPath = join(process.cwd(), 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs');
-          const distPath = join(process.cwd(), 'dist');
+          const distPath = join(process.cwd(), buildOutDir);
           const targetPath = join(distPath, 'pdf.worker.min.js');
           
           if (existsSync(pdfWorkerPath)) {
             mkdirSync(distPath, { recursive: true });
             copyFileSync(pdfWorkerPath, targetPath);
-            console.log('✅ PDF.js worker copiat ca .js pentru compatibilitate server');
+            console.log(`✅ PDF.js worker copiat ca .js în ${buildOutDir}/`);
           }
         } catch (error) {
           console.warn('⚠️ Nu s-a putut copia PDF.js worker:', error.message);

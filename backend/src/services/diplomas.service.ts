@@ -768,6 +768,53 @@ export class DiplomasService {
   }
 
   /**
+   * Upload un PDF de diplomă pentru un angajat (Matrix PRL / share Ancara).
+   */
+  async uploadDiplomaEmpleado(
+    empleadoId: string,
+    file: { buffer: Buffer; originalname?: string },
+    subidoPor: string,
+  ): Promise<{ guardados: number; errores: number }> {
+    const codigo = String(empleadoId || '').trim();
+    if (!codigo) {
+      throw new BadRequestException('empleadoId es requerido');
+    }
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Se requiere un archivo');
+    }
+    const nombre = String(file.originalname || 'diploma.pdf');
+    if (!nombre.toLowerCase().endsWith('.pdf')) {
+      throw new BadRequestException('Solo se permiten archivos PDF');
+    }
+
+    const emp = await this.prisma.$queryRawUnsafe<
+      Array<{ nombre: string | null }>
+    >(
+      `
+      SELECT \`NOMBRE / APELLIDOS\` AS nombre
+      FROM DatosEmpleados
+      WHERE CODIGO = ${this.escapeSql(codigo)}
+      LIMIT 1
+      `,
+    );
+    if (!emp?.length) {
+      throw new BadRequestException(`Empleado ${codigo} no encontrado`);
+    }
+
+    return this.guardarDiplomas(
+      [
+        {
+          nombreArchivo: nombre,
+          empleadoCodigo: codigo,
+          empleadoNombre: emp[0].nombre || codigo,
+          archivoBuffer: file.buffer,
+        },
+      ],
+      String(subidoPor || 'sistema'),
+    );
+  }
+
+  /**
    * Descarcă o diplomă. Dacă empleadoId e null/undefined (admin), se returnează orice diplomă cu acel id.
    */
   async descargarDiploma(

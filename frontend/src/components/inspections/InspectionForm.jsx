@@ -414,7 +414,7 @@ const InspectionForm = ({ type, solicitudData }) => {
     observatii: '',
     cantitate: '', // Pentru materiale
     precio: '', // Pentru materiale
-    documento: null // Pentru materiale - factură/albarán (File object)
+    documentos: [], // Factura/Albarán — multiple File
   });
   const [signatureDraft, setSignatureDraft] = useState('');
   
@@ -999,7 +999,9 @@ const InspectionForm = ({ type, solicitudData }) => {
       ...(type === 'entrega-materiales' && {
         cantitate: newPointData.cantitate.trim() || '',
         precio: newPointData.precio.trim() || '',
-        documento: newPointData.documento || null // Fișier factură/albarán
+        documentos: Array.isArray(newPointData.documentos)
+          ? [...newPointData.documentos]
+          : [],
       })
     };
 
@@ -1015,7 +1017,7 @@ const InspectionForm = ({ type, solicitudData }) => {
       observatii: '',
       cantitate: '',
       precio: '',
-      documento: null
+      documentos: [],
     });
 
     setShowAddPointModal(false);
@@ -1208,9 +1210,20 @@ const InspectionForm = ({ type, solicitudData }) => {
                           {punct.precio && punct.precio.trim() !== '' && (
                             <Text style={styles.pointDetail}>Precio: {parseFloat(punct.precio).toFixed(2)} €</Text>
                           )}
-                          {punct.documento && (
-                            <Text style={styles.pointDetail}>Documento: {punct.documento.name || 'Adjunto'}</Text>
-                          )}
+                          {(() => {
+                            const docs = Array.isArray(punct.documentos)
+                              ? punct.documentos
+                              : punct.documento
+                                ? [punct.documento]
+                                : [];
+                            if (!docs.length) return null;
+                            return (
+                              <Text style={styles.pointDetail}>
+                                Documento{docs.length > 1 ? 's' : ''}:{' '}
+                                {docs.map((d) => d?.name || 'Adjunto').join(', ')}
+                              </Text>
+                            );
+                          })()}
                           {punct.observatii && punct.observatii.trim() !== '' && (
                             <Text style={styles.pointDetail}>Observaciones: {punct.observatii}</Text>
                           )}
@@ -1452,21 +1465,36 @@ const InspectionForm = ({ type, solicitudData }) => {
         // Convertește documentele (facturi/albaranes) în base64 pentru materiale
         const puncteConDocumentos = await Promise.all(
           formData.puncte.map(async (punct) => {
-            if (type === 'entrega-materiales' && punct.documento && punct.documento instanceof File) {
-              try {
-                const documentoBase64 = await blobToBase64(punct.documento);
-                return {
-                  ...punct,
-                  documentoBase64: documentoBase64,
-                  documentoNombre: punct.documento.name,
-                  documentoType: punct.documento.type
-                };
-              } catch (error) {
-                console.error('Error converting document to base64:', error);
-                return punct; // Returnează punctul fără document dacă conversia eșuează
-              }
+            if (type !== 'entrega-materiales') return punct;
+
+            const files = Array.isArray(punct.documentos)
+              ? punct.documentos.filter((f) => f instanceof File)
+              : punct.documento instanceof File
+                ? [punct.documento]
+                : [];
+
+            if (!files.length) return punct;
+
+            try {
+              const documentosPayload = await Promise.all(
+                files.map(async (file) => ({
+                  documentoBase64: await blobToBase64(file),
+                  documentoNombre: file.name,
+                  documentoType: file.type,
+                })),
+              );
+              return {
+                ...punct,
+                documentos: documentosPayload,
+                // compat vechi (primul fișier)
+                documentoBase64: documentosPayload[0]?.documentoBase64,
+                documentoNombre: documentosPayload[0]?.documentoNombre,
+                documentoType: documentosPayload[0]?.documentoType,
+              };
+            } catch (error) {
+              console.error('Error converting document to base64:', error);
+              return punct;
             }
-            return punct;
           })
         );
         
@@ -2267,12 +2295,23 @@ const InspectionForm = ({ type, solicitudData }) => {
                               {parseFloat(point.precio).toFixed(2)} €
                             </span>
                           ) : null}
-                          {point.documento ? (
-                            <span className="inspecciones-meta-chip inspecciones-meta-chip--muted">
-                              <FileText className="w-3.5 h-3.5" aria-hidden />
-                              {point.documento.name || 'Documento adjunto'}
-                            </span>
-                          ) : null}
+                          {(() => {
+                            const docs = Array.isArray(point.documentos)
+                              ? point.documentos
+                              : point.documento
+                                ? [point.documento]
+                                : [];
+                            if (!docs.length) return null;
+                            return docs.map((doc, docIdx) => (
+                              <span
+                                key={`${point.id}-doc-${docIdx}`}
+                                className="inspecciones-meta-chip inspecciones-meta-chip--muted"
+                              >
+                                <FileText className="w-3.5 h-3.5" aria-hidden />
+                                {doc?.name || 'Documento adjunto'}
+                              </span>
+                            ));
+                          })()}
                         </div>
                       )}
                       {point.tip && type !== 'entrega-materiales' ? (
@@ -2509,30 +2548,50 @@ const InspectionForm = ({ type, solicitudData }) => {
                 />
               </div>
               <div>
-                <FormFieldLabel>Factura/Albarán (Opcional)</FormFieldLabel>
+                <FormFieldLabel>Factura/Albarán (Opcional — varios archivos)</FormFieldLabel>
                 <input
                   type="file"
+                  multiple
                   accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
                   onChange={(e) => {
-                    const file = e.target.files?.[0] || null;
-                    setNewPointData((prev) => ({ ...prev, documento: file }));
+                    const picked = Array.from(e.target.files || []);
+                    if (!picked.length) return;
+                    setNewPointData((prev) => ({
+                      ...prev,
+                      documentos: [...(prev.documentos || []), ...picked],
+                    }));
+                    e.target.value = '';
                   }}
                   className="app-modal__input w-full inspecciones-file-input"
                 />
-                {newPointData.documento ? (
-                  <AlertBanner variant="success" className="mt-2">
-                    <span className="flex items-center justify-between gap-2 w-full">
-                      <span className="truncate">Archivo: {newPointData.documento.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => setNewPointData((prev) => ({ ...prev, documento: null }))}
-                        className="inspecciones-icon-btn shrink-0"
-                        aria-label="Eliminar archivo"
-                      >
-                        <X className="w-4 h-4" aria-hidden />
-                      </button>
-                    </span>
-                  </AlertBanner>
+                {Array.isArray(newPointData.documentos) &&
+                newPointData.documentos.length > 0 ? (
+                  <div className="mt-2 space-y-1.5">
+                    {newPointData.documentos.map((file, idx) => (
+                      <AlertBanner key={`${file.name}-${idx}`} variant="success" className="mt-0">
+                        <span className="flex items-center justify-between gap-2 w-full">
+                          <span className="truncate">
+                            Archivo {idx + 1}: {file.name}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setNewPointData((prev) => ({
+                                ...prev,
+                                documentos: (prev.documentos || []).filter(
+                                  (_, i) => i !== idx,
+                                ),
+                              }))
+                            }
+                            className="inspecciones-icon-btn shrink-0"
+                            aria-label="Eliminar archivo"
+                          >
+                            <X className="w-4 h-4" aria-hidden />
+                          </button>
+                        </span>
+                      </AlertBanner>
+                    ))}
+                  </div>
                 ) : null}
               </div>
             </>

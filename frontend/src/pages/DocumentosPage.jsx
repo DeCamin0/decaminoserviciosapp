@@ -15,6 +15,7 @@ import {
   Image as ImageIcon,
   Replace,
   X,
+  HeartPulse,
 } from 'lucide-react';
 import ContractSigner from '../components/ContractSigner';
 import PRLDocumentSigner from '../components/PRLDocumentSigner';
@@ -43,6 +44,14 @@ const blobToBase64 = (blob) => {
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
+};
+
+/** Oficial deja semnat (nume _FIRMADO / tip „firmado”) — fără Firmar/AutoFirma. */
+const isDocumentoOficialFirmado = (doc) => {
+  if (!doc || doc.es_certificado_retencion) return false;
+  const name = String(doc.fileName || doc.nombre_archivo || '');
+  const tipo = String(doc.tipo || doc.tipo_documento || '').toLowerCase();
+  return /_firmado/i.test(name) || /firmado/i.test(tipo);
 };
 
 // Funcție pentru formatarea datelor în format frumos și consistent
@@ -525,32 +534,48 @@ export default function DocumentosPage() {
       
       if (Array.isArray(data)) {
         // Si la respuesta es directamente un array
-        documentosOficialesProcesados = documentosVisibles.map((doc, idx) => ({
+        documentosOficialesProcesados = documentosVisibles.map((doc, idx) => {
+          const fileName = doc.nombre_archivo || doc.fileName || doc.archivo || doc.nombre || `Documento Oficial ${idx + 1}`;
+          const tipo = doc.tipo_documento || doc.tipo || 'Documento Oficial';
+          const yaFirmado = isDocumentoOficialFirmado({ fileName, tipo });
+          return {
           id: doc.id || `doc_oficial_${idx}`,
           doc_id: doc.doc_id,
-          fileName: doc.nombre_archivo || doc.fileName || doc.archivo || doc.nombre || `Documento Oficial ${idx + 1}`,
+          fileName,
           fileSize: doc.fileSize || doc.tamaño || doc.size || 0,
           uploadDate: doc.fecha_creacion || doc.uploadDate || doc.created_at || doc.fecha || new Date().toISOString(),
-          tipo: doc.tipo_documento || doc.tipo || 'Documento Oficial',
+          tipo,
           empleadoId: authUser?.CODIGO || authUser?.id,
           empleadoEmail: email,
-          status: 'disponible',
-          necesita_firma: doc.necesita_firma === true || doc.necesita_firma === 1 || doc.necesita_firma === '1'
-        }));
+          status: yaFirmado ? 'firmado' : 'disponible',
+          necesita_firma: yaFirmado
+            ? false
+            : (doc.necesita_firma === true || doc.necesita_firma === 1 || doc.necesita_firma === '1'),
+          ya_firmado: yaFirmado,
+        };
+        });
       } else if (data.success && data.documentos) {
         // Si la respuesta tiene estructura {success: true, documentos: [...]}
-        documentosOficialesProcesados = documentosVisibles.map((doc, idx) => ({
+        documentosOficialesProcesados = documentosVisibles.map((doc, idx) => {
+          const fileName = doc.nombre_archivo || doc.fileName || doc.archivo || doc.nombre || `Documento Oficial ${idx + 1}`;
+          const tipo = doc.tipo_documento || doc.tipo || 'Documento Oficial';
+          const yaFirmado = isDocumentoOficialFirmado({ fileName, tipo });
+          return {
           id: doc.id || `doc_oficial_${idx}`,
           doc_id: doc.doc_id,
-          fileName: doc.nombre_archivo || doc.fileName || doc.archivo || doc.nombre || `Documento Oficial ${idx + 1}`,
+          fileName,
           fileSize: doc.fileSize || doc.tamaño || doc.size || 0,
           uploadDate: doc.uploadDate || doc.fecha_creacion || doc.created_at || doc.fecha || new Date().toISOString(),
-          tipo: doc.tipo_documento || doc.tipo || 'Documento Oficial',
+          tipo,
           empleadoId: authUser?.CODIGO || authUser?.id,
           empleadoEmail: email,
-          status: 'disponible',
-          necesita_firma: doc.necesita_firma === true || doc.necesita_firma === 1 || doc.necesita_firma === '1'
-        }));
+          status: yaFirmado ? 'firmado' : 'disponible',
+          necesita_firma: yaFirmado
+            ? false
+            : (doc.necesita_firma === true || doc.necesita_firma === 1 || doc.necesita_firma === '1'),
+          ya_firmado: yaFirmado,
+        };
+        });
       }
 
       // Certificados de retenciones (IRPF): mismos PDF que sube gestoría, visibles aquí como documento oficial
@@ -3184,8 +3209,16 @@ export default function DocumentosPage() {
                               {documento.fileSize > 0 ? ` · ${(documento.fileSize / 1024).toFixed(1)} KB` : ''}
                             </p>
                           </div>
-                          <span className={`solicitud-status ${documento.necesita_firma === true ? 'solicitud-status--pendiente' : 'solicitud-status--ok'}`}>
-                            {documento.necesita_firma === true ? 'Firma pendiente' : 'Sin firma'}
+                          <span className={`solicitud-status ${
+                            documento.necesita_firma === true
+                              ? 'solicitud-status--pendiente'
+                              : 'solicitud-status--ok'
+                          }`}>
+                            {documento.necesita_firma === true
+                              ? 'Firma pendiente'
+                              : (documento.ya_firmado || isDocumentoOficialFirmado(documento))
+                                ? 'Firmado'
+                                : 'Sin firma'}
                           </span>
                         </div>
                         <div className="solicitud-admin-toolbar documentos-actions mt-2 flex-wrap">
@@ -3209,7 +3242,7 @@ export default function DocumentosPage() {
                               <Download className="w-4 h-4" aria-hidden />
                               <span>Descargar</span>
                             </button>
-                          {!documento.es_certificado_retencion && (
+                          {!documento.es_certificado_retencion && !(documento.ya_firmado || isDocumentoOficialFirmado(documento)) && (
                             <>
                             <button
                               type="button"
@@ -3350,51 +3383,105 @@ export default function DocumentosPage() {
                     {doc.es_renuncia_rm && (
                       <div className="solicitud-admin-callout mt-2 text-xs">
                         Este documento se firma únicamente si rechazas el Reconocimiento Médico.
-                        {doc.estado === 'NO_APLICA' && (
-                          <div className="mt-2 flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              id={`renuncia-rm-${doc.id}`}
-                              onChange={async (e) => {
-                                if (e.target.checked) {
+                        {doc.rm_solicitado ? (
+                          <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-emerald-800 font-medium">
+                            Solicitado — pendiente de cita
+                          </div>
+                        ) : (
+                          (doc.estado === 'NO_APLICA' || doc.estado === 'PENDIENTE') && (
+                            <div className="mt-2 flex flex-col gap-2">
+                              <button
+                                type="button"
+                                className="solicitud-admin-btn solicitud-admin-btn--primary self-start"
+                                onClick={async () => {
                                   try {
                                     const token = localStorage.getItem('auth_token');
-                                    const response = await fetch(routes.prlRenunciarRM(doc.id), {
+                                    const response = await fetch(routes.prlSolicitarRM(doc.id), {
                                       method: 'POST',
                                       headers: {
                                         Authorization: `Bearer ${token}`,
                                         'Content-Type': 'application/json',
                                       },
                                     });
-
                                     if (!response.ok) {
-                                      const errorData = await response.json();
-                                      throw new Error(errorData.message || 'Error al renunciar a RM');
+                                      const errorData = await response.json().catch(() => ({}));
+                                      throw new Error(
+                                        errorData.message || 'Error al solicitar RM',
+                                      );
                                     }
-
                                     await fetchDocumentosPRL();
-
                                     setNotification({
                                       type: 'success',
-                                      title: 'Renuncia registrada',
-                                      message: 'Debes descargar el documento, firmarlo y subirlo.',
+                                      title: 'Solicitud registrada',
+                                      message:
+                                        'Recibirás confirmación por email y en la app. Próximamente te confirmarán día y hora de la cita.',
                                     });
                                   } catch (error) {
-                                    e.target.checked = false;
                                     setNotification({
                                       type: 'error',
                                       title: 'Error',
-                                      message: `Error al renunciar a RM: ${error.message}`,
+                                      message: `Error al solicitar RM: ${error.message}`,
                                     });
                                   }
-                                }
-                              }}
-                              className="w-4 h-4"
-                            />
-                            <label htmlFor={`renuncia-rm-${doc.id}`} className="cursor-pointer font-medium">
-                              Renuncio al Reconocimiento Médico
-                            </label>
-                          </div>
+                                }}
+                              >
+                                <HeartPulse className="w-4 h-4" aria-hidden />
+                                <span>Quiero el Reconocimiento Médico</span>
+                              </button>
+                              {doc.estado === 'NO_APLICA' && (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    id={`renuncia-rm-${doc.id}`}
+                                    onChange={async (e) => {
+                                      if (e.target.checked) {
+                                        try {
+                                          const token = localStorage.getItem('auth_token');
+                                          const response = await fetch(routes.prlRenunciarRM(doc.id), {
+                                            method: 'POST',
+                                            headers: {
+                                              Authorization: `Bearer ${token}`,
+                                              'Content-Type': 'application/json',
+                                            },
+                                          });
+
+                                          if (!response.ok) {
+                                            const errorData = await response.json();
+                                            throw new Error(
+                                              errorData.message || 'Error al renunciar a RM',
+                                            );
+                                          }
+
+                                          await fetchDocumentosPRL();
+
+                                          setNotification({
+                                            type: 'success',
+                                            title: 'Renuncia registrada',
+                                            message:
+                                              'Debes descargar el documento, firmarlo y subirlo.',
+                                          });
+                                        } catch (error) {
+                                          e.target.checked = false;
+                                          setNotification({
+                                            type: 'error',
+                                            title: 'Error',
+                                            message: `Error al renunciar a RM: ${error.message}`,
+                                          });
+                                        }
+                                      }
+                                    }}
+                                    className="w-4 h-4"
+                                  />
+                                  <label
+                                    htmlFor={`renuncia-rm-${doc.id}`}
+                                    className="cursor-pointer font-medium"
+                                  >
+                                    Renuncio al Reconocimiento Médico
+                                  </label>
+                                </div>
+                              )}
+                            </div>
+                          )
                         )}
                       </div>
                     )}
@@ -3444,8 +3531,15 @@ export default function DocumentosPage() {
                             <span>Descargar</span>
                           </button>
                         )}
-                        {doc.es_renuncia_rm && doc.estado === 'NO_APLICA' && (
+                        {doc.es_renuncia_rm &&
+                          doc.estado === 'NO_APLICA' &&
+                          !doc.rm_solicitado && (
                           <p className="text-xs text-gray-500 w-full">Marca la casilla arriba para descargar</p>
+                        )}
+                        {doc.es_renuncia_rm && doc.rm_solicitado && (
+                          <p className="text-xs text-emerald-700 w-full">
+                            RM solicitado — no es necesario firmar la renuncia
+                          </p>
                         )}
                         {doc.requiere_firma && doc.estado === 'PENDIENTE' && (
                           <>
@@ -3970,7 +4064,7 @@ export default function DocumentosPage() {
                     </div>
                   </div>
                 ) : (previewDocument?.fileName?.toLowerCase().endsWith('.pdf') && previewDocument?.isPdf !== false) ? (
-                  <div className="p-4 bg-gray-50 h-[75vh] pdf-preview-container">
+                  <div className="bg-gray-50 pdf-preview-container">
                     {/* Android: PDF.js rendering | iOS: <object> | Desktop: <iframe> */}
                     {isAndroid || isIOS ? (
                       <PDFViewerAndroid 

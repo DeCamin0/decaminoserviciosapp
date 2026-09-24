@@ -2924,6 +2924,13 @@
   flex-direction: column;
 }
 
+.documentos-preview-body > .border {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .app-modal--preview {
   max-height: 100dvh;
   height: 100dvh;
@@ -2934,7 +2941,7 @@
 
 @media (min-width: 640px) {
   .app-modal--preview {
-    height: auto;
+    height: min(95vh, 900px);
     max-height: 95vh;
     max-width: 72rem;
     border-radius: 0.75rem;
@@ -2942,7 +2949,7 @@
 }
 
 .app-modal--preview .app-modal__body {
-  overflow: auto;
+  overflow: hidden;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -2950,9 +2957,27 @@
 }
 
 .app-modal--preview .pdf-preview-container {
+  flex: 1 1 auto;
+  min-height: min(70vh, 720px);
+  height: min(70vh, 720px);
+  display: flex;
+  flex-direction: column;
+  padding: 0 !important;
+}
+
+.app-modal--preview .pdf-preview-container iframe,
+.app-modal--preview .pdf-preview-container > * {
   flex: 1;
   min-height: 0;
-  height: min(70vh, 100%);
+  width: 100%;
+  height: 100%;
+}
+
+@media (max-width: 639px) {
+  .app-modal--preview .pdf-preview-container {
+    min-height: 0;
+    height: auto;
+  }
 }
 
 .documentos-page .solicitud-admin-icon-btn {
@@ -5414,6 +5439,19 @@
   }
 }
 
+@media (min-width: 1280px) {
+  .inspecciones-page.app-page {
+    max-width: min(100%, 96rem);
+    padding-inline: 1.5rem;
+  }
+}
+
+@media (min-width: 1600px) {
+  .inspecciones-page.app-page {
+    max-width: min(100%, 110rem);
+  }
+}
+
 .inspecciones-hub-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -5741,7 +5779,7 @@
 
 .inspecciones-materiales-docs--compact {
   margin-top: 0;
-  min-width: 10rem;
+  min-width: 14rem;
 }
 
 .inspecciones-materiales-docs__title {
@@ -5751,10 +5789,62 @@
   color: #6b7280;
 }
 
+.inspecciones-materiales-docs__bulk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.inspecciones-materiales-docs__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  color: #4b5563;
+  cursor: pointer;
+  user-select: none;
+}
+
 .inspecciones-materiales-docs__list {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
+
+.inspecciones-materiales-docs__row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  min-height: 40px;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm);
+  background: #fff;
+  font-size: 0.72rem;
+}
+
+.inspecciones-materiales-docs__row-check {
+  flex-shrink: 0;
+}
+
+.inspecciones-materiales-docs__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #111827;
+  font-weight: 550;
+}
+
+.inspecciones-materiales-docs__row-actions {
+  display: inline-flex;
+  gap: 0.2rem;
+  flex-shrink: 0;
 }
 
 .inspecciones-materiales-docs__item {
@@ -5769,6 +5859,38 @@
   background: #fff;
   font-size: 0.72rem;
   cursor: pointer;
+}
+
+.inspecciones-admin-table {
+  table-layout: auto;
+}
+
+.inspecciones-col-centro {
+  min-width: 14rem;
+  max-width: 22rem;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.25;
+}
+
+.inspecciones-col-docs {
+  min-width: 16rem;
+  max-width: 26rem;
+}
+
+.inspecciones-pdf-modal__image-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: min(70vh, 720px);
+  background: #0f172a0d;
+  overflow: auto;
+}
+
+.inspecciones-pdf-modal__image {
+  max-width: 100%;
+  max-height: min(70vh, 720px);
+  object-fit: contain;
 }
 
 .mis-inspecciones-list {
@@ -8147,6 +8269,13 @@
   color: #64748b;
 }
 
+.docs-obligation-list__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
 .docs-obligation-footer {
   display: flex;
   justify-content: flex-end;
@@ -8158,6 +8287,30 @@
   align-items: center;
   gap: 0.35rem;
   white-space: nowrap;
+}
+
+/* Signer pe telefon: deasupra modalului obligation + hard-lock */
+.docs-obligation-signer-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 13000;
+  pointer-events: auto;
+}
+
+.docs-obligation-signer-layer .dlg,
+.docs-obligation-signer-layer .prl-signer-dialog {
+  z-index: 13001 !important;
+}
+
+.docs-obligation-signer-layer .dlg__footer,
+.docs-obligation-signer-layer .prl-signer-footer,
+.docs-obligation-signer-layer .mobile-footer-toggle {
+  z-index: 13002 !important;
+}
+
+body.docs-obligation-signing .docs-obligation-hard-block {
+  display: none !important;
+  pointer-events: none !important;
 }
 
 

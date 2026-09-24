@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   UseGuards,
   UseInterceptors,
@@ -751,6 +752,49 @@ export class PrlDocumentsController {
   }
 
   /**
+   * Angajatul solicită Reconocimiento Médico (în loc să semneze Renuncia)
+   */
+  @Post('mis-documentos/:documentoId/solicitar-rm')
+  @UseGuards(JwtAuthGuard)
+  async solicitarReconocimientoMedico(
+    @Param('documentoId') documentoId: string,
+    @CurrentUser() user: any,
+  ) {
+    try {
+      const documentoIdNum = parseInt(documentoId, 10);
+      if (isNaN(documentoIdNum)) {
+        throw new BadRequestException('documentoId debe ser un número');
+      }
+
+      const empleadoId = user.CODIGO || user.codigo || user.userId;
+      if (!empleadoId) {
+        throw new BadRequestException('No se pudo identificar al empleado');
+      }
+
+      this.logger.log(
+        `🔄 Empleado ${empleadoId} solicitando RM para documento ${documentoIdNum}`,
+      );
+
+      await this.prlDocumentsService.solicitarReconocimientoMedico(
+        documentoIdNum,
+        empleadoId,
+      );
+
+      return {
+        success: true,
+        message:
+          'Solicitud de Reconocimiento Médico registrada. Recibirás confirmación por email y en la app.',
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error solicitando RM para documento ${documentoId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Încarcă documentul semnat pentru Renuncia RM
    */
   /**
@@ -952,6 +996,35 @@ export class PrlDocumentsController {
   }
 
   /**
+   * Matrix: marca empleado como procesado (Ancara / admin)
+   * PATCH /api/prl/empleados/:empleadoId/procesado
+   * Body: { procesado: boolean }
+   */
+  @Patch('empleados/:empleadoId/procesado')
+  @UseGuards(JwtAuthGuard)
+  async setEmpleadoProcesado(
+    @Param('empleadoId') empleadoId: string,
+    @Body() body: { procesado?: boolean | string | number },
+    @CurrentUser() user: any,
+  ) {
+    const codigo = String(empleadoId || '').trim();
+    if (!codigo) {
+      throw new BadRequestException('empleadoId es requerido');
+    }
+    const procesado =
+      body?.procesado === true ||
+      String(body?.procesado).toLowerCase() === 'true' ||
+      body?.procesado === 1;
+    const por = user?.CODIGO || user?.codigo || user?.userId || 'admin';
+    const result = await this.prlDocumentsService.setEmpleadoProcesado(
+      codigo,
+      procesado,
+      por,
+    );
+    return { success: true, empleado_id: codigo, ...result };
+  }
+
+  /**
    * Admin: lista documentele PRL ale unui angajat (by codigo)
    */
   @Get('empleados/:empleadoId/documentos')
@@ -980,6 +1053,60 @@ export class PrlDocumentsController {
     } catch (error: any) {
       this.logger.error(
         `❌ Error listando documentos PRL para empleado ${empleadoId}:`,
+        error,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Admin: toggle requiere_firma pe documentul PRL alocat unui angajat
+   * PATCH /api/prl/empleados/:empleadoId/documentos/:documentoId/requiere-firma
+   * Body: { requiereFirma: boolean }
+   */
+  @Patch('empleados/:empleadoId/documentos/:documentoId/requiere-firma')
+  @UseGuards(JwtAuthGuard)
+  async updateRequiereFirmaDocumentoEmpleado(
+    @Param('empleadoId') empleadoId: string,
+    @Param('documentoId') documentoId: string,
+    @Body() body: { requiereFirma?: boolean | string | number },
+    @CurrentUser() _user: any,
+  ) {
+    try {
+      const documentoIdNum = parseInt(documentoId, 10);
+      if (isNaN(documentoIdNum)) {
+        throw new BadRequestException('documentoId debe ser un número');
+      }
+      const codigo = String(empleadoId || '').trim();
+      if (!codigo) {
+        throw new BadRequestException('empleadoId es requerido');
+      }
+
+      const requiereFirma =
+        body?.requiereFirma === true ||
+        String(body?.requiereFirma).toLowerCase() === 'true' ||
+        body?.requiereFirma === 1;
+
+      this.logger.log(
+        `🔄 Update requiere_firma PRL — empleado=${codigo}, documento=${documentoIdNum}, valor=${requiereFirma}`,
+      );
+
+      const result =
+        await this.prlDocumentsService.updateRequiereFirmaDocumentoEmpleado(
+          documentoIdNum,
+          codigo,
+          requiereFirma,
+        );
+
+      return {
+        success: true,
+        message: result.message,
+        affectedRows: result.affectedRows,
+        requiere_firma: requiereFirma,
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Error update requiere_firma PRL documento ${documentoId}:`,
         error,
       );
       throw error;

@@ -763,38 +763,91 @@ const InspectionList = ({ onBackToSelection, onlySolicitudes = false, onStartIns
   }, [materialesDocumentos]);
 
   // Funcție pentru a descărca un document de material
+  const fetchMaterialDocumentoBlob = useCallback(async (docId) => {
+    const token = localStorage.getItem('auth_token');
+    const headers = {
+      Accept: 'application/pdf, application/json, image/*, */*',
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+
+    const response = await fetch(
+      `${routes.downloadMaterialDocumento}?doc_id=${docId}`,
+      { headers },
+    );
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const blob = await response.blob();
+    const contentType =
+      response.headers.get('content-type') || blob.type || 'application/octet-stream';
+    return { blob, contentType };
+  }, []);
+
   const handleDownloadMaterialDocumento = async (docId, nombreArchivo) => {
     try {
-      const token = localStorage.getItem('auth_token');
-      const headers = {
-        'Accept': 'application/pdf, application/json, image/*',
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const response = await fetch(
-        `${routes.downloadMaterialDocumento}?doc_id=${docId}`,
-        { headers }
-      );
-
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = nombreArchivo || `material_document_${docId}.pdf`;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      } else {
-        alert('Error al descargar el documento');
-      }
+      const { blob } = await fetchMaterialDocumentoBlob(docId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = nombreArchivo || `material_document_${docId}.pdf`;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
     } catch (error) {
       console.error('Error downloading material document:', error);
       alert('Error al descargar el documento');
+    }
+  };
+
+  const handlePreviewMaterialDocumento = async (doc) => {
+    if (!doc?.doc_id) return;
+    const nombre = doc.nombre_archivo || `Documento ${doc.doc_id}`;
+    setShowPreviewModal(true);
+    setPreviewLoading(true);
+    setPreviewData({ id: nombre, pdfUrl: null, error: null, isImage: false });
+    try {
+      const { blob, contentType } = await fetchMaterialDocumentoBlob(doc.doc_id);
+      const isImage =
+        contentType.startsWith('image/') ||
+        /\.(jpe?g|png|gif|webp|bmp)$/i.test(nombre);
+      const url = window.URL.createObjectURL(blob);
+      setPreviewData({
+        id: nombre,
+        pdfUrl: url,
+        error: null,
+        isImage,
+        _materialDocId: doc.doc_id,
+        _materialNombre: nombre,
+      });
+    } catch (error) {
+      console.error('Error preview material document:', error);
+      setPreviewData({
+        id: nombre,
+        pdfUrl: null,
+        error: 'No se pudo cargar la vista previa',
+        isImage: false,
+      });
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleDownloadMaterialDocumentos = async (docs) => {
+    const list = Array.isArray(docs) ? docs : [];
+    if (!list.length) return;
+    for (let i = 0; i < list.length; i++) {
+      const doc = list[i];
+      // eslint-disable-next-line no-await-in-loop
+      await handleDownloadMaterialDocumento(
+        doc.doc_id,
+        doc.nombre_archivo || `material_document_${doc.doc_id}.pdf`,
+      );
+      if (i < list.length - 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, 350));
+      }
     }
   };
 
@@ -994,6 +1047,8 @@ const InspectionList = ({ onBackToSelection, onlySolicitudes = false, onStartIns
           onStartSolicitud={handleStartSolicitud}
           onLoadDocs={fetchMaterialesDocumentos}
           onDownloadDoc={handleDownloadMaterialDocumento}
+          onPreviewDoc={handlePreviewMaterialDocumento}
+          onDownloadDocs={handleDownloadMaterialDocumentos}
         />
       </section>
 
@@ -1004,7 +1059,17 @@ const InspectionList = ({ onBackToSelection, onlySolicitudes = false, onStartIns
         isIOS={isIOS}
         isAndroid={isAndroid}
         onClose={closePreviewModal}
-        onDownload={(data) => handleDownload(data)}
+        onDownload={(data) => {
+          if (data?._materialDocId) {
+            handleDownloadMaterialDocumento(
+              data._materialDocId,
+              data._materialNombre || data.id,
+            );
+            return;
+          }
+          handleDownload(data);
+        }}
+        title={previewData?._materialDocId ? 'Vista previa documento' : 'Vista previa PDF'}
       />
 
       <Modal

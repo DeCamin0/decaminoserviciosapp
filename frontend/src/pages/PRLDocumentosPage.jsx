@@ -508,7 +508,7 @@ export default function PRLDocumentosPage() {
     return (empleadosConDocumentos || []).filter((emp) => {
       if (q) {
         const hay = normalizeMatrixSearch(
-          `${emp.empleado_nombre || ''} ${emp.empleado_id || ''} ${emp.grupo_nombre || ''}`,
+          `${emp.empleado_nombre || ''} ${emp.empleado_id || ''} ${emp.grupo_nombre || ''} ${emp.empleado_dni || ''}`,
         );
         if (!hay.includes(q)) return false;
       }
@@ -745,7 +745,7 @@ export default function PRLDocumentosPage() {
                     type="search"
                     value={matrixSearch}
                     onChange={(e) => setMatrixSearch(e.target.value)}
-                    placeholder="Buscar por nombre, código o grupo…"
+                    placeholder="Buscar por nombre, código, grupo o DNI…"
                     className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm"
                     aria-label="Buscar en matrix PRL"
                   />
@@ -881,6 +881,12 @@ export default function PRLDocumentosPage() {
                           {tipo.label}
                         </th>
                       ))}
+                      <th className="border border-gray-300 px-3 py-2 text-center font-semibold text-xs whitespace-nowrap">
+                        Procesado
+                      </th>
+                      <th className="border border-gray-300 px-3 py-2 text-center font-semibold text-xs whitespace-nowrap">
+                        Diploma
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -889,6 +895,11 @@ export default function PRLDocumentosPage() {
                         <td className="border border-gray-300 px-4 py-2 sticky left-0 bg-white z-10 font-medium">
                           <div className="font-semibold">{empleado.empleado_nombre}</div>
                           <div className="text-xs text-gray-500">{empleado.grupo_nombre}</div>
+                          {empleado.empleado_dni ? (
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              DNI/NIE: {empleado.empleado_dni}
+                            </div>
+                          ) : null}
                         </td>
                         {TIPOS_DOCUMENTO.map((tipo) => {
                           const documento = empleado.documentos.find(
@@ -938,6 +949,107 @@ export default function PRLDocumentosPage() {
                             </td>
                           );
                         })}
+                        <td className="border border-gray-300 px-2 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={!!empleado.procesado}
+                            onChange={async (e) => {
+                              const next = e.target.checked;
+                              try {
+                                const res = await fetch(
+                                  routes.prlEmpleadoProcesado(empleado.empleado_id),
+                                  {
+                                    method: 'PATCH',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      Authorization: `Bearer ${authToken}`,
+                                    },
+                                    body: JSON.stringify({ procesado: next }),
+                                  },
+                                );
+                                if (!res.ok) {
+                                  const err = await res.json().catch(() => ({}));
+                                  throw new Error(err.message || 'Error');
+                                }
+                                setEmpleadosConDocumentos((prev) =>
+                                  prev.map((row) =>
+                                    row.empleado_id === empleado.empleado_id
+                                      ? { ...row, procesado: next }
+                                      : row,
+                                  ),
+                                );
+                              } catch (err) {
+                                e.target.checked = !next;
+                                mostrarNotificacion('error', err.message || 'Error');
+                              }
+                            }}
+                            className="h-4 w-4 cursor-pointer"
+                            title="Marcar como procesado"
+                          />
+                        </td>
+                        <td className="border border-gray-300 px-2 py-2 text-center">
+                          <div className="flex flex-col items-center gap-1">
+                            {empleado.diplomas_count > 0 ? (
+                              <span className="text-[10px] font-semibold text-emerald-700">
+                                {empleado.diplomas_count} diploma
+                                {empleado.diplomas_count > 1 ? 's' : ''}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-gray-400">Sin diploma</span>
+                            )}
+                            <label className="cursor-pointer rounded border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-gray-700 hover:bg-gray-50">
+                              Subir
+                              <input
+                                type="file"
+                                accept=".pdf,application/pdf"
+                                className="hidden"
+                                onChange={async (ev) => {
+                                  const file = ev.target.files?.[0];
+                                  ev.target.value = '';
+                                  if (!file) return;
+                                  try {
+                                    const fd = new FormData();
+                                    fd.append('archivo', file);
+                                    const res = await fetch(
+                                      routes.diplomasUploadEmpleado(empleado.empleado_id),
+                                      {
+                                        method: 'POST',
+                                        headers: {
+                                          Authorization: `Bearer ${authToken}`,
+                                        },
+                                        body: fd,
+                                      },
+                                    );
+                                    if (!res.ok) {
+                                      const err = await res.json().catch(() => ({}));
+                                      throw new Error(err.message || 'Error al subir');
+                                    }
+                                    setEmpleadosConDocumentos((prev) =>
+                                      prev.map((row) =>
+                                        row.empleado_id === empleado.empleado_id
+                                          ? {
+                                              ...row,
+                                              diplomas_count:
+                                                (row.diplomas_count || 0) + 1,
+                                            }
+                                          : row,
+                                      ),
+                                    );
+                                    mostrarNotificacion(
+                                      'success',
+                                      'Diploma subida correctamente',
+                                    );
+                                  } catch (err) {
+                                    mostrarNotificacion(
+                                      'error',
+                                      err.message || 'Error',
+                                    );
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

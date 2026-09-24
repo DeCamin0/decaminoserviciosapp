@@ -36,6 +36,7 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import PortalAccesoPage from './pages/PortalAccesoPage';
 import PortalGestoresAccesoPage from './pages/PortalGestoresAccesoPage';
+import PrlMatrixSharePage from './pages/PrlMatrixSharePage';
 import InicioPage from './pages/DashboardPage';
 import DatosPage from './pages/DatosPage';
 
@@ -228,6 +229,7 @@ function AppRoutes() {
 
         <Route path="/portal/gestores" element={<PortalGestoresAccesoPage />} />
         <Route path="/portal/:token" element={<PortalAccesoPage />} />
+        <Route path="/prl-matrix-share" element={<PrlMatrixSharePage />} />
       
       {/* Rute protejate - folosesc ResponsiveLayout */}
       <Route

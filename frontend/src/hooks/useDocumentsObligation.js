@@ -165,6 +165,30 @@ export function useDocumentsObligation() {
         const data = await prlRes.json();
         const list = Array.isArray(data?.documentos) ? data.documentos : [];
         list.forEach((d) => {
+          const isRenuncia = !!(d.es_renuncia_rm || d.tipo_documento === 'RENUNCIA_RM');
+          const rmSolicitado = !!(d.rm_solicitado === true || d.rm_solicitado === 1);
+
+          // Renuncia RM: decizie (Quiero vs Firmar) cât timp nu e solicitat RM și nu e semnat
+          if (isRenuncia && !rmSolicitado) {
+            if (d.estado === 'NO_APLICA' || d.estado === 'PENDIENTE') {
+              next.push({
+                key: `prl-rm-${d.id}`,
+                kind: 'prl_rm',
+                title:
+                  d.nombre_archivo_original ||
+                  d.template_nombre ||
+                  'Reconocimiento Médico',
+                subtitle:
+                  d.estado === 'PENDIENTE'
+                    ? 'Elige: solicitar RM o firmar la renuncia'
+                    : '¿Quieres el reconocimiento médico o renuncias?',
+                action: 'decidir_rm',
+                raw: d,
+              });
+            }
+            return;
+          }
+
           if (d.estado !== 'PENDIENTE') return;
           const needsTest = !!(d.es_manual_test && !d.test_completado);
           if (needsTest) {

@@ -171,11 +171,12 @@ if (typeof window !== 'undefined' && window.__originalFetchForLocation) {
     const [url, options = {}] = args;
     
     // Interceptează toate endpoint-urile /api/ care necesită autentificare
-    // Excepții: /api/n8n/ (proxy către n8n) și /api/auth/ (login, refresh)
+    // Excepții: /api/n8n/, /api/auth/, /api/prl/matrix-share/ (link public read-only)
     const isApiRequest = typeof url === 'string' && 
       url.includes('/api/') && 
       !url.includes('/api/n8n/') && 
-      !url.includes('/api/auth/');
+      !url.includes('/api/auth/') &&
+      !url.includes('/api/prl/matrix-share/');
     
     if (isApiRequest) {
       // Importăm dinamic pentru a evita circular dependencies

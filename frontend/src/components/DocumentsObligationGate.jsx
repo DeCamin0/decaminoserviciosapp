@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import DocumentsObligationModal from './DocumentsObligationModal';
 import { useDocumentsObligation } from '../hooks/useDocumentsObligation';
 
@@ -17,6 +18,11 @@ export default function DocumentsObligationGate() {
     logout,
   } = useDocumentsObligation();
 
+  const [signingActive, setSigningActive] = useState(false);
+  const handleSigningChange = useCallback((active) => {
+    setSigningActive(!!active);
+  }, []);
+
   return (
     <>
       <DocumentsObligationModal
@@ -29,8 +35,9 @@ export default function DocumentsObligationGate() {
         onSnooze={snooze}
         onAfterItemDone={afterItemDone}
         onLogout={logout}
+        onSigningChange={handleSigningChange}
       />
-      {hardLocked && items.length > 0 && (
+      {hardLocked && items.length > 0 && !signingActive && (
         <div
           className="docs-obligation-hard-block"
           aria-hidden

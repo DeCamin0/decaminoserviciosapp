@@ -424,35 +424,58 @@ export class InspeccionesService {
         for (let index = 0; index < body.puncte.length; index++) {
           const material = body.puncte[index];
 
-          // Verifică dacă materialul are document (albarán/factura)
-          if (material.documentoBase64 || material.documento) {
+          // Array nou (mai multe docs) sau format vechi (un singur doc)
+          const docsRaw = Array.isArray(material.documentos)
+            ? material.documentos
+            : material.documentoBase64 || material.documento
+              ? [
+                  {
+                    documentoBase64:
+                      material.documentoBase64 || material.documento,
+                    documentoNombre:
+                      material.documentoNombre || material.documento?.name,
+                    documentoType:
+                      material.documentoType || material.documento?.type,
+                  },
+                ]
+              : [];
+
+          if (!docsRaw.length) continue;
+
+          const descripcionMaterial =
+            material.descripcion || material.desc || material.text || null;
+
+          for (let docIdx = 0; docIdx < docsRaw.length; docIdx++) {
+            const docItem = docsRaw[docIdx] || {};
             try {
               const documentoBase64 =
-                material.documentoBase64 || material.documento;
-              // Remove data: prefix if present
+                docItem.documentoBase64 ||
+                docItem.documento ||
+                (typeof docItem === 'string' ? docItem : null);
+              if (!documentoBase64 || typeof documentoBase64 !== 'string') {
+                continue;
+              }
+
               const base64Data = documentoBase64.includes(',')
                 ? documentoBase64.split(',')[1]
                 : documentoBase64;
               const documentoBuffer = Buffer.from(base64Data, 'base64');
 
-              // Determină tipul documentului din nume sau tip
-              let tipoDocumento = 'albaran'; // default
+              let tipoDocumento = 'albaran';
               const nombreArchivo =
-                material.documentoNombre ||
-                material.documento?.name ||
-                `material_${index + 1}.pdf`;
+                docItem.documentoNombre ||
+                docItem.name ||
+                `material_${index + 1}_${docIdx + 1}.pdf`;
+              const tipoHint = String(
+                docItem.documentoType || docItem.type || '',
+              ).toLowerCase();
               if (
                 nombreArchivo.toLowerCase().includes('factura') ||
-                material.documentoType?.toLowerCase().includes('factura')
+                tipoHint.includes('factura')
               ) {
                 tipoDocumento = 'factura';
               }
 
-              // Descrierea materialului
-              const descripcionMaterial =
-                material.descripcion || material.desc || material.text || null;
-
-              // Salvează documentul în MaterialesDocumentos (R2)
               const matPut = await this.inspeccionesStorage.putMaterialArchivo(
                 documentoBuffer,
                 inspeccionId,
@@ -489,14 +512,13 @@ export class InspeccionesService {
               await this.prisma.$executeRawUnsafe(materialQuery);
 
               this.logger.log(
-                `✅ Material document ${index + 1} saved: ${nombreArchivo} (${tipoDocumento})`,
+                `✅ Material document ${index + 1}.${docIdx + 1} saved: ${nombreArchivo} (${tipoDocumento})`,
               );
             } catch (materialError: any) {
               this.logger.error(
-                `❌ Error saving material document ${index + 1}:`,
+                `❌ Error saving material document ${index + 1}.${docIdx + 1}:`,
                 materialError,
               );
-              // Continuă cu următorul material chiar dacă unul eșuează
             }
           }
         }
