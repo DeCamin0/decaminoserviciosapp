@@ -708,6 +708,9 @@ export const routes = {
   prlRmSolicitudesPendientes: `${BACKEND_BASE}/api/prl/rm-solicitudes/pendientes`,
   prlRmAceptar: (documentoId) => `${BACKEND_BASE}/api/prl/rm-solicitudes/${documentoId}/aceptar`,
   prlRmRechazar: (documentoId) => `${BACKEND_BASE}/api/prl/rm-solicitudes/${documentoId}/rechazar`,
+  prlRmAsignarCita: (documentoId) => `${BACKEND_BASE}/api/prl/rm-solicitudes/${documentoId}/asignar-cita`,
+  prlMatrixShareAsignarCita: (documentoId) =>
+    `${BACKEND_BASE}/api/prl/matrix-share/documentos/${documentoId}/asignar-cita`,
   prlSubirDocumentoFirmado: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/subir-firmado`,
   prlAgregarFirmaADocx: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/agregar-firma-docx`,
   prlDescargarDocumentoFirmado: (documentoId) => `${BACKEND_BASE}/api/prl/mis-documentos/${documentoId}/descargar-firmado`,

@@ -149,6 +149,14 @@ export function useDocumentsObligation() {
               : [];
         list
           .filter((s) => (s.estado || 'pendiente') === 'pendiente')
+          // Justificante de presencia → doar pe Solicitudes, nu în obligation gate
+          .filter((s) => {
+            const t = String(s.tipo_documento || '').toLowerCase();
+            return !(
+              t.includes('justificante de presencia') ||
+              (t.includes('presencia') && t.includes('cita'))
+            );
+          })
           .forEach((s) => {
             next.push({
               key: `solicitado-${s.id}`,

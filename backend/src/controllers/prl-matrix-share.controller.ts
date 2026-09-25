@@ -41,7 +41,7 @@ export class PrlMatrixShareController {
     return {
       success: true,
       displayName: this.shareService.getDisplayName(),
-      allowed_actions: ['procesado', 'subir_diploma'],
+      allowed_actions: ['procesado', 'subir_diploma', 'asignar_cita'],
       enabled: this.shareService.isEnabled(),
     };
   }
@@ -74,6 +74,31 @@ export class PrlMatrixShareController {
       body?.procesado === 1;
     const result = await this.shareService.setProcesado(empleadoId, procesado);
     return { success: true, empleado_id: empleadoId, ...result };
+  }
+
+  /** Asignar / actualizar cita RM (Noemi / Ancara) */
+  @Public()
+  @Post('documentos/:documentoId/asignar-cita')
+  @UseGuards(PrlMatrixShareGuard)
+  async asignarRmCita(
+    @Param('documentoId') documentoId: string,
+    @Body() body: { fecha?: string; hora?: string },
+  ) {
+    const documentoIdNum = parseInt(documentoId, 10);
+    if (isNaN(documentoIdNum)) {
+      throw new BadRequestException('documentoId debe ser un número');
+    }
+    const fecha = String(body?.fecha || '').trim();
+    const hora = String(body?.hora || '').trim();
+    if (!fecha || !hora) {
+      throw new BadRequestException('fecha y hora son requeridos');
+    }
+    const result = await this.shareService.asignarRmCita(
+      documentoIdNum,
+      fecha,
+      hora,
+    );
+    return { success: true, message: 'Cita RM asignada', ...result };
   }
 
   /** Solo acción permitida: subir diploma PDF */

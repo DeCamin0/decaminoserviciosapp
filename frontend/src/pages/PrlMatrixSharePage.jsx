@@ -33,6 +33,14 @@ function countDocsByEstado(empleado, estado) {
   return docs.filter((d) => d.estado === estado).length;
 }
 
+function formatRmCitaLabel(fecha, hora) {
+  if (!fecha) return null;
+  const s = String(fecha).slice(0, 10);
+  const [y, m, d] = s.split('-');
+  if (!y || !m || !d) return hora ? `${s} ${hora}` : s;
+  return `${d}/${m}${hora ? ` ${hora}` : ''}`;
+}
+
 function resolveMatrixDocDisplay(documento) {
   if (!documento) {
     return {
@@ -45,6 +53,8 @@ function resolveMatrixDocDisplay(documento) {
 
   const rmEstado = documento.rm_aprobacion_estado;
   const rmSolicitado = !!(documento.rm_solicitado === true || documento.rm_solicitado === 1);
+  const citaLabel = formatRmCitaLabel(documento.rm_cita_fecha, documento.rm_cita_hora);
+  const tieneCita = !!(documento.rm_cita_fecha && documento.rm_cita_hora);
   const enGestion =
     documento.tipo_documento === 'RENUNCIA_RM' &&
     (rmSolicitado || rmEstado === 'PENDIENTE' || rmEstado === 'ACEPTADO') &&
@@ -61,10 +71,20 @@ function resolveMatrixDocDisplay(documento) {
     };
   }
 
+  if (enGestion && rmEstado === 'ACEPTADO' && tieneCita) {
+    return {
+      key: 'CITA',
+      label: `Cita ${citaLabel}`,
+      colorClass: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+      title: `Cita asignada: ${citaLabel}`,
+      canAsignarCita: true,
+    };
+  }
+
   if (enGestion) {
     const detalle =
       rmEstado === 'ACEPTADO'
-        ? 'RM aceptado — en gestión de cita'
+        ? 'RM aceptado — pendiente de asignar cita'
         : rmEstado === 'PENDIENTE'
           ? 'RM pendiente de aprobación'
           : 'RM solicitado — en gestión';
@@ -73,6 +93,7 @@ function resolveMatrixDocDisplay(documento) {
       label: 'En gestión',
       colorClass: 'bg-sky-100 text-sky-900 border-sky-300',
       title: detalle,
+      canAsignarCita: rmEstado === 'ACEPTADO',
     };
   }
 
@@ -147,6 +168,8 @@ export default function PrlMatrixSharePage() {
   const [matrixGrupoMode, setMatrixGrupoMode] = useState('solo');
   const [matrixEstadoFilter, setMatrixEstadoFilter] = useState('todos');
   const [matrixSort, setMatrixSort] = useState([]);
+  const [citaModal, setCitaModal] = useState(null);
+  const [citaSaving, setCitaSaving] = useState(false);
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
@@ -596,12 +619,35 @@ export default function PrlMatrixSharePage() {
                           key={tipo.value}
                           className="border border-gray-300 px-2 py-2 text-center"
                         >
-                          <span
-                            className={`inline-block rounded border px-2 py-1 text-xs font-medium ${display.colorClass}`}
-                            title={display.title}
-                          >
-                            {display.label}
-                          </span>
+                          <div className="flex flex-col items-center gap-1">
+                            <span
+                              className={`inline-block rounded border px-2 py-1 text-xs font-medium ${display.colorClass}`}
+                              title={display.title}
+                            >
+                              {display.label}
+                            </span>
+                            {display.canAsignarCita && documento?.documento_id ? (
+                              <button
+                                type="button"
+                                className="rounded border border-emerald-400 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 hover:bg-emerald-50"
+                                onClick={() =>
+                                  setCitaModal({
+                                    documentoId: documento.documento_id,
+                                    empleadoId: empleado.empleado_id,
+                                    empleadoNombre: empleado.empleado_nombre,
+                                    fecha: documento.rm_cita_fecha
+                                      ? String(documento.rm_cita_fecha).slice(0, 10)
+                                      : '',
+                                    hora: documento.rm_cita_hora || '',
+                                  })
+                                }
+                              >
+                                {documento.rm_cita_fecha
+                                  ? 'Cambiar cita'
+                                  : 'Asignar cita'}
+                              </button>
+                            ) : null}
+                          </div>
                         </td>
                       );
                     })}
@@ -716,6 +762,116 @@ export default function PrlMatrixSharePage() {
           ) : null}
         </div>
       </main>
+
+      {citaModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+            <h3 className="mb-3 text-lg font-semibold text-gray-900">
+              Asignar cita RM
+            </h3>
+            <p className="mb-4 text-sm text-gray-600">
+              Empleado:{' '}
+              <strong>{citaModal.empleadoNombre || citaModal.empleadoId}</strong>
+            </p>
+            <div className="mb-4 grid grid-cols-2 gap-3">
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium">Fecha</span>
+                <input
+                  type="date"
+                  className="w-full rounded border border-gray-300 px-2 py-1.5"
+                  value={citaModal.fecha}
+                  onChange={(e) =>
+                    setCitaModal((m) => ({ ...m, fecha: e.target.value }))
+                  }
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium">Hora</span>
+                <input
+                  type="time"
+                  className="w-full rounded border border-gray-300 px-2 py-1.5"
+                  value={citaModal.hora}
+                  onChange={(e) =>
+                    setCitaModal((m) => ({ ...m, hora: e.target.value }))
+                  }
+                />
+              </label>
+            </div>
+            <p className="mb-4 text-xs text-gray-500">
+              Se notificará al empleado (email + app). Regla 48h / 55€.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded border border-gray-300 px-3 py-1.5 text-sm"
+                disabled={citaSaving}
+                onClick={() => setCitaModal(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+                disabled={citaSaving || !citaModal.fecha || !citaModal.hora}
+                onClick={async () => {
+                  setCitaSaving(true);
+                  try {
+                    const res = await fetch(
+                      routes.prlMatrixShareAsignarCita(citaModal.documentoId),
+                      {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({
+                          fecha: citaModal.fecha,
+                          hora: citaModal.hora,
+                        }),
+                      },
+                    );
+                    if (!res.ok) {
+                      const err = await res.json().catch(() => ({}));
+                      throw new Error(
+                        Array.isArray(err.message)
+                          ? err.message.join(', ')
+                          : err.message || 'Error al asignar cita',
+                      );
+                    }
+                    const data = await res.json();
+                    setEmpleados((prev) =>
+                      prev.map((row) => {
+                        if (row.empleado_id !== citaModal.empleadoId) return row;
+                        return {
+                          ...row,
+                          documentos: (row.documentos || []).map((d) =>
+                            d.documento_id === citaModal.documentoId
+                              ? {
+                                  ...d,
+                                  rm_cita_fecha:
+                                    data.rm_cita_fecha || citaModal.fecha,
+                                  rm_cita_hora:
+                                    data.rm_cita_hora || citaModal.hora,
+                                }
+                              : d,
+                          ),
+                        };
+                      }),
+                    );
+                    setCitaModal(null);
+                  } catch (err) {
+                    setLoadError(err.message || 'Error al asignar cita');
+                  } finally {
+                    setCitaSaving(false);
+                  }
+                }}
+              >
+                {citaSaving ? 'Guardando…' : 'Guardar cita'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

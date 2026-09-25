@@ -34,7 +34,15 @@ function countDocsByEstado(empleado, estado) {
   return docs.filter((d) => d.estado === estado).length;
 }
 
-/** Afișare matrix: Semnat / En gestión / Pendiente / Sin asignar */
+function formatRmCitaLabel(fecha, hora) {
+  if (!fecha) return null;
+  const s = String(fecha).slice(0, 10);
+  const [y, m, d] = s.split('-');
+  if (!y || !m || !d) return hora ? `${s} ${hora}` : s;
+  return `${d}/${m}${hora ? ` ${hora}` : ''}`;
+}
+
+/** Afișare matrix: Semnat / En gestión / Cita / Pendiente / Sin asignar */
 function resolveMatrixDocDisplay(documento) {
   if (!documento) {
     return {
@@ -47,6 +55,8 @@ function resolveMatrixDocDisplay(documento) {
 
   const rmEstado = documento.rm_aprobacion_estado;
   const rmSolicitado = !!(documento.rm_solicitado === true || documento.rm_solicitado === 1);
+  const citaLabel = formatRmCitaLabel(documento.rm_cita_fecha, documento.rm_cita_hora);
+  const tieneCita = !!(documento.rm_cita_fecha && documento.rm_cita_hora);
   const enGestion =
     documento.tipo_documento === 'RENUNCIA_RM' &&
     (rmSolicitado ||
@@ -65,10 +75,20 @@ function resolveMatrixDocDisplay(documento) {
     };
   }
 
+  if (enGestion && rmEstado === 'ACEPTADO' && tieneCita) {
+    return {
+      key: 'CITA',
+      label: `Cita ${citaLabel}`,
+      colorClass: 'bg-emerald-100 text-emerald-900 border-emerald-300',
+      title: `Cita asignada: ${citaLabel}`,
+      canAsignarCita: true,
+    };
+  }
+
   if (enGestion) {
     const detalle =
       rmEstado === 'ACEPTADO'
-        ? 'RM aceptado — en gestión de cita'
+        ? 'RM aceptado — pendiente de asignar cita'
         : rmEstado === 'PENDIENTE'
           ? 'RM pendiente de aprobación'
           : 'RM solicitado — en gestión';
@@ -77,6 +97,7 @@ function resolveMatrixDocDisplay(documento) {
       label: 'En gestión',
       colorClass: 'bg-sky-100 text-sky-900 border-sky-300',
       title: detalle,
+      canAsignarCita: rmEstado === 'ACEPTADO',
     };
   }
 
@@ -172,6 +193,8 @@ export default function PRLDocumentosPage() {
   const [loadingEmpleadosEnviar, setLoadingEmpleadosEnviar] = useState(false);
   const [filtroEmpleadoEnviar, setFiltroEmpleadoEnviar] = useState('');
   const [autoevalDocumentoId, setAutoevalDocumentoId] = useState(null);
+  const [citaModal, setCitaModal] = useState(null); // { documentoId, empleadoId, empleadoNombre, fecha, hora }
+  const [citaSaving, setCitaSaving] = useState(false);
 
   // Form states pentru upload individual
   const [formData, setFormData] = useState({
@@ -980,35 +1003,56 @@ export default function PRLDocumentosPage() {
                               className="border border-gray-300 px-2 py-2 text-center"
                             >
                               {documento ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (
-                                      tipo.value === 'MANUAL_TEST' &&
-                                      documento.test_completado &&
-                                      documento.documento_id
-                                    ) {
-                                      setAutoevalDocumentoId(documento.documento_id);
-                                    }
-                                  }}
-                                  className={`inline-block px-2 py-1 rounded text-xs font-medium border ${display.colorClass} ${
-                                    tipo.value === 'MANUAL_TEST' && documento.test_completado
-                                      ? 'cursor-pointer hover:opacity-90 underline-offset-2 hover:underline'
-                                      : ''
-                                  }`}
-                                  title={`${display.title}${
-                                    tipo.value === 'MANUAL_TEST' && documento.test_completado
-                                      ? ` · Test: ${documento.test_puntuacion ?? '—'} pts — clic para ver respuestas`
-                                      : ''
-                                  }`}
-                                >
-                                  {display.label}
-                                  {tipo.value === 'MANUAL_TEST' && documento.test_completado && (
-                                    <span className="block text-[10px] mt-0.5 opacity-90">
-                                      Test {documento.test_puntuacion ?? '—'} pts · Ver resp.
-                                    </span>
-                                  )}
-                                </button>
+                                <div className="flex flex-col items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (
+                                        tipo.value === 'MANUAL_TEST' &&
+                                        documento.test_completado &&
+                                        documento.documento_id
+                                      ) {
+                                        setAutoevalDocumentoId(documento.documento_id);
+                                      }
+                                    }}
+                                    className={`inline-block px-2 py-1 rounded text-xs font-medium border ${display.colorClass} ${
+                                      tipo.value === 'MANUAL_TEST' && documento.test_completado
+                                        ? 'cursor-pointer hover:opacity-90 underline-offset-2 hover:underline'
+                                        : ''
+                                    }`}
+                                    title={`${display.title}${
+                                      tipo.value === 'MANUAL_TEST' && documento.test_completado
+                                        ? ` · Test: ${documento.test_puntuacion ?? '—'} pts — clic para ver respuestas`
+                                        : ''
+                                    }`}
+                                  >
+                                    {display.label}
+                                    {tipo.value === 'MANUAL_TEST' && documento.test_completado && (
+                                      <span className="block text-[10px] mt-0.5 opacity-90">
+                                        Test {documento.test_puntuacion ?? '—'} pts · Ver resp.
+                                      </span>
+                                    )}
+                                  </button>
+                                  {display.canAsignarCita && documento.documento_id ? (
+                                    <button
+                                      type="button"
+                                      className="rounded border border-emerald-400 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 hover:bg-emerald-50"
+                                      onClick={() =>
+                                        setCitaModal({
+                                          documentoId: documento.documento_id,
+                                          empleadoId: empleado.empleado_id,
+                                          empleadoNombre: empleado.empleado_nombre,
+                                          fecha: documento.rm_cita_fecha
+                                            ? String(documento.rm_cita_fecha).slice(0, 10)
+                                            : '',
+                                          hora: documento.rm_cita_hora || '',
+                                        })
+                                      }
+                                    >
+                                      {documento.rm_cita_fecha ? 'Cambiar cita' : 'Asignar cita'}
+                                    </button>
+                                  ) : null}
+                                </div>
                               ) : (
                                 <span
                                   className={`inline-block px-2 py-1 rounded text-xs font-medium border ${display.colorClass}`}
@@ -1695,6 +1739,116 @@ export default function PRLDocumentosPage() {
           admin={true}
           onClose={() => setAutoevalDocumentoId(null)}
         />
+      )}
+
+      {citaModal && (
+        <Modal
+          isOpen
+          onClose={() => !citaSaving && setCitaModal(null)}
+          title="Asignar cita RM"
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Empleado:{' '}
+              <strong>{citaModal.empleadoNombre || citaModal.empleadoId}</strong>
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium">Fecha</span>
+                <input
+                  type="date"
+                  className="w-full rounded border border-gray-300 px-2 py-1.5"
+                  value={citaModal.fecha}
+                  onChange={(e) =>
+                    setCitaModal((m) => ({ ...m, fecha: e.target.value }))
+                  }
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block font-medium">Hora</span>
+                <input
+                  type="time"
+                  className="w-full rounded border border-gray-300 px-2 py-1.5"
+                  value={citaModal.hora}
+                  onChange={(e) =>
+                    setCitaModal((m) => ({ ...m, hora: e.target.value }))
+                  }
+                />
+              </label>
+            </div>
+            <p className="text-xs text-gray-500">
+              Se notificará al empleado por email y app (regla 48h / 55€).
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                disabled={citaSaving}
+                onClick={() => setCitaModal(null)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="primary"
+                disabled={citaSaving || !citaModal.fecha || !citaModal.hora}
+                onClick={async () => {
+                  setCitaSaving(true);
+                  try {
+                    const res = await fetch(
+                      routes.prlRmAsignarCita(citaModal.documentoId),
+                      {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${authToken}`,
+                        },
+                        body: JSON.stringify({
+                          fecha: citaModal.fecha,
+                          hora: citaModal.hora,
+                        }),
+                      },
+                    );
+                    if (!res.ok) {
+                      const err = await res.json().catch(() => ({}));
+                      throw new Error(
+                        Array.isArray(err.message)
+                          ? err.message.join(', ')
+                          : err.message || 'Error al asignar cita',
+                      );
+                    }
+                    const data = await res.json();
+                    setEmpleadosConDocumentos((prev) =>
+                      prev.map((row) => {
+                        if (row.empleado_id !== citaModal.empleadoId) return row;
+                        return {
+                          ...row,
+                          documentos: (row.documentos || []).map((d) =>
+                            d.documento_id === citaModal.documentoId
+                              ? {
+                                  ...d,
+                                  rm_cita_fecha:
+                                    data.rm_cita_fecha || citaModal.fecha,
+                                  rm_cita_hora:
+                                    data.rm_cita_hora || citaModal.hora,
+                                }
+                              : d,
+                          ),
+                        };
+                      }),
+                    );
+                    setCitaModal(null);
+                    mostrarNotificacion('success', 'Cita asignada correctamente');
+                  } catch (err) {
+                    mostrarNotificacion('error', err.message || 'Error');
+                  } finally {
+                    setCitaSaving(false);
+                  }
+                }}
+              >
+                {citaSaving ? 'Guardando…' : 'Guardar cita'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

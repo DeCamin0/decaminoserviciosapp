@@ -1936,6 +1936,8 @@ export class PrlDocumentsService {
       rm_aprobado_por: string | null;
       rm_aprobado_en: Date | null;
       rm_rechazo_motivo: string | null;
+      rm_cita_fecha: string | null;
+      rm_cita_hora: string | null;
       es_renuncia_rm: boolean;
       es_manual_test: boolean;
       test_completado: boolean;
@@ -1962,6 +1964,8 @@ export class PrlDocumentsService {
           rm_aprobado_por: string | null;
           rm_aprobado_en: Date | null;
           rm_rechazo_motivo: string | null;
+          rm_cita_fecha: Date | string | null;
+          rm_cita_hora: string | null;
           es_renuncia_rm: number;
           es_manual_test: number;
           test_completado: number;
@@ -1987,6 +1991,8 @@ export class PrlDocumentsService {
           ed.rm_aprobado_por,
           ed.rm_aprobado_en,
           ed.rm_rechazo_motivo,
+          ed.rm_cita_fecha,
+          ed.rm_cita_hora,
           t.es_renuncia_rm,
           t.es_manual_test,
           ed.test_completado,
@@ -2016,6 +2022,8 @@ export class PrlDocumentsService {
         rm_aprobado_por: doc.rm_aprobado_por || null,
         rm_aprobado_en: doc.rm_aprobado_en || null,
         rm_rechazo_motivo: doc.rm_rechazo_motivo || null,
+        rm_cita_fecha: this.normalizeRmCitaFecha(doc.rm_cita_fecha),
+        rm_cita_hora: doc.rm_cita_hora || null,
         es_renuncia_rm: doc.es_renuncia_rm === 1,
         es_manual_test: doc.es_manual_test === 1,
         test_completado: doc.test_completado === 1,
@@ -2801,6 +2809,204 @@ ${motivoClean ? `📝 *Motivo:* ${motivoClean}\n` : ''}📎 *Doc ID:* ${document
     }
   }
 
+  /**
+   * Asigna (o actualiza) cita RM — Matrix admin o panel share (Noemi).
+   * Solo si rm_aprobacion_estado = ACEPTADO.
+   */
+  async asignarRmCita(
+    documentoId: number,
+    fecha: string,
+    hora: string,
+    asignadoPor: string,
+  ): Promise<{
+    documento_id: number;
+    rm_cita_fecha: string;
+    rm_cita_hora: string;
+    rm_cita_asignada_por: string;
+  }> {
+    const fechaClean = String(fecha || '').trim();
+    const horaClean = String(hora || '').trim();
+    const porClean = String(asignadoPor || '').trim() || 'sistema';
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaClean)) {
+      throw new BadRequestException('fecha debe ser YYYY-MM-DD');
+    }
+    if (!/^\d{1,2}:\d{2}$/.test(horaClean)) {
+      throw new BadRequestException('hora debe ser HH:MM');
+    }
+
+    const [hh, mm] = horaClean.split(':').map((x) => parseInt(x, 10));
+    if (
+      Number.isNaN(hh) ||
+      Number.isNaN(mm) ||
+      hh < 0 ||
+      hh > 23 ||
+      mm < 0 ||
+      mm > 59
+    ) {
+      throw new BadRequestException('hora inválida');
+    }
+    const horaNorm = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        id: number;
+        empleado_id: string;
+        tipo_documento: string;
+        rm_aprobacion_estado: string | null;
+        rm_cita_fecha: Date | string | null;
+      }>
+    >(
+      `
+      SELECT id, empleado_id, tipo_documento, rm_aprobacion_estado, rm_cita_fecha
+      FROM prl_employee_documents
+      WHERE id = ${documentoId}
+      LIMIT 1
+      `,
+    );
+
+    if (!rows?.length) {
+      throw new NotFoundException(`Documento ${documentoId} no encontrado`);
+    }
+    const doc = rows[0];
+    if (doc.tipo_documento !== 'RENUNCIA_RM') {
+      throw new BadRequestException('Documento no es Renuncia RM');
+    }
+    if (doc.rm_aprobacion_estado !== 'ACEPTADO') {
+      throw new BadRequestException(
+        'Solo se puede asignar cita si el RM está aceptado',
+      );
+    }
+
+    const wasUpdate = !!doc.rm_cita_fecha;
+
+    await this.prisma.$executeRawUnsafe(
+      `
+      UPDATE prl_employee_documents
+      SET rm_cita_fecha = ${this.escapeSql(fechaClean)},
+          rm_cita_hora = ${this.escapeSql(horaNorm)},
+          rm_cita_asignada_por = ${this.escapeSql(porClean)},
+          rm_cita_asignada_en = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${documentoId}
+      `,
+    );
+
+    await this.crearAuditLog(
+      documentoId,
+      porClean,
+      'VISUALIZADO',
+      undefined,
+      undefined,
+      `RM_CITA_${wasUpdate ? 'ACTUALIZADA' : 'ASIGNADA'}: ${fechaClean} ${horaNorm}`,
+    );
+
+    const emp = await this.getEmpleadoRmContext(doc.empleado_id);
+    const tenant = this.getCompanyName() || 'Empresa';
+    const fechaEs = this.formatRmCitaFechaEs(fechaClean);
+
+    const notifTitle = wasUpdate
+      ? 'Cita de reconocimiento médico actualizada'
+      : 'Cita de reconocimiento médico asignada';
+    const notifMessage = `Tu cita es el ${fechaEs} a las ${horaNorm}. Cancelaciones con mínimo 48h; si no avisas o no acudes, 55 € en nómina.`;
+
+    try {
+      await this.notificationsService.notifyUser('system', doc.empleado_id, {
+        type: 'info',
+        title: notifTitle,
+        message: notifMessage,
+        data: {
+          kind: 'PRL_RM_CITA',
+          documentoId,
+          fecha: fechaClean,
+          hora: horaNorm,
+        },
+      });
+    } catch (e: any) {
+      this.logger.warn(`⚠️ Notif cita RM: ${e?.message || e}`);
+    }
+
+    const employeeHtml = `
+      <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1e293b;">
+        <p>Buenos días,</p>
+        <p>${wasUpdate ? 'Se ha <strong>actualizado</strong>' : 'Se te ha <strong>asignado</strong>'} la cita de <strong>reconocimiento médico</strong>:</p>
+        <ul>
+          <li><strong>Fecha:</strong> ${this.escapeHtml(fechaEs)}</li>
+          <li><strong>Hora:</strong> ${this.escapeHtml(horaNorm)}</li>
+        </ul>
+        <p><strong>Muy importante:</strong> cualquier cancelación o modificación debe comunicarse con un <strong>mínimo de 48 horas</strong> de antelación.</p>
+        <p>Si no se avisa con al menos 48 horas o <strong>no se acude a la cita</strong>, el importe de la consulta (<strong>55 €</strong>) se descontará de la nómina.</p>
+        <p>Saludos,<br>${tenant ? `Equipo ${tenant}` : 'Equipo'}</p>
+      </div>
+    `;
+
+    if (emp.email && this.emailService.isConfigured()) {
+      try {
+        await this.emailService.sendEmail(
+          emp.email,
+          wasUpdate
+            ? 'Cita RM actualizada — día y hora'
+            : 'Cita RM asignada — día y hora',
+          employeeHtml,
+        );
+      } catch (e: any) {
+        this.logger.warn(`⚠️ Email cita RM: ${e?.message || e}`);
+      }
+    }
+
+    try {
+      if (this.telegramService.isConfigured()) {
+        await this.telegramService.sendMessage(
+          `📅 *RM CITA ${wasUpdate ? 'ACTUALIZADA' : 'ASIGNADA'}*
+
+👤 *Empleado:* ${emp.nombre}
+🆔 *Código:* ${doc.empleado_id}
+📄 *DNI:* ${emp.dni}
+🗓️ *Fecha:* ${fechaEs}
+⏰ *Hora:* ${horaNorm}
+✔️ *Por:* ${porClean}
+📎 *Doc ID:* ${documentoId}`,
+        );
+      }
+    } catch (e: any) {
+      this.logger.warn(`⚠️ Telegram cita RM: ${e?.message || e}`);
+    }
+
+    return {
+      documento_id: documentoId,
+      rm_cita_fecha: fechaClean,
+      rm_cita_hora: horaNorm,
+      rm_cita_asignada_por: porClean,
+    };
+  }
+
+  private formatRmCitaFechaEs(yyyyMmDd: string): string {
+    const [y, m, d] = yyyyMmDd.split('-').map((x) => parseInt(x, 10));
+    if (!y || !m || !d) return yyyyMmDd;
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    return dt.toLocaleDateString('es-ES', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
+  }
+
+  private normalizeRmCitaFecha(value: Date | string | null | undefined): string | null {
+    if (!value) return null;
+    if (value instanceof Date) {
+      if (Number.isNaN(value.getTime())) return null;
+      const y = value.getUTCFullYear();
+      const m = String(value.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(value.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    const s = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    return null;
+  }
+
   private escapeHtml(value: string): string {
     return String(value || '')
       .replace(/&/g, '&amp;')
@@ -3575,6 +3781,8 @@ El documento ha sido firmado y guardado correctamente.`;
         test_puntuacion: number | null;
         rm_solicitado: boolean;
         rm_aprobacion_estado: string | null;
+        rm_cita_fecha: string | null;
+        rm_cita_hora: string | null;
       }>;
     }>
   > {
@@ -3616,6 +3824,8 @@ El documento ha sido firmado y guardado correctamente.`;
           test_puntuacion: number | null;
           rm_solicitado: number;
           rm_aprobacion_estado: string | null;
+          rm_cita_fecha: Date | string | null;
+          rm_cita_hora: string | null;
         }>
       >(
         `
@@ -3630,7 +3840,9 @@ El documento ha sido firmado y guardado correctamente.`;
           ed.test_completado,
           ed.test_puntuacion,
           ed.rm_solicitado,
-          ed.rm_aprobacion_estado
+          ed.rm_aprobacion_estado,
+          ed.rm_cita_fecha,
+          ed.rm_cita_hora
         FROM prl_employee_documents ed
         INNER JOIN prl_document_templates t ON ed.template_id = t.id
         WHERE t.activo = 1
@@ -3652,6 +3864,8 @@ El documento ha sido firmado y guardado correctamente.`;
           test_puntuacion: number | null;
           rm_solicitado: boolean;
           rm_aprobacion_estado: string | null;
+          rm_cita_fecha: string | null;
+          rm_cita_hora: string | null;
         }>
       >();
 
@@ -3670,6 +3884,8 @@ El documento ha sido firmado y guardado correctamente.`;
           test_puntuacion: doc.test_puntuacion,
           rm_solicitado: doc.rm_solicitado === 1,
           rm_aprobacion_estado: doc.rm_aprobacion_estado || null,
+          rm_cita_fecha: this.normalizeRmCitaFecha(doc.rm_cita_fecha),
+          rm_cita_hora: doc.rm_cita_hora || null,
         });
       }
 

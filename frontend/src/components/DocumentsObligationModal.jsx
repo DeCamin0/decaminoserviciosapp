@@ -9,6 +9,9 @@ import {
   LogOut,
   X,
   HeartPulse,
+  Camera,
+  Image as ImageIcon,
+  FileText,
 } from 'lucide-react';
 import ContractSigner from './ContractSigner';
 import PRLDocumentSigner from './PRLDocumentSigner';
@@ -57,7 +60,12 @@ export default function DocumentsObligationModal({
   onSigningChange,
 }) {
   const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
+  const galleryInputRef = useRef(null);
+  /** Sync ref — evita setTimeout care rupe user-gesture pe mobil */
+  const activeSolicitadoRef = useRef(null);
   const [activeSolicitado, setActiveSolicitado] = useState(null);
+  const [showUploadSource, setShowUploadSource] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
   const [busyKey, setBusyKey] = useState(null);
@@ -222,19 +230,24 @@ export default function DocumentsObligationModal({
 
   const handleSubir = (item) => {
     setError(null);
+    activeSolicitadoRef.current = item.raw;
     setActiveSolicitado(item.raw);
-    setTimeout(() => fileInputRef.current?.click(), 50);
+    setShowUploadSource(true);
   };
 
-  const handleFileChange = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file || !activeSolicitado) return;
+  const closeUploadSource = () => {
+    setShowUploadSource(false);
+  };
+
+  const uploadSelectedFile = async (file) => {
+    const solicitado = activeSolicitadoRef.current || activeSolicitado;
+    if (!file || !solicitado) return;
 
     setUploading(true);
     setError(null);
+    setShowUploadSource(false);
     try {
-      const tipoFinal = activeSolicitado.tipo_documento || '';
+      const tipoFinal = solicitado.tipo_documento || '';
       const formData = new FormData();
       formData.append('archivo_0', file);
       formData.append('empleado_id', user?.CODIGO || user?.id || '');
@@ -265,7 +278,15 @@ export default function DocumentsObligationModal({
         headers: authHeaders(),
         body: formData,
       });
-      if (!res.ok) throw new Error(`Error al subir (${res.status})`);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(
+          Array.isArray(errData.message)
+            ? errData.message.join(', ')
+            : errData.message || `Error al subir (${res.status})`,
+        );
+      }
+      activeSolicitadoRef.current = null;
       setActiveSolicitado(null);
       await onAfterItemDone?.();
     } catch (e) {
@@ -273,6 +294,13 @@ export default function DocumentsObligationModal({
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    await uploadSelectedFile(file);
   };
 
   const handleItemAction = (item) => {
@@ -432,10 +460,113 @@ export default function DocumentsObligationModal({
         </div>
       </div>
 
+      {showUploadSource ? (
+        <div
+          className="docs-obligation-upload-source"
+          role="dialog"
+          aria-label="Elegir origen del documento"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2,
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+            background: 'rgba(15, 23, 42, 0.55)',
+            padding: '1rem',
+            borderRadius: 'inherit',
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!uploading) closeUploadSource();
+          }}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl bg-white p-4 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="mb-1 text-sm font-semibold text-slate-900">
+              Subir documento
+            </p>
+            <p className="mb-3 text-xs text-slate-500">
+              {(activeSolicitadoRef.current || activeSolicitado)?.tipo_documento ||
+                'Selecciona una opción'}
+            </p>
+            <div className="space-y-2">
+              <button
+                type="button"
+                className="solicitud-admin-btn w-full justify-start"
+                disabled={uploading}
+                onClick={() => galleryInputRef.current?.click()}
+              >
+                <ImageIcon size={18} aria-hidden />
+                <span className="text-left">
+                  <span className="block font-semibold">Fototeca</span>
+                  <span className="block text-xs text-slate-500">
+                    Foto o imagen existente
+                  </span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="solicitud-admin-btn w-full justify-start"
+                disabled={uploading}
+                onClick={() => cameraInputRef.current?.click()}
+              >
+                <Camera size={18} aria-hidden />
+                <span className="text-left">
+                  <span className="block font-semibold">Hacer foto</span>
+                  <span className="block text-xs text-slate-500">
+                    Cámara del dispositivo
+                  </span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="solicitud-admin-btn w-full justify-start"
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <FileText size={18} aria-hidden />
+                <span className="text-left">
+                  <span className="block font-semibold">Seleccionar archivo</span>
+                  <span className="block text-xs text-slate-500">
+                    PDF, imagen u otro archivo
+                  </span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="solicitud-admin-btn w-full"
+                disabled={uploading}
+                onClick={closeUploadSource}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*,.jpg,.jpeg,.png,.gif,.webp,image/heic,image/heif"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={handleFileChange}
+      />
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*,.pdf,.jpg,.jpeg,.png"
+        accept="image/*,.pdf,.jpg,.jpeg,.png,.gif,.webp,application/pdf,image/heic,image/heif"
         className="hidden"
         onChange={handleFileChange}
       />

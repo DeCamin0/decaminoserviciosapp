@@ -1998,6 +1998,11 @@ model PrlEmployeeDocument {
   rm_aprobado_por       String?   @map("rm_aprobado_por") @db.VarChar(50)
   rm_aprobado_en        DateTime? @map("rm_aprobado_en") @db.Timestamp(0)
   rm_rechazo_motivo     String?   @map("rm_rechazo_motivo") @db.Text
+  // Cita RM (asignada por admin Matrix o panel share Noemi)
+  rm_cita_fecha         DateTime? @map("rm_cita_fecha") @db.Date
+  rm_cita_hora          String?   @map("rm_cita_hora") @db.VarChar(10)
+  rm_cita_asignada_por  String?   @map("rm_cita_asignada_por") @db.VarChar(100)
+  rm_cita_asignada_en   DateTime? @map("rm_cita_asignada_en") @db.Timestamp(0)
 
   // Documento original (template) — R2 only
   nombre_archivo_original String? @map("nombre_archivo_original") @db.VarChar(255)
@@ -2037,6 +2042,7 @@ model PrlEmployeeDocument {
   @@index([empleado_id, estado], map: "idx_prl_emp_doc_emp_estado")
   @@index([tipo_documento], map: "idx_prl_emp_doc_tipo")
   @@index([rm_aprobacion_estado], map: "idx_prl_emp_doc_rm_aprobacion")
+  @@index([rm_cita_fecha], map: "idx_prl_emp_doc_rm_cita_fecha")
   @@index([storage_key_original], map: "idx_prl_emp_doc_storage_key_original")
   @@index([storage_key_firmado], map: "idx_prl_emp_doc_storage_key_firmado")
   @@map("prl_employee_documents")

@@ -869,6 +869,38 @@ export class PrlDocumentsController {
   }
 
   /**
+   * Asigna / actualiza cita RM (Matrix admin)
+   * POST /api/prl/rm-solicitudes/:documentoId/asignar-cita
+   * Body: { fecha: 'YYYY-MM-DD', hora: 'HH:MM' }
+   */
+  @Post('rm-solicitudes/:documentoId/asignar-cita')
+  @UseGuards(JwtAuthGuard)
+  async asignarRmCita(
+    @Param('documentoId') documentoId: string,
+    @Body() body: { fecha?: string; hora?: string },
+    @CurrentUser() user: any,
+  ) {
+    const documentoIdNum = parseInt(documentoId, 10);
+    if (isNaN(documentoIdNum)) {
+      throw new BadRequestException('documentoId debe ser un número');
+    }
+    const fecha = String(body?.fecha || '').trim();
+    const hora = String(body?.hora || '').trim();
+    if (!fecha || !hora) {
+      throw new BadRequestException('fecha y hora son requeridos');
+    }
+    const por =
+      user.CODIGO || user.codigo || user.userId || user.email || 'admin';
+    const result = await this.prlDocumentsService.asignarRmCita(
+      documentoIdNum,
+      fecha,
+      hora,
+      String(por),
+    );
+    return { success: true, message: 'Cita RM asignada', ...result };
+  }
+
+  /**
    * Încarcă documentul semnat pentru Renuncia RM
    */
   /**

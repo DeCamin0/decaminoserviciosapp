@@ -113,8 +113,8 @@ export class PrlMatrixShareService {
       await this.prlDocumentsService.listarEmpleadosConDocumentosPRL();
     return {
       success: true,
-      /** Solo puede: procesado + subir diploma */
-      allowed_actions: ['procesado', 'subir_diploma'] as const,
+      /** Solo puede: procesado + subir diploma + asignar cita RM */
+      allowed_actions: ['procesado', 'subir_diploma', 'asignar_cita'] as const,
       displayName: this.getDisplayName(),
       empleados,
     };
@@ -125,6 +125,16 @@ export class PrlMatrixShareService {
     return this.prlDocumentsService.setEmpleadoProcesado(
       empleadoId,
       procesado,
+      `share:${this.getDisplayName()}`,
+    );
+  }
+
+  async asignarRmCita(documentoId: number, fecha: string, hora: string) {
+    this.assertEnabled();
+    return this.prlDocumentsService.asignarRmCita(
+      documentoId,
+      fecha,
+      hora,
       `share:${this.getDisplayName()}`,
     );
   }
