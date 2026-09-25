@@ -34,6 +34,96 @@ function countDocsByEstado(empleado, estado) {
   return docs.filter((d) => d.estado === estado).length;
 }
 
+/** Afișare matrix: Semnat / En gestión / Pendiente / Sin asignar */
+function resolveMatrixDocDisplay(documento) {
+  if (!documento) {
+    return {
+      key: 'SIN_ASIGNAR',
+      label: 'Sin asignar',
+      colorClass: 'bg-slate-100 text-slate-600 border-slate-300',
+      title: 'Sin documento asignado',
+    };
+  }
+
+  const rmEstado = documento.rm_aprobacion_estado;
+  const rmSolicitado = !!(documento.rm_solicitado === true || documento.rm_solicitado === 1);
+  const enGestion =
+    documento.tipo_documento === 'RENUNCIA_RM' &&
+    (rmSolicitado ||
+      rmEstado === 'PENDIENTE' ||
+      rmEstado === 'ACEPTADO') &&
+    documento.estado !== 'FIRMADO';
+
+  if (documento.estado === 'FIRMADO') {
+    return {
+      key: 'FIRMADO',
+      label: 'Semnat',
+      colorClass: 'bg-green-100 text-green-800 border-green-300',
+      title: documento.fecha_firma
+        ? `Firmado: ${new Date(documento.fecha_firma).toLocaleDateString('es-ES')}`
+        : 'Firmado',
+    };
+  }
+
+  if (enGestion) {
+    const detalle =
+      rmEstado === 'ACEPTADO'
+        ? 'RM aceptado — en gestión de cita'
+        : rmEstado === 'PENDIENTE'
+          ? 'RM pendiente de aprobación'
+          : 'RM solicitado — en gestión';
+    return {
+      key: 'EN_GESTION',
+      label: 'En gestión',
+      colorClass: 'bg-sky-100 text-sky-900 border-sky-300',
+      title: detalle,
+    };
+  }
+
+  if (documento.estado === 'PENDIENTE') {
+    return {
+      key: 'PENDIENTE',
+      label: 'Pendiente',
+      colorClass: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+      title: 'Pendiente de firma',
+    };
+  }
+
+  if (documento.estado === 'NO_APLICA') {
+    return {
+      key: 'NO_APLICA',
+      label: 'No aplica',
+      colorClass: 'bg-blue-100 text-blue-800 border-blue-300',
+      title: 'No aplica',
+    };
+  }
+
+  if (documento.estado === 'RECHAZADO') {
+    return {
+      key: 'RECHAZADO',
+      label: 'Rechazado',
+      colorClass: 'bg-red-100 text-red-800 border-red-300',
+      title: 'Rechazado',
+    };
+  }
+
+  if (!documento.requiere_firma) {
+    return {
+      key: 'INFO',
+      label: 'Informativo',
+      colorClass: 'bg-gray-100 text-gray-700 border-gray-300',
+      title: 'Documento informativo',
+    };
+  }
+
+  return {
+    key: documento.estado || 'OTRO',
+    label: documento.estado || '—',
+    colorClass: 'bg-gray-100 text-gray-700 border-gray-300',
+    title: documento.estado || '',
+  };
+}
+
 export default function PRLDocumentosPage() {
   const { authToken } = useAuth();
   const [activeTab, setActiveTab] = useState('grupos'); // 'grupos' sau 'matrix'
@@ -627,41 +717,6 @@ export default function PRLDocumentosPage() {
     );
   };
 
-  const getEstadoColor = (estado, requiereFirma) => {
-    if (!requiereFirma) {
-      return 'bg-gray-100 text-gray-700'; // Informativo
-    }
-    switch (estado) {
-      case 'FIRMADO':
-        return 'bg-green-100 text-green-800 border-green-300';
-      case 'PENDIENTE':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-      case 'NO_APLICA':
-        return 'bg-blue-100 text-blue-800 border-blue-300';
-      case 'RECHAZADO':
-        return 'bg-red-100 text-red-800 border-red-300';
-      default:
-        return 'bg-gray-100 text-gray-700 border-gray-300';
-    }
-  };
-
-  const getEstadoLabel = (estado) => {
-    switch (estado) {
-      case 'FIRMADO':
-        return '✅ Firmado';
-      case 'PENDIENTE':
-        return '⏳ Pendiente';
-      case 'NO_APLICA':
-        return 'ℹ️ No aplica';
-      case 'RECHAZADO':
-        return '❌ Rechazado';
-      case 'INFORMATIVO':
-        return '📄 Informativo';
-      default:
-        return estado;
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -905,6 +960,11 @@ export default function PRLDocumentosPage() {
                           const documento = empleado.documentos.find(
                             (d) => d.tipo_documento === tipo.value
                           );
+                          const display = resolveMatrixDocDisplay(
+                            documento
+                              ? { ...documento, tipo_documento: tipo.value }
+                              : null,
+                          );
                           return (
                             <td
                               key={tipo.value}
@@ -922,21 +982,18 @@ export default function PRLDocumentosPage() {
                                       setAutoevalDocumentoId(documento.documento_id);
                                     }
                                   }}
-                                  className={`inline-block px-2 py-1 rounded text-xs font-medium border ${getEstadoColor(
-                                    documento.estado,
-                                    documento.requiere_firma
-                                  )} ${
+                                  className={`inline-block px-2 py-1 rounded text-xs font-medium border ${display.colorClass} ${
                                     tipo.value === 'MANUAL_TEST' && documento.test_completado
                                       ? 'cursor-pointer hover:opacity-90 underline-offset-2 hover:underline'
                                       : ''
                                   }`}
-                                  title={`Estado: ${documento.estado}${documento.fecha_firma ? `, Fecha: ${new Date(documento.fecha_firma).toLocaleDateString('es-ES')}` : ''}${
+                                  title={`${display.title}${
                                     tipo.value === 'MANUAL_TEST' && documento.test_completado
-                                      ? `, Test: ${documento.test_puntuacion ?? '—'} pts — clic para ver respuestas`
+                                      ? ` · Test: ${documento.test_puntuacion ?? '—'} pts — clic para ver respuestas`
                                       : ''
                                   }`}
                                 >
-                                  {getEstadoLabel(documento.estado)}
+                                  {display.label}
                                   {tipo.value === 'MANUAL_TEST' && documento.test_completado && (
                                     <span className="block text-[10px] mt-0.5 opacity-90">
                                       Test {documento.test_puntuacion ?? '—'} pts · Ver resp.
@@ -944,7 +1001,12 @@ export default function PRLDocumentosPage() {
                                   )}
                                 </button>
                               ) : (
-                                <span className="text-gray-400 text-xs">—</span>
+                                <span
+                                  className={`inline-block px-2 py-1 rounded text-xs font-medium border ${display.colorClass}`}
+                                  title={display.title}
+                                >
+                                  {display.label}
+                                </span>
                               )}
                             </td>
                           );

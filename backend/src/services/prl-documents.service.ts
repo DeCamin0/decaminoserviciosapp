@@ -3573,6 +3573,8 @@ El documento ha sido firmado y guardado correctamente.`;
         documento_id: number;
         test_completado: boolean;
         test_puntuacion: number | null;
+        rm_solicitado: boolean;
+        rm_aprobacion_estado: string | null;
       }>;
     }>
   > {
@@ -3612,6 +3614,8 @@ El documento ha sido firmado y guardado correctamente.`;
           id: number;
           test_completado: number;
           test_puntuacion: number | null;
+          rm_solicitado: number;
+          rm_aprobacion_estado: string | null;
         }>
       >(
         `
@@ -3624,7 +3628,9 @@ El documento ha sido firmado y guardado correctamente.`;
           ed.template_id,
           ed.id,
           ed.test_completado,
-          ed.test_puntuacion
+          ed.test_puntuacion,
+          ed.rm_solicitado,
+          ed.rm_aprobacion_estado
         FROM prl_employee_documents ed
         INNER JOIN prl_document_templates t ON ed.template_id = t.id
         WHERE t.activo = 1
@@ -3644,6 +3650,8 @@ El documento ha sido firmado y guardado correctamente.`;
           documento_id: number;
           test_completado: boolean;
           test_puntuacion: number | null;
+          rm_solicitado: boolean;
+          rm_aprobacion_estado: string | null;
         }>
       >();
 
@@ -3660,6 +3668,8 @@ El documento ha sido firmado y guardado correctamente.`;
           documento_id: doc.id,
           test_completado: doc.test_completado === 1,
           test_puntuacion: doc.test_puntuacion,
+          rm_solicitado: doc.rm_solicitado === 1,
+          rm_aprobacion_estado: doc.rm_aprobacion_estado || null,
         });
       }
 
