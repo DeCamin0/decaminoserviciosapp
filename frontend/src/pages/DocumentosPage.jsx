@@ -3383,12 +3383,25 @@ export default function DocumentosPage() {
                     {doc.es_renuncia_rm && (
                       <div className="solicitud-admin-callout mt-2 text-xs">
                         Este documento se firma únicamente si rechazas el Reconocimiento Médico.
-                        {doc.rm_solicitado ? (
+                        {doc.rm_aprobacion_estado === 'PENDIENTE' ||
+                        (doc.rm_solicitado && doc.rm_aprobacion_estado !== 'ACEPTADO' && doc.rm_aprobacion_estado !== 'RECHAZADO') ? (
+                          <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-900 font-medium">
+                            Pendiente de aprobación del responsable
+                          </div>
+                        ) : doc.rm_aprobacion_estado === 'ACEPTADO' ||
+                          (doc.rm_solicitado && doc.rm_aprobacion_estado === 'ACEPTADO') ? (
                           <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-emerald-800 font-medium">
-                            Solicitado — pendiente de cita
+                            Aceptado — pendiente de cita
                           </div>
                         ) : (
-                          (doc.estado === 'NO_APLICA' || doc.estado === 'PENDIENTE') && (
+                          <>
+                            {doc.rm_aprobacion_estado === 'RECHAZADO' && (
+                              <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-red-800 font-medium">
+                                Solicitud rechazada — firma la renuncia o solicita de nuevo
+                                {doc.rm_rechazo_motivo ? `: ${doc.rm_rechazo_motivo}` : ''}
+                              </div>
+                            )}
+                            {(doc.estado === 'NO_APLICA' || doc.estado === 'PENDIENTE') && (
                             <div className="mt-2 flex flex-col gap-2">
                               <button
                                 type="button"
@@ -3412,9 +3425,9 @@ export default function DocumentosPage() {
                                     await fetchDocumentosPRL();
                                     setNotification({
                                       type: 'success',
-                                      title: 'Solicitud registrada',
+                                      title: 'Solicitud enviada',
                                       message:
-                                        'Recibirás confirmación por email y en la app. Próximamente te confirmarán día y hora de la cita.',
+                                        'Pendiente de aprobación del responsable. Te avisaremos cuando sea aceptada o rechazada.',
                                     });
                                   } catch (error) {
                                     setNotification({
@@ -3481,7 +3494,8 @@ export default function DocumentosPage() {
                                 </div>
                               )}
                             </div>
-                          )
+                            )}
+                          </>
                         )}
                       </div>
                     )}
@@ -3538,7 +3552,9 @@ export default function DocumentosPage() {
                         )}
                         {doc.es_renuncia_rm && doc.rm_solicitado && (
                           <p className="text-xs text-emerald-700 w-full">
-                            RM solicitado — no es necesario firmar la renuncia
+                            {doc.rm_aprobacion_estado === 'ACEPTADO'
+                              ? 'RM aceptado — no es necesario firmar la renuncia'
+                              : 'RM pendiente de aprobación — no es necesario firmar la renuncia'}
                           </p>
                         )}
                         {doc.requiere_firma && doc.estado === 'PENDIENTE' && (

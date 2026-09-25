@@ -28,7 +28,7 @@ export default function AprobacionesPage() {
   const { getPermissions } = useAdminApi();
   
   // State pentru tab-uri
-  const [activeTab, setActiveTab] = useState('cambios'); // 'cambios' sau 'regularizaciones'
+  const [activeTab, setActiveTab] = useState('cambios'); // 'cambios' | 'regularizaciones' | 'rm'
   
   // State pentru cambios de datos
   const [pendingCambios, setPendingCambios] = useState([]);
@@ -49,6 +49,16 @@ export default function AprobacionesPage() {
   const [showRejectRegularizacionModal, setShowRejectRegularizacionModal] = useState(false);
   const [showApproveRegularizacionModal, setShowApproveRegularizacionModal] = useState(false);
   const [regularizacionToApprove, setRegularizacionToApprove] = useState(null);
+
+  // State pentru solicitudes RM
+  const [pendingRm, setPendingRm] = useState([]);
+  const [loadingRm, setLoadingRm] = useState(true);
+  const [errorRm, setErrorRm] = useState('');
+  const [rmToApprove, setRmToApprove] = useState(null);
+  const [rmToReject, setRmToReject] = useState(null);
+  const [rmRejectMotivo, setRmRejectMotivo] = useState('');
+  const [showApproveRmModal, setShowApproveRmModal] = useState(false);
+  const [showRejectRmModal, setShowRejectRmModal] = useState(false);
   
   // State pentru permisiuni
   const [userPermissions, setUserPermissions] = useState(null);
@@ -414,6 +424,38 @@ export default function AprobacionesPage() {
     }
   }, [authUser?.isDemo]);
 
+  const fetchPendingRm = useCallback(async () => {
+    if (authUser?.isDemo) {
+      setPendingRm([]);
+      setLoadingRm(false);
+      return;
+    }
+    setLoadingRm(true);
+    setErrorRm('');
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(routes.prlRmSolicitudesPendientes, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      setPendingRm(Array.isArray(data?.pendientes) ? data.pendientes : []);
+    } catch (error) {
+      console.error('Error fetching RM pendientes:', error);
+      setErrorRm('Error al cargar solicitudes de reconocimiento médico.');
+      setPendingRm([]);
+    } finally {
+      setLoadingRm(false);
+    }
+  }, [authUser?.isDemo]);
+
   // Funcție helper pentru a găsi numele angajatului după cod
   const getEmpleadoNombre = useCallback((codigo) => {
     if (!codigo || !empleados.length) return null;
@@ -439,6 +481,7 @@ export default function AprobacionesPage() {
     if (!canAccess) {
       setLoadingCambios(false);
       setLoadingRegularizaciones(false);
+      setLoadingRm(false);
       return;
     }
 
@@ -446,14 +489,103 @@ export default function AprobacionesPage() {
       console.log('🎭 DEMO mode: Using demo aprobaciones data instead of fetching from backend');
       setDemoAprobaciones();
       setLoadingRegularizaciones(false);
+      setLoadingRm(false);
       return;
     }
 
     fetchPendingCambios();
     fetchPendingRegularizaciones();
     fetchConfirmedRegularizaciones();
+    fetchPendingRm();
     fetchEmpleados();
-  }, [canAccess, authUser?.isDemo, fetchPendingCambios, fetchPendingRegularizaciones, fetchConfirmedRegularizaciones, fetchEmpleados]);
+  }, [canAccess, authUser?.isDemo, fetchPendingCambios, fetchPendingRegularizaciones, fetchConfirmedRegularizaciones, fetchPendingRm, fetchEmpleados]);
+
+  const openApproveRm = (item) => {
+    setRmToApprove(item);
+    setShowApproveRmModal(true);
+  };
+
+  const confirmApproveRm = async () => {
+    if (!rmToApprove) return;
+    setProcessingAction(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(routes.prlRmAceptar(rmToApprove.documento_id), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || `HTTP ${response.status}`);
+      }
+      setPendingRm((prev) =>
+        prev.filter((r) => r.documento_id !== rmToApprove.documento_id),
+      );
+      setNotification({
+        type: 'success',
+        title: 'RM aceptada',
+        message: `Solicitud de ${rmToApprove.empleado_nombre} aceptada. Se ha notificado al empleado y a Noemi.`,
+      });
+      setShowApproveRmModal(false);
+      setRmToApprove(null);
+    } catch (error) {
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: error.message || 'No se pudo aceptar la solicitud',
+      });
+    } finally {
+      setProcessingAction(false);
+    }
+  };
+
+  const openRejectRm = (item) => {
+    setRmToReject(item);
+    setRmRejectMotivo('');
+    setShowRejectRmModal(true);
+  };
+
+  const confirmRejectRm = async () => {
+    if (!rmToReject) return;
+    setProcessingAction(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(routes.prlRmRechazar(rmToReject.documento_id), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ motivo: rmRejectMotivo || undefined }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || `HTTP ${response.status}`);
+      }
+      setPendingRm((prev) =>
+        prev.filter((r) => r.documento_id !== rmToReject.documento_id),
+      );
+      setNotification({
+        type: 'success',
+        title: 'RM rechazada',
+        message: `Solicitud de ${rmToReject.empleado_nombre} rechazada. El empleado debe firmar la renuncia o solicitar de nuevo.`,
+      });
+      setShowRejectRmModal(false);
+      setRmToReject(null);
+      setRmRejectMotivo('');
+    } catch (error) {
+      setNotification({
+        type: 'error',
+        title: 'Error',
+        message: error.message || 'No se pudo rechazar la solicitud',
+      });
+    } finally {
+      setProcessingAction(false);
+    }
+  };
 
   // Funcție pentru aprobare regularizare
   const handleApproveRegularizacion = (regularizacion) => {
@@ -1021,7 +1153,7 @@ export default function AprobacionesPage() {
     <div className="app-page aprobaciones-page">
       <PageHeader
         title="Aprobaciones"
-        subtitle="Cambios de datos y regularizaciones de fichajes"
+        subtitle="Cambios de datos, fichajes y reconocimiento médico"
         backTo="/inicio"
         actions={(
           <button type="button" onClick={handleReportError} className="solicitud-admin-btn" title="Reportar error">
@@ -1038,6 +1170,7 @@ export default function AprobacionesPage() {
         items={[
           { id: 'cambios', label: `Cambios (${pendingCambios.length})`, shortLabel: `Datos (${pendingCambios.length})` },
           { id: 'regularizaciones', label: `Fichajes (${pendingRegularizaciones.length})`, shortLabel: `Fich. (${pendingRegularizaciones.length})` },
+          { id: 'rm', label: `RM (${pendingRm.length})`, shortLabel: `RM (${pendingRm.length})` },
         ]}
       />
 
@@ -1224,6 +1357,76 @@ export default function AprobacionesPage() {
                 </div>
               )}
             </>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'rm' && (
+        <div className="app-card app-card--pad aprobaciones-section">
+          <div className="solicitud-admin-toolbar">
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100">Reconocimiento médico</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Solicitudes pendientes de aprobación</p>
+            </div>
+            <button type="button" onClick={fetchPendingRm} disabled={loadingRm} className="solicitud-admin-btn" title="Actualizar lista">
+              <RefreshCw className={`w-4 h-4 ${loadingRm ? 'animate-spin' : ''}`} aria-hidden />
+              <span className="hidden sm:inline">Actualizar</span>
+            </button>
+          </div>
+
+          {errorRm && <AlertBanner variant="danger" className="mt-3">{errorRm}</AlertBanner>}
+
+          {loadingRm ? (
+            <AlertBanner variant="loading" loading className="mt-3">Cargando solicitudes RM...</AlertBanner>
+          ) : (pendingRm || []).length === 0 ? (
+            <AlertBanner variant="success" title="No hay solicitudes RM pendientes" className="mt-3">
+              Cuando un empleado pulse &quot;Quiero el RM&quot;, aparecerá aquí.
+            </AlertBanner>
+          ) : (
+            <div className="solicitud-admin-mobile-list mt-3">
+              {pendingRm.map((item) => {
+                const solicitadoEn = item.rm_solicitado_en
+                  ? new Date(item.rm_solicitado_en).toLocaleString('es-ES', {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    })
+                  : '—';
+                return (
+                  <article key={item.documento_id} className="solicitud-admin-mobile-card">
+                    <div className="solicitud-admin-mobile-card__head">
+                      <div className="min-w-0">
+                        <h3 className="solicitud-admin-mobile-card__title">{item.empleado_nombre}</h3>
+                        <p className="text-xs text-gray-500 truncate">
+                          {item.empleado_id} · DNI {item.empleado_dni} · {item.grupo}
+                        </p>
+                      </div>
+                      <span className="solicitud-status solicitud-status--pendiente">Pendiente</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">Solicitado: {solicitadoEn}</p>
+                    <div className="solicitud-admin-toolbar mt-3">
+                      <button
+                        type="button"
+                        className="solicitud-admin-btn"
+                        disabled={processingAction}
+                        onClick={() => openRejectRm(item)}
+                      >
+                        <X className="w-4 h-4" aria-hidden />
+                        <span>Rechazar</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="solicitud-admin-btn solicitud-admin-btn--primary"
+                        disabled={processingAction}
+                        onClick={() => openApproveRm(item)}
+                      >
+                        <Check className="w-4 h-4" aria-hidden />
+                        <span>Aceptar</span>
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           )}
         </div>
       )}
@@ -1602,6 +1805,73 @@ export default function AprobacionesPage() {
             </span>
           </label>
         </div>
+      </Modal>,
+      document.body
+      )}
+
+      {typeof document !== 'undefined' && createPortal(
+      <Modal
+        isOpen={showApproveRmModal}
+        onClose={() => { setShowApproveRmModal(false); setRmToApprove(null); }}
+        title="Aceptar reconocimiento médico"
+        showCloseButton={false}
+        size="md"
+        className="app-modal--form"
+        footer={rmToApprove ? (
+          <div className="app-modal__actions">
+            <button type="button" onClick={() => { setShowApproveRmModal(false); setRmToApprove(null); }} disabled={processingAction} className="app-modal__btn">Cancelar</button>
+            <button type="button" onClick={confirmApproveRm} disabled={processingAction} className="app-modal__btn app-modal__btn--ok">
+              {processingAction ? 'Procesando...' : 'Sí, aceptar'}
+            </button>
+          </div>
+        ) : null}
+      >
+        {rmToApprove && (
+          <p className="text-sm text-gray-700 dark:text-gray-300">
+            ¿Aceptar la solicitud de <strong>{rmToApprove.empleado_nombre}</strong> ({rmToApprove.empleado_dni})?
+            Se enviará confirmación al empleado (48h / 55€) y email a Noemi.
+          </p>
+        )}
+      </Modal>,
+      document.body
+      )}
+
+      {typeof document !== 'undefined' && createPortal(
+      <Modal
+        isOpen={showRejectRmModal}
+        onClose={() => { setShowRejectRmModal(false); setRmToReject(null); setRmRejectMotivo(''); }}
+        title="Rechazar reconocimiento médico"
+        showCloseButton={false}
+        size="md"
+        className="app-modal--form"
+        footer={rmToReject ? (
+          <div className="app-modal__actions">
+            <button type="button" onClick={() => { setShowRejectRmModal(false); setRmToReject(null); setRmRejectMotivo(''); }} disabled={processingAction} className="app-modal__btn">Cancelar</button>
+            <button type="button" onClick={confirmRejectRm} disabled={processingAction} className="app-modal__btn">
+              {processingAction ? 'Procesando...' : 'Rechazar'}
+            </button>
+          </div>
+        ) : null}
+      >
+        {rmToReject && (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-700 dark:text-gray-300">
+              ¿Rechazar la solicitud de <strong>{rmToReject.empleado_nombre}</strong>?
+              La renuncia volverá a ser obligatoria.
+            </p>
+            <div className="app-modal__field">
+              <label htmlFor="rm-reject-motivo" className="app-modal__label">Motivo (opcional)</label>
+              <textarea
+                id="rm-reject-motivo"
+                value={rmRejectMotivo}
+                onChange={(e) => setRmRejectMotivo(e.target.value)}
+                placeholder="Motivo del rechazo..."
+                className="app-modal__input min-h-[5rem] resize-y"
+                rows={3}
+              />
+            </div>
+          </div>
+        )}
       </Modal>,
       document.body
       )}

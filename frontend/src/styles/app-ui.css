@@ -3490,7 +3490,7 @@
 }
 
 .empleados-filter-bar select {
-  flex: 1 1 9rem;
+  flex: 0 1 14rem;
   max-width: 100%;
 }
 

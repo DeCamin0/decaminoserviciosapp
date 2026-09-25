@@ -1993,6 +1993,11 @@ model PrlEmployeeDocument {
   // Angajatul a solicitat Reconocimiento Médico (în loc să semneze Renuncia)
   rm_solicitado         Boolean  @default(false) @map("rm_solicitado")
   rm_solicitado_en      DateTime? @map("rm_solicitado_en") @db.Timestamp(0)
+  // Aprobare șef: PENDIENTE | ACEPTADO | RECHAZADO | null
+  rm_aprobacion_estado  String?   @map("rm_aprobacion_estado") @db.VarChar(20)
+  rm_aprobado_por       String?   @map("rm_aprobado_por") @db.VarChar(50)
+  rm_aprobado_en        DateTime? @map("rm_aprobado_en") @db.Timestamp(0)
+  rm_rechazo_motivo     String?   @map("rm_rechazo_motivo") @db.Text
 
   // Documento original (template) — R2 only
   nombre_archivo_original String? @map("nombre_archivo_original") @db.VarChar(255)
@@ -2031,6 +2036,7 @@ model PrlEmployeeDocument {
   @@index([estado], map: "idx_prl_emp_doc_estado")
   @@index([empleado_id, estado], map: "idx_prl_emp_doc_emp_estado")
   @@index([tipo_documento], map: "idx_prl_emp_doc_tipo")
+  @@index([rm_aprobacion_estado], map: "idx_prl_emp_doc_rm_aprobacion")
   @@index([storage_key_original], map: "idx_prl_emp_doc_storage_key_original")
   @@index([storage_key_firmado], map: "idx_prl_emp_doc_storage_key_firmado")
   @@map("prl_employee_documents")

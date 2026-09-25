@@ -1932,6 +1932,10 @@ export class PrlDocumentsService {
       requiere_firma: boolean;
       rm_solicitado: boolean;
       rm_solicitado_en: Date | null;
+      rm_aprobacion_estado: string | null;
+      rm_aprobado_por: string | null;
+      rm_aprobado_en: Date | null;
+      rm_rechazo_motivo: string | null;
       es_renuncia_rm: boolean;
       es_manual_test: boolean;
       test_completado: boolean;
@@ -1954,6 +1958,10 @@ export class PrlDocumentsService {
           requiere_firma: number;
           rm_solicitado: number;
           rm_solicitado_en: Date | null;
+          rm_aprobacion_estado: string | null;
+          rm_aprobado_por: string | null;
+          rm_aprobado_en: Date | null;
+          rm_rechazo_motivo: string | null;
           es_renuncia_rm: number;
           es_manual_test: number;
           test_completado: number;
@@ -1975,6 +1983,10 @@ export class PrlDocumentsService {
           ed.requiere_firma,
           ed.rm_solicitado,
           ed.rm_solicitado_en,
+          ed.rm_aprobacion_estado,
+          ed.rm_aprobado_por,
+          ed.rm_aprobado_en,
+          ed.rm_rechazo_motivo,
           t.es_renuncia_rm,
           t.es_manual_test,
           ed.test_completado,
@@ -2000,6 +2012,10 @@ export class PrlDocumentsService {
         requiere_firma: doc.requiere_firma === 1,
         rm_solicitado: doc.rm_solicitado === 1,
         rm_solicitado_en: doc.rm_solicitado_en,
+        rm_aprobacion_estado: doc.rm_aprobacion_estado || null,
+        rm_aprobado_por: doc.rm_aprobado_por || null,
+        rm_aprobado_en: doc.rm_aprobado_en || null,
+        rm_rechazo_motivo: doc.rm_rechazo_motivo || null,
         es_renuncia_rm: doc.es_renuncia_rm === 1,
         es_manual_test: doc.es_manual_test === 1,
         test_completado: doc.test_completado === 1,
@@ -2242,7 +2258,7 @@ export class PrlDocumentsService {
 
   /**
    * Angajatul solicită Reconocimiento Médico (în loc să semneze Renuncia).
-   * Trimite confirmare app+email + email la Noemi.
+   * Pas 1: PENDIENTE — deblochează obligation, fără email Noemi; Telegram + notif șefi.
    */
   async solicitarReconocimientoMedico(
     documentoId: number,
@@ -2256,11 +2272,13 @@ export class PrlDocumentsService {
           tipo_documento: string;
           estado: string;
           rm_solicitado: number;
+          rm_aprobacion_estado: string | null;
           fecha_firma: Date | null;
         }>
       >(
         `
-        SELECT id, empleado_id, tipo_documento, estado, rm_solicitado, fecha_firma
+        SELECT id, empleado_id, tipo_documento, estado, rm_solicitado,
+               rm_aprobacion_estado, fecha_firma
         FROM prl_employee_documents
         WHERE id = ${documentoId}
           AND empleado_id = ${this.escapeSql(empleadoId)}
@@ -2282,7 +2300,7 @@ export class PrlDocumentsService {
         );
       }
 
-      if (doc.rm_solicitado === 1) {
+      if (doc.rm_aprobacion_estado === 'ACEPTADO' || doc.rm_solicitado === 1) {
         throw new BadRequestException(
           'Ya registraste tu solicitud de Reconocimiento Médico',
         );
@@ -2305,6 +2323,10 @@ export class PrlDocumentsService {
         UPDATE prl_employee_documents
         SET rm_solicitado = 1,
             rm_solicitado_en = CURRENT_TIMESTAMP,
+            rm_aprobacion_estado = 'PENDIENTE',
+            rm_aprobado_por = NULL,
+            rm_aprobado_en = NULL,
+            rm_rechazo_motivo = NULL,
             estado = 'NO_APLICA',
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ${documentoId}
@@ -2318,46 +2340,25 @@ export class PrlDocumentsService {
         'VISUALIZADO',
         undefined,
         undefined,
-        'SOLICITUD_RM',
+        'SOLICITUD_RM_PENDIENTE',
       );
 
-      const empleadoRows = await this.prisma.$queryRawUnsafe<
-        Array<{
-          nombre: string | null;
-          dni: string | null;
-          grupo: string | null;
-          email: string | null;
-        }>
-      >(
-        `
-        SELECT
-          \`NOMBRE / APELLIDOS\` AS nombre,
-          \`D.N.I. / NIE\` AS dni,
-          GRUPO AS grupo,
-          \`CORREO ELECTRONICO\` AS email
-        FROM DatosEmpleados
-        WHERE CODIGO = ${this.escapeSql(empleadoId)}
-        LIMIT 1
-        `,
-      );
-
-      const emp = empleadoRows?.[0];
-      const nombre = (emp?.nombre || empleadoId).trim();
-      const dni = (emp?.dni || '—').trim();
-      const grupo = (emp?.grupo || '—').trim();
-      const empleadoEmail = (emp?.email || '').trim();
+      const emp = await this.getEmpleadoRmContext(empleadoId);
       const tenant = this.getCompanyName() || 'Empresa';
 
-      const notifTitle = 'Solicitud de reconocimiento médico registrada';
+      const notifTitle = 'Solicitud de RM enviada';
       const notifMessage =
-        'Próximamente recibirás día y hora de la cita. Importante: cancelaciones con mínimo 48h; si no avisas o no acudes, se descontarán 55 € de la nómina.';
+        'Tu solicitud de reconocimiento médico está pendiente de aprobación del responsable.';
 
       try {
         await this.notificationsService.notifyUser('system', empleadoId, {
           type: 'info',
           title: notifTitle,
           message: notifMessage,
-          data: { kind: 'PRL_RM_SOLICITADO', documentoId },
+          data: {
+            kind: 'PRL_RM_PENDIENTE',
+            documentoId,
+          },
         });
       } catch (notifErr: any) {
         this.logger.warn(
@@ -2368,62 +2369,68 @@ export class PrlDocumentsService {
       const employeeHtml = `
         <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1e293b;">
           <p>Buenos días,</p>
-          <p>Hemos registrado tu solicitud de <strong>reconocimiento médico</strong>. Próximamente recibirás la confirmación con el <strong>día y la hora</strong> de la cita.</p>
-          <p><strong>Muy importante:</strong> una vez confirmada la cita, cualquier cancelación o modificación debe comunicarse con un <strong>mínimo de 48 horas</strong> de antelación.</p>
-          <p>Si no se avisa con al menos 48 horas o <strong>no se acude a la cita</strong>, el centro médico factura el servicio a la empresa. En ese caso, el importe de la consulta (<strong>55 €</strong>) se descontará de la nómina del mes en curso.</p>
-          <p>Cuando recibas la confirmación, revisa bien día y hora y ten presente el plazo de 48 horas.</p>
-          <p>Gracias por tu colaboración.</p>
+          <p>Hemos registrado tu solicitud de <strong>reconocimiento médico</strong>.</p>
+          <p>Está <strong>pendiente de aprobación</strong> del responsable. Te avisaremos cuando sea aceptada o rechazada.</p>
           <p>Saludos,<br>${tenant ? `Equipo ${tenant}` : 'Equipo'}</p>
         </div>
       `;
 
-      if (empleadoEmail && this.emailService.isConfigured()) {
+      if (emp.email && this.emailService.isConfigured()) {
         try {
           await this.emailService.sendEmail(
-            empleadoEmail,
-            'Confirmación — Solicitud de reconocimiento médico',
+            emp.email,
+            'Solicitud RM — Pendiente de aprobación',
             employeeHtml,
           );
         } catch (emailErr: any) {
           this.logger.warn(
-            `⚠️ Error email confirmación RM a ${empleadoEmail}: ${emailErr?.message || emailErr}`,
+            `⚠️ Error email RM pendiente a ${emp.email}: ${emailErr?.message || emailErr}`,
           );
         }
-      } else {
+      }
+
+      const bossMsg = `${emp.nombre} solicita reconocimiento médico (DNI ${emp.dni}, grupo ${emp.grupo}).`;
+      for (const g of ['Admin', 'Manager', 'Supervisor', 'Developer']) {
+        try {
+          await this.notificationsService.notifyGroup('system', g, {
+            type: 'info',
+            title: 'Solicitud reconocimiento médico',
+            message: bossMsg,
+            data: {
+              kind: 'PRL_RM_PENDIENTE_APROBACION',
+              documentoId,
+              empleadoId,
+            },
+          });
+        } catch (e: any) {
+          this.logger.warn(
+            `⚠️ Notif grupo ${g} RM: ${e?.message || e}`,
+          );
+        }
+      }
+
+      try {
+        const tg = `🩺 *Solicitud RM (pendiente)*
+
+👤 *Empleado:* ${emp.nombre}
+🆔 *Código:* ${empleadoId}
+📄 *DNI/NIE:* ${emp.dni}
+🏷️ *Grupo:* ${emp.grupo}
+🏢 *Tenant:* ${tenant}
+📎 *Doc ID:* ${documentoId}
+
+Esperando aprobación en Aprobaciones.`;
+        if (this.telegramService.isConfigured()) {
+          await this.telegramService.sendMessage(tg);
+        }
+      } catch (tgErr: any) {
         this.logger.warn(
-          `⚠️ Sin email empleado o SMTP no configurado — no se envió confirmación RM a ${empleadoId}`,
+          `⚠️ Telegram RM solicitud: ${tgErr?.message || tgErr}`,
         );
       }
 
-      const noemiHtml = `
-        <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1e293b;">
-          <p><strong>Solicitud de reconocimiento médico</strong></p>
-          <ul>
-            <li><strong>Nombre:</strong> ${this.escapeHtml(nombre)}</li>
-            <li><strong>DNI/NIE:</strong> ${this.escapeHtml(dni)}</li>
-            <li><strong>Puesto de trabajo (grupo):</strong> ${this.escapeHtml(grupo)}</li>
-            <li><strong>Código empleado:</strong> ${this.escapeHtml(empleadoId)}</li>
-            <li><strong>Cliente/tenant:</strong> ${this.escapeHtml(tenant)}</li>
-          </ul>
-        </div>
-      `;
-
-      if (this.emailService.isConfigured()) {
-        try {
-          await this.emailService.sendEmail(
-            'noemi@ancaraconsulting.es',
-            `Solicitud RM — ${nombre} (${dni})`,
-            noemiHtml,
-          );
-        } catch (noemiErr: any) {
-          this.logger.error(
-            `❌ Error email Noemi RM: ${noemiErr?.message || noemiErr}`,
-          );
-        }
-      }
-
       this.logger.log(
-        `✅ Empleado ${empleadoId} solicitó RM para documento ${documentoId}`,
+        `✅ Empleado ${empleadoId} solicitó RM (PENDIENTE) doc ${documentoId}`,
       );
 
       return { already: false };
@@ -2439,6 +2446,358 @@ export class PrlDocumentsService {
         throw error;
       }
       throw new BadRequestException(`Error solicitando RM: ${error.message}`);
+    }
+  }
+
+  private async getEmpleadoRmContext(empleadoId: string): Promise<{
+    nombre: string;
+    dni: string;
+    grupo: string;
+    email: string;
+  }> {
+    const empleadoRows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        nombre: string | null;
+        dni: string | null;
+        grupo: string | null;
+        email: string | null;
+      }>
+    >(
+      `
+      SELECT
+        \`NOMBRE / APELLIDOS\` AS nombre,
+        \`D.N.I. / NIE\` AS dni,
+        GRUPO AS grupo,
+        \`CORREO ELECTRONICO\` AS email
+      FROM DatosEmpleados
+      WHERE CODIGO = ${this.escapeSql(empleadoId)}
+      LIMIT 1
+      `,
+    );
+    const emp = empleadoRows?.[0];
+    return {
+      nombre: (emp?.nombre || empleadoId).trim(),
+      dni: (emp?.dni || '—').trim(),
+      grupo: (emp?.grupo || '—').trim(),
+      email: (emp?.email || '').trim(),
+    };
+  }
+
+  async listarRmSolicitudesPendientes(): Promise<
+    Array<{
+      documento_id: number;
+      empleado_id: string;
+      empleado_nombre: string;
+      empleado_dni: string;
+      grupo: string;
+      rm_solicitado_en: Date | null;
+      estado_doc: string;
+    }>
+  > {
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        documento_id: number;
+        empleado_id: string;
+        empleado_nombre: string | null;
+        empleado_dni: string | null;
+        grupo: string | null;
+        rm_solicitado_en: Date | null;
+        estado_doc: string;
+      }>
+    >(
+      `
+      SELECT
+        ed.id AS documento_id,
+        ed.empleado_id,
+        de.\`NOMBRE / APELLIDOS\` AS empleado_nombre,
+        de.\`D.N.I. / NIE\` AS empleado_dni,
+        de.GRUPO AS grupo,
+        ed.rm_solicitado_en,
+        ed.estado AS estado_doc
+      FROM prl_employee_documents ed
+      LEFT JOIN DatosEmpleados de ON de.CODIGO = ed.empleado_id
+      WHERE ed.tipo_documento = 'RENUNCIA_RM'
+        AND ed.rm_aprobacion_estado = 'PENDIENTE'
+        AND ed.rm_solicitado = 1
+      ORDER BY ed.rm_solicitado_en ASC
+      `,
+    );
+
+    return (rows || []).map((r) => ({
+      documento_id: r.documento_id,
+      empleado_id: r.empleado_id,
+      empleado_nombre: (r.empleado_nombre || r.empleado_id).trim(),
+      empleado_dni: (r.empleado_dni || '—').trim(),
+      grupo: (r.grupo || '—').trim(),
+      rm_solicitado_en: r.rm_solicitado_en,
+      estado_doc: r.estado_doc,
+    }));
+  }
+
+  /**
+   * Pas 2 — Aceptar: email 48h/55€ angajat + Noemi + Telegram.
+   */
+  async aceptarRmSolicitud(
+    documentoId: number,
+    aprobadoPor: string,
+  ): Promise<void> {
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        id: number;
+        empleado_id: string;
+        tipo_documento: string;
+        rm_solicitado: number;
+        rm_aprobacion_estado: string | null;
+      }>
+    >(
+      `
+      SELECT id, empleado_id, tipo_documento, rm_solicitado, rm_aprobacion_estado
+      FROM prl_employee_documents
+      WHERE id = ${documentoId}
+      LIMIT 1
+      `,
+    );
+
+    if (!rows?.length) {
+      throw new NotFoundException(`Documento ${documentoId} no encontrado`);
+    }
+    const doc = rows[0];
+    if (doc.tipo_documento !== 'RENUNCIA_RM') {
+      throw new BadRequestException('Documento no es Renuncia RM');
+    }
+    if (doc.rm_aprobacion_estado !== 'PENDIENTE' || doc.rm_solicitado !== 1) {
+      throw new BadRequestException(
+        'La solicitud no está pendiente de aprobación',
+      );
+    }
+
+    await this.prisma.$executeRawUnsafe(
+      `
+      UPDATE prl_employee_documents
+      SET rm_aprobacion_estado = 'ACEPTADO',
+          rm_aprobado_por = ${this.escapeSql(aprobadoPor)},
+          rm_aprobado_en = CURRENT_TIMESTAMP,
+          rm_rechazo_motivo = NULL,
+          estado = 'NO_APLICA',
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${documentoId}
+      `,
+    );
+
+    await this.crearAuditLog(
+      documentoId,
+      aprobadoPor,
+      'VISUALIZADO',
+      undefined,
+      undefined,
+      'SOLICITUD_RM_ACEPTADA',
+    );
+
+    const emp = await this.getEmpleadoRmContext(doc.empleado_id);
+    const tenant = this.getCompanyName() || 'Empresa';
+
+    const notifTitle = 'Solicitud de reconocimiento médico aceptada';
+    const notifMessage =
+      'Próximamente recibirás día y hora de la cita. Importante: cancelaciones con mínimo 48h; si no avisas o no acudes, se descontarán 55 € de la nómina.';
+
+    try {
+      await this.notificationsService.notifyUser('system', doc.empleado_id, {
+        type: 'success',
+        title: notifTitle,
+        message: notifMessage,
+        data: { kind: 'PRL_RM_ACEPTADO', documentoId },
+      });
+    } catch (e: any) {
+      this.logger.warn(`⚠️ Notif aceptado RM: ${e?.message || e}`);
+    }
+
+    const employeeHtml = `
+      <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1e293b;">
+        <p>Buenos días,</p>
+        <p>Tu solicitud de <strong>reconocimiento médico</strong> ha sido <strong>aceptada</strong>. Próximamente recibirás la confirmación con el <strong>día y la hora</strong> de la cita.</p>
+        <p><strong>Muy importante:</strong> una vez confirmada la cita, cualquier cancelación o modificación debe comunicarse con un <strong>mínimo de 48 horas</strong> de antelación.</p>
+        <p>Si no se avisa con al menos 48 horas o <strong>no se acude a la cita</strong>, el centro médico factura el servicio a la empresa. En ese caso, el importe de la consulta (<strong>55 €</strong>) se descontará de la nómina del mes en curso.</p>
+        <p>Cuando recibas la confirmación, revisa bien día y hora y ten presente el plazo de 48 horas.</p>
+        <p>Gracias por tu colaboración.</p>
+        <p>Saludos,<br>${tenant ? `Equipo ${tenant}` : 'Equipo'}</p>
+      </div>
+    `;
+
+    if (emp.email && this.emailService.isConfigured()) {
+      try {
+        await this.emailService.sendEmail(
+          emp.email,
+          'Confirmación — Solicitud de reconocimiento médico aceptada',
+          employeeHtml,
+        );
+      } catch (e: any) {
+        this.logger.warn(`⚠️ Email aceptado RM: ${e?.message || e}`);
+      }
+    }
+
+    const noemiHtml = `
+      <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1e293b;">
+        <p><strong>Confirmación RM (aprobada)</strong></p>
+        <ul>
+          <li><strong>Nombre:</strong> ${this.escapeHtml(emp.nombre)}</li>
+          <li><strong>DNI/NIE:</strong> ${this.escapeHtml(emp.dni)}</li>
+          <li><strong>Puesto de trabajo (grupo):</strong> ${this.escapeHtml(emp.grupo)}</li>
+          <li><strong>Código empleado:</strong> ${this.escapeHtml(doc.empleado_id)}</li>
+          <li><strong>Cliente/tenant:</strong> ${this.escapeHtml(tenant)}</li>
+          <li><strong>Aprobado por:</strong> ${this.escapeHtml(aprobadoPor)}</li>
+        </ul>
+      </div>
+    `;
+
+    if (this.emailService.isConfigured()) {
+      try {
+        await this.emailService.sendEmail(
+          'noemi@ancaraconsulting.es',
+          `Confirmación RM (aprobada) — ${emp.nombre} (${emp.dni})`,
+          noemiHtml,
+        );
+      } catch (e: any) {
+        this.logger.error(`❌ Email Noemi RM aceptado: ${e?.message || e}`);
+      }
+    }
+
+    try {
+      if (this.telegramService.isConfigured()) {
+        await this.telegramService.sendMessage(
+          `✅ *RM ACEPTADO*
+
+👤 *Empleado:* ${emp.nombre}
+🆔 *Código:* ${doc.empleado_id}
+📄 *DNI:* ${emp.dni}
+🏷️ *Grupo:* ${emp.grupo}
+✔️ *Aprobado por:* ${aprobadoPor}
+📎 *Doc ID:* ${documentoId}`,
+        );
+      }
+    } catch (e: any) {
+      this.logger.warn(`⚠️ Telegram RM aceptado: ${e?.message || e}`);
+    }
+  }
+
+  /**
+   * Pas 3 — Rechazar (varianta A): Renuncia revine obligatorie.
+   */
+  async rechazarRmSolicitud(
+    documentoId: number,
+    rechazadoPor: string,
+    motivo?: string,
+  ): Promise<void> {
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        id: number;
+        empleado_id: string;
+        tipo_documento: string;
+        rm_solicitado: number;
+        rm_aprobacion_estado: string | null;
+      }>
+    >(
+      `
+      SELECT id, empleado_id, tipo_documento, rm_solicitado, rm_aprobacion_estado
+      FROM prl_employee_documents
+      WHERE id = ${documentoId}
+      LIMIT 1
+      `,
+    );
+
+    if (!rows?.length) {
+      throw new NotFoundException(`Documento ${documentoId} no encontrado`);
+    }
+    const doc = rows[0];
+    if (doc.tipo_documento !== 'RENUNCIA_RM') {
+      throw new BadRequestException('Documento no es Renuncia RM');
+    }
+    if (doc.rm_aprobacion_estado !== 'PENDIENTE' || doc.rm_solicitado !== 1) {
+      throw new BadRequestException(
+        'La solicitud no está pendiente de aprobación',
+      );
+    }
+
+    const motivoClean = (motivo || '').trim().slice(0, 2000);
+
+    await this.prisma.$executeRawUnsafe(
+      `
+      UPDATE prl_employee_documents
+      SET rm_solicitado = 0,
+          rm_aprobacion_estado = 'RECHAZADO',
+          rm_aprobado_por = ${this.escapeSql(rechazadoPor)},
+          rm_aprobado_en = CURRENT_TIMESTAMP,
+          rm_rechazo_motivo = ${motivoClean ? this.escapeSql(motivoClean) : 'NULL'},
+          estado = 'PENDIENTE',
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${documentoId}
+      `,
+    );
+
+    await this.crearAuditLog(
+      documentoId,
+      rechazadoPor,
+      'VISUALIZADO',
+      undefined,
+      undefined,
+      motivoClean
+        ? `SOLICITUD_RM_RECHAZADA: ${motivoClean}`
+        : 'SOLICITUD_RM_RECHAZADA',
+    );
+
+    const emp = await this.getEmpleadoRmContext(doc.empleado_id);
+    const tenant = this.getCompanyName() || 'Empresa';
+    const motivoLine = motivoClean
+      ? ` Motivo: ${motivoClean}`
+      : '';
+
+    try {
+      await this.notificationsService.notifyUser('system', doc.empleado_id, {
+        type: 'warning',
+        title: 'Solicitud de RM rechazada',
+        message: `Tu solicitud de reconocimiento médico ha sido rechazada.${motivoLine} Debes firmar la renuncia o solicitar de nuevo.`,
+        data: { kind: 'PRL_RM_RECHAZADO', documentoId },
+      });
+    } catch (e: any) {
+      this.logger.warn(`⚠️ Notif rechazado RM: ${e?.message || e}`);
+    }
+
+    const employeeHtml = `
+      <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1e293b;">
+        <p>Buenos días,</p>
+        <p>Tu solicitud de <strong>reconocimiento médico</strong> ha sido <strong>rechazada</strong>.</p>
+        ${motivoClean ? `<p><strong>Motivo:</strong> ${this.escapeHtml(motivoClean)}</p>` : ''}
+        <p>Debes <strong>firmar la renuncia</strong> o volver a solicitar el reconocimiento médico desde la app.</p>
+        <p>Saludos,<br>${tenant ? `Equipo ${tenant}` : 'Equipo'}</p>
+      </div>
+    `;
+
+    if (emp.email && this.emailService.isConfigured()) {
+      try {
+        await this.emailService.sendEmail(
+          emp.email,
+          'Solicitud RM rechazada',
+          employeeHtml,
+        );
+      } catch (e: any) {
+        this.logger.warn(`⚠️ Email rechazado RM: ${e?.message || e}`);
+      }
+    }
+
+    try {
+      if (this.telegramService.isConfigured()) {
+        await this.telegramService.sendMessage(
+          `❌ *RM RECHAZADO*
+
+👤 *Empleado:* ${emp.nombre}
+🆔 *Código:* ${doc.empleado_id}
+📄 *DNI:* ${emp.dni}
+🏷️ *Grupo:* ${emp.grupo}
+🚫 *Por:* ${rechazadoPor}
+${motivoClean ? `📝 *Motivo:* ${motivoClean}\n` : ''}📎 *Doc ID:* ${documentoId}`,
+        );
+      }
+    } catch (e: any) {
+      this.logger.warn(`⚠️ Telegram RM rechazado: ${e?.message || e}`);
     }
   }
 

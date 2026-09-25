@@ -1803,10 +1803,10 @@ export default function EmpleadosPage() {
     setOperationLoading('users', false);
   }, [authUser, callApi, setOperationLoading, users.length]);
 
-  // Estado para búsqueda
+  // Estado para búsqueda inteligente (todas las columnas de texto)
   const [searchTerm, setSearchTerm] = useState('');
-  // 'nombre', 'codigo', 'email', 'grupo', 'estado', 'centro', 'todos'
-  const [searchBy, setSearchBy] = useState('nombre');
+  // Filtros especiales de lista (no son criterio de texto): '' | sin_fecha_alta | certificado_handicap | activos_sin_iban
+  const [searchBy, setSearchBy] = useState('');
   // Filtru rapid după status ("ALL" | "ACTIVO" | "INACTIVO" | "PENDIENTE" | "ONLINE")
   const [statusFilter, setStatusFilter] = useState('ALL');
 
@@ -1873,89 +1873,76 @@ export default function EmpleadosPage() {
     };
   }, [authUser?.GRUPO, authUser?.grupo, authToken]);
 
+  // Căutare inteligentă: match pe orice câmp relevant (fără a alege criteriu)
+  const employeeMatchesSmartSearch = (user, rawTerm) => {
+    const term = (rawTerm || '').toLowerCase().trim();
+    if (!term) return true;
+
+    const haystack = [
+      getFormattedNombre(user),
+      user['NOMBRE / APELLIDOS'],
+      user.NOMBRE,
+      user.APELLIDOS,
+      user.CODIGO,
+      user['D.N.I. / NIE'],
+      user.DNI,
+      user.NIE,
+      user['CORREO ELECTRONICO'],
+      user.EMAIL,
+      user['TELEFONO'],
+      user.TELEFONO,
+      user['Nº TELEFONO'],
+      user['GRUPO'],
+      user.GRUPO,
+      user['ESTADO'],
+      user.ESTADO,
+      user['CENTRO TRABAJO'],
+      user.CENTRO_TRABAJO,
+      user['FECHA DE ALTA'],
+      user['FECHA_DE_ALTA'],
+      user.fechaAlta,
+      user['FECHA DE BAJA'],
+      user['PUESTO'],
+      user.PUESTO,
+      user['CATEGORIA'],
+      user.CATEGORIA,
+      user['TIPO CONTRATO'],
+      user['Nº Cuenta'],
+      user['Nº_Cuenta'],
+      user.cuenta,
+    ]
+      .filter((v) => v != null && String(v).trim() !== '')
+      .map((v) => String(v).toLowerCase());
+
+    return haystack.some((value) => value.includes(term));
+  };
+
   // Funcție pentru filtrarea angajaților (memoizată pentru performanță)
   const getFilteredUsers = useMemo(() => {
-    // Filtru special: "sin_fecha_alta" - arată doar angajații fără Fecha Alta
+    let pool = users;
+
+    // Filtre speciale de listă (opționale; se pot combina cu textul inteligent)
     if (searchBy === 'sin_fecha_alta') {
-      return users.filter((user) => {
+      pool = pool.filter((user) => {
         const fechaAlta = user['FECHA DE ALTA'] || user['FECHA_DE_ALTA'] || user.fechaAlta || '';
         return !fechaAlta || fechaAlta.toString().trim() === '';
       });
-    }
-
-    // Filtru special: "certificado_handicap" - arată doar angajații cu certificat de handicap confirmat
-    if (searchBy === 'certificado_handicap') {
-      const filtered = users.filter((user) => {
+    } else if (searchBy === 'certificado_handicap') {
+      pool = pool.filter((user) => {
         const certificado = user.certificado_handicap_confirmado;
-        const hasCertificado = certificado === true || certificado === 1;
-        // Debug logging pentru primii 3 utilizatori
-        if (users.indexOf(user) < 3) {
-          console.log('🔍 [Certificado Filter] User:', user.CODIGO, 'certificado:', certificado, 'hasCertificado:', hasCertificado);
-        }
-        return hasCertificado;
+        return certificado === true || certificado === 1;
       });
-      console.log(`🔍 [Certificado Filter] Total users: ${users.length}, Filtered: ${filtered.length}`);
-      return filtered;
-    }
-
-    // Filtru special: "activos_sin_iban" - arată doar angajații activi fără IBAN
-    if (searchBy === 'activos_sin_iban') {
-      const filtered = users.filter((user) => {
+    } else if (searchBy === 'activos_sin_iban') {
+      pool = pool.filter((user) => {
         const estado = (user['ESTADO'] || user.ESTADO || '').toString().trim().toUpperCase();
         const iban = user['Nº Cuenta'] || user['Nº_Cuenta'] || user.cuenta || '';
-        const isActivo = estado === 'ACTIVO';
-        const sinIban = !iban || iban.toString().trim() === '';
-        return isActivo && sinIban;
+        return estado === 'ACTIVO' && (!iban || iban.toString().trim() === '');
       });
-      console.log(`🔍 [Activos sin IBAN Filter] Total users: ${users.length}, Filtered: ${filtered.length}`);
-      return filtered;
     }
 
-    // În primul rând aplicăm filtrul de căutare
     const base = !searchTerm.trim()
-      ? users
-      : users.filter((user) => {
-          const term = searchTerm.toLowerCase().trim();
-          const nombre = getFormattedNombre(user)?.toLowerCase() || '';
-          const codigo = user.CODIGO?.toLowerCase() || '';
-          const email = user['CORREO ELECTRONICO']?.toLowerCase() || '';
-          const grupo = (user['GRUPO'] || '').toString().toLowerCase();
-          const estado = (user['ESTADO'] || '').toString().toLowerCase();
-          const centro =
-            (user['CENTRO TRABAJO'] || user.CENTRO_TRABAJO || '')
-              .toString()
-              .toLowerCase();
-          const fechaAlta = (user['FECHA DE ALTA'] || user['FECHA_DE_ALTA'] || user.fechaAlta || '').toString().toLowerCase();
-
-          switch (searchBy) {
-            case 'nombre':
-              return nombre.includes(term);
-            case 'codigo':
-              return codigo.includes(term);
-            case 'email':
-              return email.includes(term);
-            case 'grupo':
-              return grupo.includes(term);
-            case 'estado':
-              return estado.includes(term);
-            case 'centro':
-              return centro.includes(term);
-            case 'fecha_alta':
-              // Caută în data de alta
-              return fechaAlta.includes(term);
-            case 'todos':
-            default:
-              return (
-                nombre.includes(term) ||
-                codigo.includes(term) ||
-                email.includes(term) ||
-                grupo.includes(term) ||
-                estado.includes(term) ||
-                centro.includes(term) ||
-                fechaAlta.includes(term)
-              );
-          }
-        });
+      ? pool
+      : pool.filter((user) => employeeMatchesSmartSearch(user, searchTerm));
 
     // Apoi aplicăm filtrul de status, dacă este setat
     if (statusFilter === 'ALL') return base;
@@ -3227,18 +3214,14 @@ export default function EmpleadosPage() {
       const filters = [];
       
       if (searchTerm) {
-        const searchByLabel = searchBy === 'nombre' ? 'Nombre' :
-                              searchBy === 'codigo' ? 'Código' :
-                              searchBy === 'email' ? 'Email' :
-                              searchBy === 'grupo' ? 'Grupo' :
-                              searchBy === 'estado' ? 'Estado' :
-                              searchBy === 'centro' ? 'Centro' :
-                              searchBy === 'fecha_alta' ? 'Fecha Alta' :
-                              searchBy === 'sin_fecha_alta' ? 'Sin Fecha Alta' :
-                              searchBy === 'certificado_handicap' ? 'Con Certificado Discapacidad' :
-                              searchBy === 'activos_sin_iban' ? 'Activos sin IBAN' :
-                              'Todos';
-        filters.push(`${searchByLabel}: "${searchTerm}"`);
+        filters.push(`Búsqueda: "${searchTerm}"`);
+      }
+      if (searchBy === 'sin_fecha_alta') {
+        filters.push('Filtro: Sin Fecha Alta');
+      } else if (searchBy === 'certificado_handicap') {
+        filters.push('Filtro: Con Certificado Discapacidad');
+      } else if (searchBy === 'activos_sin_iban') {
+        filters.push('Filtro: Activos sin IBAN');
       }
       
       if (statusFilter && statusFilter !== 'ALL') {
@@ -4395,18 +4378,51 @@ export default function EmpleadosPage() {
                   </button>
                 </div>
                 <div className="empleados-filter-bar app-card app-card--pad">
-                  <input id="search-empleados" name="searchTerm" type="search" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder={searchBy === 'sin_fecha_alta' ? 'Empleados sin Fecha Alta…' : searchBy === 'certificado_handicap' ? 'Con certificado discapacidad…' : searchBy === 'fecha_alta' ? 'Buscar por fecha…' : 'Buscar empleados…'}
-                    disabled={searchBy === 'sin_fecha_alta' || searchBy === 'certificado_handicap'} aria-label="Buscar empleados" />
-                  <select id="search-by-empleados" name="searchBy" value={searchBy} onChange={(e) => setSearchBy(e.target.value)} aria-label="Tipo de búsqueda">
-                    <option value="nombre">Nombre</option><option value="codigo">Código</option><option value="email">Email</option>
-                    <option value="grupo">Grupo</option><option value="estado">Estado</option><option value="centro">Centro</option>
-                    <option value="fecha_alta">Fecha Alta</option><option value="sin_fecha_alta">Sin Fecha Alta</option>
-                    <option value="certificado_handicap">Certificado discapacidad</option><option value="activos_sin_iban">Activos sin IBAN</option><option value="todos">Todos</option>
+                  <input
+                    id="search-empleados"
+                    name="searchTerm"
+                    type="search"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Buscar: nombre, código, DNI, email, grupo, centro, fecha alta…"
+                    aria-label="Búsqueda inteligente de empleados"
+                  />
+                  <select
+                    id="search-by-empleados"
+                    name="searchBy"
+                    value={searchBy}
+                    onChange={(e) => setSearchBy(e.target.value)}
+                    aria-label="Filtro rápido de lista"
+                    title="Filtros rápidos (opcionales)"
+                  >
+                    <option value="">Sin filtro especial</option>
+                    <option value="sin_fecha_alta">Sin Fecha Alta</option>
+                    <option value="certificado_handicap">Certificado discapacidad</option>
+                    <option value="activos_sin_iban">Activos sin IBAN</option>
                   </select>
-                  {searchTerm && <button type="button" onClick={() => setSearchTerm('')} className="solicitud-admin-btn" aria-label="Limpiar"><X className="w-4 h-4" /></button>}
+                  {(searchTerm || searchBy) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchTerm('');
+                        setSearchBy('');
+                      }}
+                      className="solicitud-admin-btn"
+                      aria-label="Limpiar búsqueda"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
-                {searchTerm && <AlertBanner variant="info" compact>{getFilteredUsers.length} resultados para &quot;{searchTerm}&quot;</AlertBanner>}
+                {(searchTerm || searchBy) && (
+                  <AlertBanner variant="info" compact>
+                    {getFilteredUsers.length} resultados
+                    {searchTerm ? <> para &quot;{searchTerm}&quot;</> : null}
+                    {searchBy === 'sin_fecha_alta' ? ' · Sin Fecha Alta' : ''}
+                    {searchBy === 'certificado_handicap' ? ' · Certificado discapacidad' : ''}
+                    {searchBy === 'activos_sin_iban' ? ' · Activos sin IBAN' : ''}
+                  </AlertBanner>
+                )}
                 <div className="solicitud-admin-toolbar documentos-actions flex-wrap mb-3">
                   <button type="button" onClick={handleExportExcel} className="solicitud-admin-btn"><FileSpreadsheet className="w-4 h-4" /><span>Excel</span></button>
                   <button type="button" onClick={handleExportPDF} className="solicitud-admin-btn"><FileText className="w-4 h-4" /><span>PDF</span></button>

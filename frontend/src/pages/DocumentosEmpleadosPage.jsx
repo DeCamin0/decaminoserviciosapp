@@ -6751,6 +6751,21 @@ export default function DocumentosEmpleadosPage() {
                             >
                               {getPrlEstadoLabel(doc.estado)}
                             </span>
+                            {doc.tipo_documento === 'RENUNCIA_RM' && doc.rm_aprobacion_estado === 'PENDIENTE' && (
+                              <span className="inline-block px-2 py-1 rounded text-xs font-medium border border-amber-300 bg-amber-50 text-amber-900">
+                                RM pendiente aprobación
+                              </span>
+                            )}
+                            {doc.tipo_documento === 'RENUNCIA_RM' && doc.rm_aprobacion_estado === 'ACEPTADO' && (
+                              <span className="inline-block px-2 py-1 rounded text-xs font-medium border border-emerald-300 bg-emerald-50 text-emerald-800">
+                                RM aceptado
+                              </span>
+                            )}
+                            {doc.tipo_documento === 'RENUNCIA_RM' && doc.rm_aprobacion_estado === 'RECHAZADO' && (
+                              <span className="inline-block px-2 py-1 rounded text-xs font-medium border border-red-300 bg-red-50 text-red-800">
+                                RM rechazado
+                              </span>
+                            )}
                           </div>
                           <p className="text-sm text-gray-600 mb-2">{getPrlTipoLabel(doc.tipo_documento)}</p>
                           <div className="text-xs text-gray-500 space-y-1">

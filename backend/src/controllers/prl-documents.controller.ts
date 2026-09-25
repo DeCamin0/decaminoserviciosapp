@@ -783,7 +783,7 @@ export class PrlDocumentsController {
       return {
         success: true,
         message:
-          'Solicitud de Reconocimiento Médico registrada. Recibirás confirmación por email y en la app.',
+          'Solicitud enviada. Pendiente de aprobación del responsable.',
       };
     } catch (error: any) {
       this.logger.error(
@@ -792,6 +792,80 @@ export class PrlDocumentsController {
       );
       throw error;
     }
+  }
+
+  private assertCanAprobarRm(user: any) {
+    const grupo = user?.GRUPO || user?.grupo || '';
+    const allowed = ['Admin', 'Manager', 'Supervisor', 'Developer'];
+    if (!allowed.includes(grupo)) {
+      throw new BadRequestException(
+        'No tienes permiso para aprobar solicitudes de RM',
+      );
+    }
+  }
+
+  /**
+   * Listă cereri RM pending (Aprobaciones)
+   */
+  @Get('rm-solicitudes/pendientes')
+  @UseGuards(JwtAuthGuard)
+  async listarRmPendientes(@CurrentUser() user: any) {
+    this.assertCanAprobarRm(user);
+    const pendientes =
+      await this.prlDocumentsService.listarRmSolicitudesPendientes();
+    return {
+      success: true,
+      pendientes,
+      count: pendientes.length,
+    };
+  }
+
+  /**
+   * Aceptă cerere RM
+   */
+  @Post('rm-solicitudes/:documentoId/aceptar')
+  @UseGuards(JwtAuthGuard)
+  async aceptarRmSolicitud(
+    @Param('documentoId') documentoId: string,
+    @CurrentUser() user: any,
+  ) {
+    this.assertCanAprobarRm(user);
+    const documentoIdNum = parseInt(documentoId, 10);
+    if (isNaN(documentoIdNum)) {
+      throw new BadRequestException('documentoId debe ser un número');
+    }
+    const aprobadoPor =
+      user.CODIGO || user.codigo || user.userId || user.email || 'admin';
+    await this.prlDocumentsService.aceptarRmSolicitud(
+      documentoIdNum,
+      String(aprobadoPor),
+    );
+    return { success: true, message: 'Solicitud RM aceptada' };
+  }
+
+  /**
+   * Respinge cerere RM (Renuncia revine obligatorie)
+   */
+  @Post('rm-solicitudes/:documentoId/rechazar')
+  @UseGuards(JwtAuthGuard)
+  async rechazarRmSolicitud(
+    @Param('documentoId') documentoId: string,
+    @Body() body: { motivo?: string },
+    @CurrentUser() user: any,
+  ) {
+    this.assertCanAprobarRm(user);
+    const documentoIdNum = parseInt(documentoId, 10);
+    if (isNaN(documentoIdNum)) {
+      throw new BadRequestException('documentoId debe ser un número');
+    }
+    const rechazadoPor =
+      user.CODIGO || user.codigo || user.userId || user.email || 'admin';
+    await this.prlDocumentsService.rechazarRmSolicitud(
+      documentoIdNum,
+      String(rechazadoPor),
+      body?.motivo,
+    );
+    return { success: true, message: 'Solicitud RM rechazada' };
   }
 
   /**
