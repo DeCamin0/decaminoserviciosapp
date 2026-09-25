@@ -1157,6 +1157,23 @@ export class EmpleadosService {
 
       this.logger.log(`✅ Empleado actualizat cu succes: ${codigo}`);
 
+      // Dacă admin setează discapacidad=false, închide cererea pending ca să nu blocheze modalul
+      if (
+        empleadoData.certificado_handicap_confirmado !== undefined &&
+        !empleadoData.certificado_handicap_confirmado
+      ) {
+        try {
+          await this.cerrarSolicitudesDiscapacidadPendientes(
+            codigo,
+            'Cerrado auto: admin actualizó certificado_handicap_confirmado=0',
+          );
+        } catch (cerrarErr: any) {
+          this.logger.warn(
+            `⚠️ Error cerrando solicitudes Discapacidad tras update: ${cerrarErr?.message || cerrarErr}`,
+          );
+        }
+      }
+
       return {
         success: true,
         codigo: codigo,
@@ -2150,6 +2167,43 @@ export class EmpleadosService {
   }
 
   /**
+   * Închide cereri pending „Certificado de Discapacidad” când angajatul
+   * nu mai declară discapacidad (evită blocaj pe modalul de obligation).
+   */
+  private async cerrarSolicitudesDiscapacidadPendientes(
+    codigo: string,
+    motivo: string,
+  ): Promise<number> {
+    const codigoClean = String(codigo || '').trim();
+    if (!codigoClean) return 0;
+
+    const nota = String(motivo || 'Cerrado: ya no declara discapacidad')
+      .replace(/'/g, "''")
+      .slice(0, 400);
+
+    const result = await this.prisma.$executeRawUnsafe(
+      `
+      UPDATE \`documentos_solicitados\`
+      SET
+        \`estado\` = 'completado',
+        \`fecha_completado\` = CURRENT_TIMESTAMP,
+        \`notas\` = CONCAT(IFNULL(\`notas\`, ''), ' | ', ${this.escapeSql(nota)})
+      WHERE \`empleado_id\` = ${this.escapeSql(codigoClean)}
+        AND \`tipo_documento\` = 'Certificado de Discapacidad'
+        AND \`estado\` = 'pendiente'
+      `,
+    );
+
+    const closed = typeof result === 'number' ? result : 0;
+    if (closed > 0) {
+      this.logger.log(
+        `✅ Cerradas ${closed} solicitud(es) Discapacidad pendientes para ${codigoClean}`,
+      );
+    }
+    return closed;
+  }
+
+  /**
    * Confirmă certificatul de handicap pentru un angajat
    * Dacă confirmă că are certificat, creează automat cererea de document
    */
@@ -2218,6 +2272,17 @@ export class EmpleadosService {
           // Nu aruncăm eroarea pentru a nu bloca confirmarea dacă crearea cererii eșuează
           this.logger.warn(
             `⚠️ Error creando solicitud automática: ${error.message}`,
+          );
+        }
+      } else if (!tieneCertificado) {
+        try {
+          await this.cerrarSolicitudesDiscapacidadPendientes(
+            codigoClean,
+            'Cerrado auto: empleado confirmó que NO tiene certificado de discapacidad',
+          );
+        } catch (error: any) {
+          this.logger.warn(
+            `⚠️ Error cerrando solicitudes Discapacidad: ${error.message}`,
           );
         }
       }
