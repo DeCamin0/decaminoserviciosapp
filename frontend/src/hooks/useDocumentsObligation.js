@@ -176,8 +176,31 @@ export function useDocumentsObligation() {
           const isRenuncia = !!(d.es_renuncia_rm || d.tipo_documento === 'RENUNCIA_RM');
           const rmSolicitado = !!(d.rm_solicitado === true || d.rm_solicitado === 1);
 
-          // Renuncia RM: decizie (Quiero vs Firmar) cât timp nu e solicitat RM și nu e semnat
+          // Renuncia RM: Quiero doar dacă n-a cerut niciodată;
+          // după RECHAZADO / rm_solicitado_en → doar firmar renuncia
           if (isRenuncia && !rmSolicitado) {
+            const alreadyUsedOnce =
+              d.rm_aprobacion_estado === 'RECHAZADO' ||
+              d.rm_aprobacion_estado === 'ACEPTADO' ||
+              !!d.rm_solicitado_en;
+
+            if (alreadyUsedOnce) {
+              if (d.estado === 'PENDIENTE' && d.requiere_firma) {
+                next.push({
+                  key: `prl-sign-${d.id}`,
+                  kind: 'prl',
+                  title:
+                    d.nombre_archivo_original ||
+                    d.template_nombre ||
+                    'Renuncia RM',
+                  subtitle: 'Debes firmar la renuncia (RM ya solicitado antes)',
+                  action: 'firmar',
+                  raw: d,
+                });
+              }
+              return;
+            }
+
             if (d.estado === 'NO_APLICA' || d.estado === 'PENDIENTE') {
               next.push({
                 key: `prl-rm-${d.id}`,

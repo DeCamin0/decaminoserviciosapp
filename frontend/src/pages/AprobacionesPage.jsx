@@ -22,6 +22,15 @@ const REGULARIZACION_REASON_LABELS = {
 
 const getRegularizacionReasonLabel = (code) => REGULARIZACION_REASON_LABELS[code] || code || '';
 
+/** Prisma/MySQL trimite DATETIME ca ISO cu Z, dar cifrele sunt deja ora Madrid — afișăm pe UTC ca să nu mai adăugăm +2h. */
+const formatRmSolicitadoEn = (value) => {
+  if (!value) return '—';
+  return new Date(value).toLocaleString('es-ES', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+    timeZone: 'UTC',
+  });
+};
 
 export default function AprobacionesPage() {
   const { user: authUser } = useAuth();
@@ -1385,12 +1394,7 @@ export default function AprobacionesPage() {
           ) : (
             <div className="solicitud-admin-mobile-list mt-3">
               {pendingRm.map((item) => {
-                const solicitadoEn = item.rm_solicitado_en
-                  ? new Date(item.rm_solicitado_en).toLocaleString('es-ES', {
-                      dateStyle: 'short',
-                      timeStyle: 'short',
-                    })
-                  : '—';
+                const solicitadoEn = formatRmSolicitadoEn(item.rm_solicitado_en);
                 return (
                   <article key={item.documento_id} className="solicitud-admin-mobile-card">
                     <div className="solicitud-admin-mobile-card__head">

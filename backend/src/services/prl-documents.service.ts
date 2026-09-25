@@ -2281,12 +2281,13 @@ export class PrlDocumentsService {
           estado: string;
           rm_solicitado: number;
           rm_aprobacion_estado: string | null;
+          rm_solicitado_en: Date | null;
           fecha_firma: Date | null;
         }>
       >(
         `
         SELECT id, empleado_id, tipo_documento, estado, rm_solicitado,
-               rm_aprobacion_estado, fecha_firma
+               rm_aprobacion_estado, rm_solicitado_en, fecha_firma
         FROM prl_employee_documents
         WHERE id = ${documentoId}
           AND empleado_id = ${this.escapeSql(empleadoId)}
@@ -2308,9 +2309,18 @@ export class PrlDocumentsService {
         );
       }
 
-      if (doc.rm_aprobacion_estado === 'ACEPTADO' || doc.rm_solicitado === 1) {
+      // O singură cerere RM pe viață a documentului: după Quiero (chiar dacă e respins),
+      // angajatul nu mai poate cere din nou — doar semnează renuncia.
+      const alreadyRequestedOnce =
+        doc.rm_solicitado === 1 ||
+        doc.rm_aprobacion_estado === 'PENDIENTE' ||
+        doc.rm_aprobacion_estado === 'ACEPTADO' ||
+        doc.rm_aprobacion_estado === 'RECHAZADO' ||
+        !!doc.rm_solicitado_en;
+
+      if (alreadyRequestedOnce) {
         throw new BadRequestException(
-          'Ya registraste tu solicitud de Reconocimiento Médico',
+          'Ya registraste una solicitud de Reconocimiento Médico. Solo puedes firmar la renuncia.',
         );
       }
 
@@ -2762,7 +2772,7 @@ Esperando aprobación en Aprobaciones.`;
       await this.notificationsService.notifyUser('system', doc.empleado_id, {
         type: 'warning',
         title: 'Solicitud de RM rechazada',
-        message: `Tu solicitud de reconocimiento médico ha sido rechazada.${motivoLine} Debes firmar la renuncia o solicitar de nuevo.`,
+        message: `Tu solicitud de reconocimiento médico ha sido rechazada.${motivoLine} Debes firmar la renuncia. No puedes solicitar el RM de nuevo.`,
         data: { kind: 'PRL_RM_RECHAZADO', documentoId },
       });
     } catch (e: any) {
@@ -2774,7 +2784,7 @@ Esperando aprobación en Aprobaciones.`;
         <p>Buenos días,</p>
         <p>Tu solicitud de <strong>reconocimiento médico</strong> ha sido <strong>rechazada</strong>.</p>
         ${motivoClean ? `<p><strong>Motivo:</strong> ${this.escapeHtml(motivoClean)}</p>` : ''}
-        <p>Debes <strong>firmar la renuncia</strong> o volver a solicitar el reconocimiento médico desde la app.</p>
+        <p>Debes <strong>firmar la renuncia</strong> desde la app. No es posible solicitar el reconocimiento médico otra vez.</p>
         <p>Saludos,<br>${tenant ? `Equipo ${tenant}` : 'Equipo'}</p>
       </div>
     `;

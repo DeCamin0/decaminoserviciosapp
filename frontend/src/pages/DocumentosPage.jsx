@@ -3397,11 +3397,14 @@ export default function DocumentosPage() {
                           <>
                             {doc.rm_aprobacion_estado === 'RECHAZADO' && (
                               <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-red-800 font-medium">
-                                Solicitud rechazada — firma la renuncia o solicita de nuevo
+                                Solicitud rechazada — debes firmar la renuncia (no puedes solicitar el RM otra vez)
                                 {doc.rm_rechazo_motivo ? `: ${doc.rm_rechazo_motivo}` : ''}
                               </div>
                             )}
-                            {(doc.estado === 'NO_APLICA' || doc.estado === 'PENDIENTE') && (
+                            {(doc.estado === 'NO_APLICA' || doc.estado === 'PENDIENTE') &&
+                              doc.rm_aprobacion_estado !== 'RECHAZADO' &&
+                              !doc.rm_solicitado_en &&
+                              !doc.rm_solicitado && (
                             <div className="mt-2 flex flex-col gap-2">
                               <button
                                 type="button"
