@@ -90,6 +90,15 @@ function resolveMatrixDocDisplay(documento) {
   }
 
   if (documento.estado === 'NO_APLICA') {
+    // Renuncia RM atribuită, dar angajatul încă n-a ales Quiero RM / Renuncio
+    if (documento.tipo_documento === 'RENUNCIA_RM') {
+      return {
+        key: 'SIN_GESTION',
+        label: 'Sin gestión',
+        colorClass: 'bg-violet-100 text-violet-900 border-violet-300',
+        title: 'Aún no ha elegido: solicitar RM o firmar la renuncia',
+      };
+    }
     return {
       key: 'NO_APLICA',
       label: 'No aplica',
