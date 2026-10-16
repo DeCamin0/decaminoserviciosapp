@@ -170,7 +170,7 @@ export class SolicitudesController {
         return result;
       } else {
         throw new BadRequestException(
-          `accion invalid: ${accion}. Trebuie să fie 'create', 'update' sau 'delete'`,
+          `Acción no válida: ${accion}. Debe ser 'create', 'update' o 'delete'`,
         );
       }
     } catch (error: any) {
@@ -208,7 +208,7 @@ export class SolicitudesController {
       // Validări
       if (!body.codigo || !body.nombre || !body.fecha_efectiva) {
         throw new BadRequestException(
-          'codigo, nombre și fecha_efectiva sunt obligatorii',
+          'codigo, nombre y fecha_efectiva son obligatorios',
         );
       }
 

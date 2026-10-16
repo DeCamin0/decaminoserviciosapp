@@ -1186,7 +1186,7 @@ export class AusenciasService {
       `);
 
       if (!ausencia || ausencia.length === 0) {
-        throw new BadRequestException(`Ausencia cu ID ${id} nu a fost găsită`);
+        throw new BadRequestException(`No se encontró la ausencia con ID ${id}`);
       }
 
       const ausenciaData = ausencia[0];
@@ -1315,7 +1315,7 @@ export class AusenciasService {
       `);
 
       if (!ausencia || ausencia.length === 0) {
-        throw new BadRequestException(`Ausencia cu ID ${id} nu a fost găsită`);
+        throw new BadRequestException(`No se encontró la ausencia con ID ${id}`);
       }
 
       // Actualizează flag-ul
@@ -1372,7 +1372,7 @@ export class AusenciasService {
       `);
 
       if (!ausencia || ausencia.length === 0) {
-        throw new BadRequestException(`Ausencia cu ID ${id} nu a fost găsită`);
+        throw new BadRequestException(`No se encontró la ausencia con ID ${id}`);
       }
 
       const ausenciaData = ausencia[0];
@@ -1828,7 +1828,7 @@ export class AusenciasService {
       `);
 
       if (!ausencia || ausencia.length === 0) {
-        throw new BadRequestException(`Ausencia cu ID ${id} nu a fost găsită`);
+        throw new BadRequestException(`No se encontró la ausencia con ID ${id}`);
       }
 
       // Validează durata
@@ -2571,7 +2571,7 @@ export class AusenciasService {
       `);
 
       if (!ausencia || ausencia.length === 0) {
-        throw new BadRequestException(`Ausencia cu ID ${id} nu a fost găsită`);
+        throw new BadRequestException(`No se encontró la ausencia con ID ${id}`);
       }
 
       const ausenciaData = ausencia[0];
@@ -3007,7 +3007,7 @@ ${mesFormatted ? `📊 *Período:* ${mesFormatted}\n` : ''}❌ Se ha cancelado e
 
       if (!ausencia) {
         throw new BadRequestException(
-          `Ausencia cu ID ${ausenciaId} nu a fost găsită`,
+          `No se encontró la ausencia con ID ${ausenciaId}`,
         );
       }
 
@@ -3251,7 +3251,7 @@ ${mesFormatted ? `📊 *Período:* ${mesFormatted}\n` : ''}❌ Se ha cancelado e
 
       if (!ausencia) {
         throw new BadRequestException(
-          `Ausencia cu ID ${ausenciaId} nu a fost găsită`,
+          `No se encontró la ausencia con ID ${ausenciaId}`,
         );
       }
 

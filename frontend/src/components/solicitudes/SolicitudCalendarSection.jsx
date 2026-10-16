@@ -189,7 +189,7 @@ export function SolicitudCalendarSection({
                         <strong>Total empleados en grupo:</strong> {totalInGroup}
                       </p>
                       <p>
-                        <strong>Límite per grup:</strong> {firstAvailability.total}{' '}
+                        <strong>Límite por grupo:</strong> {firstAvailability.total}{' '}
                         personas
                       </p>
                     </div>

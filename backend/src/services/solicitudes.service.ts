@@ -1248,7 +1248,7 @@ export class SolicitudesService {
       // Validează câmpurile obligatorii
       if (!data.id || !data.email || !data.codigo || !data.tipo) {
         throw new BadRequestException(
-          'id, email, codigo și tipo sunt obligatorii',
+          'id, email, codigo y tipo son obligatorios',
         );
       }
 
@@ -1904,7 +1904,7 @@ export class SolicitudesService {
 
       if (updates.length === 0) {
         throw new BadRequestException(
-          'Nu s-au furnizat câmpuri pentru actualizare',
+          'No se han indicado campos para actualizar',
         );
       }
 
@@ -2920,7 +2920,7 @@ export class SolicitudesService {
       // Validări
       if (!data.codigo || !data.nombre || !data.fecha_efectiva) {
         throw new BadRequestException(
-          'codigo, nombre și fecha_efectiva sunt obligatorii',
+          'codigo, nombre y fecha_efectiva son obligatorios',
         );
       }
 
@@ -2928,7 +2928,7 @@ export class SolicitudesService {
       const fechaEfectivaDate = new Date(data.fecha_efectiva);
       if (isNaN(fechaEfectivaDate.getTime())) {
         throw new BadRequestException(
-          'fecha_efectiva trebuie să fie o dată validă',
+          'fecha_efectiva debe ser una fecha válida',
         );
       }
 

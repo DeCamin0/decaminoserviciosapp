@@ -1941,6 +1941,20 @@ const resolvePresenciaStatus = async (item, token, presenciaRow, documentosEmple
   };
 };
 
+function ausenciaIdReal(item) {
+  const raw = item?.ausencia_id ?? item?.id ?? item?.ID;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0 || n >= 1e10) return null;
+  return n;
+}
+
+function puedeRecordarJustificante(item) {
+  const estado = String(item?.estado || item?.ESTADO || '').toLowerCase();
+  if (estado === 'rechazada' || estado === 'pendiente') return false;
+  if (item?.fuente === 'solicitudes') return false;
+  return ausenciaIdReal(item) != null;
+}
+
 export default function SolicitudesPage() {
   const { user: authUser } = useAuth();
   const { callApi } = useApi();
@@ -4668,15 +4682,46 @@ export default function SolicitudesPage() {
     }
   }, 60000, true, 12000); // 60s base + max 12s jitter
 
-  // Funcție pentru trimitere reamintire justificante (fără modal, apel direct)
-  const handleRecordarJustificante = async (ausencia) => {
-    const ausenciaId = ausencia.id || ausencia.ID;
+  const recordarInFlightRef = useRef(new Set());
+  const recordarArmRef = useRef(0);
+  const recordarCooldownRef = useRef(0);
+  const [recordarConfirm, setRecordarConfirm] = useState(null);
+  const [recordarSendingId, setRecordarSendingId] = useState(null);
+
+  // Butonul din listă doar deschide confirmarea. POST-ul pleacă din dialog,
+  // după pointerdown + click pe butonul de trimitere.
+  const abrirRecordarJustificante = (ausencia, event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    const detail = event?.detail ?? event?.nativeEvent?.detail ?? 0;
+    if (!event?.isTrusted || detail < 1) return;
+    if (!puedeRecordarJustificante(ausencia)) return;
+    recordarArmRef.current = 0;
+    setRecordarConfirm(ausencia);
+  };
+
+  const enviarRecordarJustificante = async (event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    const armedAt = recordarArmRef.current;
+    recordarArmRef.current = 0;
+    const detail = event?.detail ?? event?.nativeEvent?.detail ?? 0;
+    if (!event?.isTrusted || detail < 1) return;
+    if (!armedAt || Date.now() - armedAt > 10000) return;
+    if (Date.now() - recordarCooldownRef.current < 4000) return;
+
+    const ausencia = recordarConfirm;
+    if (!ausencia || !puedeRecordarJustificante(ausencia)) return;
+
+    const ausenciaId = ausenciaIdReal(ausencia);
     if (!ausenciaId) {
-      setErrorMsg('No se ha identificado la ausencia.');
+      setErrorMsg('No se puede enviar el recordatorio: no hay una ausencia aprobada.');
       return;
     }
-
-    setOperationLoading('recordar-justificante', true);
+    if (recordarInFlightRef.current.has(ausenciaId)) return;
+    recordarInFlightRef.current.add(ausenciaId);
+    recordarCooldownRef.current = Date.now();
+    setRecordarSendingId(ausenciaId);
     setErrorMsg(null);
 
     try {
@@ -4688,9 +4733,10 @@ export default function SolicitudesPage() {
       });
 
       if (result.success) {
-        const nombreEmpleado = ausencia.NOMBRE || ausencia.nombre || ausencia.CODIGO || ausencia.codigo || 'empleado';
+        const nombreEmpleado = ausencia.NOMBRE || ausencia.nombre || ausencia['NOMBRE / APELLIDOS'] || ausencia.NOMBRE_APELLIDOS || ausencia.CODIGO || ausencia.codigo || 'empleado';
         setSuccessMsg(`✅ Recordatorio enviado a ${nombreEmpleado}. Se ha enviado un email y notificación a gestoria.`);
         setTimeout(() => setSuccessMsg(''), 5000);
+        setRecordarConfirm(null);
       } else {
         setErrorMsg(result.error || 'Error al enviar recordatorio');
       }
@@ -4698,7 +4744,8 @@ export default function SolicitudesPage() {
       console.error('Error enviando recordatorio:', error);
       setErrorMsg(error.message || 'Error al enviar recordatorio');
     } finally {
-      setOperationLoading('recordar-justificante', false);
+      recordarInFlightRef.current.delete(ausenciaId);
+      setRecordarSendingId(null);
     }
   };
 
@@ -5787,7 +5834,7 @@ export default function SolicitudesPage() {
     };
   }, [authUser, activeTab, solicitudes.length, fetchInitialJustificantes, allAusencias]);
 
-  // Funcția handleSolicitarJustificante a fost eliminată - folosim handleRecordarJustificante direct
+  // Funcția handleSolicitarJustificante a fost eliminată - recordatorio doar din dialogul de confirmare
 
   const validateDates = (isManagerMode = false) => {
     // Pentru BAJA_VOLUNTARIA nu avem nevoie de fecha_inicio și fecha_fin
@@ -10418,13 +10465,14 @@ export default function SolicitudesPage() {
                                 </div>
                                 <div className="flex items-center gap-2 flex-shrink-0">
                                   {/* Butonul "Recordar Justificante" apare DOAR în tab-urile unde managerii pot gestiona solicitările altora */}
-                                  {isManager && !isMisSolicitudesTab && (
+                                  {isManager && !isMisSolicitudesTab && puedeRecordarJustificante(solicitud) && (
                                     <button
-                                      onClick={() => handleRecordarJustificante(solicitud)}
-                                      disabled={isOperationLoading('recordar-justificante')}
+                                      type="button"
+                                      onClick={(e) => abrirRecordarJustificante(solicitud, e)}
+                                      disabled={recordarSendingId != null}
                                       className="px-4 py-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg font-semibold hover:from-orange-600 hover:to-orange-700 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 whitespace-nowrap text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                      {isOperationLoading('recordar-justificante') ? (
+                                      {recordarSendingId === ausenciaIdReal(solicitud) ? (
                                         <span className="flex items-center gap-2">
                                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                                           Enviando...
@@ -13492,26 +13540,26 @@ export default function SolicitudesPage() {
                                 </div>
                               ) : (
                                 <div className="flex items-center gap-2">
+                                  {puedeRecordarJustificante(item) && (
                                   <button
-                                    onClick={() => handleRecordarJustificante(item)}
-                                    disabled={isOperationLoading('recordar-justificante')}
+                                    type="button"
+                                    onClick={(e) => abrirRecordarJustificante(item, e)}
+                                    disabled={recordarSendingId != null}
                                     className="solicitud-admin-btn solicitud-admin-btn--warn text-sm whitespace-nowrap"
                                   >
-                                    <div className="absolute inset-0 rounded-lg bg-orange-400 opacity-0 group-hover:opacity-20 blur-md transition-opacity duration-300"></div>
-                                    <div className="relative flex items-center gap-2">
-                                      {isOperationLoading('recordar-justificante') ? (
-                                        <>
-                                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                          <span className="text-sm">Enviando...</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <span className="text-sm">📋</span>
-                                          <span className="text-sm">Recordar Justificante</span>
-                                        </>
-                                      )}
-                                    </div>
+                                    {recordarSendingId === ausenciaIdReal(item) ? (
+                                      <>
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                        <span className="text-sm">Enviando...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span className="text-sm">📋</span>
+                                        <span className="text-sm">Recordar Justificante</span>
+                                      </>
+                                    )}
                                   </button>
+                                  )}
                                   {/* Buton "No Necesita Justificante" doar pentru Permiso Retribuido și manageri */}
                                   {((item.tipo || item.TIPO) === 'Permiso Retribuido' && isManager) && (() => {
                                     const noNecesitaJustificante = item.no_necesita_justificante === true || 
@@ -15644,7 +15692,46 @@ export default function SolicitudesPage() {
         </div>
       </Modal>
 
-      {/* Modal pentru solicitare justificante - ELIMINAT (folosim recordarJustificante direct) */}
+      <Modal
+        isOpen={!!recordarConfirm}
+        onClose={() => {
+          if (recordarSendingId != null) return;
+          recordarArmRef.current = 0;
+          setRecordarConfirm(null);
+        }}
+        title="¿Enviar recordatorio?"
+        size="md"
+        showCloseButton={false}
+        closeOnBackdrop={recordarSendingId == null}
+      >
+        <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+          Se enviará un email al empleado y un aviso a gestoría. Esto no se envía solo al abrir la página.
+        </p>
+        <div className="app-modal__actions">
+          <button
+            type="button"
+            className="app-modal__btn"
+            disabled={recordarSendingId != null}
+            onClick={() => {
+              recordarArmRef.current = 0;
+              setRecordarConfirm(null);
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="app-modal__btn app-modal__btn--primary"
+            disabled={recordarSendingId != null}
+            onPointerDown={(e) => {
+              if (e.isTrusted && e.button === 0) recordarArmRef.current = Date.now();
+            }}
+            onClick={enviarRecordarJustificante}
+          >
+            {recordarSendingId != null ? 'Enviando...' : 'Enviar recordatorio'}
+          </button>
+        </div>
+      </Modal>
 
       {/* Modal pentru Upload Justificante */}
       <Modal
