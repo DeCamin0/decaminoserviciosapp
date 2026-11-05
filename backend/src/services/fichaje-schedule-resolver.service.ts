@@ -208,15 +208,17 @@ export class FichajeScheduleResolverService {
 
   /**
    * Reminder window that respects overnight shifts (e.g. 19:30–07:30).
-   * Entrada and Salida NEVER open early — only from horaIn / horaOut onward.
-   * Overnight Salida: only from horaOut in the morning until before the next Entrada (horaIn).
-   * Overnight Entrada: only from horaIn in the evening (not during morning Salida window).
+   * Entrada: from horaIn inclusive (never early).
+   * Salida: strictly AFTER horaOut (grace so employee can punch at exact end;
+   * next cron tick ~5 min later will notify if still missing).
+   * Overnight Salida: after horaOut in the morning until before the next Entrada (horaIn).
+   * Overnight Entrada: from horaIn in the evening (not during morning Salida window).
    */
   isReminderDueForInterval(
     nowMinutes: number,
     interval: ScheduleInterval,
     tipo: PunchTipo,
-    _marginMinutes: number, // kept for callers; early-open is disabled (open at target only)
+    _marginMinutes: number, // kept for callers; early-open is disabled
   ): boolean {
     const inM = this.hmToMinutes(interval.horaIn);
     const outM = this.hmToMinutes(interval.horaOut);
@@ -224,6 +226,8 @@ export class FichajeScheduleResolverService {
     const target = tipo === 'Entrada' ? inM : outM;
 
     if (!overnight) {
+      // Salida: not at exact horaOut — leave time to fichar (next check notifies)
+      if (tipo === 'Salida') return nowMinutes > target;
       return this.isReminderDue(nowMinutes, target, 0);
     }
 
@@ -235,9 +239,10 @@ export class FichajeScheduleResolverService {
       return nowMinutes >= openAt;
     }
 
-    // Overnight Salida (morning): never in the evening after horaIn
+    // Overnight Salida (morning): never in the evening after horaIn;
+    // grace: not at exact horaOut
     if (nowMinutes >= inM) return false;
-    return nowMinutes >= openAt;
+    return nowMinutes > openAt;
   }
 
   /**

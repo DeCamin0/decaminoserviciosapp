@@ -34,6 +34,7 @@ import {
   shouldEnforcePedidoLimiteGasto,
   subtotalExceedsLimiteGasto,
 } from '../utils/pedidosLimiteGasto';
+import { useSyncedTab } from '../hooks/useSyncedTab';
 
 /** Mensaje para el usuario desde el cuerpo de error API (Nest: `{ message: string }`). */
 function messageFromApiErrorBody(body: string): string | null {
@@ -394,7 +395,14 @@ const getDemoProductos = () => [
 const PedidosPage: React.FC = () => {
   const { user } = useAuth();
   const { getPermissions } = useAdminApi();
-  const [activeTab, setActiveTab] = useState<'nuevo-pedido' | 'gestionar-pedidos' | 'permisos' | 'catalogo' | 'notas'>('nuevo-pedido');
+  const [activeTab, setActiveTab] = useSyncedTab(
+    'tab',
+    ['nuevo-pedido', 'gestionar-pedidos', 'permisos', 'catalogo', 'notas'],
+    'nuevo-pedido',
+  ) as [
+    'nuevo-pedido' | 'gestionar-pedidos' | 'permisos' | 'catalogo' | 'notas',
+    (next: string) => void,
+  ];
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [userPermissions, setUserPermissions] = useState<UserPermissions>(null);
   const [loadingPermissions, setLoadingPermissions] = useState(true);

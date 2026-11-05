@@ -1,0 +1,194 @@
+.inicio-op {
+  border-radius: var(--app-radius, 0.85rem);
+  border: 1px solid var(--app-border, color-mix(in srgb, var(--primary-color) 14%, #e5e7eb));
+  background: color-mix(in srgb, var(--primary-color) 3%, #fff);
+  padding: 1rem 1.1rem 1.15rem;
+  min-width: 0;
+}
+
+.dark .inicio-op {
+  border-color: color-mix(in srgb, var(--primary-color) 22%, #374151);
+  background: color-mix(in srgb, var(--primary-color) 8%, #111827);
+}
+
+.inicio-op__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+}
+
+.inicio-op__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.dark .inicio-op__title {
+  color: #f1f5f9;
+}
+
+.inicio-op__toggle {
+  display: inline-flex;
+  padding: 0.15rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 20%, #e5e7eb);
+  background: #fff;
+  gap: 0.15rem;
+}
+
+.dark .inicio-op__toggle {
+  background: rgba(31, 41, 55, 0.9);
+  border-color: #374151;
+}
+
+.inicio-op__toggle-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: #64748b;
+}
+
+.inicio-op__toggle-btn--on {
+  background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+  color: var(--primary-color, #e53935);
+}
+
+.inicio-op__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+@media (min-width: 1400px) {
+  .inicio-op__grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.inicio-op__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 12%, #e5e7eb);
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  min-width: 0;
+  transition: border-color 0.15s ease;
+}
+
+.dark .inicio-op__card {
+  background: rgba(31, 41, 55, 0.92);
+  border-color: #374151;
+}
+
+.inicio-op__card:hover {
+  border-color: color-mix(in srgb, var(--primary-color) 45%, #e5e7eb);
+}
+
+.inicio-op__card-label {
+  font-size: 0.68rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #64748b;
+}
+
+.inicio-op__card-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: #0f172a;
+}
+
+.dark .inicio-op__card-value {
+  color: #f8fafc;
+}
+
+.inicio-op__card--blue .inicio-op__card-value { color: #2563eb; }
+.inicio-op__card--green .inicio-op__card-value { color: #16a34a; }
+.inicio-op__card--teal .inicio-op__card-value { color: #0d9488; }
+.inicio-op__card--red .inicio-op__card-value { color: #dc2626; }
+.inicio-op__card--purple .inicio-op__card-value { color: #7c3aed; }
+.inicio-op__card--orange .inicio-op__card-value { color: #ea580c; }
+.inicio-op__card--sky .inicio-op__card-value { color: #0284c7; }
+.inicio-op__card--amber .inicio-op__card-value { color: #d97706; }
+
+.inicio-op__aus {
+  margin-top: 0.85rem;
+}
+
+.inicio-op__aus-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.inicio-op__aus-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.inicio-op__aus-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 14%, #e5e7eb);
+  background: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: inherit;
+}
+
+.dark .inicio-op__aus-item {
+  background: rgba(31, 41, 55, 0.92);
+  border-color: #374151;
+}
+
+.inicio-op__aus-count {
+  color: var(--primary-color, #e53935);
+  font-weight: 700;
+}
+
+.inicio-op__loading,
+.inicio-op__empty {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+/* Compact variant for Mi resumen (phone) */
+.inicio-op--compact {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.inicio-op--compact .inicio-op__head {
+  margin-bottom: 0.5rem;
+}
+
+.inicio-op--compact .inicio-op__grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}

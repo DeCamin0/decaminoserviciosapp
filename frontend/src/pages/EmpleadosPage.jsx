@@ -18,6 +18,7 @@ import EmployeePDFGenerator from '../components/employees/EmployeePDFGenerator.j
 import { fetchAvatarOnce, getCachedAvatar, DEFAULT_AVATAR, mapBulkAvatarsResponse, isRealAvatarUrl } from '../utils/avatarCache';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { usePermissions } from '../hooks/usePermissions';
+import { useSyncedTab } from '../hooks/useSyncedTab';
 
 import activityLogger from '../utils/activityLogger';
 import { getFormattedNombre, getEmployeeInitials } from '../utils/employeeNameHelper';
@@ -272,7 +273,14 @@ export default function EmpleadosPage() {
   const [filtroActivo, setFiltroActivo] = useState(null); // null, 'sin_cuadrante_ni_horario', 'con_cuadrante', 'con_horario', 'con_ambos'
   
   // State pentru filtre multiple pe coloane (estado, grupo, centro, etc.)
-  const [filtrosColumnas, setFiltrosColumnas] = useState({}); // { estado: 'ACTIVO', grupo: 'Limpiador', centro: '...', etc. }
+  // Deep-link Inicio: /empleados?estado=ACTIVO
+  const [filtrosColumnas, setFiltrosColumnas] = useState(() => {
+    const estado = new URLSearchParams(window.location.search).get('estado');
+    if (estado && String(estado).trim()) {
+      return { estado: String(estado).trim().toUpperCase() };
+    }
+    return {};
+  });
   
   // State pentru dropdown-uri de filtrare
   const [filtroDropdownAbierto, setFiltroDropdownAbierto] = useState(null); // null sau numele coloanei (ex: 'estado', 'grupo')
@@ -799,7 +807,11 @@ export default function EmpleadosPage() {
     return mapped;
   };
 
-  const [activeTab, setActiveTab] = useState('lista'); // 'lista' | 'adauga' | 'inspecciones' | 'corregir-nombres' | 'estadisticas'
+  const [activeTab, setActiveTab] = useSyncedTab(
+    'tab',
+    ['lista', 'adauga', 'inspecciones', 'corregir-nombres', 'estadisticas'],
+    'lista',
+  );
   const [users, setUsers] = useState([]);
   const [errorUsers, setErrorUsers] = useState(null);
   

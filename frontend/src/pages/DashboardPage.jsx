@@ -5,32 +5,20 @@ import { Notification, Modal } from '../components/ui';
 import { routes } from '../utils/routes';
 import { getCachedAvatar, setCachedAvatar, DEFAULT_AVATAR } from '../utils/avatarCache';
 import QuickAccessOrb from '../components/QuickAccessOrb';
+import InicioDesktopDashboard from '../components/inicio-dashboard/InicioDesktopDashboard';
+import InicioMiResumen from '../components/inicio-dashboard/InicioMiResumen';
+import {
+  useIsPhone,
+  useMediaMinWidth,
+} from '../components/inicio-dashboard/useMediaMinWidth';
 import { useAdminApi } from '../hooks/useAdminApi';
 import { useComunicadosApi } from '../hooks/useComunicadosApi';
 import SendNotificationModal from '../components/SendNotificationModal';
 import { getBirthdayGreeting } from '../utils/birthdayGreeting';
 import {
-  BarChart3,
   Cake,
-  Calendar,
-  CheckCircle,
-  ClipboardCheck,
   ChevronDown,
-  ClipboardList,
-  Clock,
-  FileText,
-  Folder,
-  Mail,
   Phone,
-  Settings,
-  ShoppingCart,
-  Trophy,
-  UserCircle,
-  Users,
-  ShieldCheck,
-  Camera,
-  ListTodo,
-  CheckSquare,
 } from 'lucide-react';
 import {
   getCurrentMonthKey,
@@ -42,12 +30,16 @@ import {
 } from '../utils/monthlyAlerts';
 import { config } from '../config/env.js';
 import activityLogger from '../utils/activityLogger';
+import { buildNavItems } from '../navigation/buildNavItems';
 import './DashboardPage.css';
 
 const InicioPage = () => {
   const { user } = useAuth();
   const { getPermissions } = useAdminApi();
   const { getUnreadCount } = useComunicadosApi();
+  /** New desktop dashboard only ≥1200px; phone ≤767 gets Mi resumen; tablet keeps orb/grid only */
+  const isDesktopInicio = useMediaMinWidth(1200);
+  const isPhoneInicio = useIsPhone();
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [loadingAvatar, setLoadingAvatar] = useState(false);
   const [uiReady, setUiReady] = useState(false); // decuplează UX de fetch-uri lente
@@ -1111,405 +1103,29 @@ const InicioPage = () => {
   }, [user?.CODIGO, user?.isDemo]);
 
   const quickAccessItems = useMemo(() => {
-    // Dacă permisiunile nu sunt încă încărcate, folosim verificările hardcodate ca fallback
-    const hasBackendPermissions = userPermissions && Object.keys(userPermissions).length > 0;
+    const hasBackendPermissions =
+      userPermissions && Object.keys(userPermissions).length > 0;
     const useBackendPermissions = hasBackendPermissions && !loadingPermissions;
-    
-    // Verifică dacă există permisiuni pentru grupul utilizatorului în backend
-    const grupoKeyExists = useBackendPermissions ? findGrupoKey(userGrupo, userPermissions) !== null : false;
-    
-    // Log doar când se schimbă ceva relevant (nu la fiecare render)
-    if (useBackendPermissions || grupoKeyExists) {
-      console.log('🔐 DashboardPage: Building menu items.');
-      console.log('  - useBackendPermissions:', useBackendPermissions);
-      console.log('  - userGrupo:', userGrupo);
-      console.log('  - grupoKeyExists:', grupoKeyExists);
-      console.log('  - userPermissions keys:', userPermissions ? Object.keys(userPermissions) : 'null');
-    }
-    
-    const list = [];
-    
-    // Elemente de bază - verifică permisiunile din backend sau folosește fallback
-    // Dacă folosim permisiunile din backend și grupul există, verificăm DOAR permisiunile din backend
-    // Dacă nu folosim permisiunile din backend sau grupul nu există, folosim fallback-ul
+    const grupoKeyExists = useBackendPermissions
+      ? findGrupoKey(userGrupo, userPermissions) !== null
+      : false;
     const shouldUseBackend = useBackendPermissions && grupoKeyExists;
-    
-    // Fiecare buton necesită permisiunea sa specifică - "dashboard" nu mai acordă acces la toate funcționalitățile
-    const canAccessDatos = shouldUseBackend ? hasPermission('datos') : true;
-    // Pentru fichar, verifică ambele variante (empleados și admin)
-    const canAccessFichar = shouldUseBackend 
-      ? (hasPermission('fichar-empleados') || hasPermission('fichar-admin'))
-      : true;
-    // Pentru solicitudes, verifică ambele variante (empleados și admin), similar cu pedidos
-    const canAccessSolicitudes = shouldUseBackend 
-      ? (hasPermission('solicitudes-empleados') || hasPermission('solicitudes-admin') || hasPermission('solicitudes'))
-      : true;
-    const canAccessDocumentos = shouldUseBackend ? hasPermission('documentos') : true; // Documentos necesită permisiune explicită
-    // Pentru cuadrantes-empleado, folosim DOAR permisiunile din backend (fără fallback)
-    const canAccessCuadrantesEmpleado = hasBackendPermissions ? hasPermission('cuadrantes-empleado') : false;
-    // Pentru mis-inspecciones, folosim DOAR permisiunile din backend (fără fallback)
-    const canAccessMisInspecciones = hasBackendPermissions ? hasPermission('mis-inspecciones') : false;
-    const canAccessMisTareas = hasBackendPermissions ? hasPermission('mis-tareas') : false;
-    // Pentru comunicados, folosim DOAR permisiunile din backend (fără fallback)
-    const canAccessComunicados = hasBackendPermissions ? hasPermission('comunicados') : false;
 
-    if (canAccessDatos) {
-      list.push({
-        id: 'datos-personales',
-        label: 'Datos personales',
-        hint: 'Información del empleado',
-        icon: <UserCircle className="h-6 w-6 text-white" />,
-        gradient: 'from-blue-500 via-sky-500 to-indigo-500',
-        href: '/datos',
-      });
-    }
-
-    if (canAccessFichar) {
-      list.push({
-        id: 'fichar',
-        label: 'Registro de Jornada',
-        hint: 'Control de horarios',
-        icon: <Clock className="h-6 w-6 text-white" />,
-        gradient: 'from-emerald-500 via-teal-500 to-cyan-500',
-        href: '/fichaje',
-      });
-    }
-
-    if (canAccessSolicitudes) {
-      list.push({
-        id: 'solicitudes',
-        label: 'Solicitudes',
-        hint: 'Gestionar peticiones',
-        icon: <ClipboardList className="h-6 w-6 text-white" />,
-        gradient: 'from-purple-500 via-fuchsia-500 to-pink-500',
-        href: '/solicitudes',
-      });
-    }
-
-    // Calculează totalul de notificări (documentos solicitados + PRL pendientes + documentos oficiales que necesitan firma)
-    const totalNotifications = documentosSolicitadosCount + documentosPRLPendientesCount + documentosOficialesNecesitanFirmaCount;
-    
-    if (canAccessDocumentos) {
-      list.push({
-        id: 'documentos',
-        label: 'Documentos',
-        hint: 'Nóminas y archivos',
-        icon: <FileText className="h-6 w-6 text-white" />,
-        gradient: 'from-orange-500 via-amber-500 to-yellow-500',
-        href: '/documentos',
-        notificationCount: totalNotifications > 0 ? totalNotifications : undefined,
-      });
-    }
-
-    if (canAccessCuadrantesEmpleado) {
-      list.push({
-        id: 'mi-horario',
-        label: 'Mi horario',
-        hint: 'Consulta tu cuadrante',
-        icon: <Calendar className="h-6 w-6 text-white" />,
-        gradient: 'from-sky-500 via-blue-500 to-indigo-500',
-        href: '/cuadrantes-empleado',
-      });
-    }
-
-    if (canAccessMisInspecciones) {
-      list.push({
-        id: 'mis-inspecciones',
-        label: 'Mis inspecciones',
-        hint: 'Inspecciones asignadas',
-        icon: <ClipboardCheck className="h-6 w-6 text-white" />,
-        gradient: 'from-cyan-500 via-sky-500 to-blue-500',
-        href: '/mis-inspecciones',
-      });
-    }
-
-    if (canAccessMisTareas) {
-      list.push({
-        id: 'mis-tareas',
-        label: 'Mis tareas',
-        hint: 'Confirmar y subir fotos',
-        icon: <CheckSquare className="h-6 w-6 text-white" />,
-        gradient: 'from-lime-500 via-green-500 to-emerald-600',
-        href: '/mis-tareas',
-        notificationCount:
-          misTareasPendientesCount > 0 ? misTareasPendientesCount : undefined,
-      });
-    }
-
-    if (canAccessComunicados) {
-      list.push({
-        id: 'comunicados',
-        label: 'Comunicados',
-        hint: 'Anuncios y comunicaciones oficiales',
-        icon: <FileText className="h-6 w-6 text-white" />,
-        gradient: 'from-green-500 via-emerald-500 to-teal-500',
-        href: '/comunicados',
-        notificationCount: comunicadosUnreadCount > 0 ? comunicadosUnreadCount : undefined,
-      });
-    }
-
-    // Elemente pentru manager - verifică permisiunile din backend sau folosește fallback
-    const canManageEmployees = shouldUseBackend ? hasPermission('empleados') : isManager;
-    const canManageDocuments = shouldUseBackend ? hasPermission('documentos-empleados') : isManager;
-    // Pentru cuadrantes, folosim DOAR permisiunile din backend (fără fallback)
-    const canManageCuadrantes = hasBackendPermissions ? hasPermission('cuadrantes') : false;
-    // Pentru aprobaciones, folosim DOAR permisiunile din backend (fără fallback)
-    const canApprove = hasBackendPermissions ? hasPermission('aprobaciones') : false;
-    // Pentru inspecciones, folosim DOAR permisiunile din backend (fără fallback)
-    const canInspect = hasBackendPermissions ? hasPermission('inspecciones') : false;
-    const canManageTareas = hasBackendPermissions ? hasPermission('tareas') : false;
-
-    if (canManageEmployees) {
-      list.push({
-        id: 'gestionar-empleados',
-        label: 'Gestionar empleados',
-        hint: 'Administrar equipo',
-        icon: <Users className="h-6 w-6 text-white" />,
-        gradient: 'from-indigo-500 via-violet-500 to-purple-500',
-        href: '/empleados',
-        role: 'manager',
-      });
-    }
-
-    if ((!useBackendPermissions && isManager) || canManageDocuments) {
-      list.push({
-        id: 'documentos-empleados',
-        label: 'Documentos empleados',
-        hint: 'Archivos por empleado',
-        icon: <Folder className="h-6 w-6 text-white" />,
-        gradient: 'from-teal-500 via-cyan-500 to-sky-500',
-        href: '/documentos-empleados',
-        role: 'manager',
-      });
-    }
-
-    // Documentos PRL — permiso matriz `prl-documentos` (migración: igual que documentos-empleados si no hay clave)
-    const canAccessPRL = shouldUseBackend
-      ? hasPermission('prl-documentos')
-      : isManager;
-    if (canAccessPRL) {
-      list.push({
-        id: 'prl-documentos',
-        label: 'Documentos PRL',
-        hint: 'Gestión documentos PRL por puesto',
-        icon: <ShieldCheck className="h-6 w-6 text-white" />,
-        gradient: 'from-primary-500 via-primary-600 to-primary-700',
-        href: '/prl-documentos',
-        role: 'manager',
-      });
-    }
-
-    if (canManageCuadrantes) {
-      list.push({
-        id: 'cuadrantes',
-        label: 'Cuadrantes',
-        hint: 'Gestión de horarios del equipo',
-        icon: <Calendar className="h-6 w-6 text-white" />,
-        gradient: 'from-slate-500 via-gray-500 to-zinc-500',
-        href: '/cuadrantes',
-        role: 'manager',
-      });
-    }
-
-    if (canApprove) {
-      list.push({
-        id: 'aprobaciones',
-        label: 'Aprobaciones',
-        hint: 'Aprobar solicitudes de empleados',
-        icon: <CheckCircle className="h-6 w-6 text-white" />,
-        gradient: 'from-yellow-500 via-amber-500 to-orange-500',
-        href: '/aprobaciones',
-        role: 'manager',
-      });
-    }
-
-    if (canInspect) {
-      list.push({
-        id: 'inspecciones',
-        label: 'Inspecciones',
-        hint: 'Realizar auditorías',
-        icon: <ClipboardCheck className="h-6 w-6 text-white" />,
-        gradient: 'from-amber-500 via-orange-500 to-yellow-500',
-        href: '/inspecciones',
-        role: 'manager',
-      });
-    }
-
-    if (canManageTareas) {
-      list.push({
-        id: 'tareas',
-        label: 'Tareas',
-        hint: 'Gestionar tareas del equipo',
-        icon: <ListTodo className="h-6 w-6 text-white" />,
-        gradient: 'from-emerald-500 via-teal-500 to-cyan-600',
-        href: '/tareas',
-        role: 'manager',
-      });
-    }
-
-    const canFotosTrabajo = shouldUseBackend
-      ? hasPermission('fotos-trabajo')
-      : isManager || isAdmin || isDeveloper;
-    if (canFotosTrabajo) {
-      list.push({
-        id: 'fotos-trabajo',
-        label: 'Fotos Trabajo',
-        hint: 'Fotos por comunidad y servicio',
-        icon: <Camera className="h-6 w-6 text-white" />,
-        gradient: 'from-cyan-500 via-sky-500 to-blue-600',
-        href: '/fotos-trabajo',
-        role: 'manager',
-      });
-    }
-
-    // ✅ ACTUALIZAT: Butonul "Pedidos" este mereu vizibil pentru toți angajații
-    // Verificarea DerechoPedidos se face în EmpleadoPedidosPage
-    // Link-ul se calculează în funcție de permisiuni: /pedidos pentru admin, /empleado-pedidos pentru empleados
-    const hasSpecialAccess = isManager || isAdmin || isDeveloper;
-    const hasPedidosAdminPermission = shouldUseBackend ? hasPermission('pedidos-admin') : false;
-    const hasPedidosPermissionOld = shouldUseBackend ? hasPermission('pedidos') : false;
-    const pedidosHref = (hasSpecialAccess || hasPedidosAdminPermission || hasPedidosPermissionOld) 
-      ? '/pedidos' 
-      : '/empleado-pedidos';
-    const pedidosRole = (hasSpecialAccess || hasPedidosAdminPermission || hasPedidosPermissionOld) 
-      ? 'manager' 
-      : 'empleado';
-    
-    console.log('✅ [DashboardPage] Adding Pedidos link:', {
-      hasSpecialAccess,
-      hasPedidosAdminPermission,
-      hasPedidosPermissionOld,
-      href: pedidosHref,
-      role: pedidosRole,
+    return buildNavItems({
+      shouldUseBackend,
+      hasBackendPermissions: Boolean(hasBackendPermissions),
+      hasPermission,
+      isManager,
+      isAdmin,
+      isDeveloper,
+      userGrupo: userGrupo || user?.GRUPO,
+      comunicadosUnreadCount,
+      documentosSolicitadosCount,
+      documentosPRLPendientesCount,
+      documentosOficialesNecesitanFirmaCount,
+      misTareasPendientesCount,
+      withChildren: false,
     });
-    
-    list.push({
-      id: 'pedidos',
-      label: 'Pedidos',
-      hint: 'Gestiona tus pedidos',
-      icon: <ShoppingCart className="h-6 w-6 text-white" />,
-      gradient: 'from-amber-500 via-orange-500 to-yellow-500',
-      href: pedidosHref,
-      role: pedidosRole,
-    });
-
-    const canAccessAdmin = shouldUseBackend ? hasPermission('admin') : (isAdmin || isDeveloper);
-    const canAccessStats = shouldUseBackend ? hasPermission('estadisticas') : (isAdmin || isDeveloper || user?.GRUPO === 'Supervisor');
-    // Pentru clientes, folosim DOAR permisiunile din backend (fără fallback)
-    const canAccessClientes = hasBackendPermissions ? hasPermission('clientes') : false;
-
-    if (canAccessAdmin) {
-      list.push({
-        id: 'admin-panel',
-        label: 'Admin Panel',
-        hint: 'Control del sistema y estadísticas avanzadas',
-        icon: <Settings className="h-6 w-6 text-white" />,
-        gradient: 'from-slate-500 via-slate-600 to-slate-700',
-        href: '/admin',
-        role: 'manager',
-      });
-    }
-
-    // Mensajes Enviados - doar pentru admini/developeri
-    if (canAccessAdmin) {
-      list.push({
-        id: 'mensajes-enviados',
-        label: 'Mensajes Enviados',
-        hint: 'Gestiona y visualiza todos los mensajes enviados',
-        icon: <Mail className="h-6 w-6 text-white" />,
-        gradient: 'from-purple-500 via-violet-500 to-fuchsia-500',
-        href: '/mensajes-enviados',
-        role: 'manager',
-      });
-    }
-
-    if (canAccessStats) {
-      list.push({
-        id: 'estadisticas',
-        label: 'Estadísticas',
-        hint: 'Análisis y reportes avanzados',
-        icon: <BarChart3 className="h-6 w-6 text-white" />,
-        gradient: 'from-fuchsia-500 via-purple-500 to-cyan-500',
-        href: '/estadisticas',
-        role: 'manager',
-      });
-    }
-
-    if (canAccessClientes) {
-      list.push({
-        id: 'clientes',
-        label: 'Clientes',
-        hint: 'Gestión de clientes y proveedores',
-        icon: <Users className="h-6 w-6 text-white" />,
-        gradient: 'from-teal-500 via-cyan-500 to-sky-500',
-        href: '/clientes',
-        role: 'manager',
-      });
-    }
-
-    // Presupuestos e Informes - apare pentru toți care au acces la Clientes
-    // Dacă există permisiuni în backend, verifică permisiunea; altfel apare pentru manageri
-    const canAccessPresupuestos = hasBackendPermissions 
-      ? (hasPermission('presupuestos-informes') || canAccessClientes)
-      : (isAdmin || isDeveloper || isManager || user?.GRUPO === 'Supervisor' || canAccessClientes);
-    
-    if (canAccessPresupuestos) {
-      list.push({
-        id: 'presupuestos-informes',
-        label: 'Presupuestos actual (Legacy)',
-        hint: 'Sistema actual de presupuestos e informes',
-        icon: <FileText className="h-6 w-6 text-white" />,
-        gradient: 'from-indigo-500 via-purple-500 to-pink-500',
-        href: '/presupuestos-informes',
-        role: 'manager',
-      });
-    }
-
-    const canAccessPresupuestosV2 = hasBackendPermissions
-      ? hasPermission('presupuestos-v2')
-      : (isAdmin || isDeveloper || isManager || user?.GRUPO === 'Supervisor');
-    if (canAccessPresupuestosV2) {
-      list.push({
-        id: 'presupuestos-v2',
-        label: 'Presupuestos V2',
-        hint: 'Nuevo módulo de presupuestos',
-        icon: <FileText className="h-6 w-6 text-white" />,
-        gradient: 'from-slate-600 via-gray-700 to-zinc-800',
-        href: '/presupuestos-v2',
-        role: 'manager',
-      });
-    }
-
-    const canAccessServiciosPeriodicos = hasBackendPermissions
-      ? (hasPermission('servicios-periodicos') || canAccessClientes)
-      : (isAdmin || isDeveloper || isManager || user?.GRUPO === 'Supervisor' || canAccessClientes);
-    if (canAccessServiciosPeriodicos) {
-      list.push({
-        id: 'servicios-periodicos',
-        label: 'Servicios periódicos',
-        hint: 'Checklist mensual por comunidad',
-        icon: <Calendar className="h-6 w-6 text-white" />,
-        gradient: 'from-cyan-500 via-teal-500 to-emerald-500',
-        href: '/servicios-periodicos',
-        role: 'manager',
-      });
-    }
-
-    // Salón de la Fama - verifică permisiunea din backend
-    const canAccessHallOfFame = shouldUseBackend ? hasPermission('hall-of-fame') : true;
-    
-    if (canAccessHallOfFame) {
-      list.push({
-        id: 'hall-of-fame',
-        label: 'Salón de la Fama',
-        hint: 'Clasament lunar',
-        icon: <Trophy className="h-6 w-6 text-white" />,
-        gradient: 'from-yellow-400 via-amber-500 to-orange-500',
-        href: '/hall-of-fame',
-      });
-    }
-
-    return list;
   }, [
     isManager,
     isAdmin,
@@ -1526,6 +1142,35 @@ const InicioPage = () => {
     documentosOficialesNecesitanFirmaCount,
     misTareasPendientesCount,
   ]);
+
+  const inicioBadgeCounts = useMemo(
+    () => ({
+      documentos:
+        documentosSolicitadosCount +
+        documentosPRLPendientesCount +
+        documentosOficialesNecesitanFirmaCount,
+      misTareas: misTareasPendientesCount,
+      comunicados: comunicadosUnreadCount,
+    }),
+    [
+      documentosSolicitadosCount,
+      documentosPRLPendientesCount,
+      documentosOficialesNecesitanFirmaCount,
+      misTareasPendientesCount,
+      comunicadosUnreadCount,
+    ],
+  );
+
+  /** Flags for Inicio summary / desktop KPIs — derived from the same menu permissions */
+  const inicioFlags = useMemo(() => {
+    const ids = new Set(quickAccessItems.map((i) => i.id));
+    return {
+      canJornada: ids.has('fichar') || ids.has('mi-horario'),
+      canVacaciones: ids.has('solicitudes'),
+      canEmpleados: ids.has('gestionar-empleados'),
+      canAprobaciones: ids.has('aprobaciones'),
+    };
+  }, [quickAccessItems]);
 
   // Încarcă datele complete despre angajat din backend (ca în DatosPage.jsx)
   const userCodigoRef = useRef(null);
@@ -3186,28 +2831,51 @@ const InicioPage = () => {
         </div>
       </div>
 
-      {/* Acceso rápido */}
-      <div className="dashboard-qa">
-        <div className="dashboard-qa__header">
-          <div className="dashboard-qa__icon" aria-hidden>⚡</div>
-          <div>
-            <h2 className="dashboard-qa__title">Acceso rápido</h2>
-            <p className="dashboard-qa__subtitle">
-              Funcionalidades principales del sistema
-            </p>
-          </div>
-        </div>
-
-        <QuickAccessOrb
+      {/* Desktop ≥1200: new dashboard. Phone ≤767: Mi resumen + Acceso rápido. Tablet: Acceso rápido only. */}
+      {isDesktopInicio ? (
+        <InicioDesktopDashboard
+          user={user}
           items={quickAccessItems}
-          ringSize={540}
-          innerSize={240}
-          onSelect={(id) => {
-            console.debug('[Dashboard] Acceso rápido selección:', id);
-          }}
-          className="qa-layout mx-auto max-w-[900px] py-4 lg:py-8"
+          monthlyAlerts={monthlyAlerts}
+          badgeCounts={inicioBadgeCounts}
+          flags={inicioFlags}
+          hasPermission={hasPermission}
         />
-      </div>
+      ) : (
+        <>
+          {isPhoneInicio ? (
+            <InicioMiResumen
+              user={user}
+              monthlyAlerts={monthlyAlerts}
+              badgeCounts={inicioBadgeCounts}
+              flags={inicioFlags}
+              hasPermission={hasPermission}
+            />
+          ) : null}
+
+          <div className="dashboard-qa">
+            <div className="dashboard-qa__header">
+              <div className="dashboard-qa__icon" aria-hidden>⚡</div>
+              <div>
+                <h2 className="dashboard-qa__title">Acceso rápido</h2>
+                <p className="dashboard-qa__subtitle">
+                  Funcionalidades principales del sistema
+                </p>
+              </div>
+            </div>
+
+            <QuickAccessOrb
+              items={quickAccessItems}
+              ringSize={540}
+              innerSize={240}
+              onSelect={(id) => {
+                console.debug('[Dashboard] Acceso rápido selección:', id);
+              }}
+              className="qa-layout mx-auto max-w-[900px] py-4 lg:py-8"
+            />
+          </div>
+        </>
+      )}
 
     </div>
   );

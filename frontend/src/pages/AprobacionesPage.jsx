@@ -8,6 +8,7 @@ import { useAdminApi } from '../hooks/useAdminApi';
 import activityLogger from '../utils/activityLogger';
 import { routes } from '../utils/routes';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
+import { useSyncedTab } from '../hooks/useSyncedTab';
 
 const REGULARIZACION_REASON_LABELS = {
   employee_confirmed_no_extra: 'Empleado confirmó: No trabajó de más',
@@ -35,9 +36,12 @@ const formatRmSolicitadoEn = (value) => {
 export default function AprobacionesPage() {
   const { user: authUser } = useAuth();
   const { getPermissions } = useAdminApi();
-  
-  // State pentru tab-uri
-  const [activeTab, setActiveTab] = useState('cambios'); // 'cambios' | 'regularizaciones' | 'rm'
+  // Deep-link: ?tab=cambios|regularizaciones|rm (Inicio KPI + sidebar)
+  const [activeTab, setActiveTab] = useSyncedTab(
+    'tab',
+    ['cambios', 'regularizaciones', 'rm'],
+    'cambios',
+  );
   
   // State pentru cambios de datos
   const [pendingCambios, setPendingCambios] = useState([]);

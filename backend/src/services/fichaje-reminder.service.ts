@@ -69,6 +69,18 @@ export type ReminderProcessResult = {
   skipped: ReminderSkippedRow[];
 };
 
+/** Resumen operativo (Inicio) — same schedule/absence/punch rules as reminders. */
+export type OperativoHoyKpiBucket = {
+  count: number;
+  codigos: string[];
+};
+
+export type OperativoHoyScanResult = {
+  dateStr: string;
+  programadosHoy: OperativoHoyKpiBucket;
+  pendientesFichar: OperativoHoyKpiBucket;
+};
+
 type EmployeeRow = {
   codigo: string;
   nombre: string;
@@ -201,6 +213,113 @@ export class FichajeReminderService {
     );
 
     return result;
+  }
+
+  /**
+   * Inicio Resumen operativo — programados hoy + pendientes de fichar Entrada.
+   * Reuses resolveForEmployees + baja/ausencia/fiesta + resolveNeededPunch / isReminderDueForInterval.
+   * Does NOT send push or write NotificariFichaje.
+   * @param allowedCodigos null = all active; otherwise only those CODIGOs (EmpleadoGrupoScope).
+   */
+  async scanHoyForOperativo(
+    allowedCodigos: string[] | null = null,
+  ): Promise<OperativoHoyScanResult> {
+    const defaultWindow = Number(
+      this.config.get<string>('FICHAJE_REMINDER_WINDOW_MINUTES') ?? 15,
+    );
+    const now = this.resolver.getMadridNow();
+    let employees = await this.loadActiveEmployees();
+
+    if (allowedCodigos) {
+      const set = new Set(
+        allowedCodigos.map((c) => String(c || '').trim()).filter(Boolean),
+      );
+      employees = employees.filter((e) => set.has(e.codigo));
+    }
+
+    const empty: OperativoHoyScanResult = {
+      dateStr: now.dateStr,
+      programadosHoy: { count: 0, codigos: [] },
+      pendientesFichar: { count: 0, codigos: [] },
+    };
+
+    if (employees.length === 0) return empty;
+
+    const schedules = await this.resolver.resolveForEmployees(employees, now);
+    const codes = employees.map((e) => e.codigo);
+    const [fiesta, bajaMap, ausenciaMap, fichajesByCode] = await Promise.all([
+      this.loadTodayFiesta(now.dateStr),
+      this.loadEnBajaToday(codes, now.dateStr),
+      this.loadEnAusenciaNow(codes, now),
+      this.loadFichajesToday(codes, now.dateStr),
+    ]);
+
+    const programados: string[] = [];
+    const pendientes: string[] = [];
+
+    for (const schedule of schedules) {
+      if (schedule.isOff || schedule.intervals.length === 0) continue;
+      if (ausenciaMap.has(schedule.codigo)) continue;
+      if (bajaMap.has(schedule.codigo)) continue;
+
+      const trabajaFestivos = String(schedule.trabajaFestivos || '')
+        .trim()
+        .toUpperCase();
+      if (
+        fiesta.isFiesta &&
+        (trabajaFestivos === 'NO' || trabajaFestivos === 'N')
+      ) {
+        continue;
+      }
+
+      programados.push(schedule.codigo);
+
+      const fichajes = fichajesByCode.get(schedule.codigo) ?? [];
+      const entryMargin =
+        schedule.entryMarginMinutes > 0
+          ? schedule.entryMarginMinutes
+          : defaultWindow;
+
+      const needed = this.resolveNeededPunch(
+        fichajes,
+        schedule.intervals,
+        now.minutesOfDay,
+      );
+      if (needed.status !== 'needs' || needed.tipo !== 'Entrada' || !needed.interval) {
+        continue;
+      }
+
+      if (
+        !this.resolver.isReminderDueForInterval(
+          now.minutesOfDay,
+          needed.interval,
+          'Entrada',
+          entryMargin,
+        )
+      ) {
+        continue;
+      }
+
+      const punchStatus = this.evaluatePunch(fichajes, 'Entrada');
+      if (punchStatus.estado === 'ya_fichado_correcto') continue;
+      if (
+        punchStatus.estado === 'fichado_otro_tipo' &&
+        this.hasClosedTurno(fichajes)
+      ) {
+        continue;
+      }
+
+      pendientes.push(schedule.codigo);
+    }
+
+    programados.sort();
+    pendientes.sort();
+
+    return {
+      dateStr: now.dateStr,
+      programadosHoy: { count: programados.length, codigos: programados },
+      pendientesFichar: { count: pendientes.length, codigos: pendientes },
+    };
   }
 
   private async processOne(ctx: {

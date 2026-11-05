@@ -49,6 +49,8 @@ export const routes = {
   getEmpleadoMe: `${BACKEND_BASE}/api/empleados/me`,
   confirmarCertificadoHandicap: `${BACKEND_BASE}/api/empleados/confirmar-certificado-handicap`,
   getEstadisticasEmpleados: `${BACKEND_BASE}/api/empleados/estadisticas`,
+  /** Inicio Resumen operativo — programados hoy + pendientes fichar (scope BE) */
+  getInicioResumenOperativo: `${BACKEND_BASE}/api/inicio/resumen-operativo`,
   exportEmployeeDocuments: (codigo) => `${BACKEND_BASE}/api/empleados/${codigo}/export`,
   exportAllEmployeesDocuments: `${BACKEND_BASE}/api/empleados/export-all`,
   getHallOfFame: `${BACKEND_BASE}/api/hall-of-fame`,

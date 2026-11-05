@@ -21,6 +21,7 @@ import {
 } from './presupuestos-v2/JornadaDigitalesEditors';
 import { formatJornadaPreview } from './presupuestos-v2/JornadaDigitalesEditors.utils';
 import { ContenidoLineaEditor } from './presupuestos-v2/ContenidoLineaEditor';
+import { useSyncedTab } from '../hooks/useSyncedTab';
 
 function authHeaders() {
   const token = localStorage.getItem('auth_token');
@@ -57,7 +58,11 @@ export default function PresupuestosV2Page() {
   const { hasPermission } = usePermissions();
   const canConfig = hasPermission('presupuestos-v2-config');
 
-  const [tab, setTab] = useState('lista'); // lista | nuevo | editor | config
+  const [tab, setTab] = useSyncedTab(
+    'tab',
+    ['lista', 'nuevo', 'editor', 'config'],
+    'lista',
+  );
   const [loading, setLoading] = useState(false);
   const [busyLabel, setBusyLabel] = useState('');
   const [notif, setNotif] = useState({

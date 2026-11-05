@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router';
 import { createPortal } from 'react-dom';
 
 // Cache global pentru documentos-solicitados (în afara componentei pentru a funcționa în React Strict Mode)
@@ -26,6 +27,7 @@ import { usePolling } from '../hooks/usePolling';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
 import { config } from '../config/env.js';
 import { getPdfMake } from '../utils/getPdfMake';
+import { useSyncedTab } from '../hooks/useSyncedTab';
 
 // Branding din config (multi-client)
 const rawColor = config.PRIMARY_COLOR || '#CC0000';
@@ -211,6 +213,35 @@ const solicitudSolapaAnio = (s, year) => {
   yearEnd.setHours(0, 0, 0, 0);
   const { start, end } = range;
   return end >= yearStart && start <= yearEnd;
+};
+
+/** YYYY-MM-DD local (calendario). */
+const toLocalYmd = (d = new Date()) => {
+  const x = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(x.getTime())) return null;
+  const y = x.getFullYear();
+  const m = String(x.getMonth() + 1).padStart(2, '0');
+  const day = String(x.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+/** Solapamiento con un día concreto (YYYY-MM-DD). */
+const solicitudSolapaDiaYmd = (s, ymd) => {
+  const range = getSolicitudRangoFechasLocal(s);
+  if (!range || !ymd) return false;
+  const m = String(ymd).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return false;
+  const day = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0);
+  return range.start <= day && day <= range.end;
+};
+
+/** Baja médica (formatBajaRecord): solapa con [winStart, winEnd] YMD. */
+const bajaSolapaVentanaYmd = (item, winStart, winEnd) => {
+  const baja = String(item?.fechaBaja || item?.fecha_baja || '').slice(0, 10);
+  if (!baja || !winStart || !winEnd) return false;
+  const altaRaw = item?.fechaAlta || item?.fecha_alta || '';
+  const alta = altaRaw ? String(altaRaw).slice(0, 10) : null;
+  return baja <= winEnd && (!alta || alta >= winStart);
 };
 
 const parseSolicitudFechaTs = (raw) => {
@@ -1960,6 +1991,8 @@ export default function SolicitudesPage() {
   const { callApi } = useApi();
   const { getPermissions } = useAdminApi();
   const { isMobile } = useBreakpoint();
+  const [searchParams] = useSearchParams();
+  const deepLinkAppliedRef = useRef(false);
   
   const [tipo, setTipo] = useState('Asuntos Propios');
   const [fechaInicio, setFechaInicio] = useState('');
@@ -2012,7 +2045,11 @@ export default function SolicitudesPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [solicitudes, setSolicitudes] = useState([]);
-  const [activeTab, setActiveTab] = useState('lista'); // 'lista' | 'nueva' | 'todas' | 'estadisticas'
+  const [activeTab, setActiveTab] = useSyncedTab(
+    'vista',
+    ['lista', 'nueva', 'todas', 'estadisticas'],
+    'lista',
+  );
   const [allSolicitudes, setAllSolicitudes] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [totalAsuntoPropioDays, setTotalAsuntoPropioDays] = useState(0);
@@ -2081,6 +2118,8 @@ export default function SolicitudesPage() {
   /** Año opcional cuando «Todos los meses» (Vacaciones / Asuntos Propios) */
   const [listaAnioFilter, setListaAnioFilter] = useState(0);
   const [listaEstadoFilter, setListaEstadoFilter] = useState('ALL');
+  /** Deep-link Inicio: filtrar por día YYYY-MM-DD (ej. vacaciones hoy) */
+  const [listaDiaFilter, setListaDiaFilter] = useState(null);
   const [listaSortBy, setListaSortBy] = useState('fecha_solicitud');
   const [listaSortDir, setListaSortDir] = useState('desc');
   const [selectedTipoAusencia, setSelectedTipoAusencia] = useState(['ALL']); // Filtrul de tip pentru ausencias (array pentru multi-select)
@@ -2095,6 +2134,50 @@ export default function SolicitudesPage() {
   // State pentru editare bajas médicas
   const [editingBaja, setEditingBaja] = useState(null); // { idCaso, idPosicion, field: 'fechaBaja' | 'fechaAlta' | 'situacion' }
   const [editingBajaValue, setEditingBajaValue] = useState('');
+
+  // Deep-link filters (vista sync via useSyncedTab): seccion/periodo/estado from Inicio KPI
+  useEffect(() => {
+    if (deepLinkAppliedRef.current) return;
+    const seccion = searchParams.get('seccion');
+    const periodo = searchParams.get('periodo');
+    const estado = searchParams.get('estado');
+    const tipoAusencia = searchParams.get('tipoAusencia');
+    if (!seccion && !periodo && !estado && !tipoAusencia) return;
+    deepLinkAppliedRef.current = true;
+
+    const seccionMap = {
+      vacaciones: 'vacaciones',
+      baja: 'baja',
+      ausencias: 'ausencias',
+      asunto: 'asunto',
+      baja_voluntaria: 'baja_voluntaria',
+    };
+    if (seccion && seccionMap[seccion]) {
+      setSelectedTab(seccionMap[seccion]);
+    }
+
+    const now = new Date();
+    if (periodo === 'hoy') {
+      setListaDiaFilter(toLocalYmd(now));
+      setSelectedMonth(0);
+      if (seccion === 'baja') setBajaFilter('abiertas');
+    } else if (periodo === 'mes') {
+      setListaDiaFilter(null);
+      setSelectedMonth(now.getMonth() + 1);
+      setVacationControlYear(now.getFullYear());
+    }
+
+    if (
+      estado &&
+      (seccion === 'vacaciones' || seccion === 'asunto' || !seccion)
+    ) {
+      setListaEstadoFilter(estado);
+    }
+
+    if (tipoAusencia && tipoAusencia.trim()) {
+      setSelectedTipoAusencia([tipoAusencia.trim()]);
+    }
+  }, [searchParams]);
 
   // Manual baja (creare rapidă)
   const [showManualBajaModal, setShowManualBajaModal] = useState(false);
@@ -5451,12 +5534,13 @@ export default function SolicitudesPage() {
   // Justificantes por ausencia_id: ya no se precargan en Todas > Ausencias (comprobar bajo demanda)
 
   // Sub-tab Ausencias: por defecto filtrar por mes actual (no "Todas las meses")
+  // Si hay deep-link por día (listaDiaFilter), no forzar mes — el filtro día ya acota.
   useEffect(() => {
-    if (selectedTab === 'ausencias' && selectedMonth === 0) {
+    if (selectedTab === 'ausencias' && selectedMonth === 0 && !listaDiaFilter) {
       const currentMonth = new Date().getMonth() + 1; // 1-12 (MONTHS[0]=Todas, MONTHS[1]=Enero, ...)
       setSelectedMonth(currentMonth);
     }
-  }, [selectedTab, selectedMonth]);
+  }, [selectedTab, selectedMonth, listaDiaFilter]);
 
   // Todas: documentos Baja Voluntaria al abrir ese sub-tab (justificantes ausencia: bajo demanda)
   useEffect(() => {
@@ -8402,6 +8486,14 @@ export default function SolicitudesPage() {
     }
     if (selectedMonth > 0) {
       filtered = filtered.filter((s) => {
+        if (selectedTab === 'baja') {
+          const y = vacationControlYear;
+          const m = selectedMonth;
+          const winStart = `${y}-${String(m).padStart(2, '0')}-01`;
+          const lastDay = new Date(y, m, 0).getDate();
+          const winEnd = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+          return bajaSolapaVentanaYmd(s, winStart, winEnd);
+        }
         if (selectedTab === 'ausencias') {
           if (s.FECHA && String(s.FECHA).includes(' - ')) {
             return solicitudSolapaMesCalendario(s, selectedMonth, vacationControlYear);
@@ -8426,6 +8518,15 @@ export default function SolicitudesPage() {
       (selectedTab === 'asunto' || selectedTab === 'vacaciones')
     ) {
       filtered = filtered.filter((s) => solicitudSolapaAnio(s, listaAnioFilter));
+    }
+
+    if (listaDiaFilter) {
+      filtered = filtered.filter((s) => {
+        if (selectedTab === 'baja') {
+          return bajaSolapaVentanaYmd(s, listaDiaFilter, listaDiaFilter);
+        }
+        return solicitudSolapaDiaYmd(s, listaDiaFilter);
+      });
     }
 
     if (
@@ -8508,6 +8609,7 @@ export default function SolicitudesPage() {
     selectedMonth,
     listaAnioFilter,
     listaEstadoFilter,
+    listaDiaFilter,
     listaSortBy,
     listaSortDir,
     selectedTipoAusencia,
@@ -10859,7 +10961,10 @@ export default function SolicitudesPage() {
                     <select
                       id="month-selector"
                       value={selectedMonth}
-                      onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                      onChange={(e) => {
+                        setListaDiaFilter(null);
+                        setSelectedMonth(Number(e.target.value));
+                      }}
                       className="w-full sm:w-auto px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-300 shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-indigo-700 border-2 border-indigo-200 hover:border-indigo-400 cursor-pointer"
                     >
                       {MONTHS.map((month, idx) => (

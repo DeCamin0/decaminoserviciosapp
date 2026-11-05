@@ -26,6 +26,7 @@ import {
   shouldEnforcePedidoLimiteGasto,
   subtotalExceedsLimiteGasto,
 } from '../utils/pedidosLimiteGasto';
+import { useSyncedTab } from '../hooks/useSyncedTab';
 
 // Funcție pentru a converti Buffer la base64
 const bufferToBase64 = (bufferData: number[]): string => {
@@ -319,7 +320,11 @@ const formatDate = (date: Date): string => {
 // ===== COMPONENTA PRINCIPAL =====
 const EmpleadoPedidosPage: React.FC = () => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'nuevo-pedido' | 'mis-pedidos'>('mis-pedidos'); // Default la "Mis Pedidos"
+  const [activeTab, setActiveTab] = useSyncedTab(
+    'tab',
+    ['nuevo-pedido', 'mis-pedidos'],
+    'mis-pedidos',
+  ) as ['nuevo-pedido' | 'mis-pedidos', (next: string) => void];
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [hasDerechoPedidos, setHasDerechoPedidos] = useState(false);
 

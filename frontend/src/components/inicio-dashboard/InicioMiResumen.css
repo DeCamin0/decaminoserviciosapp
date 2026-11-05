@@ -1,0 +1,101 @@
+/* Mi resumen — phone only (rendered only when max-width 767px) */
+
+.inicio-resumen {
+  --ir-radius: var(--app-radius-sm, 0.65rem);
+  --ir-border: var(--app-border, color-mix(in srgb, var(--primary-color) 14%, #e5e7eb));
+  --ir-muted: #64748b;
+  --ir-text: #0f172a;
+  border-radius: var(--ir-radius);
+  border: 1px solid var(--ir-border);
+  background: color-mix(in srgb, var(--primary-color) 4%, #fff);
+  overflow: hidden;
+}
+
+.dark .inicio-resumen {
+  --ir-border: color-mix(in srgb, var(--primary-color) 22%, #374151);
+  --ir-muted: #94a3b8;
+  --ir-text: #f1f5f9;
+  background: color-mix(in srgb, var(--primary-color) 10%, #111827);
+}
+
+.inicio-resumen__toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+}
+
+.inicio-resumen__toggle-title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--ir-text);
+}
+
+.inicio-resumen__toggle-sub {
+  margin: 0.15rem 0 0;
+  font-size: 0.72rem;
+  color: var(--ir-muted);
+}
+
+.inicio-resumen__chevron {
+  flex-shrink: 0;
+  width: 1.15rem;
+  height: 1.15rem;
+  color: var(--ir-muted);
+  transition: transform 0.15s ease;
+}
+
+.inicio-resumen__chevron--open {
+  transform: rotate(180deg);
+}
+
+.inicio-resumen__body {
+  padding: 0 0.9rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.inicio-resumen__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--ir-border);
+  background: #fff;
+  text-decoration: none;
+  color: inherit;
+}
+
+.dark .inicio-resumen__row {
+  background: rgba(31, 41, 55, 0.9);
+}
+
+.inicio-resumen__row-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ir-text);
+}
+
+.inicio-resumen__row-value {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--primary-color, #e53935);
+  flex-shrink: 0;
+}
+
+.inicio-resumen__empty {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ir-muted);
+}

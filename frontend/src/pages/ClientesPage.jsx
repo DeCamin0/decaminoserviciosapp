@@ -15,11 +15,12 @@ import ClienteForm from '../components/clientes/ClienteForm';
 import { routes } from '../utils/routes';
 import { useLoadingState } from '../hooks/useLoadingState';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
+import { useSyncedTab } from '../hooks/useSyncedTab';
 
 export default function ClientesPage() {
   const { user: authUser } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('clientes'); // 'clientes' o 'proveedores'
+  const [activeTab, setActiveTab] = useSyncedTab('tab', ['clientes', 'proveedores'], 'clientes');
   const [density, setDensity] = useState('comfortable'); // 'comfortable' | 'compact'
   const [showFiltersClientes, setShowFiltersClientes] = useState(true);
   const [showFiltersProveedores, setShowFiltersProveedores] = useState(true);

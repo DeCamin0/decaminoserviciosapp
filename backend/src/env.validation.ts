@@ -77,7 +77,7 @@ export function validateEnv(): void {
   const lines: string[] = [
     '[env.validation] Lipsesc sau sunt invalide variabile de mediu obligatorii:',
     '',
-    ...err.errors.map((e) => `  - ${e.path.join('.')}: ${e.message}`),
+    ...err.issues.map((e) => `  - ${e.path.join('.')}: ${e.message}`),
     '',
     'Completează backend/.env sau .env.decamino.local / .env.hera.local (vezi .env.example).',
   ];

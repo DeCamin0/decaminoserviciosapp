@@ -12,6 +12,7 @@ import CuadrantesMulticentroMobile from './cuadrantes-admin/CuadrantesMulticentr
 import { toMinutes } from '../types/schedule';
 import { calculateCuadranteHours } from '../utils/cuadrante-hours-helper';
 import { Loader2, RotateCcw, Plus, RefreshCw, Upload, MapPin, User, Clock, ChevronLeft, ChevronRight, Calendar, Settings2, Save, ArrowLeft, Eye, CloudDownload } from 'lucide-react';
+import { useSyncedTab } from '../hooks/useSyncedTab';
 
 const FESTIVOS_ENDPOINT = routes.getFestivos;
 const CREATE_FESTIVO_ENDPOINT = routes.createFestivo;
@@ -168,7 +169,19 @@ export default function CuadrantesPage() {
   
   
   // State pentru diferite secțiuni
-  const [activeTab, setActiveTab] = useState('generar');
+  const [activeTab, setActiveTab] = useSyncedTab(
+    'tab',
+    [
+      'generar',
+      'lista_cuadrantes',
+      'lista_horarios',
+      'horarios',
+      'festivos',
+      'horario_multicentro',
+      'preview',
+    ],
+    'generar',
+  );
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedCentro, setSelectedCentro] = useState('');

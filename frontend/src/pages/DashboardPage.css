@@ -147,6 +147,14 @@
   background: color-mix(in srgb, var(--primary-color) 8%, #111827);
 }
 
+/* Desktop ≥1200: fără mesaj ¡Bienvenido! duplicat (rămâne saludo din dashboard) */
+@media (min-width: 1200px) {
+  .dashboard-welcome__title,
+  .dashboard-welcome__lead {
+    display: none;
+  }
+}
+
 .dashboard-welcome__inner {
   position: relative;
   display: flex;

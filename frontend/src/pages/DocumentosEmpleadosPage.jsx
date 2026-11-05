@@ -30,6 +30,7 @@ import { isContratoDocumento } from '../constants/contratoPdfSignatureLayout';
 import { exportToExcelWithHeader } from '../utils/exportExcel';
 import { config } from '../config/env.js';
 import { getPdfMake } from '../utils/getPdfMake';
+import { useSyncedTab } from '../hooks/useSyncedTab';
 
 // Branding din config (multi-client)
 const rawColor = config.PRIMARY_COLOR || '#CC0000';
@@ -359,7 +360,11 @@ export default function DocumentosEmpleadosPage() {
     });
   }, [bulkAvatarsLoaded, empleados, enqueueAvatar]);
 
-  const [activeTab, setActiveTab] = useState('empleados'); // 'empleados', 'gestoria-nominas', 'coste-personal', 'diplomas', 'certificados-retenciones'
+  const [activeTab, setActiveTab] = useSyncedTab(
+    'tab',
+    ['empleados', 'gestoria-nominas', 'coste-personal', 'diplomas', 'certificados-retenciones'],
+    'empleados',
+  );
   const [activeEmpleadoTab, setActiveEmpleadoTab] = useState('documentos'); // 'documentos', 'nominas', 'documentos-empresa', 'documentos-prl', 'subir-documentos'
 
   const [uploading, setUploading] = useState(false);

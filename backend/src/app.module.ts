@@ -101,6 +101,8 @@ import { AusenciasProximasCronService } from './services/ausencias-proximas-cron
 import { FichajeScheduleResolverService } from './services/fichaje-schedule-resolver.service';
 import { FichajeReminderService } from './services/fichaje-reminder.service';
 import { FichajeReminderCronService } from './services/fichaje-reminder-cron.service';
+import { InicioController } from './controllers/inicio.controller';
+import { InicioResumenOperativoService } from './services/inicio-resumen-operativo.service';
 import { BajaVoluntariaPdfService } from './services/baja-voluntaria-pdf.service';
 import { GestoriaController } from './controllers/gestoria.controller';
 import { GestoriaService } from './services/gestoria.service';
@@ -189,6 +191,7 @@ import { PresupuestosV2Module } from './presupuestos-v2/presupuestos-v2.module';
     MeController,
     PermissionsController,
     EmpleadosController,
+    InicioController,
     AvatarController,
     MonthlyAlertsController,
     HallOfFameController,
@@ -297,6 +300,7 @@ import { PresupuestosV2Module } from './presupuestos-v2/presupuestos-v2.module';
     FichajeScheduleResolverService,
     FichajeReminderService,
     FichajeReminderCronService,
+    InicioResumenOperativoService,
     BajaVoluntariaPdfService,
     EmployeeExportService,
     PrlDocumentsService,

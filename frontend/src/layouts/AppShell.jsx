@@ -5,10 +5,14 @@ import LocationDisplay from '../components/LocationDisplay';
 import ThemeToggle from '../components/ThemeToggle';
 import NotificationsBell from '../components/NotificationsBell';
 import MobileBottomNav from '../components/navigation/MobileBottomNav';
+import DesktopSidebar from '../components/navigation/DesktopSidebar';
+import '../components/navigation/DesktopSidebar.css';
 import ChatBot from '../components/ChatBot';
 import Footer from '../components/Footer';
 import DemoBadge from '../components/DemoBadge';
 import { config } from '../config/env.js';
+import { useMediaMinWidth } from '../components/inicio-dashboard/useMediaMinWidth';
+import { useModuleVisitTracker } from '../hooks/useModuleVisitTracker';
 
 // Logo din config (multi-client). La ngrok folosim logo DC doar dacă nu e client 2 (HERA).
 const getLogoUrl = () => {
@@ -31,6 +35,9 @@ const AppShell = ({ isMobile, children }) => {
   const { user, logout, stopImpersonation, isImpersonating } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const showDesktopSidebar = useMediaMinWidth(1200);
+  /** Accesos frecuentes history — desktop ≥1200 only */
+  useModuleVisitTracker(showDesktopSidebar);
   const now = useMemo(() => new Date(), []);
   const isHolidaySeason = now.getMonth() === 11 || (now.getMonth() === 0 && now.getDate() <= 6);
 
@@ -171,7 +178,100 @@ const AppShell = ({ isMobile, children }) => {
         </>
       )}
 
-      {isMobile ? (
+      {showDesktopSidebar ? (
+        <div className="app-shell--with-sidebar relative z-10 flex-1 min-h-0">
+          <div className="app-shell__sidebar-col">
+            <DesktopSidebar />
+          </div>
+          <div className="app-shell__main-col">
+            <header className="app-shell__topbar sticky top-0 z-50 bg-white/90 dark:bg-gray-900/90 backdrop-blur border-b border-gray-200 dark:border-gray-700 relative safe-area-top">
+              <div
+                className="flex items-center min-h-[clamp(56px,6vh,72px)]"
+                style={{
+                  WebkitAlignItems: 'center',
+                  msFlexAlign: 'center',
+                  alignItems: 'center'
+                }}
+              >
+                <div
+                  className="w-full px-4 sm:px-6 lg:px-6 xl:px-8 flex items-center justify-between"
+                  style={{
+                    WebkitAlignItems: 'center',
+                    msFlexAlign: 'center',
+                    alignItems: 'center',
+                    WebkitJustifyContent: 'space-between',
+                    msFlexPack: 'justify',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <div className="flex items-center">
+                    <div className="flex-shrink-0">
+                      <div className="flex items-center">
+                        <div className="relative mr-3">
+                          {isClient2Logo() ? (
+                            <img
+                              src={getLogoUrl()}
+                              alt={`${config.APP_NAME || config.COMPANY_NAME || 'App'} Logo`}
+                              className="h-14 w-auto max-w-[260px] object-contain drop-shadow-[0_2px_8px_rgba(0,0,0,0.12)]"
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <>
+                              <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg border-4 border-primary-500">
+                                <img
+                                  src={getLogoUrl()}
+                                  alt="DeCamino Logo"
+                                  className="h-8 w-8 object-contain"
+                                  onError={(e) => {
+                                    e.target.style.display = 'none';
+                                    e.target.nextSibling.style.display = 'block';
+                                  }}
+                                />
+                                <div className="hidden text-primary-600 font-bold text-lg">DC</div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        <h1 className="text-lg lg:text-xl font-bold text-gray-900 dark:text-white">
+                          {config.COMPANY_NAME}
+                        </h1>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center">
+                    <LocationDisplay />
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    <div className="text-sm text-gray-700 dark:text-gray-300">
+                      <div className="font-medium truncate max-w-32 lg:max-w-48">{userName}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        {userGrupo || 'Empleado'}
+                      </div>
+                    </div>
+                    <NotificationsBell />
+                    <ThemeToggle />
+                    <button
+                      onClick={handleLogout}
+                      className="bg-gray-800 hover:bg-gray-900 text-white font-medium py-2 px-4 rounded-lg transition-colors text-sm"
+                    >
+                      Salir
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </header>
+            <main className="flex-1 relative z-10 min-w-0">
+              <div className="w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-w-0 overflow-x-auto">
+                {children}
+              </div>
+            </main>
+            <DemoBadge />
+            <Footer />
+          </div>
+        </div>
+      ) : isMobile ? (
         <header className="sticky top-0 z-50 bg-white/80 dark:bg-gray-800/80 backdrop-blur border-b border-gray-200 dark:border-gray-700 relative safe-area-top">
           <div
             className="flex items-center justify-between px-4 py-3 landscape:max-md:py-2"
@@ -345,35 +445,39 @@ const AppShell = ({ isMobile, children }) => {
         </header>
       )}
 
-      {/* Content stabil — același <main> indiferent de breakpoint */}
-      <main
-        className={
-          isMobile
-            ? 'flex-1 relative z-10 app-main-mobile'
-            : 'flex-1 relative z-10'
-        }
-      >
-        <div
-          className={
-            isMobile
-              ? 'w-full px-4 sm:px-6 py-4 sm:py-6 landscape:max-md:py-2'
-              : 'w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8'
-          }
-        >
-          {children}
-        </div>
-      </main>
-
-      {isMobile && <MobileBottomNav />}
-
-      <ChatBot />
-
-      {!isMobile && (
+      {/* Content — fără sidebar (<1200): same as before */}
+      {!showDesktopSidebar && (
         <>
-          <DemoBadge />
-          <Footer />
+          <main
+            className={
+              isMobile
+                ? 'flex-1 relative z-10 app-main-mobile'
+                : 'flex-1 relative z-10'
+            }
+          >
+            <div
+              className={
+                isMobile
+                  ? 'w-full px-4 sm:px-6 py-4 sm:py-6 landscape:max-md:py-2'
+                  : 'w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8'
+              }
+            >
+              {children}
+            </div>
+          </main>
+
+          {isMobile && <MobileBottomNav />}
+
+          {!isMobile && (
+            <>
+              <DemoBadge />
+              <Footer />
+            </>
+          )}
         </>
       )}
+
+      <ChatBot />
     </div>
   );
 };

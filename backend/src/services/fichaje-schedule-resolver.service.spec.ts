@@ -93,7 +93,7 @@ describe('FichajeScheduleResolverService', () => {
       ).toBe(true);
     });
 
-    it('Salida NEVER before horaOut (even with margin 15)', () => {
+    it('Salida NEVER before/at horaOut — grace until after exact end', () => {
       // Bug case: 11:45 must NOT request Salida for 12:00
       expect(
         resolver.isReminderDueForInterval(11 * 60 + 45, morning, 'Salida', 15),
@@ -101,11 +101,22 @@ describe('FichajeScheduleResolverService', () => {
       expect(
         resolver.isReminderDueForInterval(11 * 60 + 59, morning, 'Salida', 15),
       ).toBe(false);
+      // At exact horaOut: still grace (employee can punch on time)
       expect(
         resolver.isReminderDueForInterval(12 * 60, morning, 'Salida', 15),
+      ).toBe(false);
+      expect(
+        resolver.isReminderDueForInterval(12 * 60 + 1, morning, 'Salida', 15),
       ).toBe(true);
       expect(
         resolver.isReminderDueForInterval(12 * 60 + 15, morning, 'Salida', 15),
+      ).toBe(true);
+      // 09:00-17:00 office
+      expect(
+        resolver.isReminderDueForInterval(17 * 60, office, 'Salida', 15),
+      ).toBe(false);
+      expect(
+        resolver.isReminderDueForInterval(17 * 60 + 5, office, 'Salida', 15),
       ).toBe(true);
     });
   });
@@ -131,7 +142,7 @@ describe('FichajeScheduleResolverService', () => {
       ).toBe(true);
     });
 
-    it('Salida NOT due in the evening — only from horaOut 07:30 (not 07:15)', () => {
+    it('Salida NOT due in the evening — only AFTER horaOut 07:30 (grace at exact)', () => {
       // Bug case: 19:55 after Entrada must NOT request Salida yet
       expect(
         resolver.isReminderDueForInterval(19 * 60 + 55, night, 'Salida', 15),
@@ -148,8 +159,12 @@ describe('FichajeScheduleResolverService', () => {
       expect(
         resolver.isReminderDueForInterval(7 * 60 + 29, night, 'Salida', 15),
       ).toBe(false);
+      // Exact horaOut: grace — next cron (~07:35) notifies if still missing
       expect(
         resolver.isReminderDueForInterval(7 * 60 + 30, night, 'Salida', 15),
+      ).toBe(false);
+      expect(
+        resolver.isReminderDueForInterval(7 * 60 + 31, night, 'Salida', 15),
       ).toBe(true);
       expect(
         resolver.isReminderDueForInterval(10 * 60, night, 'Salida', 15),

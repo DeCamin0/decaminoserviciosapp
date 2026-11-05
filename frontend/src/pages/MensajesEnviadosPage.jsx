@@ -8,12 +8,17 @@ import { routes } from '../utils/routes';
 import activityLogger from '../utils/activityLogger';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { config } from '../config/env';
+import { useSyncedTab } from '../hooks/useSyncedTab';
 
 export default function MensajesEnviadosPage() {
   const { user: authUser } = useAuth();
   
   // State pentru formular trimitere email
-  const [activeTab, setActiveTab] = useState('enviar'); // 'enviar' | 'historial' | 'automaticos' | 'chatAi' | 'fichajeReminders'
+  const [activeTab, setActiveTab] = useSyncedTab(
+    'tab',
+    ['enviar', 'historial', 'automaticos', 'chatAi', 'fichajeReminders'],
+    'enviar',
+  );
   /** Historical Chat AI (arhiva asistent) */
   const [chatAiEmpleadoSearch, setChatAiEmpleadoSearch] = useState('');
   const [chatAiSelectedEmpleado, setChatAiSelectedEmpleado] = useState(null);
