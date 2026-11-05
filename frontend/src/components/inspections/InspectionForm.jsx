@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContextBase';
 import { useLocation } from '../../contexts/LocationContextBase';
 import { Button, Modal, AlertBanner } from '../ui';
@@ -6,7 +6,7 @@ import { FormSection, FormFieldLabel, SignatureActionCard } from './InspectionFo
 import {
   Hash, Calendar, Building2, User, Search, MapPin, CheckCircle2,
   FileText, Plus, Trash2, Package, Loader2, Download, Send, X,
-  AlertTriangle, Info, Euro, Lightbulb,
+  AlertTriangle, Info, Euro, Lightbulb, Camera, Image as ImageIcon,
 } from 'lucide-react';
 import SignaturePadComponent from '../../shared/components/SignaturePad';
 import PDFViewerAndroid from '../PDFViewerAndroid';
@@ -45,6 +45,11 @@ function getBrandingLogoUrlForPdf() {
   return rel;
 }
 
+function getBrandColor() {
+  const raw = config.PRIMARY_COLOR || '#CC0000';
+  return raw.startsWith('#') ? raw : `#${raw}`;
+}
+
 // Polyfill pentru Buffer în browser
 if (typeof window !== 'undefined' && !window.Buffer) {
   // Simple Buffer polyfill pentru browser
@@ -63,8 +68,8 @@ Font.register({
   ]
 });
 
-// Stiluri pentru PDF
-const styles = StyleSheet.create({
+// Stiluri pentru PDF — accent = PRIMARY_COLOR al clientului (Decamino roșu / Hera albastru)
+const createInspectionPdfStyles = (brandColor) => StyleSheet.create({
   page: {
     flexDirection: 'column',
     backgroundColor: '#ffffff',
@@ -73,13 +78,13 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 15, // Redus de la 20
-    borderBottom: '2 solid #e53e3e',
+    borderBottom: `2 solid ${brandColor}`,
     paddingBottom: 8 // Redus de la 10
   },
   title: {
     fontSize: 16, // Redus de la 18
     fontWeight: 'bold',
-    color: '#e53e3e',
+    color: brandColor,
     marginBottom: 6 // Redus de la 8
   },
   date: {
@@ -132,7 +137,7 @@ const styles = StyleSheet.create({
   pointNumber: {
     fontSize: 10,
     fontWeight: 'bold',
-    color: '#e53e3e'
+    color: brandColor
   },
   pointDescription: {
     fontSize: 10,
@@ -248,7 +253,7 @@ const styles = StyleSheet.create({
   pointTitle: {
     fontSize: 9, // Redus de la 10
     fontWeight: 'bold',
-    color: '#e53e3e',
+    color: brandColor,
     marginBottom: 2 // Redus de la 4
   },
   pointDetails: {
@@ -279,8 +284,84 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#718096',
     fontStyle: 'italic'
-  }
+  },
+  photoPageTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: brandColor,
+    marginBottom: 6,
+  },
+  scoreHighlight: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: brandColor,
+    marginBottom: 3,
+  },
+  photoPageSubtitle: {
+    fontSize: 10,
+    color: '#4a5568',
+    marginBottom: 14,
+  },
+  photoBlock: {
+    marginBottom: 18,
+    alignItems: 'center',
+  },
+  photoImage: {
+    width: 480,
+    maxHeight: 340,
+    objectFit: 'contain',
+  },
+  photoCaption: {
+    fontSize: 9,
+    color: '#718096',
+    marginTop: 6,
+  },
 });
+
+const MAX_INSPECTION_PHOTOS = 8;
+const INSPECTION_PHOTO_MAX_SIDE = 1280;
+const INSPECTION_PHOTO_QUALITY = 0.72;
+
+const chunkArray = (arr, size) => {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) {
+    out.push(arr.slice(i, i + size));
+  }
+  return out;
+};
+
+/** Resize + JPEG pentru PDF (fără a umfla R2). */
+const fileToJpegDataUrl = (file, maxSide = INSPECTION_PHOTO_MAX_SIDE, quality = INSPECTION_PHOTO_QUALITY) =>
+  new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new window.Image();
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        const scale = Math.min(1, maxSide / Math.max(w, h, 1));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(w * scale));
+        canvas.height = Math.max(1, Math.round(h * scale));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas no disponible'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      } catch (err) {
+        reject(err);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('No se pudo leer la imagen'));
+    };
+    img.src = objectUrl;
+  });
 
 // Funcție pentru conversia Blob în Base64
 const blobToBase64 = (blob) => {
@@ -417,6 +498,12 @@ const InspectionForm = ({ type, solicitudData }) => {
     documentos: [], // Factura/Albarán — multiple File
   });
   const [signatureDraft, setSignatureDraft] = useState('');
+  /** Poze la nivel inspecție (normale) — doar în PDF, fără DB. */
+  const [inspectionPhotos, setInspectionPhotos] = useState([]);
+  const [photosBusy, setPhotosBusy] = useState(false);
+  const photoGalleryInputRef = useRef(null);
+  const photoCameraInputRef = useRef(null);
+  const supportsInspectionPhotos = type !== 'entrega-materiales';
   
   // State pentru centrele și angajații
   const [centros, setCentros] = useState([]);
@@ -1053,6 +1140,83 @@ const InspectionForm = ({ type, solicitudData }) => {
     setSignatureDraft(signatureData);
   };
 
+  const clearInspectionPhotos = useCallback(() => {
+    setInspectionPhotos((prev) => {
+      prev.forEach((p) => {
+        if (p.previewUrl?.startsWith('blob:')) {
+          try {
+            URL.revokeObjectURL(p.previewUrl);
+          } catch {
+            /* ignore */
+          }
+        }
+      });
+      return [];
+    });
+  }, []);
+
+  const removeInspectionPhoto = useCallback((photoId) => {
+    setInspectionPhotos((prev) => {
+      const target = prev.find((p) => p.id === photoId);
+      if (target?.previewUrl?.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(target.previewUrl);
+        } catch {
+          /* ignore */
+        }
+      }
+      return prev.filter((p) => p.id !== photoId);
+    });
+  }, []);
+
+  const handleInspectionPhotosPicked = useCallback(async (event) => {
+    const files = Array.from(event.target.files || []).filter((f) =>
+      String(f.type || '').startsWith('image/'),
+    );
+    event.target.value = '';
+    if (!files.length) return;
+
+    setPhotosBusy(true);
+    try {
+      const room = Math.max(0, MAX_INSPECTION_PHOTOS - inspectionPhotos.length);
+      if (room <= 0) {
+        setErrorNotification({
+          type: 'warning',
+          title: 'Límite de fotos',
+          message: `Máximo ${MAX_INSPECTION_PHOTOS} fotos por inspección.`,
+        });
+        return;
+      }
+      const selected = files.slice(0, room);
+      if (files.length > room) {
+        setErrorNotification({
+          type: 'warning',
+          title: 'Límite de fotos',
+          message: `Solo se añadieron ${selected.length} foto(s). Máximo ${MAX_INSPECTION_PHOTOS}.`,
+        });
+      }
+      const next = [];
+      for (const file of selected) {
+        try {
+          const dataUrl = await fileToJpegDataUrl(file);
+          next.push({
+            id: `foto_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            dataUrl,
+            previewUrl: dataUrl,
+            name: file.name || 'foto.jpg',
+          });
+        } catch (err) {
+          console.warn('Foto inspección omitida:', err);
+        }
+      }
+      if (next.length) {
+        setInspectionPhotos((prev) => [...prev, ...next].slice(0, MAX_INSPECTION_PHOTOS));
+      }
+    } finally {
+      setPhotosBusy(false);
+    }
+  }, [inspectionPhotos.length]);
+
   const handleSubmit = async () => {
     // Forțează limba spaniolă pentru generarea PDF-ului
     let originalLanguage = 'ro';
@@ -1097,31 +1261,15 @@ const InspectionForm = ({ type, solicitudData }) => {
 
       // Adaugă timeout pentru generarea PDF-ului
       const pdfGenerationPromise = (async () => {
-        // Generează UUID pentru inspeccionId
-        // const inspeccionId = generateUUID();
+        const photoSrcs =
+          supportsInspectionPhotos
+            ? inspectionPhotos.map((p) => p.dataUrl).filter(Boolean)
+            : [];
+        const photoPages = chunkArray(photoSrcs, 2);
 
-        // Pregătește datele pentru trimitere
-        // const payload = {
-        //   inspeccionId: inspeccionId,
-        //   timestamp: new Date().toISOString(),
-        //   empleado: {
-        //     nume: formData.trabajador.nume,
-        //     semnaturaPng: formData.trabajador.semnaturaPng || undefined,
-        //     codigo: formData.trabajador.codigo || undefined
-        //   },
-        //   vehicul: formData.vehicul || undefined,
-        //   locatie: formData.locatie,
-        //   observatii: formData.observatii || undefined,
-        //   items: formData.puncte,
-        //   meta: {
-        //     semnaturaInspector: formData.inspector.semnaturaPng || undefined,
-        //     numeroInspeccion: inspeccionId
-        //   },
-        //   codigo_empleado: formData.trabajador.codigo || formData.codigo_empleado || undefined
-        // };
+        // Generează PDF-ul (culoare accent = branding client)
+        const styles = createInspectionPdfStyles(getBrandColor());
 
-        // Generează PDF-ul
-        
         const pdfContent = (
           <Document>
             {/* Prima pagină */}
@@ -1151,7 +1299,7 @@ const InspectionForm = ({ type, solicitudData }) => {
                    }, 0);
                    const scorTotal = totalScoruri / (formData.puncte.length * 2);
                    return (
-                     <Text style={{...styles.inspector, fontWeight: 'bold', color: '#e53e3e'}}>
+                     <Text style={styles.scoreHighlight}>
                        ⭐ Puntuación Total: {scorTotal.toFixed(2)}/5
                      </Text>
                    );
@@ -1441,6 +1589,26 @@ const InspectionForm = ({ type, solicitudData }) => {
                 </View>
               </Page>
             )}
+
+            {/* Pagini evidențe foto (după conținutul normal) */}
+            {photoPages.map((pair, pageIdx) => (
+              <Page key={`fotos-page-${pageIdx}`} size="A4" style={styles.page}>
+                <Image src={getBrandingLogoUrlForPdf()} style={styles.watermarkLogo} fixed />
+                <Text style={styles.photoPageTitle}>Evidencias fotográficas</Text>
+                <Text style={styles.photoPageSubtitle}>
+                  Inspección {safeText(formData.nr)}
+                  {photoPages.length > 1 ? ` — página ${pageIdx + 1} de ${photoPages.length}` : ''}
+                </Text>
+                {pair.map((src, i) => (
+                  <View key={`foto-${pageIdx}-${i}`} style={styles.photoBlock} wrap={false}>
+                    <Image src={src} style={styles.photoImage} />
+                    <Text style={styles.photoCaption}>
+                      Foto {pageIdx * 2 + i + 1}
+                    </Text>
+                  </View>
+                ))}
+              </Page>
+            ))}
           </Document>
         );
 
@@ -1818,6 +1986,7 @@ const InspectionForm = ({ type, solicitudData }) => {
       calidad: 3
     }));
     setFormData(prev => ({ ...prev, puncte: initialPoints }));
+    clearInspectionPhotos();
   };
 
   if (success) {
@@ -1829,7 +1998,7 @@ const InspectionForm = ({ type, solicitudData }) => {
           <p className="text-sm text-gray-600 mb-4">
             La inspección ha sido enviada al backend con FormData y los archivos adjuntos.
           </p>
-          <Button type="button" variant="primary" onClick={() => setSuccess(false)}>
+          <Button type="button" variant="primary" onClick={() => { clearInspectionPhotos(); setSuccess(false); }}>
             Nueva Inspección
           </Button>
         </section>
@@ -2382,6 +2551,93 @@ const InspectionForm = ({ type, solicitudData }) => {
           </p>
         ) : null}
       </FormSection>
+
+      {supportsInspectionPhotos ? (
+        <FormSection
+          title="Evidencias fotográficas"
+          subtitle={`Opcional — hasta ${MAX_INSPECTION_PHOTOS} fotos (aparecen al final del PDF)`}
+        >
+          <input
+            ref={photoGalleryInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={handleInspectionPhotosPicked}
+          />
+          <input
+            ref={photoCameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={handleInspectionPhotosPicked}
+          />
+          <div className="flex flex-wrap gap-2 mb-3">
+            <Button
+              type="button"
+              variant="secondary"
+              className="min-h-[44px]"
+              disabled={photosBusy || inspectionPhotos.length >= MAX_INSPECTION_PHOTOS}
+              onClick={() => photoGalleryInputRef.current?.click()}
+            >
+              <ImageIcon className="w-4 h-4" aria-hidden />
+              Fototeca
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="min-h-[44px]"
+              disabled={photosBusy || inspectionPhotos.length >= MAX_INSPECTION_PHOTOS}
+              onClick={() => photoCameraInputRef.current?.click()}
+            >
+              <Camera className="w-4 h-4" aria-hidden />
+              Cámara
+            </Button>
+            {inspectionPhotos.length > 0 ? (
+              <Button
+                type="button"
+                variant="secondary"
+                className="min-h-[44px]"
+                disabled={photosBusy}
+                onClick={clearInspectionPhotos}
+              >
+                <Trash2 className="w-4 h-4" aria-hidden />
+                Quitar todas
+              </Button>
+            ) : null}
+          </div>
+          {photosBusy ? (
+            <p className="inspecciones-form-hint flex items-center gap-1.5 mb-2">
+              <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" aria-hidden />
+              Preparando fotos…
+            </p>
+          ) : null}
+          {inspectionPhotos.length > 0 ? (
+            <div className="inspecciones-fotos-grid">
+              {inspectionPhotos.map((photo, idx) => (
+                <div key={photo.id} className="inspecciones-fotos-grid__item">
+                  <img src={photo.previewUrl || photo.dataUrl} alt={`Foto ${idx + 1}`} />
+                  <span className="inspecciones-fotos-grid__badge">Foto {idx + 1}</span>
+                  <button
+                    type="button"
+                    className="inspecciones-fotos-grid__remove"
+                    title="Eliminar foto"
+                    aria-label={`Eliminar foto ${idx + 1}`}
+                    onClick={() => removeInspectionPhoto(photo.id)}
+                  >
+                    <X className="w-4 h-4" aria-hidden />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">
+              Sin fotos. Puedes añadir evidencias del centro; irán en páginas nuevas al final del PDF.
+            </p>
+          )}
+        </FormSection>
+      ) : null}
 
       {/* Firmas Digitales */}
       <FormSection

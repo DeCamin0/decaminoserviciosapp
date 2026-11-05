@@ -12,13 +12,13 @@ import {
   PedidosStatusBadge,
   PedidosLoadingState,
   PedidosEmptyState,
-  pedidosItemsPreview,
   PedidoRowActions,
   type PedidoCatalogProduct,
 } from '../components/pedidos';
 import { useAuth } from '../contexts/AuthContextBase';
 import { useAdminApi } from '../hooks/useAdminApi';
 import { routes } from '../utils/routes';
+import activityLogger from '../utils/activityLogger';
 import { Navigate } from 'react-router';
 import { isDemoMode } from '../utils/demo';
 import { buildErrorReportMessage, openWhatsAppErrorReport } from '../utils/reportError';
@@ -2212,7 +2212,8 @@ const TabGestionarPedidos: React.FC<{
   const [pedidoCargandoAlbaran, setPedidoCargandoAlbaran] = useState<string | null>(null);
   const [copiandoPedidoUid, setCopiandoPedidoUid] = useState<string | null>(null);
   const [copiaConfirmPedido, setCopiaConfirmPedido] = useState<Pedido | null>(null);
-  const [deleteConfirmUid, setDeleteConfirmUid] = useState<string | null>(null);
+  const [deleteConfirmPedido, setDeleteConfirmPedido] = useState<Pedido | null>(null);
+  const [deleteMotivo, setDeleteMotivo] = useState('');
   const [albaranDeleteConfirm, setAlbaranDeleteConfirm] = useState(false);
   const [albaranFiles, setAlbaranFiles] = useState<File[]>([]);
   const [albaranPreview, setAlbaranPreview] = useState<string | null>(null);
@@ -2699,8 +2700,9 @@ const TabGestionarPedidos: React.FC<{
     loadPedidos();
   }, [loadPedidos]);
 
-  // Șterge un pedido
-  const handleDeletePedido = async (pedidoUid: string) => {
+  // Șterge un pedido (hard-delete; enviado/entregado cere motiv → Logs)
+  const handleDeletePedido = async (pedido: Pedido, motivo?: string) => {
+    const pedidoUid = pedido.pedido_uid;
     try {
       const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
       const headers: Record<string, string> = {
@@ -2714,9 +2716,22 @@ const TabGestionarPedidos: React.FC<{
         headers['Authorization'] = `Bearer ${token}`;
       }
 
+      const estado = String(pedido.estado || '').toLowerCase();
+      const requiresMotivo = estado === 'enviado' || estado === 'entregado';
+      const motivoTrim = (motivo || '').trim();
+      if (requiresMotivo && motivoTrim.length < 3) {
+        addToast(
+          'error',
+          'Motivo obligatorio',
+          'Para eliminar un pedido enviado o entregado debes escribir un motivo claro.',
+        );
+        return;
+      }
+
       const response = await fetch(routes.deletePedido(pedidoUid), {
         method: 'DELETE',
         headers,
+        body: JSON.stringify({ motivo: motivoTrim || null }),
       });
 
       if (!response.ok) {
@@ -2726,6 +2741,8 @@ const TabGestionarPedidos: React.FC<{
 
       const result = await response.json();
       addToast('success', 'Pedido eliminado', result.message || `Pedido ${pedidoUid} eliminado correctamente (${result.deletedRows || 0} fila(s) eliminada(s))`);
+      setDeleteConfirmPedido(null);
+      setDeleteMotivo('');
       
       // Recargar pedidos
       await loadPedidos();
@@ -4008,7 +4025,6 @@ const TabGestionarPedidos: React.FC<{
                   <p className="pedidos-list-row__meta">
                     {pedido.empleado?.nombre || 'N/A'} · {pedido.comunidad?.nombre || 'N/A'} · {formatDate(pedido.fecha)}
                   </p>
-                  <p className="pedidos-list-row__items-preview">{pedidosItemsPreview(pedido.items)}</p>
                 </div>
                 <div className="pedidos-list-row__aside">
                   <PedidosStatusBadge estado={pedido.estado} compact />
@@ -4456,7 +4472,10 @@ const TabGestionarPedidos: React.FC<{
                       }}
                       onAnadirAlbaran={() => setPedidoCargandoAlbaran(pedido.pedido_uid)}
                       onCopia={() => setCopiaConfirmPedido(pedido)}
-                      onBorrar={() => setDeleteConfirmUid(pedido.pedido_uid)}
+                      onBorrar={() => {
+                        setDeleteMotivo('');
+                        setDeleteConfirmPedido(pedido);
+                      }}
                     />
                   </div>
 
@@ -5442,24 +5461,84 @@ const TabGestionarPedidos: React.FC<{
         overlayZIndex={10050}
       />
 
-      <ConfirmModal
-        isOpen={!!deleteConfirmUid}
-        onClose={() => setDeleteConfirmUid(null)}
-        onConfirm={() => {
-          if (!deleteConfirmUid) return;
-          void handleDeletePedido(deleteConfirmUid);
-        }}
-        title="Eliminar pedido"
-        message={
-          deleteConfirmUid
-            ? `¿Estás seguro de que quieres eliminar el pedido #${deleteConfirmUid}? Esta acción no se puede deshacer y eliminará todos los datos asociados.`
-            : '¿Confirmas eliminar el pedido?'
-        }
-        confirmText="Eliminar"
-        cancelText="Cancelar"
-        type="danger"
-        overlayZIndex={10050}
-      />
+      {deleteConfirmPedido && (() => {
+        const estadoDel = String(deleteConfirmPedido.estado || '').toLowerCase();
+        const requiresMotivo = estadoDel === 'enviado' || estadoDel === 'entregado';
+        const centroNombre = deleteConfirmPedido.comunidad?.nombre || '—';
+        return (
+          <div className="app-modal-overlay" style={{ zIndex: 10050 }}>
+            <div className="app-modal app-modal--sm" role="dialog" aria-modal="true">
+              <div className="app-modal__header">
+                <h2 className="app-modal__title">
+                  {requiresMotivo ? 'Eliminar pedido enviado/entregado' : 'Eliminar pedido'}
+                </h2>
+                <button
+                  type="button"
+                  className="app-modal__close"
+                  aria-label="Cerrar"
+                  onClick={() => {
+                    setDeleteConfirmPedido(null);
+                    setDeleteMotivo('');
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+              <div className="app-modal__body space-y-3">
+                {requiresMotivo ? (
+                  <>
+                    <p className="text-sm text-red-700 dark:text-red-300 m-0 font-medium">
+                      Atención: este pedido está en estado «{estadoDel}». Ya pudo enviarse al proveedor.
+                    </p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 m-0">
+                      Pedido #{deleteConfirmPedido.pedido_uid}
+                      {' · '}
+                      {centroNombre}
+                      . La eliminación es permanente, pero quedará registrada en el Activity Log (quién, cuándo y el motivo).
+                    </p>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Motivo obligatorio
+                      <textarea
+                        className="mt-1 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
+                        rows={3}
+                        value={deleteMotivo}
+                        onChange={(e) => setDeleteMotivo(e.target.value)}
+                        placeholder="Ej.: pedido duplicado enviado por error, se mantiene el otro UID…"
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-700 dark:text-gray-300 m-0 whitespace-pre-line">
+                    {`¿Eliminar el pedido #${deleteConfirmPedido.pedido_uid} (${centroNombre})?\nEstado: ${estadoDel || 'pendiente'}.\nEsta acción no se puede deshacer. Quedará registrada en el Activity Log.`}
+                  </p>
+                )}
+              </div>
+              <div className="app-modal__footer">
+                <button
+                  type="button"
+                  className="app-modal__btn"
+                  onClick={() => {
+                    setDeleteConfirmPedido(null);
+                    setDeleteMotivo('');
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="app-modal__btn app-modal__btn--primary"
+                  disabled={requiresMotivo && deleteMotivo.trim().length < 3}
+                  onClick={() => {
+                    void handleDeletePedido(deleteConfirmPedido, deleteMotivo);
+                  }}
+                >
+                  {requiresMotivo ? 'Eliminar con motivo' : 'Eliminar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <ConfirmModal
         isOpen={albaranDeleteConfirm}
@@ -5872,6 +5951,18 @@ const TabPermisosComunidad: React.FC<{ addToast: (type: ToastType, title: string
       }
 
       await response.json();
+
+      if (user) {
+        void activityLogger.logAction('pedidos_permisos_saved', {
+          comunidad_id: comunidadSeleccionada,
+          comunidad_nombre: comunidadDetalles?.['NOMBRE O RAZON SOCIAL'] || null,
+          productos_count: productos.length,
+          user: user['NOMBRE / APELLIDOS'] || user.nombre,
+          email: user.email || user['CORREO ELECTRONICO'],
+          grupo: user.GRUPO,
+          role: user.role,
+        });
+      }
 
       addToast('success', 'Permisos guardados', `Los permisos de la comunidad se han guardado correctamente (${productos.length} productos)`);
     } catch (error) {
@@ -6423,6 +6514,20 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
       } else if (editingProduct.imagen && !editingImagePreview && editingImageDeleted) {
         imageMessage = ' (imagen eliminada)';
       }
+      if (user) {
+        void activityLogger.logAction('catalogo_producto_updated', {
+          producto: {
+            id: productId,
+            numero: updatedProduct.numero,
+            descripcion: updatedProduct.descripcion,
+            precio: updatedProduct.precio,
+          },
+          user: user['NOMBRE / APELLIDOS'] || user.nombre,
+          email: user.email || user['CORREO ELECTRONICO'],
+          grupo: user.GRUPO,
+          role: user.role,
+        });
+      }
       addToast('success', 'Producto actualizado', `"${updatedProduct.numero}" (ID: ${productId}) ha sido actualizado correctamente${imageMessage}`);
     } catch (error) {
       console.error('❌ Error editing product:', error);
@@ -6490,6 +6595,20 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
       setShowAddForm(false);
       
       const imageMessage = newImagePreview ? ' con imagen' : '';
+      if (user) {
+        void activityLogger.logAction('catalogo_producto_created', {
+          producto: {
+            id: backendId,
+            numero: newProduct.numero,
+            descripcion: newProduct.descripcion,
+            precio: newProduct.precio,
+          },
+          user: user['NOMBRE / APELLIDOS'] || user.nombre,
+          email: user.email || user['CORREO ELECTRONICO'],
+          grupo: user.GRUPO,
+          role: user.role,
+        });
+      }
       addToast('success', 'Producto agregado', `"${newProduct.numero}" (ID: ${backendId}) se ha agregado exitosamente al catálogo${imageMessage}`);
       
       // Opțional: Reîncarcă produsele pentru a fi sigur că avem datele cele mai recente
@@ -6553,6 +6672,20 @@ const TabCatalogo: React.FC<{ addToast: (type: ToastType, title: string, message
       
       // Afișează notificarea cu ID-ul din backend (dacă există)
       const deletedId = responseData.id || productId;
+      if (user) {
+        void activityLogger.logAction('catalogo_producto_deleted', {
+          producto: {
+            id: deletedId,
+            numero: product.numero,
+            descripcion: product.descripcion,
+            precio: product.precio,
+          },
+          user: user['NOMBRE / APELLIDOS'] || user.nombre,
+          email: user.email || user['CORREO ELECTRONICO'],
+          grupo: user.GRUPO,
+          role: user.role,
+        });
+      }
       addToast('success', 'Producto eliminado', `"${product.numero}" (ID: ${deletedId}) ha sido eliminado del catálogo`);
     } catch (error) {
       console.error('❌ Error deleting product:', error);

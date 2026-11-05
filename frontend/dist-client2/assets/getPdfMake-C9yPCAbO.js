@@ -1,0 +1,3 @@
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/pdf-libs-n1PpqG3E.js","assets/vendor-DB7dU3dt.js","assets/react-core-CTljUOb2.js","assets/react-core-DqKRdbjz.css","assets/crypto-polyfill-DscrZ595.js","assets/vendor-D4t2wutE.css"])))=>i.map(i=>d[i]);
+import{_ as o}from"./react-core-CTljUOb2.js";let d=null;async function n(){if(d)return d;const[f,i]=await Promise.all([o(()=>import("./pdf-libs-n1PpqG3E.js").then(a=>a.p),__vite__mapDeps([0,1,2,3,4,5])),o(()=>import("./pdf-libs-n1PpqG3E.js").then(a=>a.v),__vite__mapDeps([0,1,2,3,4,5]))]),e=f.default??f,t=i.default??i;return e.addVirtualFileSystem&&t?e.addVirtualFileSystem(t):t&&typeof e.vfs<"u"&&(e.vfs=t),d=e,e}export{n as g};
+//# sourceMappingURL=getPdfMake-C9yPCAbO.js.map

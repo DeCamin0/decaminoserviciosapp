@@ -728,7 +728,7 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
         <div className="mb-6 p-4 bg-blue-50 rounded-xl">
           <div className="flex items-center justify-between mb-4">
             <span className="text-lg font-medium text-gray-800">
-              Horas semanales per turno:
+              Horas semanales por turno:
             </span>
             <span className="text-xl font-bold text-blue-600">
               Total: {formatMinutes(totalWeekMinutesWithBreak)}
@@ -766,7 +766,7 @@ const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ centros, grupos, callAp
         <div className="mb-6 p-4 bg-blue-50 rounded-xl">
           <div className="flex items-center justify-between">
             <span className="text-lg font-medium text-gray-800">
-              Horas semanales per turno:
+              Horas semanales por turno:
             </span>
             <span className="text-2xl font-bold text-blue-600">
               {formatMinutes(totalWeekMinutesWithBreak)}

@@ -2472,6 +2472,20 @@ export default function DocumentosPage() {
       
       // Backend returnează {ok: true, mensaje: ...} sau {success: true, message: ...}
       if (result.ok === true || result.success === true) {
+        if (authUser) {
+          void activityLogger.logAction('documento_deleted', {
+            documento: {
+              id: documentoId,
+              doc_id: docId,
+              fileName,
+              email,
+            },
+            user: authUser['NOMBRE / APELLIDOS'] || authUser.nombre,
+            email: authUser.email || authUser['CORREO ELECTRONICO'],
+            grupo: authUser.GRUPO,
+            role: authUser.role,
+          });
+        }
         // Reîncarcă lista de documente
         setTimeout(() => fetchDocumentos(), 500);
         return true;

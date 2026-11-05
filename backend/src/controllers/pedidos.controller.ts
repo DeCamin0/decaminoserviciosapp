@@ -34,13 +34,41 @@ export class PedidosController {
     private readonly empleadosService: EmpleadosService,
   ) {}
 
+  private async resolveUserInfo(user: any): Promise<string> {
+    try {
+      const codigo = user?.userId || user?.codigo;
+      if (codigo) {
+        const empleado =
+          await this.empleadosService.getEmpleadoByCodigo(codigo);
+        if (empleado) {
+          const nombre = this.empleadosService.getFormattedNombre(empleado);
+          return `${nombre} (${codigo})`;
+        }
+        return String(codigo);
+      }
+      return user?.email || 'unknown';
+    } catch {
+      return user?.userId || user?.codigo || user?.email || 'unknown';
+    }
+  }
+
+  private buildLogActor(user: any, userInfo?: string) {
+    return {
+      user: userInfo || user?.email || user?.userId || null,
+      email: user?.email || null,
+      grupo: user?.grupo ?? user?.GRUPO ?? null,
+    };
+  }
+
   @Post()
   async savePedido(@Body() body: any, @CurrentUser() user: any) {
     this.logger.log(
       `Received request to save pedido for empleado: ${body.empleado?.id || 'N/A'}`,
     );
+    const userInfo = await this.resolveUserInfo(user);
     return this.pedidosService.savePedido(body, {
       actorGrupo: user?.grupo ?? user?.GRUPO,
+      actor: this.buildLogActor(user, userInfo),
     });
   }
 
@@ -67,14 +95,21 @@ export class PedidosController {
    * IMPORTANT: Trebuie să fie înainte de @Get(':pedidoUid') pentru a evita conflicte de routing
    */
   @Delete(':pedidoUid')
-  async deletePedido(@Param('pedidoUid') pedidoUid: string) {
+  async deletePedido(
+    @Param('pedidoUid') pedidoUid: string,
+    @Body() body: { motivo?: string } | undefined,
+    @CurrentUser() user: any,
+  ) {
     this.logger.log(
       `🗑️ [PedidosController] Deleting pedido with UID: ${pedidoUid}`,
     );
     try {
-      // Decode UID dacă este URL-encoded
       const decodedUid = decodeURIComponent(pedidoUid);
-      return await this.pedidosService.deletePedido(decodedUid);
+      const userInfo = await this.resolveUserInfo(user);
+      return await this.pedidosService.deletePedido(decodedUid, {
+        actor: this.buildLogActor(user, userInfo),
+        motivo: body?.motivo ?? null,
+      });
     } catch (error: any) {
       this.logger.error(`❌ [PedidosController] Error deleting pedido:`, error);
       throw error;
@@ -177,29 +212,7 @@ export class PedidosController {
     @CurrentUser() user: any,
   ) {
     const decodedUid = decodeURIComponent(pedidoUid);
-
-    // Obține numele și codigo-ul utilizatorului
-    let userInfo = 'unknown';
-    try {
-      const codigo = user?.userId || user?.codigo;
-      if (codigo) {
-        const empleado =
-          await this.empleadosService.getEmpleadoByCodigo(codigo);
-        if (empleado) {
-          const nombre = this.empleadosService.getFormattedNombre(empleado);
-          userInfo = `${nombre} (${codigo})`;
-        } else {
-          userInfo = codigo; // Fallback la codigo dacă nu găsește empleado
-        }
-      } else {
-        userInfo = user?.email || 'unknown';
-      }
-    } catch {
-      this.logger.warn(
-        `⚠️ Could not fetch empleado info for user: ${user?.userId || user?.codigo || 'unknown'}, using fallback`,
-      );
-      userInfo = user?.userId || user?.codigo || user?.email || 'unknown';
-    }
+    const userInfo = await this.resolveUserInfo(user);
 
     this.logger.log(
       `📦 [PedidosController] Updating pedido ${decodedUid} estado to: ${body.estado}${body.fecha_envio ? ` with fecha_envio: ${body.fecha_envio}` : ''} by user: ${userInfo}`,
@@ -209,6 +222,7 @@ export class PedidosController {
       body.estado,
       body.fecha_envio,
       userInfo,
+      this.buildLogActor(user, userInfo),
     );
   }
 
@@ -223,8 +237,10 @@ export class PedidosController {
       provincia_envio?: string;
       telefono_entrega?: string;
     },
+    @CurrentUser() user: any,
   ) {
     const decodedUid = decodeURIComponent(pedidoUid);
+    const userInfo = await this.resolveUserInfo(user);
     this.logger.log(
       `📦 [PedidosController] Updating pedido ${decodedUid} dirección de envío`,
     );
@@ -235,6 +251,7 @@ export class PedidosController {
       body.localidad_envio,
       body.provincia_envio,
       body.telefono_entrega,
+      this.buildLogActor(user, userInfo),
     );
   }
 
@@ -253,6 +270,7 @@ export class PedidosController {
   ) {
     // Decodează UID-ul dacă este encodat
     const decodedUid = decodeURIComponent(pedidoUid);
+    const userInfo = await this.resolveUserInfo(user);
     this.logger.log(
       `📦 [PedidosController] Updating pedido ${decodedUid} items (${body.items?.length || 0} items)`,
     );
@@ -267,6 +285,7 @@ export class PedidosController {
       body.total,
       body.notas,
       user?.grupo ?? user?.GRUPO,
+      this.buildLogActor(user, userInfo),
     );
   }
 
@@ -275,12 +294,18 @@ export class PedidosController {
     @Param('pedidoUid') pedidoUid: string,
     @Body()
     body: { notas?: string | null },
+    @CurrentUser() user: any,
   ) {
     const decodedUid = decodeURIComponent(pedidoUid);
+    const userInfo = await this.resolveUserInfo(user);
     this.logger.log(
       `📝 [PedidosController] Updating notas for pedido ${decodedUid}`,
     );
-    return this.pedidosService.updatePedidoNotas(decodedUid, body.notas);
+    return this.pedidosService.updatePedidoNotas(
+      decodedUid,
+      body.notas,
+      this.buildLogActor(user, userInfo),
+    );
   }
 
   @Post('generar-excel')
@@ -324,6 +349,7 @@ export class PedidosController {
     const senderId = String(
       user?.CODIGO || user?.codigo || user?.userId || 'system',
     );
+    const userInfo = await this.resolveUserInfo(user);
 
     // Trimite mesajul la provider (dacă este specificat) și marchează ca enviado
     return this.pedidosService.enviarPedidosAprobados(
@@ -331,6 +357,7 @@ export class PedidosController {
       body.mensaje,
       body.enviarProveedor,
       senderId,
+      this.buildLogActor(user, userInfo),
     );
   }
 

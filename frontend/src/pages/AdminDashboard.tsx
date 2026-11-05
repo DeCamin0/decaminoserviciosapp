@@ -171,7 +171,7 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-red-50">
       {/* Header modern */}
       <div className="bg-gradient-to-br from-red-600 to-red-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="max-w-[1800px] w-[98%] mx-auto px-3 sm:px-4 lg:px-5 py-8">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Back3DButton to="/dashboard" title="Regresar al Dashboard" />
@@ -192,7 +192,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-[1800px] w-[98%] mx-auto px-3 sm:px-4 lg:px-5 py-8">
         {/* Botón Reportar Error */}
         <div className="flex justify-end mb-4">
           <button 

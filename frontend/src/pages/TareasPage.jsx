@@ -114,6 +114,15 @@ export default function TareasPage() {
         headers: authHeaders(),
         body: JSON.stringify({ estado }),
       });
+      if (user) {
+        void activityLogger.logAction('tarea_estado_updated', {
+          tarea: { id, estado },
+          user: user['NOMBRE / APELLIDOS'] || user.nombre,
+          email: user.email || user['CORREO ELECTRONICO'],
+          grupo: user.GRUPO,
+          role: user.role,
+        });
+      }
       await load();
       if (detail?.id === id) {
         setDetail((d) => (d ? { ...d, estado } : d));

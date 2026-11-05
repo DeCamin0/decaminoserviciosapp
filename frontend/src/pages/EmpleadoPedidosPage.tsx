@@ -12,7 +12,6 @@ import {
   PedidosStatusBadge,
   PedidosLoadingState,
   PedidosEmptyState,
-  pedidosItemsPreview,
   EmpleadoPedidoRowActions,
   type PedidoCatalogProduct,
 } from '../components/pedidos';
@@ -2464,7 +2463,6 @@ const TabMisPedidos: React.FC<{ addToast: (type: ToastType, title: string, messa
                   <p className="pedidos-list-row__meta">
                     {pedido.comunidad?.nombre || 'N/A'} · {formatDate(pedido.fecha)}
                   </p>
-                  <p className="pedidos-list-row__items-preview">{pedidosItemsPreview(pedido.items)}</p>
                 </div>
                 <PedidosStatusBadge estado={pedido.estado} compact />
               </div>

@@ -639,6 +639,17 @@ export default function AprobacionesPage() {
       if (response.ok) {
         const responseData = await response.json();
         console.log('Response data:', responseData);
+        if (authUser && regularizacionToApprove) {
+          void activityLogger.logAprobacionFichajeApproved(
+            {
+              id: regularizacionToApprove.id,
+              employee_codigo: regularizacionToApprove.employee_codigo || regularizacionToApprove.codigo,
+              fecha: regularizacionToApprove.fecha || regularizacionToApprove.data,
+              tipo: regularizacionToApprove.tipo || 'regularizacion',
+            },
+            authUser,
+          );
+        }
         setNotification({
           type: 'success',
           title: '¡Éxito!',
@@ -728,6 +739,19 @@ export default function AprobacionesPage() {
       if (response.ok) {
         const responseData = await response.json();
         console.log('Response data:', responseData);
+        if (authUser && regularizacionToReject) {
+          void activityLogger.logAprobacionFichajeRejected(
+            {
+              id: regularizacionToReject.id,
+              employee_codigo: regularizacionToReject.employee_codigo || regularizacionToReject.codigo,
+              fecha: regularizacionToReject.fecha || regularizacionToReject.data,
+              tipo: regularizacionToReject.tipo || 'regularizacion',
+              create_ausencia: createAusenciaOnReject,
+            },
+            rejectRegularizacionReason,
+            authUser,
+          );
+        }
         setNotification({
           type: 'success',
           title: '¡Éxito!',

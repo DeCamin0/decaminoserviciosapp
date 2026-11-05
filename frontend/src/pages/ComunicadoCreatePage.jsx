@@ -1,12 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { useAuth } from '../contexts/AuthContextBase';
 import { useComunicadosApi } from '../hooks/useComunicadosApi';
 import { PageHeader, Notification } from '../components/ui';
 import { Save, Paperclip, X } from 'lucide-react';
+import activityLogger from '../utils/activityLogger';
 
 const ComunicadoCreatePage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user: authUser } = useAuth();
   const {
     fetchComunicado,
     createComunicado,
@@ -72,9 +75,27 @@ const ComunicadoCreatePage = () => {
 
       if (isEdit) {
         await updateComunicado(id, formData);
+        if (authUser) {
+          void activityLogger.logAction('comunicado_updated', {
+            comunicado: { id, titulo: titulo.trim(), publicado },
+            user: authUser['NOMBRE / APELLIDOS'] || authUser.nombre,
+            email: authUser.email || authUser['CORREO ELECTRONICO'],
+            grupo: authUser.GRUPO,
+            role: authUser.role,
+          });
+        }
         setNotification({ type: 'success', message: 'Comunicado actualizado con éxito' });
       } else {
         await createComunicado(formData);
+        if (authUser) {
+          void activityLogger.logAction('comunicado_created', {
+            comunicado: { titulo: titulo.trim(), publicado },
+            user: authUser['NOMBRE / APELLIDOS'] || authUser.nombre,
+            email: authUser.email || authUser['CORREO ELECTRONICO'],
+            grupo: authUser.GRUPO,
+            role: authUser.role,
+          });
+        }
         setNotification({ type: 'success', message: 'Comunicado creado con éxito' });
       }
 

@@ -169,6 +169,20 @@ export default function MisTareasPage() {
         headers: authHeaders(false),
         body: fd,
       });
+      if (user) {
+        void activityLogger.logAction('tarea_completada', {
+          tarea: {
+            id: completing.id,
+            titulo: completing.titulo || completing.nombre || null,
+            fotos: files?.length || 0,
+            tiene_nota: !!nota.trim(),
+          },
+          user: user['NOMBRE / APELLIDOS'] || user.nombre,
+          email: user.email || user['CORREO ELECTRONICO'],
+          grupo: user.GRUPO,
+          role: user.role,
+        });
+      }
       setCompleting(null);
       clearFileInput();
       await load();

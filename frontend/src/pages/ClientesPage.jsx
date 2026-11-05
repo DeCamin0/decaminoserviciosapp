@@ -491,6 +491,17 @@ export default function ClientesPage() {
         body: JSON.stringify(payload)
       });
       if (response.ok) {
+        if (authUser) {
+          void activityLogger.logClienteDeleted(
+            {
+              id: item?.id,
+              nif: item?.NIF || item?.nif,
+              nombre: item?.['NOMBRE O RAZON SOCIAL'] || item?.['NOMBRE O RAZÓN SOCIAL'] || item?.nombre,
+              tipo,
+            },
+            authUser,
+          );
+        }
         if (tipo === 'cliente') {
           fetchClientes();
         } else {

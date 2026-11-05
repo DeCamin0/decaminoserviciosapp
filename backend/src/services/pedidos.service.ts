@@ -11,9 +11,16 @@ import { EmailService } from './email.service';
 import { TelegramService } from './telegram.service';
 import { SentEmailsService } from './sent-emails.service';
 import { PedidosAlbaranesStorageService } from './pedidos-albaranes-storage.service';
+import { ActivityLogsService } from './activity-logs.service';
 import * as ExcelJS from 'exceljs';
 import * as fs from 'fs';
 import * as path from 'path';
+
+type PedidoLogActor = {
+  user?: string | null;
+  email?: string | null;
+  grupo?: string | null;
+};
 
 @Injectable()
 export class PedidosService {
@@ -26,6 +33,7 @@ export class PedidosService {
     private readonly sentEmailsService: SentEmailsService,
     private readonly configService: ConfigService,
     private readonly albaranesStorage: PedidosAlbaranesStorageService,
+    private readonly activityLogsService: ActivityLogsService,
   ) {}
 
   private getCompanyName(): string {
@@ -45,6 +53,84 @@ export class PedidosService {
     if (typeof value === 'number') return String(value);
     const str = String(value);
     return `'${str.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`;
+  }
+
+  /** Log în tabelul Logs — nu blochează operația principală dacă eșuează. */
+  private async logPedidoAction(
+    action: string,
+    details: Record<string, unknown>,
+    actor?: PedidoLogActor | null,
+  ): Promise<void> {
+    try {
+      await this.activityLogsService.createLog({
+        action,
+        user: actor?.user || undefined,
+        email: actor?.email || undefined,
+        grupo: actor?.grupo || undefined,
+        updateby: actor?.user || actor?.email || undefined,
+        details: {
+          module: 'pedidos',
+          ...details,
+        },
+        url: '/api/pedidos',
+      } as any);
+    } catch (e) {
+      this.logger.warn(`⚠️ logPedidoAction(${action}) failed:`, e);
+    }
+  }
+
+  private async getPedidoSnapshotForLog(
+    pedidoUid: string,
+  ): Promise<Record<string, unknown> | null> {
+    const uidEscaped = this.escapeSql(pedidoUid.trim());
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT pedido_uid,
+             MAX(comunidad_id) AS comunidad_id,
+             MAX(comunidad_nombre) AS comunidad_nombre,
+             MAX(empleado_id) AS empleado_id,
+             MAX(empleado_nombre) AS empleado_nombre,
+             MAX(notas) AS notas,
+             MAX(estado) AS estado,
+             MAX(fecha) AS fecha,
+             MAX(fecha_envio) AS fecha_envio,
+             MAX(total) AS total,
+             MAX(aprobado_por) AS aprobado_por,
+             COUNT(*) AS num_lineas
+      FROM PedidosTodos
+      WHERE pedido_uid = ${uidEscaped}
+      GROUP BY pedido_uid
+      LIMIT 1
+    `);
+    if (!rows?.length) return null;
+
+    const items = await this.prisma.$queryRawUnsafe<any[]>(`
+      SELECT numero_articulo, descripcion, cantidad, total_linea
+      FROM PedidosTodos
+      WHERE pedido_uid = ${uidEscaped}
+      ORDER BY id
+    `);
+
+    const head = rows[0];
+    return {
+      pedido_uid: head.pedido_uid,
+      comunidad_id: head.comunidad_id,
+      comunidad_nombre: head.comunidad_nombre,
+      empleado_id: head.empleado_id,
+      empleado_nombre: head.empleado_nombre,
+      notas: head.notas,
+      estado: head.estado,
+      fecha: head.fecha,
+      fecha_envio: head.fecha_envio,
+      total: head.total != null ? Number(head.total) : null,
+      aprobado_por: head.aprobado_por,
+      num_lineas: Number(head.num_lineas) || 0,
+      items: (items || []).map((it) => ({
+        numero_articulo: it.numero_articulo,
+        descripcion: it.descripcion,
+        cantidad: it.cantidad != null ? Number(it.cantidad) : null,
+        total_linea: it.total_linea != null ? Number(it.total_linea) : null,
+      })),
+    };
   }
 
   /** Límite de gasto (EUR) desde Clientes; null = sin límite configurado. */
@@ -218,7 +304,7 @@ export class PedidosService {
         }>;
       };
     },
-    options?: { actorGrupo?: string | null },
+    options?: { actorGrupo?: string | null; actor?: PedidoLogActor | null },
   ): Promise<{
     status: string;
     message: string;
@@ -405,6 +491,30 @@ export class PedidosService {
 
       this.logger.log(
         `✅ Pedido ${pedidoUid} saved successfully with ${pedidoData.pedido.items.length} items`,
+      );
+
+      await this.logPedidoAction(
+        'pedido_create',
+        {
+          pedido_uid: pedidoUid,
+          estado: estadoPedido,
+          comunidad_id: comunidadId,
+          comunidad_nombre: pedidoData.comunidad.nombre,
+          empleado_id: pedidoData.empleado.id,
+          empleado_nombre: pedidoData.empleado.nombre,
+          notas: pedidoData.pedido.notas || null,
+          num_lineas: pedidoData.pedido.items.length,
+          total:
+            pedidoData.pedido.total != null
+              ? Number(pedidoData.pedido.total)
+              : null,
+          items: pedidoData.pedido.items.map((it) => ({
+            numero_articulo: it.numero_articulo,
+            descripcion: it.descripcion,
+            cantidad: it.cantidad,
+          })),
+        },
+        options?.actor,
       );
 
       // Returnează răspuns în format compatibil cu n8n
@@ -815,6 +925,7 @@ export class PedidosService {
     localidad_envio?: string,
     provincia_envio?: string,
     telefono_entrega?: string,
+    actor?: PedidoLogActor | null,
   ): Promise<any> {
     try {
       const canonicalUid = await this.resolveCanonicalPedidoUid(pedidoUid);
@@ -863,6 +974,19 @@ export class PedidosService {
 
       this.logger.log(`✅ Pedido ${pedidoUid} dirección de envío updated`);
 
+      await this.logPedidoAction(
+        'pedido_direccion_updated',
+        {
+          pedido_uid: canonicalUid,
+          fields: updates.map((u) => u.split('=')[0].trim()),
+          telefono_entrega:
+            telefono_entrega !== undefined
+              ? String(telefono_entrega).trim()
+              : undefined,
+        },
+        actor,
+      );
+
       // Returnează comanda actualizată
       return this.getPedidoByUid(pedidoUid);
     } catch (error: any) {
@@ -882,6 +1006,7 @@ export class PedidosService {
     estado: string,
     fecha_envio?: string,
     userInfo?: string,
+    actor?: PedidoLogActor | null,
   ): Promise<any> {
     try {
       const canonicalUid = await this.resolveCanonicalPedidoUid(pedidoUid);
@@ -901,6 +1026,8 @@ export class PedidosService {
           `Estado inválido. Debe ser uno de: ${estadosValidos.join(', ')}`,
         );
       }
+
+      const beforeSnap = await this.getPedidoSnapshotForLog(canonicalUid);
 
       // Parsează fecha_envio dacă este furnizată
       let fechaEnvioSQL = '';
@@ -947,6 +1074,25 @@ export class PedidosService {
         `✅ Pedido ${pedidoUid} estado updated to: ${estado}${userInfo ? ` by ${userInfo}` : ''}`,
       );
 
+      await this.logPedidoAction(
+        `pedido_estado_${estado}`,
+        {
+          pedido_uid: canonicalUid,
+          estado_anterior: beforeSnap?.estado ?? null,
+          estado_nuevo: estado,
+          fecha_envio: fecha_envio || null,
+          user_info: userInfo || null,
+          comunidad_nombre: beforeSnap?.comunidad_nombre ?? null,
+          notas: beforeSnap?.notas ?? null,
+          num_lineas: beforeSnap?.num_lineas ?? null,
+          total: beforeSnap?.total ?? null,
+        },
+        actor ||
+          (userInfo
+            ? { user: userInfo, email: null, grupo: null }
+            : null),
+      );
+
       // Returnează comanda actualizată
       return this.getPedidoByUid(pedidoUid);
     } catch (error: any) {
@@ -978,6 +1124,7 @@ export class PedidosService {
     total: number,
     notas?: string | null,
     actorGrupo?: string | null,
+    actor?: PedidoLogActor | null,
   ): Promise<any> {
     try {
       this.logger.log(
@@ -1183,6 +1330,26 @@ export class PedidosService {
         `✅ Pedido ${pedidoUid} items updated successfully with ${items.length} items`,
       );
 
+      await this.logPedidoAction(
+        'pedido_items_updated',
+        {
+          pedido_uid: canonicalUid,
+          comunidad_nombre: pedidoExistente.comunidad?.nombre || null,
+          estado: pedidoExistente.estado || null,
+          num_lineas: items.length,
+          subtotal,
+          iva_total,
+          total,
+          notas: notas ?? pedidoExistente.notas ?? null,
+          items: items.map((it) => ({
+            numero_articulo: it.numero_articulo,
+            descripcion: it.descripcion,
+            cantidad: it.cantidad,
+          })),
+        },
+        actor,
+      );
+
       // Returnează comanda actualizată
       return this.getPedidoByUid(pedidoUid);
     } catch (error: any) {
@@ -1197,6 +1364,7 @@ export class PedidosService {
   async updatePedidoNotas(
     pedidoUid: string,
     notas?: string | null,
+    actor?: PedidoLogActor | null,
   ): Promise<any> {
     try {
       this.logger.log(
@@ -1225,6 +1393,20 @@ export class PedidosService {
       await this.prisma.$executeRawUnsafe(updateQuery);
 
       this.logger.log(`✅ Pedido ${pedidoUid} notas updated successfully`);
+
+      await this.logPedidoAction(
+        'pedido_notas_updated',
+        {
+          pedido_uid: pedidoExistente.pedido_uid,
+          comunidad_nombre: pedidoExistente.comunidad?.nombre || null,
+          notas_anterior: pedidoExistente.notas || null,
+          notas_nueva:
+            notas !== undefined && notas !== null && String(notas).trim() !== ''
+              ? String(notas).trim()
+              : null,
+        },
+        actor,
+      );
 
       // Returnează comanda actualizată
       return this.getPedidoByUid(pedidoUid);
@@ -1905,6 +2087,7 @@ export class PedidosService {
     mensaje?: string,
     enviarProveedor?: boolean,
     senderId?: string,
+    actor?: PedidoLogActor | null,
   ): Promise<any> {
     try {
       if (!pedidoUids || pedidoUids.length === 0) {
@@ -1975,6 +2158,19 @@ export class PedidosService {
 
       this.logger.log(
         `✅ ${pedidosValidos.length} pedidos marcados como enviados`,
+      );
+
+      await this.logPedidoAction(
+        'pedido_send_proveedor',
+        {
+          pedido_uids: pedidosValidos,
+          count: pedidosValidos.length,
+          enviar_proveedor: !!enviarProveedor,
+          tiene_mensaje: !!(mensaje && String(mensaje).trim()),
+          sender_id: senderId || null,
+        },
+        actor ||
+          (senderId ? { user: senderId, email: null, grupo: null } : null),
       );
 
       // Trimite email la provider cu Excel-ul atașat
@@ -2168,11 +2364,15 @@ export class PedidosService {
   }
 
   /**
-   * Șterge un pedido complet (toate rândurile asociate cu pedido_uid)
-   * @param pedidoUid - UID-ul pedido-ului de șters
+   * Șterge un pedido complet (toate rândurile asociate cu pedido_uid).
+   * Hard-delete; pentru enviado/entregado cere motiv (rămâne în Logs).
    */
   async deletePedido(
     pedidoUid: string,
+    options?: {
+      actor?: PedidoLogActor | null;
+      motivo?: string | null;
+    },
   ): Promise<{ success: true; message: string; deletedRows: number }> {
     try {
       if (
@@ -2185,17 +2385,21 @@ export class PedidosService {
 
       const pedidoUidEscaped = this.escapeSql(pedidoUid.trim());
 
-      // Verifică dacă pedido-ul există
-      const existingPedidos = await this.prisma.$queryRawUnsafe<any[]>(`
-        SELECT COUNT(*) as count
-        FROM PedidosTodos
-        WHERE pedido_uid = ${pedidoUidEscaped}
-      `);
-
-      const count = existingPedidos[0]?.count || 0;
-      if (count === 0) {
+      const snapshot = await this.getPedidoSnapshotForLog(pedidoUid.trim());
+      if (!snapshot) {
         throw new NotFoundException(
           `Pedido con UID ${pedidoUid} no encontrado`,
+        );
+      }
+
+      const estado = String(snapshot.estado || '')
+        .trim()
+        .toLowerCase();
+      const motivo = options?.motivo != null ? String(options.motivo).trim() : '';
+      const requiresMotivo = estado === 'enviado' || estado === 'entregado';
+      if (requiresMotivo && motivo.length < 3) {
+        throw new BadRequestException(
+          'Para eliminar un pedido enviado o entregado debes indicar un motivo claro (mín. 3 caracteres).',
         );
       }
 
@@ -2222,6 +2426,17 @@ export class PedidosService {
 
       this.logger.log(
         `🗑️ Pedido eliminado: ${pedidoUid} (${deletedRows} filas eliminadas)`,
+      );
+
+      await this.logPedidoAction(
+        'pedido_delete',
+        {
+          ...snapshot,
+          deleted_rows: deletedRows,
+          motivo: motivo || null,
+          requires_motivo: requiresMotivo,
+        },
+        options?.actor,
       );
 
       return {
@@ -2502,6 +2717,19 @@ export class PedidosService {
 
     this.logger.log(
       `🗑️ Albarán ${id} eliminado de pedido ${canonical} por ${userInfo || 'unknown'} (${remaining} restante(s))`,
+    );
+
+    await this.logPedidoAction(
+      'pedido_albaran_deleted',
+      {
+        pedido_uid: canonical,
+        albaran_id: id,
+        nombre_archivo: nombre,
+        remaining,
+        estado_despues: estado || null,
+        user_info: userInfo || null,
+      },
+      userInfo ? { user: userInfo, email: null, grupo: null } : null,
     );
 
     return {

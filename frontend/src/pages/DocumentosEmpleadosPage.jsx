@@ -4639,6 +4639,20 @@ export default function DocumentosEmpleadosPage() {
 
         
 
+        if (authUser) {
+          void activityLogger.logAction('nomina_deleted', {
+            nomina: {
+              id: nomina.id,
+              fileName: nomina.fileName || null,
+              empleado: selectedEmpleado?.CODIGO || selectedEmpleado?.['NOMBRE / APELLIDOS'] || null,
+            },
+            user: authUser['NOMBRE / APELLIDOS'] || authUser.nombre,
+            email: authUser.email || authUser['CORREO ELECTRONICO'],
+            grupo: authUser.GRUPO,
+            role: authUser.role,
+          });
+        }
+
         showNotification('success', 'Borrado Exitoso', 'La nómina se ha borrado correctamente');
 
       } else {
@@ -4777,6 +4791,22 @@ export default function DocumentosEmpleadosPage() {
 
         
 
+        if (authUser) {
+          void activityLogger.logAction('documento_deleted', {
+            documento: {
+              id: documento.id,
+              doc_id: documento.doc_id || documento.backendId || null,
+              fileName: documento.fileName || null,
+              empleado: selectedEmpleado?.CODIGO || documento.empleadoId || null,
+              scope: 'documentos_empleados',
+            },
+            user: authUser['NOMBRE / APELLIDOS'] || authUser.nombre,
+            email: authUser.email || authUser['CORREO ELECTRONICO'],
+            grupo: authUser.GRUPO,
+            role: authUser.role,
+          });
+        }
+
         showNotification('success', 'Borrado Exitoso', 'El documento se ha borrado correctamente');
 
       } else {
@@ -4887,6 +4917,22 @@ export default function DocumentosEmpleadosPage() {
       if (response.ok) {
 
         console.log('✅ Documento oficial borrado exitosamente');
+
+        if (authUser) {
+          void activityLogger.logAction('documento_oficial_deleted', {
+            documento: {
+              id: documento.id,
+              doc_id: documento.doc_id || null,
+              fileName: documento.fileName || documento.nombre_archivo || null,
+              empleado: selectedEmpleado?.CODIGO || null,
+              scope: 'documentos_oficiales',
+            },
+            user: authUser['NOMBRE / APELLIDOS'] || authUser.nombre,
+            email: authUser.email || authUser['CORREO ELECTRONICO'],
+            grupo: authUser.GRUPO,
+            role: authUser.role,
+          });
+        }
 
         
 

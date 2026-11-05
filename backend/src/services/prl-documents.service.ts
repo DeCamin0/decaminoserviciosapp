@@ -1204,6 +1204,27 @@ export class PrlDocumentsService {
       this.logger.log(
         `📝 Audit log creado: ${accion} para employee_doc_id ${employeeDocId} por usuario ${usuarioId}`,
       );
+
+      // Mirror în Activity Log (Logs) — fără a bloca fluxul PRL
+      try {
+        await this.prisma.logs.create({
+          data: {
+            timestamp: new Date().toISOString(),
+            action: `prl_${String(accion).toLowerCase()}`,
+            user: usuarioId || null,
+            updateby: usuarioId || null,
+            details_json: {
+              module: 'prl',
+              employee_doc_id: employeeDocId,
+              accion,
+              detalles: detalles || null,
+              ip_address: ipAddress || null,
+            } as any,
+          },
+        });
+      } catch {
+        // ignore
+      }
     } catch (error: any) {
       // Nu aruncăm eroare pentru audit log - doar logăm
       this.logger.warn(`⚠️ Error creando audit log: ${error.message}`);

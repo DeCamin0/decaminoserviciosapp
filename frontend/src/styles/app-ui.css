@@ -6252,6 +6252,62 @@
   padding-bottom: 0.45rem !important;
 }
 
+.inspecciones-fotos-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+@media (min-width: 640px) {
+  .inspecciones-fotos-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.inspecciones-fotos-grid__item {
+  position: relative;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm);
+  overflow: hidden;
+  background: #f9fafb;
+  aspect-ratio: 4 / 3;
+}
+
+.inspecciones-fotos-grid__item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.inspecciones-fotos-grid__badge {
+  position: absolute;
+  left: 0.35rem;
+  bottom: 0.35rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  background: rgba(17, 24, 39, 0.72);
+  color: #fff;
+}
+
+.inspecciones-fotos-grid__remove {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(185, 28, 28, 0.9);
+  color: #fff;
+  cursor: pointer;
+}
+
 .inspecciones-signature-modal .app-modal__body,
 .inspecciones-add-point-modal .app-modal__body {
   min-height: 0;
@@ -6461,7 +6517,7 @@
 .pedidos-status--approved { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
 .pedidos-status--rejected { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
 .pedidos-status--sent { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
-.pedidos-status--delivered { color: #047857; background: #ecfdf5; border-color: #a7f3d0; }
+.pedidos-status--delivered { color: #6d28d9; background: #f5f3ff; border-color: #ddd6fe; }
 
 .pedidos-state {
   display: flex;
@@ -6862,6 +6918,22 @@
   padding: 0.75rem;
 }
 
+.hof-filters__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.hof-filters--toolbar {
+  align-items: center;
+}
+
+.hof-filters__toolbar-label {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
 .hof-filters__grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -6913,6 +6985,19 @@
 
 .hof-period-nav {
   padding: 0.65rem 0.75rem;
+}
+
+.hof-period-nav__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  margin-bottom: 0.45rem;
+}
+
+.hof-period-nav__header .hof-period-nav__label {
+  margin: 0;
 }
 
 .hof-period-nav__label {

@@ -4481,6 +4481,18 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
       const updatedRegistros = registros.filter((r) => r.id !== deletedId);
       setRegistros(updatedRegistros);
       setFiltered(updatedRegistros);
+
+      if (authUser) {
+        void activityLogger.logFichajeDeleted(
+          {
+            id: registro.id,
+            fecha: registro.data || registro.fecha,
+            tipo: registro.tipo,
+            empleado: registro.empleado || registro.codigo,
+          },
+          authUser,
+        );
+      }
       
       setNotification({
         type: 'success',
@@ -4490,7 +4502,7 @@ function RegistrosEmpleadosScreen({ setDeleteConfirmDialog, setNotification, onD
     } else {
       throw new Error(result.message || 'Error al eliminar registro');
     }
-  }, [registros, setRegistros, setFiltered, setNotification]);
+  }, [registros, setRegistros, setFiltered, setNotification, authUser]);
 
   // Actualizează ref-ul când funcția se schimbă
   useEffect(() => {

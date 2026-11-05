@@ -108,6 +108,29 @@ export class EmitirV2Service {
         actor,
       },
     });
+
+    // Mirror în Activity Log (Logs) — nu blochează emit dacă eșuează
+    try {
+      await this.prisma.logs.create({
+        data: {
+          timestamp: new Date().toISOString(),
+          action: `presupuesto_v2_${eventType}`,
+          user: actor || null,
+          updateby: actor || null,
+          details_json: {
+            module: 'presupuestos_v2',
+            presupuesto_id: presupuestoId,
+            event_type: eventType,
+            payload:
+              payload && typeof payload === 'object'
+                ? payload
+                : { value: payload ?? null },
+          } as Prisma.InputJsonValue,
+        },
+      });
+    } catch (e) {
+      // ignore — audit dedicat rămâne sursa de adevăr
+    }
   }
 
   async loadClienteFicha(clienteId: number) {

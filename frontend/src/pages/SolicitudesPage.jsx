@@ -6187,6 +6187,18 @@ export default function SolicitudesPage() {
 
       if (response.ok && (responseData?.success === true || responseData?.status === 'ok' || responseData?.solicitud_ok === 1)) {
         setSuccessMsg('Baja voluntaria aprobada y enviada a gestoria correctamente.');
+        if (authUser) {
+          void activityLogger.logSolicitudApproved(
+            {
+              id: solicitud.id || solicitud.ID,
+              tipo: solicitud.tipo || solicitud.TIPO || 'Baja voluntaria',
+              estado: 'Aprobada',
+              codigo: solicitud.codigo || solicitud.CODIGO,
+              empleado: solicitud.empleado || solicitud.EMPLEADO || solicitud.nombre,
+            },
+            authUser,
+          );
+        }
         // Reîncarcă listele
         setTimeout(() => {
           fetchSolicitudes();
@@ -6235,6 +6247,18 @@ export default function SolicitudesPage() {
 
       if (response.ok && (responseData?.success === true || responseData?.status === 'ok' || responseData?.solicitud_ok === 1)) {
         setSuccessMsg('Baja voluntaria rechazada correctamente.');
+        if (authUser) {
+          void activityLogger.logSolicitudRejected(
+            {
+              id: solicitud.id || solicitud.ID,
+              tipo: solicitud.tipo || solicitud.TIPO || 'Baja voluntaria',
+              estado: 'Rechazada',
+              codigo: solicitud.codigo || solicitud.CODIGO,
+              empleado: solicitud.empleado || solicitud.EMPLEADO || solicitud.nombre,
+            },
+            authUser,
+          );
+        }
         // Reîncarcă listele
         setTimeout(() => {
           fetchSolicitudes();
@@ -6284,6 +6308,18 @@ export default function SolicitudesPage() {
 
       if (response.ok && (responseData?.success === true || responseData?.status === 'ok' || responseData?.solicitud_ok === 1)) {
         setSuccessMsg('Permiso retribuido aprobado correctamente.');
+        if (authUser) {
+          void activityLogger.logSolicitudApproved(
+            {
+              id: solicitud.id || solicitud.ID,
+              tipo: solicitud.tipo || solicitud.TIPO || 'Permiso Retribuido',
+              estado: 'Aprobada',
+              codigo: solicitud.codigo || solicitud.CODIGO,
+              empleado: solicitud.empleado || solicitud.EMPLEADO || solicitud.nombre,
+            },
+            authUser,
+          );
+        }
         // Reîncarcă listele
         setTimeout(() => {
           fetchSolicitudes();
@@ -6318,6 +6354,18 @@ export default function SolicitudesPage() {
       const responseData = Array.isArray(result) && result.length > 0 ? result[0] : result;
       if (response.ok && (responseData?.success === true || responseData?.status === 'ok' || responseData?.solicitud_ok === 1)) {
         setSuccessMsg('Ausencia justificada aprobada correctamente.');
+        if (authUser) {
+          void activityLogger.logSolicitudApproved(
+            {
+              id: solicitud.id || solicitud.ID,
+              tipo: solicitud.tipo || solicitud.TIPO || 'Ausencias justificada',
+              estado: 'Aprobada',
+              codigo: solicitud.codigo || solicitud.CODIGO,
+              empleado: solicitud.empleado || solicitud.EMPLEADO || solicitud.nombre,
+            },
+            authUser,
+          );
+        }
         // Crear "Solicitud de Documento" para que el empleado suba justificante de presencia a la cita (diferente del justificante de la cita subido al solicitar)
         try {
           const codigoEmpleado = solicitud.codigo || solicitud.CODIGO || '';
@@ -6399,6 +6447,20 @@ export default function SolicitudesPage() {
 
       if (responseData?.success === true || responseData?.status === 'ok' || responseData?.solicitud_ok === 1) {
         setSuccessMsg('Vacaciones aprobadas correctamente.');
+        if (authUser) {
+          void activityLogger.logSolicitudApproved(
+            {
+              id: solicitud.id || solicitud.ID,
+              tipo: solicitud.tipo || solicitud.TIPO || 'Vacaciones',
+              estado: 'Aprobada',
+              codigo: solicitud.codigo || solicitud.CODIGO,
+              empleado: solicitud.empleado || solicitud.EMPLEADO || solicitud.nombre,
+              fecha_inicio: solicitud.fecha_inicio || solicitud.FECHA_INICIO,
+              fecha_fin: solicitud.fecha_fin || solicitud.FECHA_FIN,
+            },
+            authUser,
+          );
+        }
         setTimeout(() => {
           fetchSolicitudes();
           if (isManager) {
@@ -6449,6 +6511,20 @@ export default function SolicitudesPage() {
 
       if (response.ok && (responseData?.success === true || responseData?.status === 'ok' || responseData?.solicitud_ok === 1)) {
         setSuccessMsg('Solicitud rechazada correctamente.');
+        const rej = rejectPermisoModal.solicitud;
+        if (authUser && rej) {
+          void activityLogger.logSolicitudRejected(
+            {
+              id: rej.id || rej.ID,
+              tipo: rejectPermisoModal.tipoSolicitud || rej.tipo || rej.TIPO,
+              estado: 'Rechazada',
+              codigo: rej.codigo || rej.CODIGO,
+              empleado: rej.empleado || rej.EMPLEADO || rej.nombre,
+              mensaje: rejectPermisoModal.mensaje || null,
+            },
+            authUser,
+          );
+        }
         setRejectPermisoModal({ isOpen: false, solicitud: null, mensaje: '', tipoSolicitud: 'Permiso Retribuido' });
         // Reîncarcă listele
         setTimeout(() => {
@@ -14095,6 +14171,18 @@ export default function SolicitudesPage() {
                                     );
                                     
                                     if (response?.success) {
+                                      if (authUser) {
+                                        void activityLogger.logAction('vacaciones_anuales_updated', {
+                                          empleado_codigo: emp.codigo,
+                                          empleado_nombre: emp.nombre,
+                                          dias_anuales_anterior: oldValue,
+                                          dias_anuales_nuevo: newValue,
+                                          user: authUser['NOMBRE / APELLIDOS'] || authUser.nombre,
+                                          email: authUser.email || authUser['CORREO ELECTRONICO'],
+                                          grupo: authUser.GRUPO,
+                                          role: authUser.role,
+                                        });
+                                      }
                                       // Recargar estadísticas para obtener valores actualizados
                                       const refreshResponse = await callApi(routes.getVacacionesEstadisticas);
                                       if (refreshResponse?.success && refreshResponse?.data?.success && refreshResponse?.data?.estadisticas) {
@@ -14186,6 +14274,18 @@ export default function SolicitudesPage() {
                                     );
                                     
                                     if (response?.success) {
+                                      if (authUser) {
+                                        void activityLogger.logAction('vacaciones_restantes_ano_anterior_updated', {
+                                          empleado_codigo: emp.codigo,
+                                          empleado_nombre: emp.nombre,
+                                          anteriores: oldValue,
+                                          nuevos: newValue,
+                                          user: authUser['NOMBRE / APELLIDOS'] || authUser.nombre,
+                                          email: authUser.email || authUser['CORREO ELECTRONICO'],
+                                          grupo: authUser.GRUPO,
+                                          role: authUser.role,
+                                        });
+                                      }
                                       // Actualizar estadísticas localmente
                                       setEstadisticas((prev) =>
                                         prev.map((e) =>

@@ -22,19 +22,9 @@ export default function AccessMatrix() {
   const [customGroups, setCustomGroups] = useState([]);
   const isMountedRef = useRef(true);
 
-  // Grupurile de utilizatori – exact ca în modalul de editare (de la zero)
-  const [userGroups, setUserGroups] = useState([
-    { id: 'Administrativ', name: 'Administrativ', color: 'bg-gray-500' },
-    { id: 'Auxiliar De Servicios - C', name: 'Auxiliar De Servicios - C', color: 'bg-yellow-500' },
-    { id: 'Auxiliar De Servicios - L', name: 'Auxiliar De Servicios - L', color: 'bg-yellow-400' },
-    { id: 'Comercial', name: 'Comercial', color: 'bg-orange-500' },
-    { id: 'Developer', name: 'Developer', color: 'bg-indigo-500' },
-    { id: 'Especialista', name: 'Especialista', color: 'bg-teal-500' },
-    { id: 'Informatico', name: 'Informatico', color: 'bg-blue-500' },
-    { id: 'Limpiador', name: 'Limpiador', color: 'bg-green-500' },
-    { id: 'Socorrista', name: 'Socorrista', color: 'bg-cyan-500' },
-    { id: 'Supervisor', name: 'Supervisor', color: 'bg-purple-500' }
-  ]);
+  // Grupuri vizibile = cele din DatosEmpleados (+ custom adăugate manual). Fără seed hardcodat.
+  const [userGroups, setUserGroups] = useState([]);
+  const [groupsFromEmpleados, setGroupsFromEmpleados] = useState([]);
 
   // Modulele aplicației – sincronizate cu cheile reale din backend
   const modules = useMemo(() => ([
@@ -252,30 +242,25 @@ export default function AccessMatrix() {
     return normalized;
   }, [modules]);
 
-  const mergeDynamicGroups = useCallback((incomingGroups) => {
-    if (!isMountedRef.current) return;
-    if (!incomingGroups?.length) return;
-
-    setUserGroups(prev => {
-      const existingIds = new Set(prev.map(g => g.id));
-      const merged = [...prev];
-      let changed = false;
-
-      incomingGroups.forEach(grupo => {
-        if (!grupo?.id) return;
-        if (existingIds.has(grupo.id)) return;
-
-        merged.push({
-          id: grupo.id,
-          name: grupo.name || grupo.id,
-          color: groupColors[grupo.id] || groupColors.default
-        });
-        existingIds.add(grupo.id);
-        changed = true;
+  const buildVisibleGroups = useCallback((empleadosGrupos, custom = []) => {
+    const byId = new Map();
+    (empleadosGrupos || []).forEach((g) => {
+      if (!g?.id) return;
+      byId.set(g.id, {
+        id: g.id,
+        name: g.name || g.id,
+        color: groupColors[g.id] || groupColors.default,
       });
-
-      return changed ? merged : prev;
     });
+    (custom || []).forEach((g) => {
+      if (!g?.id || byId.has(g.id)) return;
+      byId.set(g.id, {
+        id: g.id,
+        name: g.name || g.id,
+        color: groupColors[g.id] || groupColors.default,
+      });
+    });
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'es'));
   }, [groupColors]);
 
   const loadEmployeeGroups = useCallback(async () => {
@@ -293,24 +278,37 @@ export default function AccessMatrix() {
 
       if (!response.ok) {
         console.warn('Error fetching empleados:', response.status);
-        return;
+        return [];
       }
 
       const empleadosData = await response.json();
       const empleadosArray = Array.isArray(empleadosData) ? empleadosData : [empleadosData];
-      const gruposUnicos = [...new Set(empleadosArray.map(emp => emp['GRUPO'] || emp.grupo).filter(Boolean))];
+      const gruposUnicos = [...new Set(
+        empleadosArray
+          .map((emp) => String(emp['GRUPO'] || emp.grupo || '').trim())
+          .filter(Boolean),
+      )].sort((a, b) => a.localeCompare(b, 'es'));
 
-      const gruposFromEmpleados = gruposUnicos.map(grupo => ({
+      const fromEmpleados = gruposUnicos.map((grupo) => ({
         id: grupo,
         name: grupo,
-        color: groupColors[grupo] || groupColors.default
+        color: groupColors[grupo] || groupColors.default,
       }));
 
-      mergeDynamicGroups(gruposFromEmpleados);
+      if (!isMountedRef.current) return fromEmpleados;
+      setGroupsFromEmpleados(fromEmpleados);
+      // Păstrează rândurile adăugate manual (nu sunt încă în DatosEmpleados)
+      setUserGroups((prev) => {
+        const empleadoIds = new Set(fromEmpleados.map((g) => g.id));
+        const customsKept = prev.filter((g) => !empleadoIds.has(g.id));
+        return buildVisibleGroups(fromEmpleados, customsKept);
+      });
+      return fromEmpleados;
     } catch (empleadosError) {
       console.warn('Error fetching empleados data, continuing with existing groups:', empleadosError);
+      return [];
     }
-  }, [groupColors, mergeDynamicGroups]);
+  }, [groupColors, buildVisibleGroups]);
 
   useEffect(() => {
     getAllPermissionsRef.current = getAllPermissions;
@@ -353,17 +351,10 @@ export default function AccessMatrix() {
           setDemoPermissions();
         } else {
           setPermissions(normalized);
-          mergeDynamicGroups(
-            Object.keys(normalized).map(groupId => ({
-              id: groupId,
-              name: groupId
-            }))
-          );
         }
 
-        loadEmployeeGroups().catch((error) =>
-          console.warn('Error loading grupos adicionales:', error),
-        );
+        // Vizibile doar grupurile din DatosEmpleados (per client) — nu cele orphan din Permissions
+        await loadEmployeeGroups();
       } catch (error) {
         if (!isMountedRef.current) return;
         console.error('Error al cargar permisos:', error);
@@ -377,7 +368,7 @@ export default function AccessMatrix() {
     };
 
     loadPermissions();
-  }, [authUser?.isDemo, setDemoPermissions, normalizePermissions, mergeDynamicGroups, loadEmployeeGroups]);
+  }, [authUser?.isDemo, setDemoPermissions, normalizePermissions, loadEmployeeGroups]);
 
   const togglePermission = (groupId, moduleId) => {
     setPermissions(prev => ({
@@ -529,15 +520,22 @@ export default function AccessMatrix() {
       alert('¡El grupo ya existe!');
       return;
     }
-    
+
     const newGroupObj = {
       id: newGroup.id,
       name: newGroup.name,
       color: groupColors[newGroup.id] || groupColors.default
     };
-    
-    setUserGroups(prev => [...prev, newGroupObj]);
-    setCustomGroups(prev => [...prev, newGroupObj]);
+
+    setUserGroups((prev) => [...prev, newGroupObj].sort((a, b) => a.name.localeCompare(b.name, 'es')));
+    setCustomGroups((prev) => [...prev, newGroupObj]);
+    setPermissions((prev) => ({
+      ...prev,
+      [newGroupObj.id]: modules.reduce(
+        (acc, m) => ({ ...acc, [m.id]: prev[newGroupObj.id]?.[m.id] ?? false }),
+        {},
+      ),
+    }));
     setShowAddGroupModal(false);
   };
 
@@ -602,7 +600,11 @@ export default function AccessMatrix() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-red-600">Control de Acces</h2>
-          <p className="text-gray-600">Gestiona los permisos para los diferentes grupos de usuarios</p>
+          <p className="text-gray-600">
+            Solo grupos presentes en empleados de este cliente
+            {groupsFromEmpleados.length > 0 ? ` (${groupsFromEmpleados.length})` : ''}.
+            Usa «Añadir grupo» para uno nuevo.
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <input
@@ -645,78 +647,105 @@ export default function AccessMatrix() {
         </div>
       </div>
 
-      {/* Tabelul de permisiuni */}
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
+      {/* Matrice: rânduri = module, coloane = grupuri (mai ușor de gestionat) */}
+      <Card padding="p-2 sm:p-3">
+        <div className="overflow-auto max-h-[min(75vh,900px)] rounded-lg border border-gray-100">
+          <table
+            className="w-full border-separate border-spacing-0"
+            style={{ minWidth: `${260 + Math.max(filteredGroups.length, 1) * 112}px` }}
+          >
+            <thead className="sticky top-0 z-20 bg-white shadow-sm">
               <tr className="border-b border-gray-200">
-                <th className="text-left p-4 font-semibold text-gray-700">Grup / Modul</th>
-                {modules.map(module => (
-                  <th key={module.id} className="text-center p-4 font-semibold text-gray-700">
-                    <div className="flex flex-col items-center">
-                      <span className="text-lg">{module.icon}</span>
-                      <span className="text-xs">{module.name}</span>
+                <th className="sticky left-0 z-30 bg-white text-left px-3 py-3 font-semibold text-gray-700 min-w-[240px] border-b border-r border-gray-200">
+                  Modul / Grupo
+                </th>
+                {filteredGroups.map((group) => (
+                  <th
+                    key={group.id}
+                    className="text-center px-1.5 py-2 font-semibold text-gray-700 min-w-[108px] max-w-[128px] border-b border-gray-200 bg-white align-bottom"
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <div className={`w-3 h-3 rounded-full ${group.color}`} title={group.name} />
+                      <span
+                        className="text-[11px] leading-tight font-semibold text-gray-800 px-0.5 line-clamp-3"
+                        title={group.name}
+                      >
+                        {group.name}
+                      </span>
                       <button
-                        className="mt-1 text-xs text-red-600 hover:underline"
-                        onClick={() => toggleAllForModule(module.id)}
-                        title="Alternar todos para esta columna"
+                        type="button"
+                        className="text-[10px] text-red-600 hover:underline"
+                        onClick={() => toggleAllForGroup(group.id)}
+                        title={`Alternar todos los módulos para ${group.name}`}
                       >
                         Toggle col
                       </button>
+                      {customGroups.find((g) => g.id === group.id) && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveGroup(group.id)}
+                          className="text-red-600 hover:text-red-800 text-xs"
+                          title="Eliminar grupo"
+                        >
+                          🗑️
+                        </button>
+                      )}
                     </div>
                   </th>
                 ))}
-                <th className="text-center p-4 font-semibold text-gray-700">Acciones</th>
+                <th className="text-center px-2 py-3 font-semibold text-gray-700 min-w-[100px] border-b border-gray-200 bg-white sticky right-0 z-20">
+                  Acciones
+                </th>
               </tr>
             </thead>
             <tbody>
-              {filteredGroups.map(group => (
-                <tr key={group.id} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-4 h-4 rounded-full ${group.color}`}></div>
-                      <div>
-                        <div className="font-semibold text-gray-900">{group.name}</div>
-                        <div className="text-sm text-gray-500">{group.id}</div>
+              {modules.map((module) => (
+                <tr key={module.id} className="border-b border-gray-100 hover:bg-gray-50/80 group/row">
+                  <td className="sticky left-0 z-10 bg-white group-hover/row:bg-gray-50 px-3 py-2.5 border-r border-b border-gray-100 min-w-[240px]">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <span className="text-base leading-none shrink-0 mt-0.5" aria-hidden>
+                        {module.icon}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-sm text-gray-900 leading-tight">
+                          {module.name}
+                        </div>
+                        {module.description ? (
+                          <div className="text-[11px] text-gray-500 leading-snug mt-0.5 line-clamp-2" title={module.description}>
+                            {module.description}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   </td>
-                  {modules.map(module => {
-                    // Asigură că modulul există în permisiuni (chiar dacă e false)
+                  {filteredGroups.map((group) => {
                     const hasPermission = permissions[group.id]?.[module.id] ?? false;
                     return (
-                      <td key={module.id} className="text-center p-4">
+                      <td key={group.id} className="text-center px-1.5 py-2 border-b border-gray-100">
                         <button
+                          type="button"
                           onClick={() => togglePermission(group.id, module.id)}
-                          className={`w-6 h-6 rounded border-2 transition-colors ${
+                          aria-label={`${module.name} — ${group.name}`}
+                          className={`inline-flex items-center justify-center w-9 h-9 rounded-md border-2 text-sm font-bold transition-colors ${
                             hasPermission
                               ? 'bg-red-600 border-red-600 text-white'
-                              : 'bg-white border-gray-300 hover:border-red-300'
+                              : 'bg-white border-gray-300 hover:border-red-400 text-transparent'
                           }`}
                         >
-                          {hasPermission ? '✓' : ''}
+                          {hasPermission ? '✓' : '·'}
                         </button>
                       </td>
                     );
                   })}
-                  <td className="text-center p-4">
+                  <td className="text-center px-2 py-2 border-b border-gray-100 bg-white sticky right-0 z-10">
                     <button
-                      onClick={() => toggleAllForGroup(group.id)}
-                      className="text-red-600 hover:text-red-800 mr-2 text-xs underline"
-                      title="Alternar todos los módulos para este grupo"
+                      type="button"
+                      onClick={() => toggleAllForModule(module.id)}
+                      className="text-red-600 hover:text-red-800 text-xs underline whitespace-nowrap"
+                      title={`Alternar este módulo para todos los grupos`}
                     >
                       Toggle row
                     </button>
-                    {customGroups.find(g => g.id === group.id) && (
-                      <button
-                        onClick={() => handleRemoveGroup(group.id)}
-                        className="text-red-600 hover:text-red-800 p-1"
-                        title="Eliminar grupo"
-                      >
-                        🗑️
-                      </button>
-                    )}
                   </td>
                 </tr>
               ))}

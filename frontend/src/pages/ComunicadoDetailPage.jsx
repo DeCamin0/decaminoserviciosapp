@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import ConfirmModal from '../components/ui/ConfirmModal';
 import PDFViewerAndroid from '../components/PDFViewerAndroid';
+import activityLogger from '../utils/activityLogger';
 
 // Helper function pentru a converti Blob la Base64
 const blobToBase64 = (blob) => {
@@ -119,6 +120,15 @@ const ComunicadoDetailPage = () => {
   const confirmPublish = async () => {
     try {
       await publicarComunicado(id);
+      if (user) {
+        void activityLogger.logAction('comunicado_publicado', {
+          comunicado: { id, titulo: comunicado?.titulo },
+          user: user['NOMBRE / APELLIDOS'] || user.nombre,
+          email: user.email || user['CORREO ELECTRONICO'],
+          grupo: user.GRUPO,
+          role: user.role,
+        });
+      }
       setNotification({
         type: 'success',
         message: 'Comunicado publicado con éxito. Se ha enviado una notificación push a todos los empleados.',
@@ -157,6 +167,15 @@ const ComunicadoDetailPage = () => {
         message = `Notificación reenviada: ${sent} de ${total} empleados con notificaciones activas.`;
       }
 
+      if (user) {
+        void activityLogger.logAction('comunicado_notify', {
+          comunicado: { id, titulo: comunicado?.titulo, sent, total },
+          user: user['NOMBRE / APELLIDOS'] || user.nombre,
+          email: user.email || user['CORREO ELECTRONICO'],
+          grupo: user.GRUPO,
+          role: user.role,
+        });
+      }
       setNotification({
         type: 'success',
         message:
@@ -181,6 +200,15 @@ const ComunicadoDetailPage = () => {
   const confirmDelete = async () => {
     try {
       await deleteComunicado(id);
+      if (user) {
+        void activityLogger.logAction('comunicado_deleted', {
+          comunicado: { id, titulo: comunicado?.titulo },
+          user: user['NOMBRE / APELLIDOS'] || user.nombre,
+          email: user.email || user['CORREO ELECTRONICO'],
+          grupo: user.GRUPO,
+          role: user.role,
+        });
+      }
       setNotification({
         type: 'success',
         message: 'Comunicado eliminado con éxito',

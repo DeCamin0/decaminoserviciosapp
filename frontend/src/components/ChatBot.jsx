@@ -2,6 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContextBase';
 import { routes } from '../utils/routes';
+import activityLogger from '../utils/activityLogger';
 import ConfirmModal from './ui/ConfirmModal';
 import './ChatBot.css';
 import { config } from '../config/env.js';
@@ -1066,6 +1067,19 @@ const ChatBot = () => {
             : m,
         ),
       );
+      if (user) {
+        void activityLogger.logAction('assistant_chat_message', {
+          preview: text.slice(0, 120),
+          respuesta_preview:
+            typeof respuestaText === 'string' ? respuestaText.slice(0, 120) : null,
+          assistant_message_id: assistantMessageId || null,
+          acciones_count: Array.isArray(acciones) ? acciones.length : 0,
+          user: user['NOMBRE / APELLIDOS'] || user.nombre,
+          email: user.email || user['CORREO ELECTRONICO'],
+          grupo: user.GRUPO,
+          role: user.role,
+        });
+      }
     } catch (e) {
       console.error(e);
       setMessages((prev) =>

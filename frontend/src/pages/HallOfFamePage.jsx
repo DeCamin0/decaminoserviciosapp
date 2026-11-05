@@ -4,6 +4,7 @@ import { useApi } from '../hooks/useApi';
 import { Button, PageHeader, SegmentedControl, AlertBanner } from '../components/ui';
 import Notification from '../components/ui/Notification.jsx';
 import { routes } from '../utils/routes.js';
+import activityLogger from '../utils/activityLogger';
 import { Trophy, Calendar, RefreshCw, Gift } from 'lucide-react';
 import {
   formatHofScore,
@@ -248,6 +249,12 @@ const HallOfFamePage = () => {
     else if (activeTab === 'trimestral') fetchRankingTrimestral();
   }, [activeTab, fetchPremios, fetchRankingTrimestral]);
 
+  const refreshCurrentView = useCallback(() => {
+    if (activeTab === 'premios') return fetchPremios();
+    if (activeTab === 'trimestral') return fetchRankingTrimestral();
+    return fetchRanking();
+  }, [activeTab, fetchPremios, fetchRankingTrimestral, fetchRanking]);
+
   const createPremio = async () => {
     if (!selectedEmployeeForPremio || !premioFecha) {
       setNotification({ type: 'error', title: 'Error', message: 'Por favor selecciona una fecha', duration: 3000 });
@@ -265,6 +272,20 @@ const HallOfFamePage = () => {
         }),
       });
       if (result.success) {
+        if (authUser) {
+          void activityLogger.logAction('hof_premio_created', {
+            premio: {
+              codigo: selectedEmployeeForPremio.empleado_codigo || selectedEmployeeForPremio.CODIGO,
+              nombre: selectedEmployeeForPremio.empleadoNombre || selectedEmployeeForPremio.NOMBRE,
+              fecha: premioFecha,
+              mesPremio: selectedMonth,
+            },
+            user: authUser['NOMBRE / APELLIDOS'] || authUser.nombre,
+            email: authUser.email || authUser['CORREO ELECTRONICO'],
+            grupo: authUser.GRUPO,
+            role: authUser.role,
+          });
+        }
         setNotification({
           type: 'success',
           title: 'Premio creado',
@@ -412,10 +433,16 @@ const HallOfFamePage = () => {
               </select>
             </label>
           </div>
-          <Button type="button" variant="primary" size="sm" className="min-h-[44px]" onClick={calculateScores} disabled={loading}>
-            <RefreshCw className={`w-4 h-4${loading ? ' animate-spin' : ''}`} aria-hidden />
-            Calcular scores
-          </Button>
+          <div className="hof-filters__actions">
+            <Button type="button" variant="secondary" size="sm" className="min-h-[44px]" onClick={refreshCurrentView} disabled={loading}>
+              <RefreshCw className={`w-4 h-4${loading ? ' animate-spin' : ''}`} aria-hidden />
+              Refrescar
+            </Button>
+            <Button type="button" variant="primary" size="sm" className="min-h-[44px]" onClick={calculateScores} disabled={loading}>
+              <RefreshCw className={`w-4 h-4${loading ? ' animate-spin' : ''}`} aria-hidden />
+              Calcular scores
+            </Button>
+          </div>
         </section>
       )}
 
@@ -451,18 +478,42 @@ const HallOfFamePage = () => {
               </select>
             </label>
           </div>
-          <Button type="button" variant="primary" size="sm" className="min-h-[44px]" onClick={calculateTrimestralScores} disabled={loading}>
+          <div className="hof-filters__actions">
+            <Button type="button" variant="secondary" size="sm" className="min-h-[44px]" onClick={refreshCurrentView} disabled={loading}>
+              <RefreshCw className={`w-4 h-4${loading ? ' animate-spin' : ''}`} aria-hidden />
+              Refrescar
+            </Button>
+            <Button type="button" variant="primary" size="sm" className="min-h-[44px]" onClick={calculateTrimestralScores} disabled={loading}>
+              <RefreshCw className={`w-4 h-4${loading ? ' animate-spin' : ''}`} aria-hidden />
+              Calcular trimestral
+            </Button>
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'premios' && (
+        <section className="hof-filters app-card hof-filters--toolbar">
+          <p className="hof-period-nav__label hof-filters__toolbar-label">
+            Lista de premios otorgados
+          </p>
+          <Button type="button" variant="secondary" size="sm" className="min-h-[44px]" onClick={refreshCurrentView} disabled={loading}>
             <RefreshCw className={`w-4 h-4${loading ? ' animate-spin' : ''}`} aria-hidden />
-            Calcular trimestral
+            Refrescar
           </Button>
         </section>
       )}
 
       {!canCalculate && activeTab === 'ranking' && selectedMonth && (
         <section className="hof-period-nav app-card">
-          <p className="hof-period-nav__label">
-            Mostrando: <strong>{getMonthName(selectedMonth)}</strong>
-          </p>
+          <div className="hof-period-nav__header">
+            <p className="hof-period-nav__label">
+              Mostrando: <strong>{getMonthName(selectedMonth)}</strong>
+            </p>
+            <Button type="button" variant="secondary" size="sm" onClick={refreshCurrentView} disabled={loading}>
+              <RefreshCw className={`w-4 h-4${loading ? ' animate-spin' : ''}`} aria-hidden />
+              Refrescar
+            </Button>
+          </div>
           <div className="hof-period-nav__chips">
             {selectedMonth === currentMonthKey ? (
               previousMonths.map((month) => (
@@ -494,9 +545,15 @@ const HallOfFamePage = () => {
 
       {!canCalculate && activeTab === 'trimestral' && selectedTrimestre && (
         <section className="hof-period-nav app-card">
-          <p className="hof-period-nav__label">
-            Mostrando: <strong>{selectedTrimestre}</strong>
-          </p>
+          <div className="hof-period-nav__header">
+            <p className="hof-period-nav__label">
+              Mostrando: <strong>{selectedTrimestre}</strong>
+            </p>
+            <Button type="button" variant="secondary" size="sm" onClick={refreshCurrentView} disabled={loading}>
+              <RefreshCw className={`w-4 h-4${loading ? ' animate-spin' : ''}`} aria-hidden />
+              Refrescar
+            </Button>
+          </div>
           <div className="hof-period-nav__chips">
             {selectedTrimestre === currentTrimestreKey ? (
               previousTrimestres.map((t) => (
