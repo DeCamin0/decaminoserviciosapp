@@ -10,6 +10,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { EmpleadoGrupoScopeFilter } from './empleado-grupo-scope.service';
+import { empleadosListQueryMode } from './empleados-list-access';
 import { DocumentosSolicitadosService } from './documentos-solicitados.service';
 import { PrlDocumentsService } from './prl-documents.service';
 import { CarpetasDocumentosStorageService } from './carpetas-documentos-storage.service';
@@ -21,6 +22,8 @@ import {
   validatePasswordComplexity,
   verifyPassword,
 } from '../utils/password.util';
+import { revokeAllRefreshSessions } from './refresh-session';
+import { writeActivityLog } from '../utils/activity-log-write';
 import * as ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 
@@ -611,10 +614,15 @@ export class EmpleadosService {
   }
 
   /**
-   * Lista empleados. `scope` solo desde HTTP autenticado con filas en user_empleado_grupo_scope.
-   * Sin scope o sin filas en tabla = mismo comportamiento histórico (todos).
+   * Lista empleados.
+   * `onlyCodigo` limita la fila a ese CODIGO (angajat fără drept de listă).
+   * `scope` con grupos filtra. Sin scope y sin onlyCodigo = lista completa
+   * (Admin, Developer, Manager, Supervisor, RRHH, Jefe).
    */
-  async getAllEmpleados(scope?: EmpleadoGrupoScopeFilter | null) {
+  async getAllEmpleados(
+    scope?: EmpleadoGrupoScopeFilter | null,
+    onlyCodigo?: string | null,
+  ) {
     const selectSql = Prisma.sql`
       SELECT 
         CODIGO,
@@ -652,7 +660,15 @@ export class EmpleadosService {
     `;
 
     let rows: any[];
-    if (scope?.grupos?.length) {
+    const mode = empleadosListQueryMode(scope, onlyCodigo);
+    const selfCodigo = (onlyCodigo || '').trim();
+    if (mode === 'self') {
+      rows = await this.prisma.$queryRaw<any[]>`
+        ${selectSql}
+        WHERE CODIGO = ${selfCodigo}
+        ORDER BY \`NOMBRE / APELLIDOS\` ASC
+      `;
+    } else if (mode === 'scope' && scope?.grupos?.length) {
       const inList = Prisma.join(scope.grupos.map((g) => Prisma.sql`${g}`));
       rows = await this.prisma.$queryRaw<any[]>`
         ${selectSql}
@@ -732,6 +748,7 @@ export class EmpleadosService {
       passwordHash,
       codigo,
     );
+    await revokeAllRefreshSessions(this.prisma, codigo);
   }
 
   /**
@@ -1154,6 +1171,9 @@ export class EmpleadosService {
       }
 
       await this.prisma.$executeRawUnsafe(updateQuery);
+      if (passwordUpdate) {
+        await revokeAllRefreshSessions(this.prisma, codigo);
+      }
 
       this.logger.log(`✅ Empleado actualizat cu succes: ${codigo}`);
 
@@ -2097,6 +2117,17 @@ export class EmpleadosService {
         this.logger.warn(
           `⚠️ [changePassword] Contraseña actual incorrecta para codigo: ${codigo}`,
         );
+        const nombreFallido =
+          empleado?.NOMBRE_APELLIDOS ||
+          empleado?.['NOMBRE / APELLIDOS'] ||
+          codigo;
+        await writeActivityLog(this.prisma, {
+          action: 'password_change_failed',
+          user: String(nombreFallido),
+          updateby: codigo,
+          url: '/api/empleados/change-password',
+          details: { codigo, motivo: 'contraseña_actual_incorrecta' },
+        });
         throw new BadRequestException('La contraseña actual es incorrecta');
       }
 
@@ -2112,6 +2143,17 @@ export class EmpleadosService {
       this.logger.log(
         `✅ Contraseña cambiada exitosamente para empleado: ${codigo}`,
       );
+      const nombreOk =
+        empleado?.NOMBRE_APELLIDOS ||
+        empleado?.['NOMBRE / APELLIDOS'] ||
+        codigo;
+      await writeActivityLog(this.prisma, {
+        action: 'password_changed',
+        user: String(nombreOk),
+        updateby: codigo,
+        url: '/api/empleados/change-password',
+        details: { codigo, hecho: 'Ha cambiado su contraseña.' },
+      });
 
       return {
         success: true,

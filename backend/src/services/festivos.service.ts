@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { PrismaService } from '../prisma/prisma.service';
+import { isManualCalendarShadow } from './festivos-zona.logic';
 
 type CalendarHoliday = {
   date: string;
@@ -89,6 +90,7 @@ export class FestivosService {
     'madrid-od',
     'nager',
   ] as const;
+  private municipioColumnReady: boolean | null = null;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -549,7 +551,7 @@ export class FestivosService {
     const existing = await this.findExistingForSync(date, scope, ccaa, name);
 
     if (!existing) {
-      await this.createFestivo({
+      const created = await this.createFestivo({
         fecha: date,
         nombre: name,
         scope,
@@ -558,6 +560,7 @@ export class FestivosService {
         active: 1,
         notes,
       });
+      await this.retireManualShadows(date, created.id);
       return 'inserted';
     }
 
@@ -580,6 +583,7 @@ export class FestivosService {
         notes,
         active: 1,
       });
+      await this.retireManualShadows(date, existing.id);
       return 'unchanged';
     }
 
@@ -599,7 +603,48 @@ export class FestivosService {
       );
     }
 
+    await this.retireManualShadows(date, existing.id);
     return 'updated';
+  }
+
+  /** Un festivo pus de mână pe aceeași zi cu cel oficial nu mai rămâne în listă. */
+  private async retireManualShadows(
+    date: string,
+    keepId: number,
+  ): Promise<void> {
+    if (!keepId) return;
+    const withMunicipio = await this.hasMunicipioColumn();
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        id: number;
+        scope: string;
+        notes: string | null;
+        municipio_ine?: string | null;
+      }>
+    >(
+      `SELECT id, scope, notes${withMunicipio ? ', municipio_ine' : ''}
+       FROM fiestas
+       WHERE \`date\` = ${this.escapeSql(date)}
+         AND active = 1
+         AND id <> ${Number(keepId)}`,
+    );
+    for (const row of rows || []) {
+      if (
+        !isManualCalendarShadow({
+          scope: row.scope,
+          notes: row.notes,
+          municipioIne: row.municipio_ine,
+        })
+      ) {
+        continue;
+      }
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE fiestas
+         SET active = 0,
+             notes = CONCAT(IFNULL(notes, ''), ' | sustituido por festivo oficial')
+         WHERE id = ${Number(row.id)}`,
+      );
+    }
   }
 
   private async findExistingForSync(
@@ -614,6 +659,7 @@ export class FestivosService {
     ccaa_code: string | null;
     notes: string | null;
   } | null> {
+    const withMunicipio = await this.hasMunicipioColumn();
     const rows = await this.prisma.$queryRawUnsafe<
       Array<{
         id: number;
@@ -621,19 +667,23 @@ export class FestivosService {
         scope: string;
         ccaa_code: string | null;
         notes: string | null;
+        municipio_ine: string | null;
       }>
     >(
-      `SELECT id, name, scope, ccaa_code, notes
+      `SELECT id, name, scope, ccaa_code, notes${withMunicipio ? ', municipio_ine' : ''}
        FROM fiestas
        WHERE date = ${this.escapeSql(date)}`,
     );
 
-    if (!rows?.length) return null;
+    const ownRows = (rows || []).filter(
+      (row) => !String(row.municipio_ine || '').trim(),
+    );
+    if (!ownRows.length) return null;
 
     const nameKey = this.normalizeNameKey(name);
 
     // 1) Match pe scope + ccaa (sau notes din sync anterior)
-    const byScope = rows.find((r) => {
+    const byScope = ownRows.find((r) => {
       const rScope = this.normalizeScope(r.scope);
       if (rScope !== scope) return false;
       if (scope === 'Nacional') {
@@ -653,11 +703,13 @@ export class FestivosService {
     if (byScope) return byScope;
 
     // 2) Match pe nume (evită dubluri față de festivos manuale)
-    const byName = rows.find((r) => this.normalizeNameKey(r.name) === nameKey);
+    const byName = ownRows.find(
+      (r) => this.normalizeNameKey(r.name) === nameKey,
+    );
     if (byName) return byName;
 
     // 3) Deja sync-uit pe aceeași dată
-    const byNotes = rows.find((r) =>
+    const byNotes = ownRows.find((r) =>
       this.syncMarkers.some((m) => String(r.notes || '').includes(m)),
     );
     if (byNotes) return byNotes;
@@ -678,6 +730,7 @@ export class FestivosService {
         );
       }
 
+      const withMunicipio = await this.hasMunicipioColumn();
       const query = `
         SELECT
           id,
@@ -685,6 +738,7 @@ export class FestivosService {
           name,
           scope,
           ccaa_code,
+          ${withMunicipio ? 'municipio_ine, municipio_nombre,' : ''}
           observed_date,
           active,
           notes
@@ -710,6 +764,20 @@ export class FestivosService {
         `Error al obtener festivos: ${error.message}`,
       );
     }
+  }
+
+  private async hasMunicipioColumn(): Promise<boolean> {
+    if (this.municipioColumnReady === true) return true;
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ ok: number }>>(
+      `SELECT 1 AS ok
+       FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'fiestas'
+         AND COLUMN_NAME = 'municipio_ine'
+       LIMIT 1`,
+    );
+    this.municipioColumnReady = (rows || []).length > 0;
+    return this.municipioColumnReady;
   }
 
   /**

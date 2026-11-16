@@ -87,12 +87,15 @@ export function sourcesForSuccessfulDataIntent(
 
 export function defaultFollowUpsForIntent(
   intent: IntentType,
-  entidades?: { nombre?: string; codigo?: string },
+  entidades?: { nombre?: string; codigo?: string; fecha?: string },
 ): string[] | undefined {
   switch (intent) {
     case IntentType.FICHAJES:
       return ['¿Otra fecha?', '¿Ver el mes completo?'];
     case IntentType.CUADRANTE:
+      if (entidades?.fecha) {
+        return ['¿Otro día?', '¿Y mañana?'];
+      }
       if (entidades?.nombre || entidades?.codigo) {
         return ['¿Otro día?', '¿Otro empleado (nombre o código)?'];
       }

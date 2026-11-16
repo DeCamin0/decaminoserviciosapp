@@ -377,6 +377,7 @@ export function NavModulesProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useNavModules() {
   const ctx = useContext(NavModulesContext);
   if (!ctx) {
@@ -386,6 +387,7 @@ export function useNavModules() {
 }
 
 /** Optional for components that may render outside provider */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useNavModulesOptional() {
   return useContext(NavModulesContext);
 }

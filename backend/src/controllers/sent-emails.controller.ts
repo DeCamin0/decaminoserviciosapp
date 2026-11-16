@@ -17,6 +17,7 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SentEmailsService } from '../services/sent-emails.service';
+import { contentDisposition } from '../services/content-disposition';
 import { EmailService } from '../services/email.service';
 import { EmpleadosService } from '../services/empleados.service';
 import { NotificationsService } from '../services/notifications.service';
@@ -137,7 +138,7 @@ export class SentEmailsController {
       res.setHeader('Content-Type', attachment.mime_type);
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${attachment.filename}"`,
+        contentDisposition('attachment', attachment.filename),
       );
       res.setHeader('Content-Length', attachment.file_content.length);
 

@@ -1789,7 +1789,14 @@ export class PrlDocumentsService {
             `;
 
             if (this.emailService.isConfigured()) {
-              await this.emailService.sendEmail(empleadoEmail, subject, html);
+              await this.emailService.sendEmail(empleadoEmail, subject, html, {
+                record: {
+                  senderId: 'sistema',
+                  recipientType: 'empleado',
+                  recipientId: String(empleadoCodigo || ''),
+                  recipientName: empleadoNombre,
+                },
+              });
               emailsEnviados++;
               this.logger.log(
                 `✅ Email enviado a ${empleadoEmail} (${empleadoNombre})`,
@@ -2420,6 +2427,14 @@ export class PrlDocumentsService {
             emp.email,
             'Solicitud RM — Pendiente de aprobación',
             employeeHtml,
+            {
+              record: {
+                senderId: 'sistema',
+                recipientType: 'empleado',
+                recipientId: String(doc.empleado_id || ''),
+                recipientName: emp.nombre,
+              },
+            },
           );
         } catch (emailErr: any) {
           this.logger.warn(
@@ -2442,9 +2457,7 @@ export class PrlDocumentsService {
             },
           });
         } catch (e: any) {
-          this.logger.warn(
-            `⚠️ Notif grupo ${g} RM: ${e?.message || e}`,
-          );
+          this.logger.warn(`⚠️ Notif grupo ${g} RM: ${e?.message || e}`);
         }
       }
 
@@ -2668,6 +2681,14 @@ Esperando aprobación en Aprobaciones.`;
           emp.email,
           'Confirmación — Solicitud de reconocimiento médico aceptada',
           employeeHtml,
+          {
+            record: {
+              senderId: 'sistema',
+              recipientType: 'empleado',
+              recipientId: String(doc.empleado_id || ''),
+              recipientName: emp.nombre,
+            },
+          },
         );
       } catch (e: any) {
         this.logger.warn(`⚠️ Email aceptado RM: ${e?.message || e}`);
@@ -2694,6 +2715,13 @@ Esperando aprobación en Aprobaciones.`;
           'noemi@ancaraconsulting.es',
           `Confirmación RM (aprobada) — ${emp.nombre} (${emp.dni})`,
           noemiHtml,
+          {
+            record: {
+              senderId: 'sistema',
+              recipientType: 'gestoria',
+              recipientName: 'Noemi',
+            },
+          },
         );
       } catch (e: any) {
         this.logger.error(`❌ Email Noemi RM aceptado: ${e?.message || e}`);
@@ -2785,9 +2813,7 @@ Esperando aprobación en Aprobaciones.`;
 
     const emp = await this.getEmpleadoRmContext(doc.empleado_id);
     const tenant = this.getCompanyName() || 'Empresa';
-    const motivoLine = motivoClean
-      ? ` Motivo: ${motivoClean}`
-      : '';
+    const motivoLine = motivoClean ? ` Motivo: ${motivoClean}` : '';
 
     try {
       await this.notificationsService.notifyUser('system', doc.empleado_id, {
@@ -2816,6 +2842,14 @@ Esperando aprobación en Aprobaciones.`;
           emp.email,
           'Solicitud RM rechazada',
           employeeHtml,
+          {
+            record: {
+              senderId: 'sistema',
+              recipientType: 'empleado',
+              recipientId: String(doc.empleado_id || ''),
+              recipientName: emp.nombre,
+            },
+          },
         );
       } catch (e: any) {
         this.logger.warn(`⚠️ Email rechazado RM: ${e?.message || e}`);
@@ -2979,6 +3013,14 @@ ${motivoClean ? `📝 *Motivo:* ${motivoClean}\n` : ''}📎 *Doc ID:* ${document
             ? 'Cita RM actualizada — día y hora'
             : 'Cita RM asignada — día y hora',
           employeeHtml,
+          {
+            record: {
+              senderId: 'sistema',
+              recipientType: 'empleado',
+              recipientId: String(doc.empleado_id || ''),
+              recipientName: emp.nombre,
+            },
+          },
         );
       } catch (e: any) {
         this.logger.warn(`⚠️ Email cita RM: ${e?.message || e}`);
@@ -3024,7 +3066,9 @@ ${motivoClean ? `📝 *Motivo:* ${motivoClean}\n` : ''}📎 *Doc ID:* ${document
     });
   }
 
-  private normalizeRmCitaFecha(value: Date | string | null | undefined): string | null {
+  private normalizeRmCitaFecha(
+    value: Date | string | null | undefined,
+  ): string | null {
     if (!value) return null;
     if (value instanceof Date) {
       if (Number.isNaN(value.getTime())) return null;
@@ -3986,7 +4030,6 @@ El documento ha sido firmado y guardado correctamente.`;
     }
   }
 
-
   /**
    * Marchează / demarchează angajatul ca „procesado” în Matrix PRL.
    */
@@ -4011,7 +4054,9 @@ El documento ha sido firmado y guardado correctamente.`;
       throw new NotFoundException(`Empleado ${codigo} no encontrado`);
     }
 
-    const por = String(procesadoPor || 'sistema').trim().substring(0, 100);
+    const por = String(procesadoPor || 'sistema')
+      .trim()
+      .substring(0, 100);
     const flag = procesado ? 1 : 0;
 
     await this.prisma.$executeRawUnsafe(

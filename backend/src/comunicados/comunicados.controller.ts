@@ -17,6 +17,7 @@ import {
 import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ComunicadosService } from './comunicados.service';
+import { contentDisposition } from '../services/content-disposition';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
@@ -349,7 +350,7 @@ export class ComunicadosController {
     res.setHeader('Content-Type', result.tipo_mime);
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${encodeURIComponent(result.nombre_archivo)}"`,
+      contentDisposition('attachment', result.nombre_archivo),
     );
     res.setHeader('Content-Length', result.archivo.length);
 

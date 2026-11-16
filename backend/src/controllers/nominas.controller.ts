@@ -7,6 +7,7 @@ import {
   UseGuards,
   Logger,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
   Res,
   UseInterceptors,
@@ -17,6 +18,7 @@ import {
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Response, Request } from 'express';
+import { contentDisposition } from '../services/content-disposition';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { NominasService } from '../services/nominas.service';
@@ -32,13 +34,18 @@ export class NominasController {
   async getNominas(
     @Query('nombre') nombre?: string,
     @Query('codigo') codigo?: string,
+    @CurrentUser() user?: any,
   ) {
     try {
       this.logger.log(
-        `📝 Get nominas request - nombre: ${nombre || 'all'}, codigo: ${codigo || 'none'}`,
+        `📝 Get nominas request - nombre: ${nombre || 'all'}, codigo: ${codigo || 'none'}, actor: ${user?.userId || 'none'}`,
       );
 
-      const nominas = await this.nominasService.getNominas(nombre, codigo);
+      const nominas = await this.nominasService.getNominasForActor(
+        user,
+        nombre,
+        codigo,
+      );
 
       return nominas;
     } catch (error: any) {
@@ -74,7 +81,7 @@ export class NominasController {
       );
 
       const { archivo, tipo_mime, nombre_archivo } =
-        await this.nominasService.downloadNomina(idNumber, nombre || '');
+        await this.nominasService.downloadNomina(idNumber, nombre || '', user);
 
       // Loghează accesul (download)
       const empleadoCodigo = user?.userId || user?.CODIGO || user?.codigo || '';
@@ -107,9 +114,7 @@ export class NominasController {
       // Pentru download, folosește 'attachment'
       res.setHeader(
         'Content-Disposition',
-        isPreview
-          ? `inline; filename="${nombre_archivo}"`
-          : `attachment; filename="${nombre_archivo}"`,
+        contentDisposition(isPreview ? 'inline' : 'attachment', nombre_archivo),
       );
       res.setHeader('Content-Length', archivo.length.toString());
 
@@ -119,6 +124,7 @@ export class NominasController {
       this.logger.error('Error in NominasController.downloadNomina:', error);
       if (
         error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
         error instanceof NotFoundException
       ) {
         throw error;
@@ -151,7 +157,7 @@ export class NominasController {
       );
 
       const { archivo, tipo_mime, nombre_archivo } =
-        await this.nominasService.downloadNomina(idNumber, nombre || '');
+        await this.nominasService.downloadNomina(idNumber, nombre || '', user);
 
       // Loghează accesul (preview)
       const empleadoCodigo = user?.userId || user?.CODIGO || user?.codigo || '';
@@ -182,7 +188,7 @@ export class NominasController {
       res.setHeader('Content-Type', tipo_mime);
       res.setHeader(
         'Content-Disposition',
-        `inline; filename="${nombre_archivo}"`,
+        contentDisposition('inline', nombre_archivo),
       );
       res.setHeader('Content-Length', archivo.length.toString());
 
@@ -192,6 +198,7 @@ export class NominasController {
       this.logger.error('Error in NominasController.previewNomina:', error);
       if (
         error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
         error instanceof NotFoundException
       ) {
         throw error;
@@ -244,8 +251,10 @@ export class NominasController {
       archivo?: Express.Multer.File[]; // Fallback
     },
     @Body() body: any,
+    @CurrentUser() user: any,
   ) {
     try {
+      await this.nominasService.assertCanMutateNominas(user);
       // Collect all files in order
       const allFiles: Express.Multer.File[] = [];
 
@@ -281,7 +290,10 @@ export class NominasController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error uploading nóminas:', error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(`Error al subir nóminas: ${error.message}`);
@@ -294,8 +306,9 @@ export class NominasController {
    * Accepts body: { id: number, nombre?: string, filename?: string, fileName?: string }
    */
   @Post('delete')
-  async deleteNominaPost(@Body() body: any) {
+  async deleteNominaPost(@Body() body: any, @CurrentUser() user: any) {
     try {
+      await this.nominasService.assertCanMutateNominas(user);
       // Extract id (required)
       const id = body.id || body.facturald || body.facturaId;
       if (!id) {
@@ -337,6 +350,7 @@ export class NominasController {
       );
       if (
         error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
         error instanceof NotFoundException
       ) {
         throw error;
@@ -352,8 +366,13 @@ export class NominasController {
    * DELETE /api/nominas/:id?nombre=...
    */
   @Delete(':id')
-  async deleteNomina(@Param('id') id: string, @Query('nombre') nombre: string) {
+  async deleteNomina(
+    @Param('id') id: string,
+    @Query('nombre') nombre: string,
+    @CurrentUser() user: any,
+  ) {
     try {
+      await this.nominasService.assertCanMutateNominas(user);
       if (!nombre) {
         throw new BadRequestException(
           'Se requiere query parameter "nombre" (nombre del archivo)',
@@ -375,6 +394,7 @@ export class NominasController {
       this.logger.error('❌ Error in NominasController.deleteNomina:', error);
       if (
         error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
         error instanceof NotFoundException
       ) {
         throw error;
@@ -426,6 +446,7 @@ export class NominasController {
         body.nombre,
         body.email,
         empleadoNombre,
+        user,
       );
 
       // Loghează accesul (email)
@@ -472,6 +493,7 @@ export class NominasController {
       );
       if (
         error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
         error instanceof NotFoundException
       ) {
         throw error;

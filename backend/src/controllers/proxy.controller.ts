@@ -6,9 +6,12 @@ import {
   Body,
   Query,
   Headers,
+  UseGuards,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { N8nProxyService } from '../services/n8n-proxy.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { n8nForwardHeaders } from '../services/n8n-proxy-access';
 import multer from 'multer';
 import FormData from 'form-data';
 
@@ -16,6 +19,7 @@ import FormData from 'form-data';
  * Proxy controller for routing requests to n8n
  * This allows gradual migration: frontend can switch endpoints one by one
  */
+@UseGuards(JwtAuthGuard)
 @Controller('api/n8n')
 export class ProxyController {
   constructor(private readonly n8nProxyService: N8nProxyService) {}
@@ -104,13 +108,7 @@ export class ProxyController {
             requestBody = formData;
 
             try {
-              const forwardHeaders: Record<string, string> = {};
-              const excludeHeaders = ['host', 'connection', 'content-length'];
-              Object.keys(headers).forEach((key) => {
-                if (!excludeHeaders.includes(key.toLowerCase())) {
-                  forwardHeaders[key] = headers[key];
-                }
-              });
+              const forwardHeaders = n8nForwardHeaders(headers);
 
               console.log(
                 '[Proxy] Calling n8nProxyService.proxyRequest with FormData',
@@ -156,15 +154,7 @@ export class ProxyController {
           body && typeof body === 'object' ? Object.keys(body) : 'not object',
       });
 
-      // Forward relevant headers (exclude host, connection, etc.)
-      const forwardHeaders: Record<string, string> = {};
-      const excludeHeaders = ['host', 'connection', 'content-length'];
-
-      Object.keys(headers).forEach((key) => {
-        if (!excludeHeaders.includes(key.toLowerCase())) {
-          forwardHeaders[key] = headers[key];
-        }
-      });
+      const forwardHeaders = n8nForwardHeaders(headers);
 
       // Proxy the request to n8n
       const result = await this.n8nProxyService.proxyRequest(

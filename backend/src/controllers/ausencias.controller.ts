@@ -174,6 +174,7 @@ export class AusenciasController {
       fecha_inicio?: string;
       fecha_fin?: string;
     },
+    @CurrentUser() user: any,
   ) {
     try {
       this.logger.log(
@@ -186,6 +187,7 @@ export class AusenciasController {
         body.mensaje,
         body.fecha_inicio,
         body.fecha_fin,
+        user,
       );
 
       return result;
@@ -235,11 +237,19 @@ export class AusenciasController {
 
   @Patch(':id/recalcular-duracion')
   @UseGuards(JwtAuthGuard)
-  async recalcularDuracion(@Param('id') id: string) {
+  async recalcularDuracion(
+    @Param('id') id: string,
+    @CurrentUser() user: any,
+    @Body() body?: { forzar?: boolean },
+  ) {
     try {
       this.logger.log(`🔄 Recalcular duración request - id: ${id}`);
 
-      const result = await this.ausenciasService.recalcularDuracion(Number(id));
+      const result = await this.ausenciasService.recalcularDuracion(
+        Number(id),
+        user,
+        body?.forzar === true,
+      );
 
       return result;
     } catch (error: any) {
@@ -253,6 +263,7 @@ export class AusenciasController {
   async updateDuracion(
     @Param('id') id: string,
     @Body() body: { duracion: number | string; unidad?: 'dias' | 'horas' },
+    @CurrentUser() user: any,
   ) {
     try {
       this.logger.log(
@@ -263,6 +274,7 @@ export class AusenciasController {
         Number(id),
         body.duracion,
         body.unidad || 'dias',
+        user,
       );
 
       return result;

@@ -27,6 +27,8 @@ describe('PasswordResetService', () => {
       },
       $transaction: jest.fn(async (fn: any) => fn(prisma)),
       $executeRawUnsafe: jest.fn().mockResolvedValue(1),
+      sentEmail: { create: jest.fn().mockResolvedValue({ id: 'mail-1' }) },
+      authRefreshSession: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
     };
     email = {
       isConfigured: jest.fn().mockReturnValue(true),
@@ -67,6 +69,11 @@ describe('PasswordResetService', () => {
     const html = email.sendEmail.mock.calls[0][2] as string;
     expect(html).toContain('Restablecer contraseña');
     expect(html).toContain('/restablecer-contrasena?token=');
+    const saved = prisma.sentEmail.create.mock.calls[0][0].data;
+    expect(saved.status).toBe('sent');
+    expect(saved.recipient_email).toBe('user@ex.com');
+    expect(saved.message).not.toContain('token=');
+    expect(saved.message).not.toContain(html);
   });
 
   it('unknown email → same generic message', async () => {
@@ -93,6 +100,9 @@ describe('PasswordResetService', () => {
       userAgent: null,
     });
     expect(res.message).toBe(FORGOT_GENERIC_MESSAGE);
+    const saved = prisma.sentEmail.create.mock.calls[0][0].data;
+    expect(saved.status).toBe('failed');
+    expect(saved.message).not.toContain('token=');
   });
 
   it('valid token resets with bcrypt and marks used', async () => {

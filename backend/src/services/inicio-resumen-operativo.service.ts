@@ -5,6 +5,8 @@ import {
   type JwtUserLike,
 } from './empleado-grupo-scope.service';
 import { FichajeReminderService } from './fichaje-reminder.service';
+import { isImplicitAdmin } from './empleados-operation-access';
+import { permissionFlag } from './pedidos-access-policy';
 
 export type InicioOperativoKpiPayload = {
   count: number;
@@ -39,20 +41,19 @@ export class InicioResumenOperativoService {
   }
 
   /**
-   * Same matrix semantics as FE hasPermission: Admin/Developer default allow
-   * unless explicit permitted=false; others need explicit true.
+   * Admin și Developer păstrează indicatorii chiar dacă bifa este false.
+   * Restul grupurilor au nevoie de bifa explicită din matrice.
    */
-  async hasModule(grupo: string, module: string): Promise<boolean> {
-    if (!grupo || !module) return false;
-    const key = `${grupo}_${module}`;
+  async hasModule(user: any, module: string): Promise<boolean> {
+    const grupo = this.grupoOf(user);
+    const role = String(user?.role || user?.ROLE || '').trim();
+    if (!module) return false;
+    if (isImplicitAdmin({ grupo, role })) return true;
+    if (!grupo) return false;
     const row = await this.prisma.permissions.findFirst({
-      where: { grupo_module: key },
+      where: { grupo_module: `${grupo}_${module}` },
     });
-    if (grupo === 'Admin' || grupo === 'Developer') {
-      if (row && String(row.permitted).toLowerCase() === 'false') return false;
-      return true;
-    }
-    return Boolean(row && String(row.permitted).toLowerCase() === 'true');
+    return permissionFlag(row?.permitted);
   }
 
   private wantsIncludeCodigos(raw?: string): boolean {
@@ -78,11 +79,15 @@ export class InicioResumenOperativoService {
     includeCodigosRaw?: string,
   ): Promise<InicioResumenOperativoResponse> {
     const periodo: 'hoy' | 'mes' =
-      String(periodoRaw || 'hoy').trim().toLowerCase() === 'mes' ? 'mes' : 'hoy';
+      String(periodoRaw || 'hoy')
+        .trim()
+        .toLowerCase() === 'mes'
+        ? 'mes'
+        : 'hoy';
 
     const grupo = this.grupoOf(user);
-    const canEmpleados = await this.hasModule(grupo, 'empleados');
-    const canFicharAdmin = await this.hasModule(grupo, 'fichar-admin');
+    const canEmpleados = await this.hasModule(user, 'empleados');
+    const canFicharAdmin = await this.hasModule(user, 'fichar-admin');
     const canPunchKpis = canEmpleados || canFicharAdmin;
     /** Audit lists: opt-in query + same modules that unlock the KPIs */
     const withCodigos =
@@ -121,9 +126,7 @@ export class InicioResumenOperativoService {
           withCodigos,
         );
       } catch (err: any) {
-        this.logger.error(
-          `scanHoyForOperativo failed: ${err?.message || err}`,
-        );
+        this.logger.error(`scanHoyForOperativo failed: ${err?.message || err}`);
         omitted.push('programadosHoy', 'pendientesFichar');
       }
     }

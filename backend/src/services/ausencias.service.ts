@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from './telegram.service';
@@ -6,6 +11,15 @@ import { EmailService } from './email.service';
 import { SentEmailsService } from './sent-emails.service';
 import { EmpleadosService } from './empleados.service';
 import { CarpetasDocumentosStorageService } from './carpetas-documentos-storage.service';
+import { PermisoRetribuidoDurationService } from './permiso-retribuido-duration.service';
+import {
+  canConfirmPermisoDuracion,
+  decidePermisoSave,
+  isPermisoRetribuido,
+  madridIsoDate,
+} from './permiso-retribuido-duration.logic';
+import { matrixModuleEnabled } from './empleados-operation-access';
+import type { SolicitudActor } from './solicitudes-actor-policy';
 
 @Injectable()
 export class AusenciasService {
@@ -19,6 +33,7 @@ export class AusenciasService {
     private readonly empleadosService: EmpleadosService,
     private readonly configService: ConfigService,
     private readonly carpetasStorage: CarpetasDocumentosStorageService,
+    private readonly permisoDuracion: PermisoRetribuidoDurationService,
   ) {}
 
   private getSolicitudesEmail(): string {
@@ -1186,7 +1201,9 @@ export class AusenciasService {
       `);
 
       if (!ausencia || ausencia.length === 0) {
-        throw new BadRequestException(`No se encontró la ausencia con ID ${id}`);
+        throw new BadRequestException(
+          `No se encontró la ausencia con ID ${id}`,
+        );
       }
 
       const ausenciaData = ausencia[0];
@@ -1315,7 +1332,9 @@ export class AusenciasService {
       `);
 
       if (!ausencia || ausencia.length === 0) {
-        throw new BadRequestException(`No se encontró la ausencia con ID ${id}`);
+        throw new BadRequestException(
+          `No se encontró la ausencia con ID ${id}`,
+        );
       }
 
       // Actualizează flag-ul
@@ -1352,11 +1371,106 @@ export class AusenciasService {
   /**
    * Recalculează durata unei ausencias bazat pe intervalul de date din FECHA
    */
-  async recalcularDuracion(id: number): Promise<{
+  private async actorFromUser(user: any): Promise<SolicitudActor> {
+    const grupo = String(user?.grupo || user?.GRUPO || '').trim();
+    const role = String(user?.role || user?.ROLE || '').trim();
+    let solicitudesAdmin = false;
+    try {
+      solicitudesAdmin = await matrixModuleEnabled(
+        this.prisma,
+        grupo,
+        'solicitudes-admin',
+      );
+    } catch (error: any) {
+      this.logger.warn(
+        `No se pudo leer el permiso de solicitudes: ${error?.message || error}`,
+      );
+    }
+    return {
+      userId: String(user?.userId || user?.CODIGO || user?.codigo || '').trim(),
+      email: user?.email,
+      grupo,
+      role,
+      solicitudesAdmin,
+    };
+  }
+
+  private async recalcularPermiso(
+    id: number,
+    ausenciaData: any,
+    actor: SolicitudActor,
+    forzar: boolean,
+  ): Promise<{
+    success: true;
+    message: string;
+    duracion: number;
+    unidad: string;
+    requiresForce?: boolean;
+  }> {
+    if (!canConfirmPermisoDuracion(actor)) {
+      throw new ForbiddenException('No puedes recalcular este permiso');
+    }
+    const parsed = this.parseFecha(String(ausenciaData.FECHA || ''));
+    const inicio = madridIsoDate(parsed.inicio) || '';
+    const fin = madridIsoDate(parsed.fin) || inicio;
+    const preview = await this.permisoDuracion.evaluate(
+      String(ausenciaData.CODIGO || ''),
+      inicio,
+      fin,
+    );
+    const storedText =
+      ausenciaData.DURACION == null ? '' : String(ausenciaData.DURACION).trim();
+    const storedNumber = Number(storedText);
+    const decision = decidePermisoSave({
+      tipo: ausenciaData.TIPO,
+      preview,
+      existingUnidad: ausenciaData.UNIDAD_DURACION,
+      existingDias:
+        storedText !== '' && Number.isFinite(storedNumber)
+          ? storedNumber
+          : null,
+      forzar,
+      replaceStored: forzar,
+    });
+    if (!decision.applies) {
+      throw new BadRequestException('Duración pendiente de verificar.');
+    }
+    if (decision.action === 'keep') {
+      return {
+        success: true,
+        message: decision.warning,
+        duracion: decision.dias,
+        unidad: decision.unidad,
+        requiresForce: decision.requiresForce,
+      };
+    }
+    if (decision.action === 'reject') {
+      throw new BadRequestException(decision.message);
+    }
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE Ausencias
+       SET DURACION = ${decision.dias},
+           UNIDAD_DURACION = ${this.escapeSql(decision.unidad)}
+       WHERE id = ${Number(id)}`,
+    );
+    return {
+      success: true,
+      message: `Duración recalculada: ${decision.dias} días laborables. ${preview.intervalo}`,
+      duracion: decision.dias,
+      unidad: decision.unidad,
+    };
+  }
+
+  async recalcularDuracion(
+    id: number,
+    user?: any,
+    forzar = false,
+  ): Promise<{
     success: true;
     message: string;
     duracion: number;
     unidad?: string;
+    requiresForce?: boolean;
   }> {
     try {
       if (!id) {
@@ -1372,10 +1486,16 @@ export class AusenciasService {
       `);
 
       if (!ausencia || ausencia.length === 0) {
-        throw new BadRequestException(`No se encontró la ausencia con ID ${id}`);
+        throw new BadRequestException(
+          `No se encontró la ausencia con ID ${id}`,
+        );
       }
 
       const ausenciaData = ausencia[0];
+      if (isPermisoRetribuido(ausenciaData.TIPO)) {
+        const actor = await this.actorFromUser(user);
+        return this.recalcularPermiso(id, ausenciaData, actor, forzar);
+      }
       const tipo = (ausenciaData.TIPO || '').toLowerCase();
       const fecha = ausenciaData.FECHA || '';
       const codigo = ausenciaData.CODIGO || '';
@@ -1792,7 +1912,10 @@ export class AusenciasService {
         `❌ Error recalculando duración para ausencia ${id}:`,
         error,
       );
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -1808,6 +1931,7 @@ export class AusenciasService {
     id: number,
     duracion: number | string,
     unidad: 'dias' | 'horas' = 'dias',
+    user?: any,
   ): Promise<{
     success: true;
     message: string;
@@ -1828,7 +1952,24 @@ export class AusenciasService {
       `);
 
       if (!ausencia || ausencia.length === 0) {
-        throw new BadRequestException(`No se encontró la ausencia con ID ${id}`);
+        throw new BadRequestException(
+          `No se encontró la ausencia con ID ${id}`,
+        );
+      }
+
+      const esPermiso = isPermisoRetribuido(ausencia[0].TIPO);
+      if (esPermiso) {
+        const actor = await this.actorFromUser(user);
+        if (!canConfirmPermisoDuracion(actor)) {
+          throw new ForbiddenException(
+            'No puedes confirmar la duración de este permiso',
+          );
+        }
+        if (unidad === 'horas') {
+          throw new BadRequestException(
+            'Permiso Retribuido se confirma en días laborables.',
+          );
+        }
       }
 
       // Validează durata
@@ -1875,10 +2016,11 @@ export class AusenciasService {
           throw new BadRequestException('Duración debe ser un número positivo');
         }
 
+        const unidadGuardada = esPermiso ? 'dias_manual' : 'dias';
         await this.prisma.$executeRawUnsafe(`
           UPDATE Ausencias
           SET DURACION = ${duracionNum},
-              UNIDAD_DURACION = 'dias'
+              UNIDAD_DURACION = ${this.escapeSql(unidadGuardada)}
           WHERE id = ${Number(id)}
         `);
 
@@ -1890,7 +2032,7 @@ export class AusenciasService {
           success: true,
           message: `Duración actualizada: ${duracionNum} ${duracionNum === 1 ? 'día' : 'días'}`,
           duracion: duracionNum,
-          unidad: 'dias',
+          unidad: unidadGuardada,
         };
       }
     } catch (error: any) {
@@ -1898,7 +2040,10 @@ export class AusenciasService {
         `❌ Error actualizando duración manualmente para ausencia ${id}:`,
         error,
       );
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -2571,7 +2716,9 @@ export class AusenciasService {
       `);
 
       if (!ausencia || ausencia.length === 0) {
-        throw new BadRequestException(`No se encontró la ausencia con ID ${id}`);
+        throw new BadRequestException(
+          `No se encontró la ausencia con ID ${id}`,
+        );
       }
 
       const ausenciaData = ausencia[0];
@@ -2805,6 +2952,12 @@ export class AusenciasService {
 
           await this.emailService.sendEmail(empleadoEmail, subject, html, {
             bcc: this.emailService.getDefaultBcc(),
+            record: {
+              senderId: 'sistema',
+              recipientType: 'empleado',
+              recipientId: codigo,
+              recipientName: empleadoNombreFormatted,
+            },
           });
 
           this.logger.log(
@@ -2949,6 +3102,7 @@ ${mesFormatted ? `📊 *Período:* ${mesFormatted}\n` : ''}❌ Se ha cancelado e
         `✅ Ausencias retrieved: ${transformed.length} records (codigo: ${codigo || 'all'}, mes: ${mes || 'all'})`,
       );
 
+      await this.permisoDuracion.attachAusencias(transformed);
       return transformed;
     } catch (error: any) {
       this.logger.error('❌ Error retrieving ausencias:', error);
@@ -3232,12 +3386,91 @@ ${mesFormatted ? `📊 *Período:* ${mesFormatted}\n` : ''}❌ Se ha cancelado e
   /**
    * Actualizează tipul unei absențe și trimite notificare pe email
    */
+  private async convertirAPermisoRetribuido(
+    ausencia: {
+      id: number;
+      CODIGO: string | null;
+      NOMBRE: string | null;
+      TIPO: string | null;
+      FECHA: string | null;
+      DURACION: string | null;
+      UNIDAD_DURACION: string | null;
+    },
+    nuevoTipo: string,
+    mensajePersonalizado: string | undefined,
+    fechaInicio: string | undefined,
+    fechaFin: string | undefined,
+  ): Promise<{ success: true; message: string }> {
+    const parsed = fechaInicio
+      ? { inicio: fechaInicio, fin: fechaFin || fechaInicio }
+      : this.parseFecha(ausencia.FECHA || '');
+    const inicio = madridIsoDate(parsed.inicio) || '';
+    const fin = madridIsoDate(parsed.fin) || inicio;
+    const preview = await this.permisoDuracion.evaluate(
+      String(ausencia.CODIGO || ''),
+      inicio,
+      fin,
+    );
+    const alreadyPermiso = isPermisoRetribuido(ausencia.TIPO);
+    const storedText =
+      ausencia.DURACION == null ? '' : String(ausencia.DURACION).trim();
+    const storedNumber = Number(storedText);
+    const decision = decidePermisoSave({
+      tipo: nuevoTipo,
+      preview,
+      existingUnidad: alreadyPermiso ? ausencia.UNIDAD_DURACION : null,
+      existingDias:
+        alreadyPermiso && storedText !== '' && Number.isFinite(storedNumber)
+          ? storedNumber
+          : null,
+      replaceStored: true,
+    });
+    if (!decision.applies) {
+      throw new BadRequestException('Duración pendiente de verificar.');
+    }
+    if (decision.action === 'reject') {
+      throw new BadRequestException(decision.message);
+    }
+    const fecha =
+      inicio && fin && inicio !== fin ? `${inicio} - ${fin}` : inicio;
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE Ausencias
+       SET TIPO = ${this.escapeSql(nuevoTipo)},
+           FECHA = ${this.escapeSql(fecha)},
+           DURACION = ${decision.dias},
+           UNIDAD_DURACION = ${this.escapeSql(decision.unidad)}
+       WHERE id = ${Number(ausencia.id)}`,
+    );
+    try {
+      await this.sendTipoChangedNotification(
+        String(ausencia.CODIGO || ''),
+        String(ausencia.NOMBRE || ''),
+        String(ausencia.TIPO || ''),
+        nuevoTipo,
+        fecha,
+        mensajePersonalizado,
+      );
+    } catch (emailError: any) {
+      this.logger.warn(
+        `⚠️ [updateTipo] Error sending email notification: ${emailError.message}`,
+      );
+    }
+    return {
+      success: true,
+      message:
+        decision.action === 'keep'
+          ? decision.warning
+          : `Ausencia convertida a Permiso Retribuido. ${decision.dias} días laborables. ${preview.intervalo}`,
+    };
+  }
+
   async updateTipo(
     ausenciaId: number,
     nuevoTipo: string,
     mensajePersonalizado?: string,
     fechaInicio?: string,
     fechaFin?: string,
+    user?: any,
   ): Promise<{ success: true; message: string }> {
     try {
       this.logger.log(
@@ -3252,6 +3485,22 @@ ${mesFormatted ? `📊 *Período:* ${mesFormatted}\n` : ''}❌ Se ha cancelado e
       if (!ausencia) {
         throw new BadRequestException(
           `No se encontró la ausencia con ID ${ausenciaId}`,
+        );
+      }
+
+      if (isPermisoRetribuido(nuevoTipo)) {
+        const actor = await this.actorFromUser(user);
+        if (!canConfirmPermisoDuracion(actor)) {
+          throw new ForbiddenException(
+            'No puedes convertir esta ausencia a Permiso Retribuido',
+          );
+        }
+        return this.convertirAPermisoRetribuido(
+          ausencia,
+          nuevoTipo,
+          mensajePersonalizado,
+          fechaInicio,
+          fechaFin,
         );
       }
 
@@ -3691,7 +3940,10 @@ ${mesFormatted ? `📊 *Período:* ${mesFormatted}\n` : ''}❌ Se ha cancelado e
       };
     } catch (error: any) {
       this.logger.error(`❌ [updateTipo] Error:`, error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(

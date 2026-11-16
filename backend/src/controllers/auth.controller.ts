@@ -20,6 +20,7 @@ import { SecurityAlertService } from '../services/security-alert.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ForgotPasswordRateLimitError } from '../utils/password-reset.util';
+import { isImplicitAdmin } from '../services/empleados-operation-access';
 
 @Controller('api/auth')
 export class AuthController {
@@ -57,6 +58,7 @@ export class AuthController {
       const result = await this.authService.login(
         loginDto.email,
         loginDto.password,
+        this.clientIp(req),
       );
 
       if (!result.success) {
@@ -193,19 +195,6 @@ export class AuthController {
         );
       }
 
-      const role = String(user?.role || '').toUpperCase();
-      const grupo = String(user?.grupo || user?.GRUPO || '');
-      const isManager =
-        !!user?.isManager ||
-        role === 'MANAGER' ||
-        role === 'ADMIN' ||
-        role === 'DEVELOPER' ||
-        grupo === 'Manager' ||
-        grupo === 'Supervisor' ||
-        grupo === 'Developer' ||
-        grupo === 'Admin';
-      const isDeveloper = role === 'DEVELOPER' || grupo === 'Developer';
-
       const actorCodigo = user?.userId || user?.CODIGO;
       if (!actorCodigo) {
         throw new HttpException(
@@ -224,7 +213,12 @@ export class AuthController {
         );
       }
 
-      if (!isManager && !isDeveloper) {
+      if (
+        !isImplicitAdmin({
+          grupo: user?.grupo || user?.GRUPO,
+          role: user?.role,
+        })
+      ) {
         throw new HttpException(
           {
             success: false,
@@ -289,6 +283,14 @@ export class AuthController {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  @Post('logout')
+  async logout(@Body() body: { refreshToken?: string }) {
+    await this.authService.revokePresentedRefreshToken(
+      body?.refreshToken || '',
+    );
+    return { success: true };
   }
 
   @Post('refresh')

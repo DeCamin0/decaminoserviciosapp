@@ -6,7 +6,7 @@ import { routes } from '../utils/routes.js';
 import { auth, debug } from '../utils/logger';
 import { useErrorHandler } from '../hooks/useErrorHandler';
 import { AuthContext } from './AuthContextBase';
-import { fetchWithAuth } from '../utils/tokenRefresh';
+import { fetchWithAuth, revokeRefreshToken } from '../utils/tokenRefresh';
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -307,14 +307,6 @@ export const AuthProvider = ({ children }) => {
         );
       }
 
-      // Log login (con delay para evitar requests simultáneos)
-      // Folosește setTimeout cu cleanup pentru a preveni memory leaks
-      setTimeout(() => {
-        activityLogger.logLogin(userObj).catch(error => {
-          console.error('Error logging login:', error);
-        });
-      }, 1000);
-      
       return { success: true, user: userObj };
     } catch (e) {
       console.error('Login error:', e);
@@ -352,6 +344,20 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
+    const currentRefresh = localStorage.getItem('refresh_token');
+    let backupRefresh = '';
+    try {
+      backupRefresh =
+        JSON.parse(sessionStorage.getItem('impersonation_backup') || '{}')
+          ?.refresh_token || '';
+    } catch {
+      backupRefresh = '';
+    }
+    await revokeRefreshToken(currentRefresh);
+    if (backupRefresh && backupRefresh !== currentRefresh) {
+      await revokeRefreshToken(backupRefresh);
+    }
+
     // Salvează token-ul înainte de a-l șterge (pentru request-ul de logout)
     const currentToken = localStorage.getItem('auth_token');
     
@@ -439,12 +445,13 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const stopImpersonation = () => {
+  const stopImpersonation = async () => {
     try {
       const raw = sessionStorage.getItem(IMPERSONATION_BACKUP_KEY);
       if (!raw) {
         return { success: false, error: 'No hay sesión de administrador guardada' };
       }
+      await revokeRefreshToken(localStorage.getItem('refresh_token'));
       const backup = JSON.parse(raw);
       if (backup.auth_token) {
         localStorage.setItem('auth_token', backup.auth_token);

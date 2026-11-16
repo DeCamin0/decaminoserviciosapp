@@ -16,6 +16,7 @@ import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { DiplomasService } from '../services/diplomas.service';
+import { contentDisposition } from '../services/content-disposition';
 import { Response } from 'express';
 
 @Controller('api/diplomas')
@@ -404,7 +405,7 @@ export class DiplomasController {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${diploma.nombre_archivo}"`,
+        contentDisposition('attachment', diploma.nombre_archivo),
       );
 
       res.send(diploma.archivo);

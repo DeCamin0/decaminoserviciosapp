@@ -63,6 +63,9 @@ export default function CuadrantesFestivosList({
                 {festivo.ccaa ? (
                   <span className="cuadrantes-badge">{CCAA_NAMES[festivo.ccaa] || festivo.ccaa}</span>
                 ) : null}
+                {festivo.municipio ? (
+                  <span className="cuadrantes-badge">{festivo.municipio}</span>
+                ) : null}
               </div>
               {festivo.notes ? (
                 <p className="text-xs text-gray-500 mt-2">{festivo.notes}</p>
@@ -111,6 +114,9 @@ export default function CuadrantesFestivosList({
                     </span>
                     {festivo.ccaa ? (
                       <span className="cuadrantes-badge">{CCAA_NAMES[festivo.ccaa] || festivo.ccaa}</span>
+                    ) : null}
+                    {festivo.municipio ? (
+                      <span className="cuadrantes-badge">{festivo.municipio}</span>
                     ) : null}
                   </div>
                 </td>

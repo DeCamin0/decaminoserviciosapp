@@ -8,13 +8,20 @@ import {
   Logger,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
   Res,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { contentDisposition } from '../services/content-disposition';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { InspeccionesService } from '../services/inspecciones.service';
 import { EmpleadoGrupoScopeService } from '../services/empleado-grupo-scope.service';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  isImplicitAdmin,
+  matrixModuleEnabled,
+} from '../services/empleados-operation-access';
 
 @Controller('api/inspecciones')
 @UseGuards(JwtAuthGuard)
@@ -24,7 +31,48 @@ export class InspeccionesController {
   constructor(
     private readonly inspeccionesService: InspeccionesService,
     private readonly empleadoGrupoScopeService: EmpleadoGrupoScopeService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  private async moduleOn(user: any, module: string): Promise<boolean> {
+    const grupo = String(user?.grupo || user?.GRUPO || '').trim();
+    const role = String(user?.role || user?.ROLE || '').trim();
+    if (isImplicitAdmin({ grupo, role })) return true;
+    return matrixModuleEnabled(this.prisma, grupo, module);
+  }
+
+  /** Lista completă cere `inspecciones`. Propriile inspecții cer `mis-inspecciones`. */
+  private async inspectionAudience(
+    user: any,
+    requestedCodigo?: string,
+  ): Promise<string[] | null> {
+    const full = await this.moduleOn(user, 'inspecciones');
+    const mine = await this.moduleOn(user, 'mis-inspecciones');
+    if (!full && !mine) {
+      throw new ForbiddenException('Sin permiso para inspecciones');
+    }
+    const self = String(user?.userId || user?.CODIGO || '').trim();
+    const scopeAllowed =
+      await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
+        this.scopePayload(user),
+      );
+    if (full) {
+      if (
+        requestedCodigo &&
+        scopeAllowed &&
+        !scopeAllowed.includes(String(requestedCodigo).trim())
+      ) {
+        throw new ForbiddenException('Empleado fuera de ámbito');
+      }
+      return scopeAllowed;
+    }
+    if (!self) throw new ForbiddenException('Sin permiso para inspecciones');
+    if (requestedCodigo && String(requestedCodigo).trim() !== self) {
+      throw new ForbiddenException('Sin permiso para inspecciones');
+    }
+    if (!scopeAllowed) return [self];
+    return scopeAllowed.filter((code) => String(code).trim() === self);
+  }
 
   private scopePayload(user: any) {
     return {
@@ -45,10 +93,7 @@ export class InspeccionesController {
     @Query('codigo_empleado') codigoEmpleado?: string,
   ) {
     try {
-      const allowed =
-        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
-          this.scopePayload(user),
-        );
+      const allowed = await this.inspectionAudience(user, codigoEmpleado);
 
       // Dacă există codigo_empleado, returnează inspecțiile pentru acel empleado
       if (codigoEmpleado) {
@@ -76,7 +121,10 @@ export class InspeccionesController {
         'Error in InspeccionesController.getInspecciones:',
         error,
       );
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException('Error al obtener las inspecciones');
@@ -92,10 +140,10 @@ export class InspeccionesController {
     try {
       this.logger.log('📝 Create inspeccion request received');
 
-      const allowed =
-        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
-          this.scopePayload(user),
-        );
+      const allowed = await this.inspectionAudience(
+        user,
+        body?.codigo_empleado,
+      );
 
       const result = await this.inspeccionesService.createInspeccion(
         body,
@@ -108,7 +156,10 @@ export class InspeccionesController {
         'Error in InspeccionesController.createInspeccion:',
         error,
       );
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException('Error al crear la inspección');
@@ -124,10 +175,10 @@ export class InspeccionesController {
     try {
       this.logger.log('📝 Create solicitud inspeccion request received');
 
-      const allowed =
-        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
-          this.scopePayload(user),
-        );
+      const allowed = await this.inspectionAudience(
+        user,
+        body?.codigo_empleado,
+      );
 
       const result = await this.inspeccionesService.createSolicitudInspeccion(
         body,
@@ -140,7 +191,10 @@ export class InspeccionesController {
         'Error in InspeccionesController.createSolicitudInspeccion:',
         error,
       );
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -162,10 +216,7 @@ export class InspeccionesController {
     try {
       this.logger.log(`📥 Download inspeccion request - id: ${id}`);
 
-      const allowed =
-        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
-          this.scopePayload(user),
-        );
+      const allowed = await this.inspectionAudience(user);
 
       const { archivo, tipo_mime, nombre_archivo } =
         await this.inspeccionesService.downloadInspeccion(id, allowed);
@@ -174,7 +225,7 @@ export class InspeccionesController {
       res.setHeader('Content-Type', tipo_mime);
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${nombre_archivo}"`,
+        contentDisposition('attachment', nombre_archivo),
       );
       res.setHeader('Content-Length', archivo.length.toString());
 
@@ -187,6 +238,7 @@ export class InspeccionesController {
       );
       if (
         error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
         error instanceof NotFoundException
       ) {
         throw error;
@@ -209,10 +261,7 @@ export class InspeccionesController {
         `📦 Get materiales documentos request - inspeccion_id: ${inspeccionId}`,
       );
 
-      const allowed =
-        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
-          this.scopePayload(user),
-        );
+      const allowed = await this.inspectionAudience(user);
 
       const documentos = await this.inspeccionesService.getMaterialesDocumentos(
         inspeccionId,
@@ -225,7 +274,10 @@ export class InspeccionesController {
         'Error in InspeccionesController.getMaterialesDocumentos:',
         error,
       );
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -254,10 +306,7 @@ export class InspeccionesController {
         throw new BadRequestException('doc_id debe ser un número válido');
       }
 
-      const allowed =
-        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
-          this.scopePayload(user),
-        );
+      const allowed = await this.inspectionAudience(user);
 
       const { archivo, tipo_mime, nombre_archivo } =
         await this.inspeccionesService.downloadMaterialDocumento(
@@ -269,7 +318,7 @@ export class InspeccionesController {
       res.setHeader('Content-Type', tipo_mime);
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${nombre_archivo}"`,
+        contentDisposition('attachment', nombre_archivo),
       );
       res.setHeader('Content-Length', archivo.length.toString());
 
@@ -282,6 +331,7 @@ export class InspeccionesController {
       );
       if (
         error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
         error instanceof NotFoundException
       ) {
         throw error;

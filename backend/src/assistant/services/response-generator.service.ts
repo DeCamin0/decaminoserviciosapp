@@ -211,8 +211,14 @@ export class ResponseGeneratorService {
       acciones: [
         {
           tipo: 'ver_cuadrante',
-          label: 'Abrir Mi Horario (calendario)',
-          payload: { tipo: 'cuadrante', mes: entidades?.mes },
+          label: entidades?.fecha
+            ? `Abrir Mi Horario (${entidades.fecha})`
+            : 'Abrir Mi Horario (calendario)',
+          payload: {
+            tipo: 'cuadrante',
+            mes: entidades?.mes,
+            fecha: entidades?.fecha,
+          },
         },
       ],
     };

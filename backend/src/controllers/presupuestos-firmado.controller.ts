@@ -5,6 +5,7 @@ import {
   Body,
   Req,
   Param,
+  Query,
   Logger,
   BadRequestException,
   ParseIntPipe,
@@ -21,6 +22,10 @@ import {
 } from '../services/presupuesto-documento.service';
 import { PresupuestosGuardadosService } from '../services/presupuestos-guardados.service';
 import { PresupuestosFirmasStorageService } from '../services/presupuestos-firmas-storage.service';
+import {
+  readPresupuestoFirmaConfig,
+  resolveFirmaAccess,
+} from '../services/presupuesto-firma-access';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -103,7 +108,7 @@ function mergePiscinaHorarioFirmaEnPayload(
 
 /** DTO enviado por la página de firma (firmar.html) */
 export interface PresupuestoFirmadoDto {
-  quotation_id: number;
+  quotation_id?: number;
   fecha_hora: string;
   nombre_comunidad: string;
   cif: string;
@@ -116,6 +121,8 @@ export interface PresupuestoFirmadoDto {
   /** Fecha de inicio del servicio (YYYY-MM-DD desde el formulario de firma). */
   fecha_inicio_servicio?: string;
   firma_base64: string;
+  /** Tokenul din linkul nou. Absent la linkurile vechi, care au doar id-ul. */
+  firma_token?: string;
   pdf_base64?: string; // opcional: PDF de confirmación generado en el cliente para guardarlo en servidor
   numero_presupuesto?: string; // opcional: número legible del presupuesto (ej. MAD20260001)
   /** Índice de la fila de oferta económica aceptada (cuando hay varias variantes). */
@@ -156,9 +163,89 @@ export class PresupuestosFirmadoController {
     private readonly presupuestosFirmasStorage: PresupuestosFirmasStorageService,
   ) {}
 
+  private presentedToken(value: unknown): string | null | undefined {
+    if (value === undefined || value === null) return undefined;
+    return typeof value === 'string' ? value : '';
+  }
+
+  private parseRequestedId(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+      return value;
+    }
+    if (typeof value === 'string' && /^[1-9]\d*$/.test(value.trim())) {
+      return parseInt(value.trim(), 10);
+    }
+    return null;
+  }
+
+  /**
+   * Token prezent: se verifică doar tokenul. Nu există fallback la linkul vechi.
+   * Token absent: link vechi, după data creării bugetului și fereastra de 90 de zile.
+   */
+  private async authorizedPresupuestoId(
+    token: string | undefined,
+    requestedId: number | null,
+  ): Promise<number> {
+    const config = readPresupuestoFirmaConfig(process.env);
+    const now = new Date();
+    let decision = resolveFirmaAccess({
+      token: token === undefined ? null : token,
+      requestedId,
+      createdAt: null,
+      config,
+      now,
+    });
+    if (
+      decision.ok === false &&
+      decision.reason === 'needs-row' &&
+      requestedId
+    ) {
+      const row = await this.prisma.presupuestos_guardados.findUnique({
+        where: { id: requestedId },
+        select: { created_at: true },
+      });
+      if (!row) {
+        throw new NotFoundException('Presupuesto no encontrado');
+      }
+      decision = resolveFirmaAccess({
+        token: null,
+        requestedId,
+        createdAt: row.created_at,
+        config,
+        now,
+      });
+    }
+    if (decision.ok === false) {
+      this.logger.warn(`Acceso firma rechazado: ${decision.reason}`);
+      throw new NotFoundException('Presupuesto no encontrado');
+    }
+    return decision.id;
+  }
+
+  /** Link nou: /api/presupuestos/datos-firma?t=... Id-ul nu este în URL. */
+  @Get('datos-firma')
+  async getDatosFirmaByToken(@Query('t') token?: string) {
+    if (typeof token !== 'string') {
+      throw new NotFoundException('Presupuesto no encontrado');
+    }
+    const id = await this.authorizedPresupuestoId(token, null);
+    return this.loadDatosFirma(id);
+  }
+
   /** Endpoint público (sin JWT): devuelve numero_presupuesto, cliente_nombre, cif y direccion para prellenar la página de firma. */
   @Get(':id/datos-firma')
-  async getDatosFirma(@Param('id', ParseIntPipe) id: number) {
+  async getDatosFirma(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('t') token?: string,
+  ) {
+    const authorizedId = await this.authorizedPresupuestoId(
+      this.presentedToken(token),
+      id,
+    );
+    return this.loadDatosFirma(authorizedId);
+  }
+
+  private async loadDatosFirma(id: number) {
     const p = await this.prisma.presupuestos_guardados.findUnique({
       where: { id },
       select: {
@@ -330,10 +417,15 @@ export class PresupuestosFirmadoController {
       '';
     const userAgent = req.headers['user-agent'] || '';
 
-    const presupuestoId = body.quotation_id;
-    if (!presupuestoId) {
+    const token = this.presentedToken(body.firma_token);
+    const requestedId = this.parseRequestedId(body.quotation_id);
+    if (token === undefined && requestedId === null) {
       throw new BadRequestException('Falta quotation_id');
     }
+    const presupuestoId = await this.authorizedPresupuestoId(
+      token,
+      requestedId,
+    );
 
     const existe = await this.prisma.presupuestos_guardados.findUnique({
       where: { id: presupuestoId },
@@ -583,6 +675,14 @@ export class PresupuestosFirmadoController {
           html,
           pdfBuffer,
           fileName,
+          {
+            record: {
+              senderId: 'sistema',
+              recipientType: 'cliente',
+              recipientName: (body.nombre_representante || '').trim() || 'Cliente',
+              attachmentNote: `Adjunto: ${fileName}`,
+            },
+          },
         );
         emailEnviado = true;
         this.logger.log(

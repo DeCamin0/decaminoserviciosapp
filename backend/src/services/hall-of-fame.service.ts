@@ -5867,6 +5867,12 @@ ORDER BY
 
           await this.emailService.sendEmail(empleadoEmail, subject, html, {
             bcc: this.emailService.getDefaultBcc(),
+            record: {
+              senderId: 'sistema',
+              recipientType: 'empleado',
+              recipientId: codigo,
+              recipientName: empleadoNombreFormatted,
+            },
           });
 
           this.logger.log(

@@ -16,6 +16,7 @@ import {
   UploadedFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { contentDisposition } from '../services/content-disposition';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import { SkipThrottle } from '@nestjs/throttler';
@@ -290,7 +291,10 @@ export class PresupuestosV2Controller {
     const { buffer, filename, contentType } =
       await this.pdfService.generatePreviewPdf(req.user, id);
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    res.setHeader(
+      'Content-Disposition',
+      contentDisposition('inline', filename),
+    );
     res.send(buffer);
   }
 
@@ -308,7 +312,10 @@ export class PresupuestosV2Controller {
         forceNewVersion: regen === '1' || regen === 'true',
       });
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+    res.setHeader(
+      'Content-Disposition',
+      contentDisposition('inline', filename),
+    );
     res.setHeader('X-Presupuesto-V2-Pdf', '1');
     res.send(buffer);
   }

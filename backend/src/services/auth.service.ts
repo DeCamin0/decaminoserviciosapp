@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { JwtSignOptions } from '@nestjs/jwt';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -6,6 +7,15 @@ import {
   isBcryptHash,
   verifyPassword,
 } from '../utils/password.util';
+import {
+  createRefreshSession,
+  decideRefreshSession,
+  findRefreshSession,
+  refreshTtlMs,
+  revokeAllRefreshSessions,
+  revokeRefreshSession,
+} from './refresh-session';
+import { writeActivityLog } from '../utils/activity-log-write';
 
 /**
  * Auth Service — employee login with bcrypt + legacy plaintext auto-upgrade.
@@ -13,6 +23,20 @@ import {
  */
 @Injectable()
 export class AuthService {
+  /** Sesiunea de impersonare rămâne mai scurtă decât refresh-ul obișnuit de 7 zile. */
+  private static readonly IMPERSONATION_REFRESH = '2h';
+
+  private accessExpires(): JwtSignOptions['expiresIn'] {
+    const value = String(process.env.JWT_EXPIRES_IN || '30m').trim() || '30m';
+    return value as JwtSignOptions['expiresIn'];
+  }
+
+  private refreshExpires(): JwtSignOptions['expiresIn'] {
+    const value =
+      String(process.env.JWT_REFRESH_EXPIRES_IN || '7d').trim() || '7d';
+    return value as JwtSignOptions['expiresIn'];
+  }
+
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
@@ -40,12 +64,75 @@ export class AuthService {
       where: { CODIGO: codigo },
       select: { AUTH_VERSION: true },
     });
+    await revokeAllRefreshSessions(this.prisma, codigo);
     return updated?.AUTH_VERSION ?? 1;
+  }
+
+  private async issueSession(input: {
+    email: string | null;
+    userId: string;
+    authVersion: number;
+    impersonation?: boolean;
+    impersonatedBy?: string | null;
+  }): Promise<{ sid: string; refreshToken: string }> {
+    const impersonation = input.impersonation === true;
+    const ttlSpec = impersonation
+      ? AuthService.IMPERSONATION_REFRESH
+      : String(process.env.JWT_REFRESH_EXPIRES_IN || '7d');
+    const fallbackMs = impersonation
+      ? 2 * 60 * 60 * 1000
+      : 7 * 24 * 60 * 60 * 1000;
+    const expiresAt = new Date(Date.now() + refreshTtlMs(ttlSpec, fallbackMs));
+    const sid = await createRefreshSession(this.prisma, {
+      userCodigo: input.userId,
+      expiresAt,
+      impersonation,
+      impersonatedBy: input.impersonatedBy ?? null,
+    });
+    const refreshToken = this.jwtService.sign(
+      {
+        email: input.email,
+        userId: input.userId,
+        authVersion: input.authVersion,
+        type: 'refresh',
+        sid,
+        ...(impersonation
+          ? { impersonation: true, impersonatedBy: input.impersonatedBy }
+          : {}),
+      },
+      {
+        expiresIn: impersonation
+          ? AuthService.IMPERSONATION_REFRESH
+          : this.refreshExpires(),
+      },
+    );
+    return { sid, refreshToken };
+  }
+
+  private async recordAuth(input: {
+    action: string;
+    user?: string | null;
+    email?: string | null;
+    grupo?: string | null;
+    ip?: string | null;
+    details?: Record<string, unknown>;
+  }): Promise<void> {
+    await writeActivityLog(this.prisma, {
+      action: input.action,
+      user: input.user,
+      email: input.email,
+      grupo: input.grupo,
+      updateby: input.user,
+      ip: input.ip,
+      url: '/api/auth/login',
+      details: input.details,
+    });
   }
 
   async login(
     email: string,
     password: string,
+    ip?: string | null,
   ): Promise<{
     success: boolean;
     user?: any;
@@ -63,6 +150,12 @@ export class AuthService {
 
       if (!found) {
         console.log('[AuthService] User not found (Prisma):', normalizedEmail);
+        await this.recordAuth({
+          action: 'login_failed',
+          email: normalizedEmail,
+          ip,
+          details: { motivo: 'usuario_no_encontrado' },
+        });
         return { success: false, error: 'Correo o contraseña incorrecta' };
       }
 
@@ -71,12 +164,28 @@ export class AuthService {
 
       if (!storedPassword) {
         console.log('[AuthService] Empty password for:', normalizedEmail);
+        await this.recordAuth({
+          action: 'login_failed',
+          user: found.NOMBRE_APELLIDOS,
+          email: normalizedEmail,
+          grupo: found.GRUPO,
+          ip,
+          details: { codigo: found.CODIGO, motivo: 'sin_contraseña' },
+        });
         return { success: false, error: 'Correo o contraseña incorrecta' };
       }
 
       const check = await verifyPassword(inputPassword, storedPassword);
       if (!check.ok) {
         console.log('[AuthService] Password mismatch for:', normalizedEmail);
+        await this.recordAuth({
+          action: 'login_failed',
+          user: found.NOMBRE_APELLIDOS,
+          email: normalizedEmail,
+          grupo: found.GRUPO,
+          ip,
+          details: { codigo: found.CODIGO, motivo: 'contraseña_incorrecta' },
+        });
         return { success: false, error: 'Correo o contraseña incorrecta' };
       }
 
@@ -99,6 +208,14 @@ export class AuthService {
           'Estado:',
           estadoRaw,
         );
+        await this.recordAuth({
+          action: 'login_failed',
+          user: found.NOMBRE_APELLIDOS,
+          email: normalizedEmail,
+          grupo: found.GRUPO,
+          ip,
+          details: { codigo: found.CODIGO, motivo: 'usuario_inactivo' },
+        });
         return { success: false, error: 'Usuario inactivo' };
       }
 
@@ -118,6 +235,11 @@ export class AuthService {
       };
       delete (userObj as any).CONTRASENA;
 
+      const session = await this.issueSession({
+        email: found.CORREO_ELECTRONICO,
+        userId: found.CODIGO,
+        authVersion,
+      });
       const payload = {
         email: found.CORREO_ELECTRONICO,
         userId: found.CODIGO,
@@ -125,20 +247,12 @@ export class AuthService {
         grupo,
         authVersion,
         type: 'access',
+        sid: session.sid,
       };
       const accessToken = this.jwtService.sign(payload, {
-        expiresIn: '30m',
+        expiresIn: this.accessExpires(),
       });
-
-      const refreshPayload = {
-        email: found.CORREO_ELECTRONICO,
-        userId: found.CODIGO,
-        authVersion,
-        type: 'refresh',
-      };
-      const refreshToken = this.jwtService.sign(refreshPayload, {
-        expiresIn: '7d',
-      });
+      const refreshToken = session.refreshToken;
 
       console.log(
         '[AuthService] Login successful for:',
@@ -146,6 +260,14 @@ export class AuthService {
         'Role:',
         role,
       );
+      await this.recordAuth({
+        action: 'login',
+        user: found.NOMBRE_APELLIDOS,
+        email: normalizedEmail,
+        grupo,
+        ip,
+        details: { codigo: found.CODIGO, role },
+      });
       return {
         success: true,
         user: userObj,
@@ -221,6 +343,13 @@ export class AuthService {
       };
       delete userObj.CONTRASENA;
 
+      const session = await this.issueSession({
+        email: found.CORREO_ELECTRONICO,
+        userId: found.CODIGO,
+        authVersion,
+        impersonation: true,
+        impersonatedBy: actorUserId,
+      });
       const payload = {
         email: found.CORREO_ELECTRONICO,
         userId: found.CODIGO,
@@ -228,28 +357,29 @@ export class AuthService {
         grupo,
         authVersion,
         type: 'access',
+        sid: session.sid,
         impersonation: true,
         impersonatedBy: actorUserId,
       };
       const accessToken = this.jwtService.sign(payload, {
-        expiresIn: '30m',
+        expiresIn: this.accessExpires(),
       });
-
-      const refreshPayload = {
-        email: found.CORREO_ELECTRONICO,
-        userId: found.CODIGO,
-        authVersion,
-        type: 'refresh',
-        impersonation: true,
-        impersonatedBy: actorUserId,
-      };
-      const refreshToken = this.jwtService.sign(refreshPayload, {
-        expiresIn: '2h',
-      });
+      const refreshToken = session.refreshToken;
 
       console.log(
         `[AuthService] Impersonation: actor=${actorUserId} → target=${found.CODIGO} (${found.CORREO_ELECTRONICO})`,
       );
+      await writeActivityLog(this.prisma, {
+        action: 'impersonation_started',
+        user: actorUserId,
+        updateby: actorUserId,
+        url: '/api/auth/impersonate',
+        details: {
+          actorCodigo: actorUserId,
+          targetCodigo: found.CODIGO,
+          targetNombre: found.NOMBRE_APELLIDOS,
+        },
+      });
 
       return {
         success: true,
@@ -315,6 +445,24 @@ export class AuthService {
         };
       }
 
+      const session = await findRefreshSession(
+        this.prisma,
+        String(decoded.sid || ''),
+      );
+      const sessionDecision = decideRefreshSession({
+        sid: decoded.sid,
+        userId: found.CODIGO,
+        session,
+        now: new Date(),
+      });
+      if (sessionDecision.ok === false) {
+        console.log(
+          '[AuthService] Refresh session rejected:',
+          sessionDecision.reason,
+        );
+        return { success: false, error: 'Invalid refresh token' };
+      }
+
       const grupo = found.GRUPO || '';
       const role = this.mapRole(grupo);
 
@@ -325,13 +473,14 @@ export class AuthService {
         grupo,
         authVersion: currentVersion,
         type: 'access',
+        sid: decoded.sid,
       };
       if (isImpersonation) {
         payload.impersonation = true;
         payload.impersonatedBy = decoded.impersonatedBy;
       }
       const newAccessToken = this.jwtService.sign(payload, {
-        expiresIn: '30m',
+        expiresIn: this.accessExpires(),
       });
 
       console.log(
@@ -355,6 +504,26 @@ export class AuthService {
         success: false,
         error: error.message || 'Error refreshing token',
       };
+    }
+  }
+
+  /**
+   * Închide o singură sesiune. Token invalid sau deja închis: tot succes,
+   * ca logout-ul din browser să nu depindă de starea cheii.
+   */
+  async revokePresentedRefreshToken(refreshToken: string): Promise<void> {
+    const raw = String(refreshToken || '').trim();
+    if (!raw) return;
+    try {
+      const decoded = this.jwtService.verify(raw, { ignoreExpiration: true });
+      if (decoded?.type !== 'refresh' || typeof decoded.sid !== 'string')
+        return;
+      await revokeRefreshSession(this.prisma, decoded.sid);
+    } catch (error: any) {
+      console.log(
+        '[AuthService] Logout revoke skipped:',
+        error?.name || 'invalid',
+      );
     }
   }
 

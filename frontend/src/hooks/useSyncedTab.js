@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router';
 
 /**
@@ -17,8 +17,6 @@ export function useSyncedTab(
   { replace = true, keepDefaultInUrl = true } = {},
 ) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const allowedRef = useRef(allowedValues);
-  allowedRef.current = allowedValues;
   const allowedKey = allowedValues.join('|');
 
   const activeTab = useMemo(() => {
@@ -30,7 +28,7 @@ export function useSyncedTab(
 
   const setActiveTab = useCallback(
     (next) => {
-      const allowed = allowedRef.current;
+      const allowed = allowedKey.split('|');
       const value = allowed.includes(next) ? next : defaultValue;
       setSearchParams(
         (prev) => {
@@ -45,7 +43,7 @@ export function useSyncedTab(
         { replace },
       );
     },
-    [defaultValue, keepDefaultInUrl, paramName, replace, setSearchParams],
+    [allowedKey, defaultValue, keepDefaultInUrl, paramName, replace, setSearchParams],
   );
 
   return [activeTab, setActiveTab];

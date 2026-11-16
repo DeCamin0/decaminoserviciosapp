@@ -13,10 +13,12 @@ export type ResolveAssistantResponseSourceParams =
   /** KB procedimientos sin artículos; text generat LLM fără rânduri KB */
   | { kind: 'pipeline_empty_kb' }
   /** Read tools goale, mesaj no_data generic */
-  | { kind: 'pipeline_empty_no_data' };
+  | { kind: 'pipeline_empty_no_data' }
+  /** Modelul nu a răspuns. Textul spune asta explicit. */
+  | { kind: 'fallback' };
 
 /**
- * Mapare unică spre cele 4 valori permise: validated_faq | read_tools | llm | no_data
+ * Mapare unică: validated_faq | read_tools | llm | no_data | fallback
  */
 export function resolveAssistantResponseSource(
   params: ResolveAssistantResponseSourceParams,
@@ -32,6 +34,8 @@ export function resolveAssistantResponseSource(
       return 'llm';
     case 'pipeline_empty_no_data':
       return 'no_data';
+    case 'fallback':
+      return 'fallback';
     default: {
       const _exhaustive: never = params;
       return _exhaustive;

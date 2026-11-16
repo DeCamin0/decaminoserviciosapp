@@ -2,12 +2,23 @@ import {
   Injectable,
   Logger,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from './email.service';
 import { NominasStorageService } from './nominas-storage.service';
+import {
+  assertCanMutateNominas,
+  assertNominaRowAccess,
+  assertOwnOrManagedNombre,
+  isNominaStaff,
+  nominasListScope,
+  personNameFromNomina,
+  nominaNombreMatchesOwner,
+  type NominaActor,
+} from './nominas-access-policy';
 
 @Injectable()
 export class NominasService {
@@ -95,10 +106,145 @@ export class NominasService {
   }
 
   /**
+   * Lista pentru utilizatorul din token.
+   * Angajatul primește doar codigo-ul lui. Cine gestionează documentele angajaților
+   * păstrează filtrele primite (inclusiv lista unui alt codigo).
+   */
+  async getNominasForActor(
+    actor: NominaActor | null | undefined,
+    nombre?: string,
+    codigo?: string,
+  ): Promise<any[]> {
+    const canManage = await this.actorCanManageNominas(actor);
+    const scope = nominasListScope(actor, { nombre, codigo }, canManage);
+    return this.getNominas(scope.nombre, scope.codigo);
+  }
+
+  async mayManageNominas(
+    actor: NominaActor | null | undefined,
+  ): Promise<boolean> {
+    return this.actorCanManageNominas(actor);
+  }
+
+  async assertCanMutateNominas(
+    actor: NominaActor | null | undefined,
+  ): Promise<void> {
+    const canManage = await this.actorCanManageNominas(actor);
+    assertCanMutateNominas(actor, canManage);
+  }
+
+  async assertCanReadNominaNombre(
+    actor: NominaActor | null | undefined,
+    requestedNombre: string,
+  ): Promise<void> {
+    const canManage = await this.actorCanManageNominas(actor);
+    const userId = String(actor?.userId || '').trim();
+    const ownerName =
+      !canManage && userId ? await this.lookupNombreApellidos(userId) : null;
+    assertOwnOrManagedNombre(actor, requestedNombre, ownerName, canManage);
+  }
+
+  async assertCanReadNominaById(
+    actor: NominaActor | null | undefined,
+    id: number,
+  ): Promise<void> {
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ codigo_empleado: string | null; nombre: string | null }>
+    >(
+      `SELECT codigo_empleado, nombre FROM Nominas WHERE id = ${Number(id)} LIMIT 1`,
+    );
+    const row = rows?.[0];
+    if (!row) {
+      throw new NotFoundException(`Nómina con ID ${id} no encontrada`);
+    }
+    await this.assertActorOwnsStoredNomina(actor, row);
+  }
+
+  private async assertActorOwnsStoredNomina(
+    actor: NominaActor | null | undefined,
+    row: { codigo_empleado?: string | null; nombre?: string | null },
+  ): Promise<void> {
+    const canManage = await this.actorCanManageNominas(actor);
+    let sameNameCodigos: string[] | undefined;
+    const codigo = String(row.codigo_empleado || '').trim();
+    if (actor && !canManage && !isNominaStaff(actor) && !codigo) {
+      const person = personNameFromNomina(String(row.nombre || ''));
+      const ownerName = await this.lookupNombreApellidos(
+        String(actor.userId || ''),
+      );
+      if (
+        !ownerName ||
+        !nominaNombreMatchesOwner(String(row.nombre || ''), ownerName)
+      ) {
+        throw new ForbiddenException('No puedes acceder a esta nómina');
+      }
+      sameNameCodigos = await this.lookupCodigosByNombre(person);
+    }
+    assertNominaRowAccess(actor, row, canManage, sameNameCodigos);
+  }
+
+  private async lookupCodigosByNombre(nombre: string): Promise<string[]> {
+    const needle = personNameFromNomina(nombre).toUpperCase();
+    if (!needle) return [];
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ CODIGO: string | null }>
+    >(
+      `SELECT CODIGO FROM DatosEmpleados WHERE TRIM(UPPER(\`NOMBRE / APELLIDOS\`)) = ${this.escapeSql(needle)}`,
+    );
+    return rows.map((row) => String(row.CODIGO || '').trim()).filter(Boolean);
+  }
+
+  private async actorCanManageNominas(
+    actor: NominaActor | null | undefined,
+  ): Promise<boolean> {
+    if (isNominaStaff(actor)) return true;
+    const grupo = String(actor?.grupo || '').trim();
+    if (!grupo) return false;
+    try {
+      const row = await this.prisma.permissions.findUnique({
+        where: { grupo_module: `${grupo}_documentos-empleados` },
+        select: { permitted: true },
+      });
+      const permitted = String(row?.permitted ?? '')
+        .trim()
+        .toLowerCase();
+      return permitted === 'true' || permitted === '1';
+    } catch (error: any) {
+      this.logger.warn(
+        `No se pudo leer el permiso de nóminas: ${error.message}`,
+      );
+      return false;
+    }
+  }
+
+  private async lookupNombreApellidos(codigo: string): Promise<string | null> {
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ nombre: string | null }>
+    >(
+      `SELECT \`NOMBRE / APELLIDOS\` AS nombre FROM DatosEmpleados WHERE CODIGO = ${this.escapeSql(codigo)} LIMIT 1`,
+    );
+    const nombre = String(rows?.[0]?.nombre || '').trim();
+    return nombre || null;
+  }
+
+  private async resolveNominaReadNombre(
+    actor: NominaActor | null | undefined,
+    requestedNombre: string,
+  ): Promise<{ nombre: string; canManage: boolean }> {
+    const canManage = actor ? await this.actorCanManageNominas(actor) : true;
+    if (!actor || canManage) {
+      return { nombre: requestedNombre, canManage };
+    }
+    const userId = String(actor.userId || '').trim();
+    const ownName = userId ? await this.lookupNombreApellidos(userId) : null;
+    if (!ownName) {
+      throw new ForbiddenException('No puedes acceder a esta nómina');
+    }
+    return { nombre: ownName, canManage: false };
+  }
+
+  /**
    * Obține lista de nóminas cu filtrare bazată pe codigo (prioritate) sau nume (fallback)
-   * @param nombre - Numele angajatului pentru filtrare (fallback dacă nu există codigo)
-   * @param codigo - Codigo angajatului pentru filtrare (prioritate)
-   * @returns Array de nóminas filtrate
    */
   async getNominas(nombre?: string, codigo?: string): Promise<any[]> {
     try {
@@ -267,6 +413,7 @@ export class NominasService {
   async downloadNomina(
     id: number,
     nombre: string,
+    actor?: NominaActor,
   ): Promise<{
     archivo: Buffer;
     tipo_mime: string;
@@ -280,12 +427,14 @@ export class NominasService {
 
       // Validează numele
       const nombreTrimmed = (nombre ?? '').toString().trim();
-      if (!nombreTrimmed) {
+      const resolved = await this.resolveNominaReadNombre(actor, nombreTrimmed);
+      const nombreForMatch = resolved.nombre.trim();
+      if (!nombreForMatch) {
         throw new BadRequestException('Parámetro "nombre" requerido');
       }
 
       // Normalizează spațiile multiple la un singur spațiu (pentru compatibilitate)
-      const nombreNormalized = nombreTrimmed.replace(/\s+/g, ' ').trim();
+      const nombreNormalized = nombreForMatch.replace(/\s+/g, ' ').trim();
 
       // Construiește query-ul SQL (similar cu n8n)
       // Acceptă atât numele exact cât și cu prefix "FINIQUITO - " (pentru finiquitos salvate automat)
@@ -298,6 +447,7 @@ export class NominasService {
           fecha_subida,
           Mes,
           Ano,
+          codigo_empleado,
           storage_key
         FROM Nominas
         WHERE id = ${id}
@@ -317,18 +467,24 @@ export class NominasService {
 
       if (!result || result.length === 0) {
         throw new NotFoundException(
-          `Nómina no encontrada para id=${id} y nombre=${nombreTrimmed}`,
+          `Nómina no encontrada para id=${id} y nombre=${nombreForMatch}`,
         );
       }
 
       const row = result[0];
+      if (actor) {
+        await this.assertActorOwnsStoredNomina(actor, {
+          codigo_empleado: row.codigo_empleado,
+          nombre: nombreForMatch,
+        });
+      }
       const archivoBuffer = await this.nominasStorage.resolveArchivo(row);
 
       const fileName = row.nombre ? `${row.nombre}.pdf` : `nomina_${id}.pdf`;
       const mimeType = row.tipo_mime || 'application/pdf';
 
       this.logger.log(
-        `✅ Nómina descargada: id=${id}, nombre=${nombreTrimmed}, tamaño=${archivoBuffer.length} bytes`,
+        `✅ Nómina descargada: id=${id}, nombre=${nombreForMatch}, tamaño=${archivoBuffer.length} bytes`,
       );
 
       return {
@@ -340,6 +496,7 @@ export class NominasService {
       this.logger.error('❌ Error downloading nomina:', error);
       if (
         error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
         error instanceof NotFoundException
       ) {
         throw error;
@@ -546,6 +703,7 @@ export class NominasService {
     nombre: string,
     email: string,
     empleadoNombre: string,
+    actor?: NominaActor,
   ): Promise<{ success: boolean; message: string }> {
     try {
       // Validează ID-ul
@@ -555,7 +713,7 @@ export class NominasService {
 
       // Validează numele
       const nombreTrimmed = (nombre ?? '').toString().trim();
-      if (!nombreTrimmed) {
+      if (!nombreTrimmed && !actor) {
         throw new BadRequestException('Parámetro "nombre" requerido');
       }
 
@@ -565,10 +723,13 @@ export class NominasService {
         throw new BadRequestException('Email inválido');
       }
 
+      const resolved = await this.resolveNominaReadNombre(actor, nombreTrimmed);
+
       // Obține nómina (folosim logica din downloadNomina)
       const { archivo, nombre_archivo } = await this.downloadNomina(
         id,
-        nombreTrimmed,
+        resolved.nombre,
+        actor,
       );
 
       // Obține informații despre mes și an din baza de date
@@ -576,7 +737,7 @@ export class NominasService {
         SELECT Mes, Ano
         FROM Nominas
         WHERE id = ${id}
-          AND LOWER(nombre) = LOWER(${this.escapeSql(nombreTrimmed)})
+          AND LOWER(nombre) = LOWER(${this.escapeSql(resolved.nombre)})
         LIMIT 1;
       `;
 
@@ -738,6 +899,12 @@ export class NominasService {
         nombre_archivo,
         {
           bcc: this.emailService.getDefaultBcc(),
+          record: {
+            senderId: 'sistema',
+            recipientType: 'empleado',
+            recipientName: empleadoNombre,
+            attachmentNote: `Adjunto: ${nombre_archivo}`,
+          },
         },
       );
 
@@ -753,6 +920,7 @@ export class NominasService {
       this.logger.error('❌ Error sending nomina by email:', error);
       if (
         error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
         error instanceof NotFoundException
       ) {
         throw error;

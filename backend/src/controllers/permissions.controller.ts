@@ -7,10 +7,16 @@ import {
   Body,
   UseGuards,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  canReadAllPermissions,
+  canWritePermissions,
+} from '../services/permissions-access';
 
 @Controller('api/permissions')
 export class PermissionsController {
@@ -23,9 +29,37 @@ export class PermissionsController {
     return this.configService.get<{ email?: string }>('company')?.email ?? '';
   }
 
+  private async adminModulePermitted(grupo: string): Promise<boolean> {
+    if (!grupo) return false;
+    try {
+      const row = await this.prisma.permissions.findUnique({
+        where: { grupo_module: `${grupo}_admin` },
+        select: { permitted: true },
+      });
+      const permitted = row?.permitted;
+      return permitted === 'true' || permitted === 'TRUE' || permitted === '1';
+    } catch {
+      return false;
+    }
+  }
+
   @Get()
   @UseGuards(JwtAuthGuard)
-  async getPermissions(@Query('grupo') grupo?: string) {
+  async getPermissions(
+    @Query('grupo') grupo: string | undefined,
+    @CurrentUser() user: any,
+  ) {
+    const actor = { grupo: user?.grupo, role: user?.role };
+    const ownGrupo = String(user?.grupo || '').trim();
+    const mayReadAll = canReadAllPermissions(
+      actor,
+      await this.adminModulePermitted(ownGrupo),
+    );
+    const effectiveGrupo = mayReadAll ? grupo : ownGrupo;
+    if (!mayReadAll && !effectiveGrupo) {
+      return { success: true, count: 0, permissions: [] };
+    }
+    grupo = effectiveGrupo;
     try {
       const rows = await this.prisma.permissions.findMany({
         where: grupo
@@ -57,7 +91,16 @@ export class PermissionsController {
    */
   @Post()
   @UseGuards(JwtAuthGuard)
-  async savePermissions(@Body() body: any) {
+  async savePermissions(@Body() body: any, @CurrentUser() user: any) {
+    const ownGrupo = String(user?.grupo || '').trim();
+    if (
+      !canWritePermissions(
+        { grupo: user?.grupo, role: user?.role },
+        await this.adminModulePermitted(ownGrupo),
+      )
+    ) {
+      throw new ForbiddenException('No puedes modificar los permisos');
+    }
     try {
       // Verifică dacă body este array sau obiect cu array
       const permissionsArray = Array.isArray(body)
@@ -108,7 +151,10 @@ export class PermissionsController {
         permissions: results,
       };
     } catch (error: any) {
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -124,7 +170,16 @@ export class PermissionsController {
    */
   @Delete('unused-groups')
   @UseGuards(JwtAuthGuard)
-  async deleteUnusedGroups() {
+  async deleteUnusedGroups(@CurrentUser() user: any) {
+    const ownGrupo = String(user?.grupo || '').trim();
+    if (
+      !canWritePermissions(
+        { grupo: user?.grupo, role: user?.role },
+        await this.adminModulePermitted(ownGrupo),
+      )
+    ) {
+      throw new ForbiddenException('No puedes modificar los permisos');
+    }
     try {
       // Obține toate grupurile unice din DatosEmpleados (câmpul GRUPO)
       const gruposEmpleados = await this.prisma.$queryRawUnsafe<
@@ -203,7 +258,10 @@ export class PermissionsController {
         usedGroups: usedGroups,
       };
     } catch (error: any) {
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(

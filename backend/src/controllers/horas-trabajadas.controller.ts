@@ -3,6 +3,12 @@ import { HorasTrabajadasService } from '../services/horas-trabajadas.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { EmpleadoGrupoScopeService } from '../services/empleado-grupo-scope.service';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  loadEmpleadoModuleFlags,
+  resolvePunchReadCodigos,
+  toEmpleadoActor,
+} from '../services/empleados-operation-access';
 
 @Controller('api/horas-trabajadas')
 @UseGuards(JwtAuthGuard)
@@ -12,6 +18,7 @@ export class HorasTrabajadasController {
   constructor(
     private readonly horasTrabajadasService: HorasTrabajadasService,
     private readonly empleadoGrupoScopeService: EmpleadoGrupoScopeService,
+    private readonly prisma: PrismaService,
   ) {}
 
   private scopePayload(user: any) {
@@ -20,6 +27,25 @@ export class HorasTrabajadasController {
       role: user?.role,
       grupo: user?.grupo,
     };
+  }
+
+  private async readCodigos(user: any) {
+    const actor = toEmpleadoActor(user);
+    const flags = await loadEmpleadoModuleFlags(user?.grupo, (keys) =>
+      this.prisma.permissions.findMany({
+        where: { grupo_module: { in: keys } },
+        select: { grupo_module: true, permitted: true },
+      }),
+    );
+    const payload = this.scopePayload(user);
+    return resolvePunchReadCodigos({
+      actor,
+      flags,
+      bypass: this.empleadoGrupoScopeService.bypassesScope(payload),
+      scope: await this.empleadoGrupoScopeService.resolveScopeFilter(payload),
+      listScopeCodigos: () =>
+        this.empleadoGrupoScopeService.listAllowedCodigosForPayload(payload),
+    });
   }
 
   @Get()
@@ -36,10 +62,14 @@ export class HorasTrabajadasController {
         `📝 Get horas trabajadas request - tipo: ${tipo}, lunaselectata: ${lunaselectata}, ano: ${ano}, codigo: ${codigo}`,
       );
 
-      const allowed =
-        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
-          this.scopePayload(user),
-        );
+      const allowed = await this.readCodigos(user);
+      const selfOnly =
+        Array.isArray(allowed) &&
+        allowed.length === 1 &&
+        allowed[0] === String(user?.userId || '').trim();
+      if (selfOnly && !String(codigo || empleadoId || '').trim()) {
+        codigo = String(user?.userId || '').trim();
+      }
 
       // Pentru tipo=anual
       if (tipo === 'anual' && ano) {

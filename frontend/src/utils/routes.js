@@ -29,6 +29,7 @@ export const routes = {
   resetPasswordSelf: `${BACKEND_BASE}/api/auth/reset-password`,
   passwordMigrationStats: `${BACKEND_BASE}/api/auth/password-migration-stats`,
   refresh: `${BACKEND_BASE}/api/auth/refresh`,
+  logout: `${BACKEND_BASE}/api/auth/logout`,
   impersonate: (codigo) =>
     `${BACKEND_BASE}/api/auth/impersonate/${encodeURIComponent(codigo)}`,
   me: `${BACKEND_BASE}/api/me`,
@@ -217,6 +218,7 @@ export const routes = {
   deleteBajaMedica: (idCaso, idPosicion) => `${BACKEND_BASE}/api/bajas-medicas/${encodeURIComponent(idCaso)}/${encodeURIComponent(idPosicion)}`,
   createBajaMedicaManual: `${BACKEND_BASE}/api/bajas-medicas/manual`,
   createBajaMedicaEmpleado: `${BACKEND_BASE}/api/bajas-medicas/empleado`,
+  announceBajaMedicaAlta: `${BACKEND_BASE}/api/bajas-medicas/empleado/alta`,
   resolveBajasMedicasConflicts: `${BACKEND_BASE}/api/bajas-medicas/resolve-conflicts`,
   
   // Documentos
@@ -529,6 +531,8 @@ export const routes = {
   
   // Festivos (Zile Festive)
   getFestivos: `${BACKEND_BASE}/api/festivos`,
+  centrosEmpleado: `${BACKEND_BASE}/api/centros-empleado`,
+  centrosEmpleadoHoy: `${BACKEND_BASE}/api/centros-empleado/hoy`,
   editFestivo: `${BACKEND_BASE}/api/festivos`,
   createFestivo: `${BACKEND_BASE}/api/festivos`,
   deleteFestivo: `${BACKEND_BASE}/api/festivos`,

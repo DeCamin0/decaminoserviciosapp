@@ -74,6 +74,21 @@ model PasswordResetToken {
   @@map("password_reset_tokens")
 }
 
+/// O sesiune de refresh. Logout o revocă pe ea. Schimbarea parolei le revocă pe toate.
+model AuthRefreshSession {
+  id             String    @id @db.Char(36)
+  userCodigo     String    @map("user_codigo") @db.VarChar(50)
+  expiresAt      DateTime  @map("expires_at") @db.DateTime(3)
+  revokedAt      DateTime? @map("revoked_at") @db.DateTime(3)
+  impersonation  Boolean   @default(false) @map("impersonation")
+  impersonatedBy String?   @map("impersonated_by") @db.VarChar(50)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+
+  @@index([userCodigo], map: "idx_auth_refresh_user")
+  @@index([expiresAt], map: "idx_auth_refresh_expires")
+  @@map("auth_refresh_sessions")
+}
+
 model Permissions {
   grupo_module String  @id @db.VarChar(100)
   permitted    String? @db.VarChar(50)
@@ -790,6 +805,7 @@ model MutuaCasos {
   Fecha_baja                               DateTime? @map("Fecha baja") @db.Date
   Fecha_de_alta_prevista_SPS               DateTime? @map("Fecha de alta prevista SPS") @db.Date
   Fecha_de_alta                            DateTime? @map("Fecha de alta") @db.Date
+  alta_anunciada                           DateTime? @map("alta_anunciada") @db.Date
   D_as_de_baja                             Int?      @map("Días de baja")
   D_as_previstos_Servicio_P_blico_de_Salud Int?      @map("Días previstos Servicio Público de Salud")
   Fecha_inicio_subrogaci_n                 DateTime? @map("Fecha inicio subrogación") @db.Date
@@ -1116,17 +1132,58 @@ model fiestas {
   id            Int       @id @default(autoincrement())
   date          DateTime  @db.Date
   name          String    @db.VarChar(160)
-  scope         String    @db.VarChar(100)
-  ccaa_code     String?   @db.VarChar(10)
-  observed_date DateTime? @db.Date
-  active        Boolean   @default(true)
-  notes         String?   @db.Text
+  scope            String    @db.VarChar(100)
+  ccaa_code        String?   @db.VarChar(10)
+  municipio_ine    String    @default("") @db.VarChar(10)
+  municipio_nombre String?   @db.VarChar(160)
+  observed_date    DateTime? @db.Date
+  active           Boolean   @default(true)
+  notes            String?   @db.Text
 
-  @@unique([date, scope, ccaa_code], map: "uniq_f")
+  @@unique([date, scope, ccaa_code, municipio_ine], map: "uniq_f")
   @@index([date], map: "idx_f_date")
   @@index([scope], map: "idx_f_scope")
   @@index([observed_date], map: "idx_fiestas_observed_date")
   @@index([scope, ccaa_code, active], map: "idx_fiestas_scope_ccaa_active")
+}
+
+model festivo_zonas {
+  ine            String   @id @db.VarChar(10)
+  slug           String   @db.VarChar(120)
+  nombre         String   @db.VarChar(160)
+  ccaa_slug      String   @default("mad") @db.VarChar(20)
+  provincia_slug String   @default("madrid") @db.VarChar(40)
+  ccaa_code      String   @default("ES-MD") @db.VarChar(10)
+  created_at     DateTime @default(now()) @db.Timestamp(0)
+}
+
+model fichaje_zona_dia {
+  id            Int      @id @default(autoincrement())
+  codigo        String   @db.VarChar(50)
+  fecha         DateTime @db.Date
+  municipio_ine String   @db.VarChar(10)
+  created_at    DateTime @default(now()) @db.Timestamp(0)
+
+  @@unique([codigo, fecha], map: "uq_fichaje_zona_dia")
+}
+
+model empleado_centros {
+  id         Int      @id @default(autoincrement())
+  codigo     String   @db.VarChar(50)
+  centro     String   @db.VarChar(300)
+  created_at DateTime @default(now()) @db.Timestamp(0)
+
+  @@unique([codigo, centro], map: "uq_empleado_centro")
+}
+
+model fichaje_centro_dia {
+  id         Int      @id @default(autoincrement())
+  codigo     String   @db.VarChar(50)
+  fecha      DateTime @db.Date
+  centro     String   @db.VarChar(300)
+  created_at DateTime @default(now()) @db.Timestamp(0)
+
+  @@unique([codigo, fecha], map: "uq_fichaje_centro_dia")
 }
 
 model horarios {

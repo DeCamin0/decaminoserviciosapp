@@ -7,6 +7,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { contentDisposition } from '../services/content-disposition';
 import { PortalJwtAuthGuard } from './portal-jwt.guard';
 import { PortalJwtOrSelectGuard } from './portal-jwt-or-select.guard';
 import { PortalUser } from './portal-user.decorator';
@@ -68,7 +69,7 @@ export class PortalClienteController {
     res.setHeader('Content-Type', mime);
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      contentDisposition('inline', filename),
     );
     res.send(buffer);
   }
@@ -94,7 +95,7 @@ export class PortalClienteController {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      contentDisposition('inline', filename),
     );
     res.send(buffer);
   }
@@ -120,7 +121,7 @@ export class PortalClienteController {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      contentDisposition('inline', filename),
     );
     res.send(buffer);
   }
@@ -145,7 +146,7 @@ export class PortalClienteController {
     res.setHeader('Content-Type', mime);
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      contentDisposition('inline', filename),
     );
     res.send(buffer);
   }
@@ -171,7 +172,7 @@ export class PortalClienteController {
     res.setHeader('Content-Type', mime);
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      contentDisposition('inline', filename),
     );
     res.send(buffer);
   }
@@ -197,7 +198,7 @@ export class PortalClienteController {
     res.setHeader('Content-Type', mime);
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      contentDisposition('inline', filename),
     );
     res.send(buffer);
   }

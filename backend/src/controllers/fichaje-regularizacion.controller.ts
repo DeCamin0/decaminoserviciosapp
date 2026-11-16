@@ -13,6 +13,8 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { FichajeRegularizacionService } from '../services/fichaje-regularizacion.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { writeActivityLog } from '../utils/activity-log-write';
 
 @Controller('api/registros')
 export class FichajeRegularizacionController {
@@ -20,6 +22,7 @@ export class FichajeRegularizacionController {
 
   constructor(
     private readonly regularizacionService: FichajeRegularizacionService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
@@ -67,6 +70,18 @@ export class FichajeRegularizacionController {
         created_by: user?.userId || user?.CODIGO || 'unknown',
         ip_address,
         user_agent,
+      });
+      await writeActivityLog(this.prisma, {
+        action: 'regularizacion_confirmada',
+        user: user?.userId || user?.CODIGO || null,
+        grupo: user?.grupo || user?.GRUPO || null,
+        updateby: user?.userId || user?.CODIGO || null,
+        url: '/api/registros/confirmar-jornada',
+        details: {
+          employee_codigo: body.employee_codigo,
+          fecha: body.fecha,
+          decision: body.decision,
+        },
       });
 
       return {
@@ -327,6 +342,18 @@ export class FichajeRegularizacionController {
           supervisor_codigo,
           supervisor_nombre,
         );
+      await writeActivityLog(this.prisma, {
+        action: 'regularizacion_solicitada',
+        user: supervisor_nombre,
+        grupo: grupo || null,
+        updateby: supervisor_codigo,
+        url: '/api/registros/request-regularizacion',
+        details: {
+          employee_codigo: body.employee_codigo,
+          fecha: body.fecha,
+          actorCodigo: supervisor_codigo,
+        },
+      });
 
       return {
         success: true,
@@ -466,6 +493,18 @@ export class FichajeRegularizacionController {
         created_by: employee_codigo,
         ip_address,
         user_agent,
+      });
+      await writeActivityLog(this.prisma, {
+        action: 'regularizacion_sin_fichaje',
+        user: user?.userId || user?.CODIGO || employee_codigo,
+        grupo: user?.grupo || user?.GRUPO || null,
+        updateby: user?.userId || user?.CODIGO || employee_codigo,
+        url: '/api/registros/no-punch/declare',
+        details: {
+          employee_codigo,
+          fecha: body.workday_date,
+          motivo: body.reason_code,
+        },
       });
 
       return {

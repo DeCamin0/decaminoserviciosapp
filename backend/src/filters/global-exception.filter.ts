@@ -67,9 +67,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           message: errorMessage,
         });
       } catch (e: any) {
-        this.logger.warn(
-          `Security 403 alert hook failed: ${e?.message || e}`,
-        );
+        this.logger.warn(`Security 403 alert hook failed: ${e?.message || e}`);
       }
     }
 

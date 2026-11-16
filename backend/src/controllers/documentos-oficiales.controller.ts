@@ -20,6 +20,7 @@ import { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { DocumentosOficialesService } from '../services/documentos-oficiales.service';
+import { contentDisposition } from '../services/content-disposition';
 
 @Controller('api/documentos-oficiales')
 @UseGuards(JwtAuthGuard)
@@ -142,9 +143,7 @@ export class DocumentosOficialesController {
       // Pentru download, folosește 'attachment'
       res.setHeader(
         'Content-Disposition',
-        isPreview
-          ? `inline; filename="${nombre_archivo}"`
-          : `attachment; filename="${nombre_archivo}"`,
+        contentDisposition(isPreview ? 'inline' : 'attachment', nombre_archivo),
       );
       res.setHeader('Content-Length', archivo.length.toString());
 

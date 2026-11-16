@@ -320,7 +320,13 @@ export function useInicioSummaryData({
   ]);
 
   useEffect(() => {
-    load();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) void load();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [load]);
 
   const kpis = useMemo(() => {

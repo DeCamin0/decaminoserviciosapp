@@ -1,0 +1,23 @@
+---
+description: Poartă pentru modificări în codul comun DeCamino și HERA (decaminoserviciosapp) — autorizare în backend, ambele baze, fără scriere în DB fără aprobare.
+globs: decaminoserviciosapp/**/*.{ts,js,jsx,prisma,sql},decaminoserviciosapp/**/*.mdc
+alwaysApply: false
+---
+
+# Poartă DeCamino / HERA
+
+Codul din `decaminoserviciosapp` deservește **ambele** instanțe: DeCamino (`decamino_db`) și HERA (`hera_facility_db`). O modificare de logică, autorizare sau schemă se evaluează pentru amândouă.
+
+Această regulă nu înlocuiește `multi-client-databases`, `visual-refresh-v2` sau backlog-urile. La migrări, urmează `multi-client-databases`. Paginile marcate CERRADO rămân închise dacă task-ul nu este explicit UI și aprobat.
+
+## Înainte de o modificare
+
+1. Spune ce se schimbă, în ce fișiere, și cine are voie să apeleze fluxul.
+2. Autorizarea se verifică în backend. `codigo`, `email`, `estado` și id-urile din body sau query nu sunt sursă de autoritate.
+3. Nu scrie în baze, nu rula migrări, `prisma db push`, `ALTER`, `DELETE` sau `DROP` fără aprobare explicită pentru acea comandă.
+4. O singură constatare sau un singur comportament pe rând, când lucrarea vine din audit.
+5. Hook-ul de shell este doar o plasă. Refuză tu comanda periculoasă chiar dacă hook-ul nu a oprit-o.
+
+## După modificare
+
+Spune ce ai verificat, ce rămâne neacoperit și ce regresii sunt posibile pe DeCamino și pe HERA.

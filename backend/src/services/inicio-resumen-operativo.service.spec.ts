@@ -26,12 +26,13 @@ describe('InicioResumenOperativoService', () => {
       ),
     };
     const fichajeReminderService = {
-      scanHoyForOperativo: jest.fn(async () =>
-        opts.scan ?? {
-          dateStr: '2026-11-05',
-          programadosHoy: { count: 2, codigos: ['A', 'B'] },
-          pendientesFichar: { count: 1, codigos: ['A'] },
-        },
+      scanHoyForOperativo: jest.fn(
+        async () =>
+          opts.scan ?? {
+            dateStr: '2026-11-05',
+            programadosHoy: { count: 2, codigos: ['A', 'B'] },
+            pendientesFichar: { count: 1, codigos: ['A'] },
+          },
       ),
     };
     const service = new InicioResumenOperativoService(
@@ -113,7 +114,9 @@ describe('InicioResumenOperativoService', () => {
 
   it('allows Manager with explicit fichar-admin permission', async () => {
     const { service, fichajeReminderService } = makeService({
-      permissions: [{ grupo_module: 'Manager_fichar-admin', permitted: 'true' }],
+      permissions: [
+        { grupo_module: 'Manager_fichar-admin', permitted: 'true' },
+      ],
       allowedCodigos: null,
     });
     const res = await service.getResumen(
@@ -126,5 +129,24 @@ describe('InicioResumenOperativoService', () => {
       null,
     );
     expect(res.kpis.programadosHoy).toEqual({ count: 2 });
+  });
+
+  it('Admin și Developer nu sunt blocați de bifa false', async () => {
+    const { service } = makeService({
+      permissions: [
+        { grupo_module: 'Admin_fichar-admin', permitted: 'false' },
+        { grupo_module: 'Admin_empleados', permitted: 'false' },
+      ],
+    });
+    const byGrupo = await service.getResumen(
+      { userId: '1', grupo: 'Admin', role: 'EMPLEADOS' },
+      'hoy',
+    );
+    const byRole = await service.getResumen(
+      { userId: '2', grupo: 'Contabilidad', role: 'DEVELOPER' },
+      'hoy',
+    );
+    expect(byGrupo.omitted).toEqual([]);
+    expect(byRole.omitted).toEqual([]);
   });
 });

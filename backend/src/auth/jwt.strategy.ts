@@ -1,8 +1,14 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
-import { ExtractJwt, Strategy } from 'passport-jwt';
+import { Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { decideJwtAccess } from '../services/jwt-access-policy';
+import { extractJwtToken } from '../services/jwt-query-token';
+import {
+  decideRefreshSession,
+  findRefreshSession,
+} from '../services/refresh-session';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -11,10 +17,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private prisma: PrismaService,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromExtractors([
-        ExtractJwt.fromAuthHeaderAsBearerToken(),
-        ExtractJwt.fromUrlQueryParameter('token'),
-      ]),
+      jwtFromRequest: (req: {
+        headers?: { authorization?: string | string[] };
+        query?: { token?: unknown };
+        method?: string;
+        path?: string;
+        url?: string;
+      }) =>
+        extractJwtToken({
+          authorizationHeader: req?.headers?.authorization,
+          queryToken: req?.query?.token,
+          method: req?.method,
+          path: req?.path || req?.url,
+        }),
       ignoreExpiration: false,
       secretOrKey: configService.get<string>('jwt.secret'),
     });
@@ -32,24 +47,72 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       );
     }
 
+    let lookupFailed = false;
+    let user: { AUTH_VERSION: number | null; ESTADO: string | null } | null =
+      null;
     try {
-      const user = await this.prisma.user.findUnique({
+      user = await this.prisma.user.findUnique({
         where: { CODIGO: payload.userId },
-        select: { AUTH_VERSION: true },
+        select: { AUTH_VERSION: true, ESTADO: true },
       });
+    } catch (error: any) {
+      lookupFailed = true;
+      console.warn(
+        '[JwtStrategy] Error validating authVersion:',
+        error?.message,
+      );
+    }
 
-      if (user && (user.AUTH_VERSION ?? 0) !== payload.authVersion) {
+    const decision = decideJwtAccess({
+      lookupFailed,
+      userFound: !!user,
+      tokenAuthVersion: payload.authVersion,
+      storedAuthVersion: user?.AUTH_VERSION ?? 0,
+      estado: user?.ESTADO,
+      impersonation: payload.impersonation === true,
+    });
+    if (decision.ok === false) {
+      if (decision.reason === 'version-mismatch') {
         throw new UnauthorizedException(
           'Token invalidado: la contraseña ha sido cambiada. Por favor, inicia sesión nuevamente.',
         );
       }
-    } catch (error: any) {
-      if (error instanceof UnauthorizedException) {
-        throw error;
+      if (decision.reason === 'inactive') {
+        throw new UnauthorizedException('Usuario inactivo');
       }
+      if (decision.reason === 'missing-user') {
+        throw new UnauthorizedException(
+          'Token invalidado: el usuario ya no existe.',
+        );
+      }
+      throw new UnauthorizedException('No se ha podido verificar la sesión.');
+    }
+
+    let sessionLookupFailed = false;
+    let session = null;
+    try {
+      if (typeof payload.sid === 'string' && payload.sid.trim() !== '') {
+        session = await findRefreshSession(this.prisma, payload.sid);
+      }
+    } catch (error: any) {
+      sessionLookupFailed = true;
       console.warn(
-        '[JwtStrategy] Error validating authVersion:',
-        error.message,
+        '[JwtStrategy] Error validating refresh session:',
+        error?.message,
+      );
+    }
+    if (sessionLookupFailed) {
+      throw new UnauthorizedException('No se ha podido verificar la sesión.');
+    }
+    const sessionDecision = decideRefreshSession({
+      sid: payload.sid,
+      userId: payload.userId,
+      session,
+      now: new Date(),
+    });
+    if (sessionDecision.ok === false) {
+      throw new UnauthorizedException(
+        'Token invalidado: inicia sesión nuevamente.',
       );
     }
 

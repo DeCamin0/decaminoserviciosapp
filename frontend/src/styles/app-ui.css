@@ -1446,6 +1446,82 @@
   padding: 0.85rem 1rem;
 }
 
+.activity-log-kv {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.activity-log-kv__label {
+  color: #6b7280;
+  font-size: 0.8rem;
+}
+
+.activity-log-kv__value {
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.activity-log-json {
+  margin: 0;
+  max-height: min(42vh, 28rem);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.activity-log-modal__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+@media (max-width: 639px) {
+  .app-modal-overlay:has(.app-modal--activity-log) {
+    z-index: 20000;
+  }
+
+  .activity-log-modal__actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin-top: 0.5rem;
+    padding-top: 0.75rem;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    background: #fff;
+  }
+
+  .dark .activity-log-modal__actions {
+    background: #1f2937;
+  }
+}
+
+.activity-log-modal__actions > * {
+  width: 100%;
+}
+
+@media (min-width: 640px) {
+  .activity-log-kv {
+    grid-template-columns: 8.5rem minmax(0, 1fr);
+    column-gap: 0.75rem;
+    align-items: start;
+  }
+
+  .activity-log-modal__actions {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+
+  .activity-log-modal__actions > * {
+    width: auto;
+  }
+}
+
 .app-modal__footer,
 .app-modal__actions {
   display: flex;
@@ -1722,6 +1798,11 @@
   .app-modal--md { max-width: 32rem; }
   .app-modal--lg { max-width: 40rem; }
   .app-modal--xl { max-width: 48rem; }
+
+  .app-modal.app-modal--activity-log {
+    max-width: min(72rem, calc(100vw - 2rem));
+    max-height: min(90vh, 920px);
+  }
 
   .app-modal__footer > *,
   .app-modal__actions > * {

@@ -1,7 +1,12 @@
 import { FichajeScheduleResolverService } from './fichaje-schedule-resolver.service';
 
 describe('FichajeScheduleResolverService', () => {
-  const resolver = new FichajeScheduleResolverService({} as any);
+  const resolver = new FichajeScheduleResolverService(
+    {} as any,
+    {
+      loadDayContext: async () => null,
+    } as any,
+  );
 
   describe('parseSlotRaw', () => {
     it('marks LIBRE as off', () => {
@@ -9,6 +14,14 @@ describe('FichajeScheduleResolverService', () => {
         isOff: true,
         intervals: [],
       });
+    });
+
+    it('keeps SQL TIME on the clock stored in the database', () => {
+      const nine = new Date('1970-01-01T09:00:00.000Z');
+      const seventeen = new Date('1970-01-01T17:00:00.000Z');
+      expect((resolver as any).normalizeSqlTime(nine)).toBe('09:00');
+      expect((resolver as any).normalizeSqlTime(seventeen)).toBe('17:00');
+      expect((resolver as any).normalizeSqlTime('09:00:00')).toBe('09:00');
     });
 
     it('parses T1 label + range', () => {

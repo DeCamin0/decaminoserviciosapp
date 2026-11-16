@@ -124,9 +124,7 @@ export class SecurityAlertService {
         `${opts.method} ${pathOnly}`,
         `Usuario: ${opts.userLabel || 'anónimo / sin JWT'}`,
         `IP: ${ip}`,
-        opts.message
-          ? `Mensaje: ${String(opts.message).slice(0, 200)}`
-          : '',
+        opts.message ? `Mensaje: ${String(opts.message).slice(0, 200)}` : '',
         `Timestamp: ${new Date().toISOString()}`,
       ]
         .filter(Boolean)
@@ -135,7 +133,9 @@ export class SecurityAlertService {
   }
 
   isSensitivePath(path: string): boolean {
-    const p = String(path || '').toLowerCase().split('?')[0];
+    const p = String(path || '')
+      .toLowerCase()
+      .split('?')[0];
     return this.sensitivePathPrefixes.some(
       (prefix) => p === prefix || p.startsWith(`${prefix}/`),
     );
@@ -199,9 +199,7 @@ export class SecurityAlertService {
           disableMarkdown: true,
         });
       } else {
-        this.logger.warn(
-          '⚠️ Security alert skipped — Telegram not configured',
-        );
+        this.logger.warn('⚠️ Security alert skipped — Telegram not configured');
         return;
       }
       this.logger.log(`✅ Security alert sent (${key})`);

@@ -17,6 +17,7 @@ import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { CertificadosRetencionesService } from '../services/certificados-retenciones.service';
+import { contentDisposition } from '../services/content-disposition';
 import { Response } from 'express';
 
 @Controller('api/certificados-retenciones')
@@ -435,7 +436,7 @@ export class CertificadosRetencionesController {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${doc.nombre_archivo}"`,
+        contentDisposition('attachment', doc.nombre_archivo),
       );
 
       res.send(doc.archivo);

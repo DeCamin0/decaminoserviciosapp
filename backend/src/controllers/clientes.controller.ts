@@ -14,8 +14,11 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { ClientesService } from '../services/clientes.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { contentDisposition } from '../services/content-disposition';
+import { writeActivityLog } from '../utils/activity-log-write';
 
 @Controller('api/clientes')
 export class ClientesController {
@@ -77,7 +80,7 @@ export class ClientesController {
    */
   @Post()
   @UseGuards(JwtAuthGuard)
-  async crudCliente(@Body() body: any) {
+  async crudCliente(@Body() body: any, @CurrentUser() user: any) {
     try {
       this.logger.log(
         `📝 CRUD request - action: ${body.action || 'missing'}, id: ${body.id || 'missing'}`,
@@ -91,7 +94,25 @@ export class ClientesController {
         if (!body.id) {
           throw new BadRequestException('ID is required for edit operation');
         }
-        return await this.clientesService.updateCliente(Number(body.id), body);
+        const updated = await this.clientesService.updateCliente(
+          Number(body.id),
+          body,
+        );
+        await writeActivityLog(this.prisma, {
+          action: 'cliente_updated',
+          user: user?.userId || user?.CODIGO || null,
+          grupo: user?.grupo || user?.GRUPO || null,
+          updateby: user?.userId || user?.CODIGO || null,
+          url: '/api/clientes',
+          details: {
+            clienteId: Number(body.id),
+            nombre:
+              body['NOMBRE O RAZON SOCIAL'] ||
+              body.NOMBRE_O_RAZON_SOCIAL ||
+              null,
+          },
+        });
+        return updated;
       } else if (action === 'delete') {
         if (!body.id) {
           throw new BadRequestException('ID is required for delete operation');
@@ -252,7 +273,7 @@ export class ClientesController {
     res.setHeader('Content-Type', mime);
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      contentDisposition('inline', filename),
     );
     res.send(buffer);
   }

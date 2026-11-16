@@ -4,6 +4,7 @@
  * transition; every successful legacy login (and every write) upgrades to bcrypt.
  */
 import * as bcrypt from 'bcrypt';
+import { randomInt } from 'crypto';
 
 export const BCRYPT_COST = 12;
 
@@ -108,21 +109,24 @@ export function generateTemporaryPassword(length = 12): string {
   const lowercase = 'abcdefghijkmnpqrstuvwxyz';
   const numbers = '23456789';
   const special = '!@#$%&*';
-  let password = '';
-  password += uppercase[Math.floor(Math.random() * uppercase.length)];
-  password += uppercase[Math.floor(Math.random() * uppercase.length)];
-  password += lowercase[Math.floor(Math.random() * lowercase.length)];
-  password += lowercase[Math.floor(Math.random() * lowercase.length)];
-  password += numbers[Math.floor(Math.random() * numbers.length)];
-  password += numbers[Math.floor(Math.random() * numbers.length)];
-  password += special[Math.floor(Math.random() * special.length)];
-  password += special[Math.floor(Math.random() * special.length)];
+  const pick = (chars: string) => chars[randomInt(chars.length)];
+  const chars = [
+    pick(uppercase),
+    pick(uppercase),
+    pick(lowercase),
+    pick(lowercase),
+    pick(numbers),
+    pick(numbers),
+    pick(special),
+    pick(special),
+  ];
   const allChars = uppercase + lowercase + numbers + special;
-  while (password.length < length) {
-    password += allChars[Math.floor(Math.random() * allChars.length)];
+  while (chars.length < length) chars.push(pick(allChars));
+  for (let i = chars.length - 1; i > 0; i -= 1) {
+    const j = randomInt(i + 1);
+    const swap = chars[i];
+    chars[i] = chars[j];
+    chars[j] = swap;
   }
-  return password
-    .split('')
-    .sort(() => Math.random() - 0.5)
-    .join('');
+  return chars.join('');
 }

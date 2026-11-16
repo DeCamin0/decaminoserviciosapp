@@ -76,9 +76,13 @@ import { DocumentoObligationService } from './services/documento-obligation.serv
 import { InspeccionesController } from './controllers/inspecciones.controller';
 import { InspeccionesService } from './services/inspecciones.service';
 import { HorariosController } from './controllers/horarios.controller';
+import { EmpleadoCentrosController } from './controllers/empleado-centros.controller';
 import { HorariosService } from './services/horarios.service';
 import { FestivosController } from './controllers/festivos.controller';
 import { FestivosService } from './services/festivos.service';
+import { FestivosZonaService } from './services/festivos-zona.service';
+import { PermisoRetribuidoDurationService } from './services/permiso-retribuido-duration.service';
+import { EmpleadoCentrosService } from './services/empleado-centros.service';
 import { FestivosSyncCronService } from './services/festivos-sync-cron.service';
 import { GeocodingController } from './controllers/geocoding.controller';
 import { GeocodingService } from './services/geocoding.service';
@@ -221,6 +225,7 @@ import { PresupuestosV2Module } from './presupuestos-v2/presupuestos-v2.module';
     DocumentoObligationController,
     InspeccionesController,
     HorariosController,
+    EmpleadoCentrosController,
     FestivosController,
     GeocodingController,
     EstadisticasController,
@@ -282,6 +287,9 @@ import { PresupuestosV2Module } from './presupuestos-v2/presupuestos-v2.module';
     InspeccionesMaterialesStorageService,
     HorariosService,
     FestivosService,
+    FestivosZonaService,
+    PermisoRetribuidoDurationService,
+    EmpleadoCentrosService,
     FestivosSyncCronService,
     GeocodingService,
     ClientesService,

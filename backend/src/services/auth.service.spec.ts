@@ -21,6 +21,15 @@ describe('AuthService login bcrypt migration', () => {
         findFirst: jest.fn(),
         findUnique: jest.fn(),
       },
+      authRefreshSession: {
+        create: jest
+          .fn()
+          .mockImplementation(({ data }: { data: { id: string } }) =>
+            Promise.resolve(data),
+          ),
+        findUnique: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
       $executeRawUnsafe: jest.fn().mockResolvedValue(1),
     };
     jwt = makeJwt();
@@ -76,7 +85,18 @@ describe('AuthService login bcrypt migration', () => {
     const result = await service.login('b@b.com', 'BcryptPass1!');
     expect(result.success).toBe(true);
     expect(prisma.$executeRawUnsafe).not.toHaveBeenCalled();
+    expect(prisma.authRefreshSession.create).toHaveBeenCalled();
     expect(result.accessToken).toContain('jwt:access:3');
+    const accessCall = jwt.sign.mock.calls.find(
+      (call: any[]) => call[0]?.type === 'access',
+    );
+    const refreshCall = jwt.sign.mock.calls.find(
+      (call: any[]) => call[0]?.type === 'refresh' && !call[0]?.impersonation,
+    );
+    expect(accessCall[1].expiresIn).toBe(process.env.JWT_EXPIRES_IN || '30m');
+    expect(refreshCall[1].expiresIn).toBe(
+      process.env.JWT_REFRESH_EXPIRES_IN || '7d',
+    );
   });
 
   it('bcrypt incorrect → reject', async () => {
@@ -120,5 +140,57 @@ describe('AuthService login bcrypt migration', () => {
     expect(stats.totalWithPassword).toBe(3);
     expect(stats.bcrypt).toBe(1);
     expect(stats.plaintextLegacy).toBe(2);
+  });
+
+  it('refresh acceptă sesiunea activă și refuză sesiunea revocată sau fără sid', async () => {
+    prisma.user.findFirst.mockResolvedValue({
+      CODIGO: 'E2',
+      CORREO_ELECTRONICO: 'b@b.com',
+      ESTADO: 'ACTIVO',
+      GRUPO: 'Empleados',
+      AUTH_VERSION: 3,
+    });
+    prisma.authRefreshSession.findUnique.mockResolvedValue({
+      userCodigo: 'E2',
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    jwt.verify.mockReturnValue({
+      type: 'refresh',
+      email: 'b@b.com',
+      userId: 'E2',
+      authVersion: 3,
+      sid: 'sid-1',
+    });
+    const ok = await service.refreshToken('refresh-jwt');
+    expect(ok.success).toBe(true);
+    expect(ok.accessToken).toContain('jwt:access:3');
+
+    prisma.authRefreshSession.findUnique.mockResolvedValue({
+      userCodigo: 'E2',
+      revokedAt: new Date(),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const revoked = await service.refreshToken('refresh-jwt');
+    expect(revoked.success).toBe(false);
+
+    jwt.verify.mockReturnValue({
+      type: 'refresh',
+      email: 'b@b.com',
+      userId: 'E2',
+      authVersion: 3,
+    });
+    const legacy = await service.refreshToken('refresh-jwt');
+    expect(legacy.success).toBe(false);
+  });
+
+  it('logout revocă sid-ul din refresh', async () => {
+    jwt.verify.mockReturnValue({ type: 'refresh', sid: 'sid-9' });
+    await service.revokePresentedRefreshToken('refresh-jwt');
+    expect(prisma.authRefreshSession.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'sid-9' }),
+      }),
+    );
   });
 });

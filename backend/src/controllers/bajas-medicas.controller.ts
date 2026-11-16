@@ -125,6 +125,31 @@ export class BajasMedicasController {
     }
   }
 
+  @Post('empleado/alta')
+  async announceEmpleadoAlta(@CurrentUser() user: any, @Body() body: any) {
+    try {
+      const codigoEmpleado =
+        user?.userId || user?.CODIGO || user?.codigo || user?.id;
+      if (!codigoEmpleado) {
+        throw new BadRequestException(
+          'No se pudo obtener el código de empleado del token',
+        );
+      }
+      const fechaAlta = String(body?.fechaAlta || '').trim();
+      if (!fechaAlta) {
+        throw new BadRequestException('fechaAlta es obligatoria (YYYY-MM-DD)');
+      }
+      const result = await this.bajasMedicasService.announceEmpleadoAlta(
+        String(codigoEmpleado).trim(),
+        fechaAlta,
+      );
+      return { success: true, ...result };
+    } catch (error: any) {
+      this.logger.error('❌ Error announcing empleado alta:', error);
+      throw error;
+    }
+  }
+
   @Post('empleado')
   async createEmpleadoBaja(@CurrentUser() user: any, @Body() body: any) {
     try {

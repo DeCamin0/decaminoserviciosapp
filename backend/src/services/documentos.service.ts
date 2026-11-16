@@ -2,6 +2,7 @@ import {
   Injectable,
   Logger,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
   Inject,
   forwardRef,
@@ -9,6 +10,16 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { DocumentosSolicitadosService } from './documentos-solicitados.service';
 import { CarpetasDocumentosStorageService } from './carpetas-documentos-storage.service';
+import {
+  assertDocumentoOwner,
+  canManageDocumentos,
+  canReadDocumentos,
+  documentosDownloadScope,
+  documentosListScope,
+  documentosUploadOwner,
+  isDocumentoStaff,
+  type DocumentoActor,
+} from './documentos-access-policy';
 
 @Injectable()
 export class DocumentosService {
@@ -33,11 +44,71 @@ export class DocumentosService {
     return `'${escaped}'`;
   }
 
+  private permisoActivo(value: string | null | undefined): boolean {
+    const permitted = String(value ?? '')
+      .trim()
+      .toLowerCase();
+    return permitted === 'true' || permitted === '1';
+  }
+
+  private async actorDocumentoAccess(
+    actor: DocumentoActor | null | undefined,
+  ): Promise<{ canRead: boolean; canManage: boolean }> {
+    if (isDocumentoStaff(actor)) {
+      return { canRead: true, canManage: true };
+    }
+    const grupo = String(actor?.grupo || '').trim();
+    if (!grupo) return { canRead: false, canManage: false };
+    try {
+      const rows = await this.prisma.permissions.findMany({
+        where: {
+          grupo_module: {
+            in: [`${grupo}_documentos-empleados`, `${grupo}_solicitudes-admin`],
+          },
+        },
+        select: { grupo_module: true, permitted: true },
+      });
+      const documentos = rows.some(
+        (row) =>
+          row.grupo_module === `${grupo}_documentos-empleados` &&
+          this.permisoActivo(row.permitted),
+      );
+      const solicitudes = rows.some(
+        (row) =>
+          row.grupo_module === `${grupo}_solicitudes-admin` &&
+          this.permisoActivo(row.permitted),
+      );
+      return {
+        canRead: canReadDocumentos(actor, documentos, solicitudes),
+        canManage: canManageDocumentos(actor, documentos),
+      };
+    } catch (error: any) {
+      this.logger.warn(
+        `No se pudo leer el permiso de documentos: ${error.message}`,
+      );
+      return { canRead: false, canManage: false };
+    }
+  }
+
   /**
    * Obține documentele pentru un angajat specificat prin id (CODIGO) și/sau email
    */
-  async getDocumentos(empleadoId?: string, email?: string): Promise<any[]> {
+  async getDocumentos(
+    empleadoId?: string,
+    email?: string,
+    actor?: DocumentoActor,
+  ): Promise<any[]> {
     try {
+      if (actor) {
+        const scope = documentosListScope(
+          actor,
+          { empleadoId, email },
+          (await this.actorDocumentoAccess(actor)).canRead,
+        );
+        empleadoId = scope.empleadoId;
+        email = scope.email;
+      }
+
       if (!empleadoId && !email) {
         throw new BadRequestException(
           'Se requiere al menos empleadoId o email',
@@ -93,6 +164,12 @@ export class DocumentosService {
       }));
     } catch (error: any) {
       this.logger.error('❌ Error fetching documentos:', error);
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
+        throw error;
+      }
       throw new BadRequestException(
         `Error al obtener los documentos: ${error.message}`,
       );
@@ -112,12 +189,24 @@ export class DocumentosService {
     empleadoId?: string,
     email?: string,
     fileName?: string,
+    actor?: DocumentoActor,
   ): Promise<{
     archivo: Buffer;
     tipo_mime: string;
     nombre_archivo: string;
   }> {
     try {
+      if (actor) {
+        const scope = documentosDownloadScope(
+          actor,
+          { empleadoId, email, fileName },
+          (await this.actorDocumentoAccess(actor)).canRead,
+        );
+        empleadoId = scope.empleadoId;
+        email = scope.email;
+        fileName = scope.fileName;
+      }
+
       // Validează documentId
       if (!Number.isFinite(documentId)) {
         throw new BadRequestException(
@@ -189,6 +278,7 @@ export class DocumentosService {
       this.logger.error('❌ Error downloading documento:', error);
       if (
         error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
         error instanceof NotFoundException
       ) {
         throw error;
@@ -218,8 +308,17 @@ export class DocumentosService {
       ausencia_id?: string | number; // Optional: link justificante cerere to this ausencia (ausencia_justificantes)
       [key: string]: any; // For indexed fields like tipo_documento_0, archivo_0_nombre, etc.
     },
+    actor?: DocumentoActor,
   ): Promise<{ success: true; processed: number; inserted: number }> {
     try {
+      if (actor) {
+        body.empleado_id = documentosUploadOwner(
+          actor,
+          body.empleado_id,
+          (await this.actorDocumentoAccess(actor)).canManage,
+        );
+      }
+
       if (!files || files.length === 0) {
         throw new BadRequestException(
           'Se requiere al menos un archivo para subir',
@@ -570,7 +669,10 @@ export class DocumentosService {
       return { success: true, processed, inserted };
     } catch (error: any) {
       this.logger.error('❌ Error uploading documentos:', error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -588,6 +690,7 @@ export class DocumentosService {
     id: string | number,
     nombreArchivo: string,
     docIdOptional?: string | number | null,
+    actor?: DocumentoActor,
   ): Promise<{ success: true; message: string; affectedRows: number }> {
     try {
       // Validate id (can be string for empleado ID)
@@ -632,8 +735,16 @@ export class DocumentosService {
           id: string;
         }>
       >(selectSql);
-      const docIdToClear = docIdRows?.[0]?.doc_id;
-      const storageKeyToDelete = docIdRows?.[0]?.storage_key;
+      const selected = docIdRows?.[0];
+      if (actor && selected) {
+        assertDocumentoOwner(
+          actor,
+          selected.id,
+          (await this.actorDocumentoAccess(actor)).canManage,
+        );
+      }
+      const docIdToClear = selected?.doc_id;
+      const storageKeyToDelete = selected?.storage_key;
 
       const query = hasDocId
         ? `
@@ -674,6 +785,13 @@ export class DocumentosService {
              LIMIT 1`,
           );
           if (fallbackRows?.[0]) {
+            if (actor) {
+              assertDocumentoOwner(
+                actor,
+                fallbackRows[0].id,
+                (await this.actorDocumentoAccess(actor)).canManage,
+              );
+            }
             resolvedDocId = fallbackRows[0].doc_id;
             resolvedStorageKey = fallbackRows[0].storage_key;
             const fallbackResult = await this.prisma.$executeRawUnsafe(
@@ -730,6 +848,7 @@ export class DocumentosService {
       this.logger.error('❌ Error deleting documento:', error);
       if (
         error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
         error instanceof NotFoundException
       ) {
         throw error;

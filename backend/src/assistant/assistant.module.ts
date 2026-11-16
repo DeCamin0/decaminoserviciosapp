@@ -10,6 +10,8 @@ import { EscalationService } from './services/escalation.service';
 import { AuditService } from './services/audit.service';
 import { RbacService } from './services/rbac.service';
 import { AiResponseService } from './services/ai-response.service';
+import { AssistantToolRouterService } from './services/assistant-tool-router.service';
+import { AssistantConductorService } from './services/assistant-conductor.service';
 import { ConversationContextService } from './services/conversation-context.service';
 import { AssistantUserPreferencesService } from './services/assistant-user-preferences.service';
 import { AssistantConversationService } from './services/assistant-conversation.service';
@@ -36,6 +38,8 @@ import { VacacionesModule } from '../vacaciones/vacaciones.module';
     AuditService,
     RbacService,
     AiResponseService,
+    AssistantToolRouterService,
+    AssistantConductorService,
     ConversationContextService,
     AssistantUserPreferencesService,
     AssistantConversationService,

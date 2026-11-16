@@ -16,6 +16,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { AnyFilesInterceptor, FileInterceptor } from '@nestjs/platform-express';
+import { contentDisposition } from '../services/content-disposition';
 import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -176,7 +177,10 @@ export class FotosTrabajoController {
       '_',
     );
     res.setHeader('Content-Type', mime_type);
-    res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
+    res.setHeader(
+      'Content-Disposition',
+      contentDisposition('inline', safeName),
+    );
     res.send(body);
   }
 

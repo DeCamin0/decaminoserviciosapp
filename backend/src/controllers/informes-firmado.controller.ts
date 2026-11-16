@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Param,
+  Query,
   Req,
   ParseIntPipe,
   NotFoundException,
@@ -18,6 +19,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { InformePdfService } from '../services/informe-pdf.service';
 import { EmailService } from '../services/email.service';
 import { InformesFirmasStorageService } from '../services/informes-firmas-storage.service';
+import {
+  FIRMA_PURPOSE_INFORME,
+  readInformeFirmaConfig,
+  resolveFirmaAccess,
+} from '../services/presupuesto-firma-access';
 
 export interface InformeFirmadoDto {
   informe_id: number;
@@ -32,6 +38,7 @@ export interface InformeFirmadoDto {
   firma_base64: string;
   ip?: string;
   user_agent?: string;
+  token?: string;
 }
 
 @Controller('api/informes-firma')
@@ -45,9 +52,63 @@ export class InformesFirmadoController {
     private readonly informesFirmasStorage: InformesFirmasStorageService,
   ) {}
 
+  private async authorizedInformeId(
+    token: string | undefined,
+    requestedId: number | null,
+  ): Promise<number> {
+    const config = readInformeFirmaConfig(process.env);
+    const now = new Date();
+    let decision = resolveFirmaAccess({
+      token: token === undefined ? null : token,
+      requestedId,
+      createdAt: null,
+      config,
+      now,
+      purpose: FIRMA_PURPOSE_INFORME,
+    });
+    if (
+      decision.ok === false &&
+      decision.reason === 'needs-row' &&
+      requestedId
+    ) {
+      const row = await this.prisma.informes_factura_config.findUnique({
+        where: { id: requestedId },
+        select: { created_at: true },
+      });
+      if (!row) throw new NotFoundException('Informe no encontrado');
+      decision = resolveFirmaAccess({
+        token: null,
+        requestedId,
+        createdAt: row.created_at,
+        config,
+        now,
+        purpose: FIRMA_PURPOSE_INFORME,
+      });
+    }
+    if (decision.ok === false) {
+      this.logger.warn(`Acceso firma informe rechazado: ${decision.reason}`);
+      throw new NotFoundException('Informe no encontrado');
+    }
+    return decision.id;
+  }
+
+  @Get('datos-firma')
+  async getDatosFirmaByToken(@Query('t') token?: string) {
+    if (typeof token !== 'string' || !token.trim()) {
+      throw new NotFoundException('Informe no encontrado');
+    }
+    const id = await this.authorizedInformeId(token, null);
+    return this.loadDatosFirma(id);
+  }
+
   /** Endpoint público (sin JWT): devuelve numero_informe, cliente_nombre, cif, direccion para prellenar la página de firma. */
   @Get(':id/datos-firma')
   async getDatosFirma(@Param('id', ParseIntPipe) id: number) {
+    const allowed = await this.authorizedInformeId(undefined, id);
+    return this.loadDatosFirma(allowed);
+  }
+
+  private async loadDatosFirma(id: number) {
     const informe = await this.prisma.informes_factura_config.findUnique({
       where: { id },
       select: { id: true, cliente_id: true },
@@ -95,6 +156,7 @@ export class InformesFirmadoController {
     }
 
     return {
+      id,
       numero_informe: numeroInforme,
       cliente_nombre: clienteNombre,
       cif: cif ?? '',
@@ -111,8 +173,11 @@ export class InformesFirmadoController {
       '';
     const userAgent = req.headers['user-agent'] || '';
 
-    const informeId = body.informe_id;
-    if (!informeId) throw new BadRequestException('Falta informe_id');
+    const requestedId = Number(body.informe_id);
+    const informeId = await this.authorizedInformeId(
+      typeof body.token === 'string' ? body.token : undefined,
+      Number.isInteger(requestedId) && requestedId > 0 ? requestedId : null,
+    );
 
     const existe = await this.prisma.informes_factura_config.findUnique({
       where: { id: informeId },
@@ -251,6 +316,14 @@ export class InformesFirmadoController {
           `<p>Estimado/a ${(body.nombre_representante || '').trim() || 'cliente'},</p><p>Adjuntamos el informe nº <strong>${numeroInforme}</strong> firmado electrónicamente.</p><p>Saludos cordiales,<br/><strong>De Camino Servicios Auxiliares</strong></p>`,
           pdfBuffer,
           fileName,
+          {
+            record: {
+              senderId: 'sistema',
+              recipientType: 'cliente',
+              recipientName: (body.nombre_representante || '').trim() || 'Cliente',
+              attachmentNote: `Adjunto: ${fileName}`,
+            },
+          },
         );
         emailEnviado = true;
       } catch {

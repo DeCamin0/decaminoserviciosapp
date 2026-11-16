@@ -87,6 +87,25 @@ function clearAuthTokens() {
   localStorage.removeItem('refresh_token');
 }
 
+/** Închide pe server sesiunea acestei chei. Eșecul de rețea nu blochează logout-ul local. */
+export async function revokeRefreshToken(refreshToken) {
+  const token = String(refreshToken || '').trim();
+  if (!token) return;
+  try {
+    await fetchWithTimeout(
+      `${BASE_URL}/api/auth/logout`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: token }),
+      },
+      8000,
+    );
+  } catch (error) {
+    console.warn('[TokenRefresh] Logout revoke failed:', error?.message || error);
+  }
+}
+
 // Salvează fetch-ul original pentru a evita loop-uri cu interceptor-ul global
 const originalFetch = typeof window !== 'undefined' && window.__originalFetchForLocation 
   ? window.__originalFetchForLocation 

@@ -225,12 +225,14 @@ async function bootstrap() {
     next(error);
   });
 
-  // Increase body size limit for file uploads and folder ingestion (base64 content can be large)
-  // Base64 encoding increases size by ~33%, so for multiple large files we need a high limit
-  // For folder ingestion with many files, we may need up to 500MB
-  app.use(json({ limit: '500mb' }));
-  // Parse URL-encoded bodies
-  app.use(urlencoded({ extended: true, limit: '500mb' }));
+  // Ingestia de dosare trimite conținutul în JSON base64 și poate depăși 2 MB.
+  // Parserul specific consumă body-ul înainte de limita generală.
+  app.use('/admin/documents/save-folder-documents', json({ limit: '500mb' }));
+  // Semnătura poate include PDF-ul generat de client.
+  app.use('/api/presupuestos/firmado', json({ limit: '32mb' }));
+  app.use('/api/informes-firma/firmado', json({ limit: '32mb' }));
+  app.use(json({ limit: '2mb' }));
+  app.use(urlencoded({ extended: true, limit: '2mb' }));
 
   // Enable CORS – aceeași listă ca la OPTIONS (inclusiv FRONTEND_APP_URL / APP_URL).
   app.enableCors({

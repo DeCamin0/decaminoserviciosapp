@@ -329,6 +329,28 @@ describe('IntentClassifierService (natural language RO/ES)', () => {
     expect(r.intent).toBe(IntentType.CUADRANTE);
   });
 
+  it('que ago si olbido fichar nu moștenește cuadrantele de ieri', async () => {
+    const first = await svc.classifyIntent('que horario tengo para hoy');
+    const ctx: IntentContextSnapshot = {
+      lastIntent: first.intent,
+      lastEntities: first.entidades ?? null,
+    };
+    const raw = await svc.classifyIntent('que ago si mi se olbido fichar ?');
+    const r = svc.applyContextualFollowUp(
+      'que ago si mi se olbido fichar ?',
+      raw,
+      ctx,
+    );
+    expect(r.intent).not.toBe(IntentType.CUADRANTE);
+  });
+
+  it('que horarrio tengo para hoy → CUADRANTE + fecha de azi, nu luna', async () => {
+    const r = await svc.classifyIntent('que horarrio tengo para hoy ?');
+    expect(r.intent).toBe(IntentType.CUADRANTE);
+    expect(r.entidades?.fecha).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(r.entidades?.mes).toBeUndefined();
+  });
+
   it('que horario tiene Anisoara hoy → CUADRANTE + fecha + entidad nombre', async () => {
     const r = await svc.classifyIntent('que horario tiene Anisoara hoy');
     expect(r.intent).toBe(IntentType.CUADRANTE);

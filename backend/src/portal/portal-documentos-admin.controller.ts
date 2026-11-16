@@ -15,6 +15,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { contentDisposition } from '../services/content-disposition';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -55,7 +56,7 @@ export class PortalDocumentosAdminController {
     res.setHeader('Content-Type', mime);
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      contentDisposition('attachment', filename),
     );
     res.send(buffer);
   }

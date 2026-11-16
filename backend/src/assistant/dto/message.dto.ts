@@ -52,7 +52,8 @@ export type AssistantResponseSourceKind =
   | 'validated_faq'
   | 'read_tools'
   | 'llm'
-  | 'no_data';
+  | 'no_data'
+  | 'fallback';
 
 export interface AssistantResponseSource {
   type: AssistantSourceType;

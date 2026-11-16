@@ -399,7 +399,13 @@ export function useInicioOperativoData({
   ]);
 
   useEffect(() => {
-    load();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) void load();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [load]);
 
   const periodoQ = periodo === 'mes' ? 'mes' : 'hoy';
@@ -429,17 +435,25 @@ export function useInicioOperativoData({
         periodo: 'both',
       });
     }
-    if (canVacacionesEquipo && vacacionesDias != null) {
+    if (periodo === 'mes' && canVacacionesEquipo && vacacionesDias != null) {
       list.push({
         id: 'op-vac-dias',
-        label:
-          periodo === 'hoy'
-            ? 'Días vacaciones hoy'
-            : 'Días vacaciones este mes',
+        label: 'Días vacaciones este mes',
         value: vacacionesDias,
         href: `/solicitudes?vista=todas&seccion=vacaciones&periodo=${periodoQ}&estado=Aprobada`,
         tone: 'teal',
-        periodo: 'both',
+        periodo: 'mes',
+      });
+    }
+    if (periodo === 'hoy' && canAusenciasEquipo && ausenciasPorTipo) {
+      const otras = Object.values(ausenciasPorTipo).reduce((sum, n) => sum + n, 0);
+      list.push({
+        id: 'op-otras-ausencias',
+        label: 'Otras ausencias hoy',
+        value: otras,
+        href: `/solicitudes?vista=todas&seccion=ausencias&periodo=${periodoQ}`,
+        tone: 'teal',
+        periodo: 'hoy',
       });
     }
     if (canBajasEquipo && bajasHoy != null) {
@@ -500,12 +514,14 @@ export function useInicioOperativoData({
   }, [
     canEmpleadosActivos,
     canVacacionesEquipo,
+    canAusenciasEquipo,
     canBajasEquipo,
     canAprobaciones,
     canProgramadosFichar,
     empleadosActivos,
     vacacionesPersonas,
     vacacionesDias,
+    ausenciasPorTipo,
     bajasHoy,
     cambiosPendientes,
     regularizacionesPendientes,

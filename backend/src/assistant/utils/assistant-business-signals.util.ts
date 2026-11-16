@@ -18,7 +18,10 @@ export function applyCommonAssistantTypos(raw: string): string {
   return String(raw ?? '')
     .replace(/\baucensias\b/gi, 'ausencias')
     .replace(/\bausensias\b/gi, 'ausencias')
-    .replace(/\bauscencias\b/gi, 'ausencias');
+    .replace(/\bauscencias\b/gi, 'ausencias')
+    .replace(/\bhorar+io\b/gi, 'horario')
+    .replace(/\bhoraro\b/gi, 'horario')
+    .replace(/\bhorairo\b/gi, 'horario');
 }
 
 /** Semnătură scurtă pentru dedup (fără PII structurată). */

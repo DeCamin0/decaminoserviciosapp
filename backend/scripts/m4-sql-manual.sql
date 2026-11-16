@@ -1,0 +1,13 @@
+-- m4. Risc cunoscut, lăsat intenționat la 2026-11-10. Nu se rescrie acum.
+--
+-- Multe interogări sunt text în care se lipește un nume, un cod sau un filtru.
+-- Ghilimelele se dublează cu escapeSql. Varianta de păstrat la cod nou este
+-- valoarea separată, cu placeholder ?.
+--
+-- Nu este doar chatul asistentului. Același tip de interogare este la angajați,
+-- cereri, comenzi, pontaj, nóminas și alte servicii.
+-- Nu s-a găsit o injecție demonstrată. Rescrierea tuturor interogărilor dintr-o
+-- dată poate strica DeCamino și Hera.
+--
+-- Când se reia: doar interogările în care intră text de la utilizator, pe rând,
+-- începând cu căutările și asistentul. Cele care au deja ? rămân.

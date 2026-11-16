@@ -839,13 +839,11 @@ const InspectionList = ({ onBackToSelection, onlySolicitudes = false, onStartIns
     if (!list.length) return;
     for (let i = 0; i < list.length; i++) {
       const doc = list[i];
-      // eslint-disable-next-line no-await-in-loop
       await handleDownloadMaterialDocumento(
         doc.doc_id,
         doc.nombre_archivo || `material_document_${doc.doc_id}.pdf`,
       );
       if (i < list.length - 1) {
-        // eslint-disable-next-line no-await-in-loop
         await new Promise((r) => setTimeout(r, 350));
       }
     }

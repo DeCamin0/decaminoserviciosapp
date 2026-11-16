@@ -15,11 +15,13 @@ import {
   Logger,
   Res,
   ConflictException,
+  ForbiddenException,
   Req,
   NotFoundException,
 } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { contentDisposition } from '../services/content-disposition';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { GestoriaService } from '../services/gestoria.service';
 import { NominasService } from '../services/nominas.service';
@@ -109,6 +111,7 @@ export class GestoriaController {
   @Get('nominas')
   async getNominas(
     @Query('employeeNombre') employeeNombre: string,
+    @CurrentUser() user: any,
     @Query('mes') mes?: string,
     @Query('ano') ano?: string,
   ) {
@@ -116,6 +119,7 @@ export class GestoriaController {
       if (!employeeNombre) {
         throw new BadRequestException('employeeNombre es requerido');
       }
+      await this.nominasService.assertCanReadNominaNombre(user, employeeNombre);
 
       const mesNum = mes ? parseInt(mes, 10) : undefined;
       const anoNum = ano ? parseInt(ano, 10) : undefined;
@@ -140,7 +144,10 @@ export class GestoriaController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error getting nominas:', error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -161,6 +168,7 @@ export class GestoriaController {
     @CurrentUser() user: any,
   ) {
     try {
+      await this.nominasService.assertCanMutateNominas(user);
       if (!file) {
         throw new BadRequestException('Archivo es requerido');
       }
@@ -201,6 +209,7 @@ export class GestoriaController {
       this.logger.error('❌ Error uploading nómina:', error);
       if (
         error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
         error instanceof ConflictException
       ) {
         throw error;
@@ -221,6 +230,7 @@ export class GestoriaController {
     @CurrentUser() user: any,
   ) {
     try {
+      await this.nominasService.assertCanMutateNominas(user);
       if (!file) {
         throw new BadRequestException('Archivo es requerido');
       }
@@ -290,7 +300,10 @@ export class GestoriaController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error in bulk upload:', error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -315,6 +328,7 @@ export class GestoriaController {
       if (!employeeNombre?.trim()) {
         throw new BadRequestException('employeeNombre es requerido');
       }
+      await this.nominasService.assertCanReadNominaNombre(user, employeeNombre);
       const anoNum = parseInt(ano, 10);
       if (isNaN(anoNum) || anoNum < 2000 || anoNum > 2100) {
         throw new BadRequestException('Año inválido');
@@ -363,13 +377,14 @@ export class GestoriaController {
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${filename}"`,
+        contentDisposition('attachment', filename),
       );
       stream.pipe(res);
     } catch (error: any) {
       this.logger.error('❌ Error downloading all nóminas:', error);
       if (
         error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
         error instanceof NotFoundException
       ) {
         throw error;
@@ -398,6 +413,7 @@ export class GestoriaController {
         throw new BadRequestException('ID inválido');
       }
 
+      await this.nominasService.assertCanReadNominaById(user, idNum);
       const nomina = await this.gestoriaService.getNominaById(idNum);
 
       // Loghează accesul (download) - folosim NominasService pentru logging
@@ -438,12 +454,16 @@ export class GestoriaController {
       res.setHeader('Content-Type', nomina.tipo_mime);
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${nomina.nombre}_${id}.pdf"`,
+        contentDisposition('attachment', `${nomina.nombre}_${id}.pdf`),
       );
       res.send(nomina.archivo);
     } catch (error: any) {
       this.logger.error(`❌ Error downloading nómina ${id}:`, error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
+        error instanceof NotFoundException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -464,6 +484,7 @@ export class GestoriaController {
         throw new BadRequestException('ID inválido');
       }
 
+      await this.nominasService.assertCanMutateNominas(user);
       await this.gestoriaService.deleteNomina(idNum);
 
       this.logger.log(
@@ -476,7 +497,10 @@ export class GestoriaController {
       };
     } catch (error: any) {
       this.logger.error(`❌ Error deleting nómina ${id}:`, error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -902,7 +926,7 @@ export class GestoriaController {
       );
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="Coste_Personal_${mes}_${ano}.xlsx"`,
+        contentDisposition('attachment', `Coste_Personal_${mes}_${ano}.xlsx`),
       );
       res.send(buffer);
     } catch (error: any) {
@@ -938,7 +962,7 @@ export class GestoriaController {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="Coste_Personal_${mes}_${ano}.pdf"`,
+        contentDisposition('attachment', `Coste_Personal_${mes}_${ano}.pdf`),
       );
       res.send(buffer);
     } catch (error: any) {

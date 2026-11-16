@@ -1088,9 +1088,7 @@ export class PedidosService {
           total: beforeSnap?.total ?? null,
         },
         actor ||
-          (userInfo
-            ? { user: userInfo, email: null, grupo: null }
-            : null),
+          (userInfo ? { user: userInfo, email: null, grupo: null } : null),
       );
 
       // Returnează comanda actualizată
@@ -2395,7 +2393,8 @@ export class PedidosService {
       const estado = String(snapshot.estado || '')
         .trim()
         .toLowerCase();
-      const motivo = options?.motivo != null ? String(options.motivo).trim() : '';
+      const motivo =
+        options?.motivo != null ? String(options.motivo).trim() : '';
       const requiresMotivo = estado === 'enviado' || estado === 'entregado';
       if (requiresMotivo && motivo.length < 3) {
         throw new BadRequestException(

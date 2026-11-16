@@ -24,6 +24,7 @@ import activityLogger from '../utils/activityLogger';
 import { getFormattedNombre, getEmployeeInitials } from '../utils/employeeNameHelper';
 import CorregirNombresTab from '../components/employees/CorregirNombresTab';
 import AddressAutocomplete from '../components/AddressAutocomplete';
+import EmpleadoCentrosExtra from '../components/employees/EmpleadoCentrosExtra';
 import { config } from '../config/env.js';
 import { getPdfMake } from '../utils/getPdfMake';
 import { dateInputToDdMmYyyy } from '../utils/dateInputFormat';
@@ -1059,6 +1060,9 @@ export default function EmpleadosPage() {
   const [employeeAvatars, setEmployeeAvatars] = useState({});
   const [bulkAvatarsLoaded, setBulkAvatarsLoaded] = useState(false);
   const loadingAvatarsRef = useRef(new Set());
+  const attemptedAvatarsRef = useRef(new Set());
+  const employeeAvatarsRef = useRef(employeeAvatars);
+  employeeAvatarsRef.current = employeeAvatars;
   const bulkAvatarsLoadedRef = useRef(false);
 
   const fetchBulkAvatars = useCallback(async () => {
@@ -1120,10 +1124,15 @@ export default function EmpleadosPage() {
   const loadEmployeeAvatar = useCallback(async (codigo, nombre) => {
     if (!codigo) return;
 
-    if (isRealAvatarUrl(employeeAvatars[codigo]) || loadingAvatarsRef.current.has(codigo)) {
+    if (
+      isRealAvatarUrl(employeeAvatarsRef.current[codigo]) ||
+      attemptedAvatarsRef.current.has(codigo) ||
+      loadingAvatarsRef.current.has(codigo)
+    ) {
       return;
     }
 
+    attemptedAvatarsRef.current.add(codigo);
     loadingAvatarsRef.current.add(codigo);
 
     // Skip real avatar loading in DEMO mode
@@ -1160,7 +1169,7 @@ export default function EmpleadosPage() {
     } finally {
       loadingAvatarsRef.current.delete(codigo);
     }
-  }, [authUser, employeeAvatars]);
+  }, [authUser]);
 
   // Demo empleados data
   const setDemoEmpleados = () => {
@@ -2056,14 +2065,15 @@ export default function EmpleadosPage() {
       usersToLoad.forEach(user => {
         if (
           user.CODIGO &&
-          !isRealAvatarUrl(employeeAvatars[user.CODIGO]) &&
+          !isRealAvatarUrl(employeeAvatarsRef.current[user.CODIGO]) &&
+          !attemptedAvatarsRef.current.has(user.CODIGO) &&
           !loadingAvatarsRef.current.has(user.CODIGO)
         ) {
           loadEmployeeAvatar(user.CODIGO, getFormattedNombre(user));
         }
       });
     }
-  }, [users, employeeAvatars, activeTab, getFilteredUsers, loadEmployeeAvatar, bulkAvatarsLoaded]);
+  }, [users, activeTab, getFilteredUsers, loadEmployeeAvatar, bulkAvatarsLoaded]);
 
   const handleAddUser = async () => {
     setAddError(null);
@@ -6328,6 +6338,7 @@ export default function EmpleadosPage() {
                     }}
                   />
                 ) : field === 'CENTRO TRABAJO' ? (
+                  <>
                   <div className="relative">
                     <input
                       id={fieldId}
@@ -6387,6 +6398,12 @@ export default function EmpleadosPage() {
                       </div>
                     )}
                   </div>
+                  <EmpleadoCentrosExtra
+                    codigo={editForm.CODIGO || editForm.codigo || ''}
+                    primario={editForm['CENTRO TRABAJO'] || ''}
+                    clientes={clientes}
+                  />
+                  </>
                 ) : field === 'Antigüedad' ? (
                   <div className="relative">
                     <input

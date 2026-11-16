@@ -15,15 +15,14 @@ import {
   ForbiddenException,
   Logger,
   Res,
-  Headers,
 } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import {
   FileFieldsInterceptor,
   FileInterceptor,
 } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { contentDisposition } from '../services/content-disposition';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { EmpleadosService } from '../services/empleados.service';
 import { EmailService } from '../services/email.service';
@@ -32,10 +31,24 @@ import { NotificationsGateway } from '../gateways/notifications.gateway';
 import { NotificationsService } from '../services/notifications.service';
 import { SentEmailsService } from '../services/sent-emails.service';
 import { EmployeeExportService } from '../services/employee-export.service';
+import { EmpleadoGrupoScopeService } from '../services/empleado-grupo-scope.service';
+import { loadEmpleadosForUser } from '../services/empleados-list-access';
 import {
-  EmpleadoGrupoScopeService,
-  type EmpleadoGrupoScopeFilter,
-} from '../services/empleado-grupo-scope.service';
+  assertCanApproveEmployeeChange,
+  assertCanReadEmpleadoStatus,
+  assertEmployeeFileWrite,
+  bindOwnChangeRequest,
+  filterRowsByCodigos,
+  loadEmpleadoModuleFlags,
+  toEmpleadoActor,
+} from '../services/empleados-operation-access';
+import { NominasService } from '../services/nominas.service';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  assertExportAllNominas,
+  assertUnscopedEmployeeExport,
+} from '../services/nominas-access-policy';
+import { writeActivityLog } from '../utils/activity-log-write';
 
 @Controller('api/empleados')
 export class EmpleadosController {
@@ -50,8 +63,9 @@ export class EmpleadosController {
     private readonly sentEmailsService: SentEmailsService,
     private readonly employeeExportService: EmployeeExportService,
     private readonly configService: ConfigService,
-    private readonly jwtService: JwtService,
     private readonly empleadoGrupoScopeService: EmpleadoGrupoScopeService,
+    private readonly nominasService: NominasService,
+    private readonly prisma: PrismaService,
   ) {}
 
   private getCompany() {
@@ -76,6 +90,30 @@ export class EmpleadosController {
           .map((e) => e.trim())
           .filter(Boolean)
       : [];
+  }
+
+  private async moduleFlags(user: any) {
+    return loadEmpleadoModuleFlags(user?.grupo, (keys) =>
+      this.prisma.permissions.findMany({
+        where: { grupo_module: { in: keys } },
+        select: { grupo_module: true, permitted: true },
+      }),
+    );
+  }
+
+  private async requireFileWrite(user: any) {
+    const actor = toEmpleadoActor(user);
+    const flags = await this.moduleFlags(user);
+    assertEmployeeFileWrite(actor, flags);
+    return { actor, flags };
+  }
+
+  private scopeUser(user: any) {
+    return {
+      userId: user?.userId,
+      role: user?.role,
+      grupo: user?.grupo,
+    };
   }
 
   private escapeHtmlForEmail(value: string): string {
@@ -112,37 +150,20 @@ export class EmpleadosController {
             </div>`;
   }
 
-  private extractBearerToken(authorization?: string): string | null {
-    if (!authorization || typeof authorization !== 'string') return null;
-    const t = authorization.trim();
-    if (!t.toLowerCase().startsWith('bearer ')) return null;
-    const token = t.slice(7).trim();
-    return token || null;
-  }
-
-  /**
-   * Lista GET /empleados: con Bearer válido + filas en user_empleado_grupo_scope → filtrar.
-   * Sin Bearer o token inválido → lista completa (compat. n8n / llamadas legacy).
-   */
-  private async resolveScopeFilterFromAuthHeader(
-    authorization?: string,
-  ): Promise<EmpleadoGrupoScopeFilter | null> {
-    const token = this.extractBearerToken(authorization);
-    if (!token) return null;
-    try {
-      const payload = this.jwtService.verify(token) as {
-        userId?: string;
-        role?: string;
-        grupo?: string;
-      };
-      return await this.empleadoGrupoScopeService.resolveScopeFilter({
-        userId: payload.userId,
-        role: payload.role,
-        grupo: payload.grupo,
-      });
-    } catch {
-      return null;
-    }
+  @Get()
+  @UseGuards(JwtAuthGuard)
+  async getAll(@CurrentUser() user: any) {
+    const flags = await this.moduleFlags(user);
+    return loadEmpleadosForUser(
+      user,
+      {
+        resolveScopeFilter: (payload) =>
+          this.empleadoGrupoScopeService.resolveScopeFilter(payload),
+        getAllEmpleados: (scope, onlyCodigo) =>
+          this.empleadosService.getAllEmpleados(scope, onlyCodigo),
+      },
+      flags,
+    );
   }
 
   @Get('me')
@@ -155,13 +176,29 @@ export class EmpleadosController {
 
   @Get('cambios-pendientes')
   @UseGuards(JwtAuthGuard)
-  async getCambiosPendientes() {
+  async getCambiosPendientes(@CurrentUser() user: any) {
     try {
       this.logger.log('📋 Get cambios pendientes request');
+      const actor = toEmpleadoActor(user);
+      const flags = await this.moduleFlags(user);
+      assertCanApproveEmployeeChange(actor, flags);
       const cambios = await this.empleadosService.getCambiosPendientes();
-      return cambios;
+      const payload = this.scopeUser(user);
+      const bypass = this.empleadoGrupoScopeService.bypassesScope(payload);
+      const scope =
+        await this.empleadoGrupoScopeService.resolveScopeFilter(payload);
+      const allowed =
+        !bypass && scope?.grupos?.length
+          ? await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
+              payload,
+            )
+          : null;
+      return filterRowsByCodigos(cambios, allowed, (row) =>
+        String(row?.CODIGO || row?.codigo || ''),
+      );
     } catch (error: any) {
       this.logger.error('❌ Error getting cambios pendientes:', error);
+      if (error instanceof ForbiddenException) throw error;
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -173,13 +210,30 @@ export class EmpleadosController {
 
   @Get('stats')
   @UseGuards(JwtAuthGuard)
-  async getEmpleadosStats() {
+  async getEmpleadosStats(@CurrentUser() user: any) {
     try {
+      const actor = toEmpleadoActor(user);
+      const flags = await this.moduleFlags(user);
+      assertCanReadEmpleadoStatus(actor, flags);
       this.logger.log('📊 Get empleados stats request');
       const stats = await this.empleadosStatsService.getEmpleadosStats();
+      const payload = this.scopeUser(user);
+      const bypass = this.empleadoGrupoScopeService.bypassesScope(payload);
+      const scope =
+        await this.empleadoGrupoScopeService.resolveScopeFilter(payload);
+      if (!bypass && scope?.grupos?.length) {
+        const allowed =
+          await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
+            payload,
+          );
+        return filterRowsByCodigos(stats, allowed ?? [], (row) =>
+          String(row?.codigo || ''),
+        );
+      }
       return stats;
     } catch (error: any) {
       this.logger.error('❌ Error getting empleados stats:', error);
+      if (error instanceof ForbiddenException) throw error;
       throw new BadRequestException(
         `Error al obtener estadísticas: ${error.message}`,
       );
@@ -193,6 +247,7 @@ export class EmpleadosController {
     @Query('mes') mes?: string,
   ) {
     try {
+      await this.requireFileWrite(user);
       this.logger.log(
         `📊 Get estadísticas empleados request${mes ? ` for mes: ${mes}` : ' (current month)'}`,
       );
@@ -208,6 +263,7 @@ export class EmpleadosController {
       return { success: true, estadisticas };
     } catch (error: any) {
       this.logger.error('❌ Error getting estadísticas empleados:', error);
+      if (error instanceof ForbiddenException) throw error;
       throw new BadRequestException(
         `Error al obtener estadísticas: ${error.message}`,
       );
@@ -222,6 +278,7 @@ export class EmpleadosController {
     @CurrentUser() user: any,
   ) {
     try {
+      await this.requireFileWrite(user);
       const scope = await this.empleadoGrupoScopeService.resolveScopeFilter({
         userId: user?.userId,
         role: user?.role,
@@ -269,6 +326,7 @@ export class EmpleadosController {
     @CurrentUser() user: any,
   ) {
     try {
+      await this.requireFileWrite(user);
       const scope = await this.empleadoGrupoScopeService.resolveScopeFilter({
         userId: user?.userId,
         role: user?.role,
@@ -308,6 +366,7 @@ export class EmpleadosController {
   @UseGuards(JwtAuthGuard)
   async exportListaIbanPDF(@Res() res: any, @CurrentUser() user: any) {
     try {
+      await this.requireFileWrite(user);
       await this.empleadoGrupoScopeService.assertNotMassExportRestricted({
         userId: user?.userId,
         role: user?.role,
@@ -375,13 +434,6 @@ export class EmpleadosController {
     return { success: true, userCodigo: codigo, grupos: saved };
   }
 
-  @Get()
-  async getAll(@Headers('authorization') authorization?: string) {
-    const scope = await this.resolveScopeFilterFromAuthHeader(authorization);
-    const empleados = await this.empleadosService.getAllEmpleados(scope);
-    return empleados;
-  }
-
   @Post()
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(
@@ -402,6 +454,7 @@ export class EmpleadosController {
     const pdfFile = files?.pdf?.[0];
     const archivosGestoria = files?.archivosGestoria || [];
     try {
+      await this.requireFileWrite(user);
       // Extragem datele din body
       const empleadoData = {
         CODIGO: body.CODIGO,
@@ -770,6 +823,7 @@ export class EmpleadosController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error adding empleado:', error);
+      if (error instanceof ForbiddenException) throw error;
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -797,6 +851,7 @@ export class EmpleadosController {
     @CurrentUser() user: any,
   ) {
     try {
+      await this.requireFileWrite(user);
       const pdfFile = files?.pdf?.[0];
       const archivosGestoria = files?.archivosGestoria || [];
 
@@ -817,6 +872,16 @@ export class EmpleadosController {
           `Angajatul cu CODIGO ${body.CODIGO} nu există`,
         );
       }
+
+      const scopeFicha =
+        await this.empleadoGrupoScopeService.resolveScopeFilter(
+          this.scopeUser(user),
+        );
+      this.empleadoGrupoScopeService.assertEmpleadoAccessible(
+        scopeFicha,
+        body.CODIGO,
+        empleadoExistente?.GRUPO ?? empleadoExistente?.grupo,
+      );
 
       // Nu modificăm angajatul în BD, doar trimitem ficha la gestorie
       // Get employee data to use formatted nombre
@@ -958,6 +1023,7 @@ export class EmpleadosController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error retrimitere ficha:', error);
+      if (error instanceof ForbiddenException) throw error;
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -1223,7 +1289,11 @@ export class EmpleadosController {
     }
   }
 
-  private async sendResetPasswordEmail(empleado: any, newPassword: string) {
+  private async sendResetPasswordEmail(
+    empleado: any,
+    newPassword: string,
+    senderId: string,
+  ) {
     if (!this.emailService.isConfigured()) {
       this.logger.warn(
         '⚠️ SMTP nu este configurat. Email-ul de resetare parolă nu va fi trimis.',
@@ -1280,15 +1350,36 @@ export class EmpleadosController {
       </html>
     `;
 
+    let status: 'sent' | 'failed' = 'sent';
+    let errorMessage: string | undefined;
     try {
       await this.emailService.sendEmail(email, subject, html);
 
       this.logger.log(`✅ Email de resetare parolă trimis către: ${email}`);
     } catch (error: any) {
+      status = 'failed';
+      errorMessage = String(error?.message || error).slice(0, 500);
       this.logger.error(
-        `❌ Error sending reset password email: ${error.message}`,
+        `❌ Error sending reset password email: ${errorMessage}`,
       );
-      // Nu aruncăm eroarea pentru a nu bloca resetarea parolei dacă email-ul eșuează
+    }
+    try {
+      await this.sentEmailsService.saveSentEmail({
+        senderId: String(senderId || 'sistema').slice(0, 50),
+        recipientType: 'empleado',
+        recipientId: String(empleado.CODIGO || '').slice(0, 50),
+        recipientEmail: email,
+        recipientName: nombre,
+        subject,
+        message:
+          '<p>Se ha enviado un correo con una contraseña temporal. La contraseña no se guarda en este registro.</p>',
+        status,
+        errorMessage,
+      });
+    } catch (error: any) {
+      this.logger.warn(
+        `No se pudo guardar el registro del correo de contraseña: ${error?.message || error}`,
+      );
     }
   }
 
@@ -1306,6 +1397,7 @@ export class EmpleadosController {
     @CurrentUser() user: any,
   ) {
     try {
+      await this.requireFileWrite(user);
       this.logger.log(
         `📝 Update empleado request received. Body keys: ${Object.keys(body || {}).join(', ')}`,
       );
@@ -1755,6 +1847,7 @@ export class EmpleadosController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error updating empleado:', error);
+      if (error instanceof ForbiddenException) throw error;
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -1766,10 +1859,13 @@ export class EmpleadosController {
 
   @Post('cambio-aprobacion')
   @UseGuards(JwtAuthGuard)
-  async createCambioAprobacion(@Body() body: any) {
+  async createCambioAprobacion(@Body() body: any, @CurrentUser() user: any) {
     try {
+      const actor = toEmpleadoActor(user);
+      const flags = await this.moduleFlags(user);
+      const bound = bindOwnChangeRequest(actor, flags, body?.CODIGO);
       this.logger.log(
-        `📝 Creare cerere de aprobare pentru empleado: ${body?.CODIGO || 'unknown'}`,
+        `📝 Creare cerere de aprobare pentru empleado: ${bound.codigo}`,
       );
 
       // Validăm datele
@@ -1779,10 +1875,24 @@ export class EmpleadosController {
         );
       }
 
-      // Creăm cererea de aprobare
+      if (bound.codigo !== actor.userId) {
+        const target = await this.empleadosService.getEmpleadoByCodigo(
+          bound.codigo,
+        );
+        const scope = await this.empleadoGrupoScopeService.resolveScopeFilter(
+          this.scopeUser(user),
+        );
+        this.empleadoGrupoScopeService.assertEmpleadoAccessible(
+          scope,
+          bound.codigo,
+          target?.GRUPO ?? target?.grupo,
+        );
+      }
+
+      // Cererea rămâne pendiente. Aprobarea este o operațiune separată.
       const result = await this.empleadosService.createCambioAprobacion({
         ID: body.ID,
-        CODIGO: body.CODIGO,
+        CODIGO: bound.codigo,
         CORREO_ELECTRONICO: body.CORREO_ELECTRONICO,
         NOMBRE: body.NOMBRE || '',
         CAMPO_MODIFICADO: body.CAMPO_MODIFICADO || '',
@@ -1791,7 +1901,7 @@ export class EmpleadosController {
         MOTIVO_CAMBIO: body.MOTIVO_CAMBIO || '',
         FECHA_SOLICITUD: body.FECHA_SOLICITUD || new Date().toISOString(),
         FECHA_APROBACION: body.FECHA_APROBACION || new Date().toISOString(),
-        ESTADO: body.ESTADO || 'pendiente',
+        ESTADO: bound.estado,
         // Campos separados (opcionales)
         NOMBRE_SEPARADO: body.NOMBRE_SEPARADO,
         APELLIDO1: body.APELLIDO1,
@@ -1861,6 +1971,12 @@ export class EmpleadosController {
             html,
             {
               bcc: this.emailService.getDefaultBcc(),
+              record: {
+                senderId: String(bound.codigo || 'sistema'),
+                recipientType: 'empleado',
+                recipientId: String(bound.codigo || ''),
+                recipientName: body.NOMBRE || 'Empleado',
+              },
             },
           );
 
@@ -1886,6 +2002,7 @@ export class EmpleadosController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error creating cambio aprobacion:', error);
+      if (error instanceof ForbiddenException) throw error;
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -1899,6 +2016,9 @@ export class EmpleadosController {
   @UseGuards(JwtAuthGuard)
   async approveCambio(@Body() body: any, @CurrentUser() user: any) {
     try {
+      const actor = toEmpleadoActor(user);
+      const flags = await this.moduleFlags(user);
+      assertCanApproveEmployeeChange(actor, flags);
       this.logger.log(
         `✅ Aprobare cambio pentru empleado: ${body?.codigo || body?.CODIGO || 'unknown'}, cambio ID: ${body?.id || body?.ID || 'unknown'}`,
       );
@@ -1941,6 +2061,22 @@ export class EmpleadosController {
 
       // Dacă nu există campo în body, folosim din cambio (nu mai aruncăm eroare)
       // approveCambio va parsea cambio.campo pentru a obține lista de câmpuri
+
+      const codigoAprobare = String(
+        body.codigo || body.CODIGO || cambioData?.codigo || '',
+      ).trim();
+      const empAprobare = codigoAprobare
+        ? await this.empleadosService.getEmpleadoByCodigo(codigoAprobare)
+        : null;
+      const scopeAprobare =
+        await this.empleadoGrupoScopeService.resolveScopeFilter(
+          this.scopeUser(user),
+        );
+      this.empleadoGrupoScopeService.assertEmpleadoAccessible(
+        scopeAprobare,
+        codigoAprobare,
+        empAprobare?.GRUPO ?? empAprobare?.grupo,
+      );
 
       // Aprobă cambio-ul
       // Folosim campo și valor din body dacă există, altfel approveCambio va parsea din cambio
@@ -2178,6 +2314,11 @@ export class EmpleadosController {
             {
               ...(gestoriaCcAprob.length > 0 && { cc: gestoriaCcAprob }),
               bcc: this.emailService.getDefaultBcc(),
+              record: {
+                senderId: String(body.updatedBy || actor.userId || 'sistema').slice(0, 50),
+                recipientType: 'gestoria',
+                recipientName: 'Gestoría',
+              },
             },
           );
 
@@ -2199,6 +2340,7 @@ export class EmpleadosController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error approving cambio:', error);
+      if (error instanceof ForbiddenException) throw error;
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -2212,6 +2354,9 @@ export class EmpleadosController {
   @UseGuards(JwtAuthGuard)
   async rejectCambio(@Body() body: any, @CurrentUser() user: any) {
     try {
+      const actor = toEmpleadoActor(user);
+      const flags = await this.moduleFlags(user);
+      assertCanApproveEmployeeChange(actor, flags);
       this.logger.log(
         `❌ Respingere cambio ID: ${body?.id || body?.ID || 'unknown'}`,
       );
@@ -2220,6 +2365,25 @@ export class EmpleadosController {
       if (!body.id && !body.ID) {
         throw new BadRequestException('El ID del cambio es obligatorio');
       }
+
+      const cambioReject = await this.empleadosService.getCambioById(
+        body.id || body.ID,
+      );
+      const codigoReject = String(
+        body.codigo || body.CODIGO || cambioReject?.codigo || '',
+      ).trim();
+      const empReject = codigoReject
+        ? await this.empleadosService.getEmpleadoByCodigo(codigoReject)
+        : null;
+      const scopeReject =
+        await this.empleadoGrupoScopeService.resolveScopeFilter(
+          this.scopeUser(user),
+        );
+      this.empleadoGrupoScopeService.assertEmpleadoAccessible(
+        scopeReject,
+        codigoReject,
+        empReject?.GRUPO ?? empReject?.grupo,
+      );
 
       // Respinge cambio-ul
       const result = await this.empleadosService.rejectCambio({
@@ -2376,6 +2540,7 @@ export class EmpleadosController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error rejecting cambio:', error);
+      if (error instanceof ForbiddenException) throw error;
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -2389,6 +2554,7 @@ export class EmpleadosController {
   @UseGuards(JwtAuthGuard)
   async sendEmailToEmpleado(@Body() body: any, @CurrentUser() user: any) {
     try {
+      await this.requireFileWrite(user);
       this.logger.log('📧 Send email request:', {
         destinatar: body.destinatar,
         grup: body.grup,
@@ -2794,6 +2960,7 @@ export class EmpleadosController {
     @CurrentUser() user: any,
   ) {
     try {
+      await this.requireFileWrite(user);
       const codigo = (body as any).CODIGO || (body as any).codigo;
       if (!codigo) {
         throw new BadRequestException('CODIGO is required');
@@ -2854,13 +3021,22 @@ export class EmpleadosController {
         );
       }
 
-      // Verifică că utilizatorul își schimbă propria parolă sau este manager
-      const userCodigo = user?.userId || user?.CODIGO;
-      const isManager = user?.isManager || false;
+      const actor = toEmpleadoActor(user);
+      const flags = await this.moduleFlags(user);
+      const userCodigo = actor.userId;
 
-      if (body.codigo !== userCodigo && !isManager) {
-        throw new BadRequestException(
-          'No tienes permiso para cambiar la contraseña de otro usuario',
+      if (body.codigo !== userCodigo) {
+        assertEmployeeFileWrite(actor, flags);
+        const empPw = await this.empleadosService.getEmpleadoByCodigo(
+          body.codigo,
+        );
+        const scopePw = await this.empleadoGrupoScopeService.resolveScopeFilter(
+          this.scopeUser(user),
+        );
+        this.empleadoGrupoScopeService.assertEmpleadoAccessible(
+          scopePw,
+          body.codigo,
+          empPw?.GRUPO ?? empPw?.grupo,
         );
       }
 
@@ -2929,6 +3105,12 @@ export class EmpleadosController {
             htmlEmail,
             {
               bcc: this.emailService.getDefaultBcc(),
+              record: {
+                senderId: String(body.codigo || 'sistema').slice(0, 50),
+                recipientType: 'gestoria',
+                recipientId: String(body.codigo || ''),
+                recipientName: this.getCompany().legalNameShort || 'Empresa',
+              },
             },
           );
 
@@ -2982,20 +3164,12 @@ export class EmpleadosController {
         throw new BadRequestException('CODIGO es obligatorio');
       }
 
-      // Verifică că utilizatorul este manager/admin/developer
-      const isManager = user?.isManager || false;
-      const isDeveloper =
-        user?.GRUPO === 'Developer' || user?.grupo === 'Developer';
-      const userCodigo = user?.userId || user?.CODIGO;
-
-      // Doar managerii, adminii și developerii pot reseta parola altor utilizatori
-      if (codigo !== userCodigo && !isManager && !isDeveloper) {
-        throw new BadRequestException(
-          'No tienes permiso para resetear la contraseña de otro usuario',
-        );
-      }
+      const actor = toEmpleadoActor(user);
+      const flags = await this.moduleFlags(user);
+      const userCodigo = actor.userId;
 
       if (codigo !== userCodigo) {
+        assertEmployeeFileWrite(actor, flags);
         const empRs = await this.empleadosService.getEmpleadoByCodigo(codigo);
         const scRs = await this.empleadoGrupoScopeService.resolveScopeFilter({
           userId: user?.userId,
@@ -3018,7 +3192,26 @@ export class EmpleadosController {
         throw new BadRequestException('Empleado no encontrado');
       }
 
-      await this.sendResetPasswordEmail(empleado, result.temporaryPassword);
+      await this.sendResetPasswordEmail(
+        empleado,
+        result.temporaryPassword,
+        String(userCodigo || 'sistema'),
+      );
+      const targetNombre =
+        empleado?.NOMBRE_APELLIDOS ||
+        empleado?.['NOMBRE / APELLIDOS'] ||
+        codigo;
+      await writeActivityLog(this.prisma, {
+        action: 'password_reset_by_admin',
+        user: String(targetNombre),
+        updateby: String(userCodigo || 'sistema'),
+        url: '/api/empleados/reset-password',
+        details: {
+          codigo,
+          actorCodigo: String(userCodigo || 'sistema'),
+          hecho: 'Un administrador ha restablecido la contraseña. La contraseña no se guarda.',
+        },
+      });
 
       const requiresLogout = codigo === userCodigo;
 
@@ -3091,6 +3284,10 @@ export class EmpleadosController {
         role: user?.role,
         grupo: user?.grupo,
       });
+      assertExportAllNominas(
+        user,
+        await this.nominasService.mayManageNominas(user),
+      );
       this.logger.log(`📦 Export request for all employees`);
 
       const { stream, filename } =
@@ -3100,7 +3297,7 @@ export class EmpleadosController {
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${filename}"`,
+        contentDisposition('attachment', filename),
       );
 
       // Pipe stream-ul către response
@@ -3139,6 +3336,13 @@ export class EmpleadosController {
         codigo,
         emp?.GRUPO ?? emp?.grupo,
       );
+      if (!scopeOne) {
+        assertUnscopedEmployeeExport(
+          user,
+          codigo,
+          await this.nominasService.mayManageNominas(user),
+        );
+      }
       this.logger.log(`📦 Export request for empleado: ${codigo}`);
 
       const { stream, filename } =
@@ -3148,7 +3352,7 @@ export class EmpleadosController {
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${filename}"`,
+        contentDisposition('attachment', filename),
       );
 
       // Pipe stream-ul către response
@@ -3173,9 +3377,10 @@ export class EmpleadosController {
   async previewActualizacionIbans(
     @UploadedFile() file: Express.Multer.File,
 
-    @CurrentUser() _user: any,
+    @CurrentUser() user: any,
   ) {
     try {
+      await this.requireFileWrite(user);
       if (!file) {
         throw new BadRequestException('No se proporcionó archivo PDF');
       }
@@ -3189,6 +3394,24 @@ export class EmpleadosController {
       const resultado = await this.empleadosService.procesarPdfSoportePreview(
         file.buffer,
       );
+      const payload = this.scopeUser(user);
+      const bypass = this.empleadoGrupoScopeService.bypassesScope(payload);
+      const scope =
+        await this.empleadoGrupoScopeService.resolveScopeFilter(payload);
+      if (!bypass && scope?.grupos?.length) {
+        const allowed =
+          await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
+            payload,
+          );
+        const permitidos = new Set(allowed.map((codigo) => codigo.trim()));
+        resultado.asociaciones = resultado.asociaciones.filter((row) => {
+          const codigo = String(
+            row.empleadoEncontrado?.codigo || row.codigo || '',
+          ).trim();
+          if (!codigo) return true;
+          return permitidos.has(codigo);
+        });
+      }
 
       return {
         success: true,
@@ -3199,6 +3422,7 @@ export class EmpleadosController {
         `❌ Error en preview de IBANs: ${error.message}`,
         error.stack,
       );
+      if (error instanceof ForbiddenException) throw error;
       if (error instanceof BadRequestException) {
         throw error;
       }
@@ -3216,6 +3440,7 @@ export class EmpleadosController {
     @CurrentUser() user: any,
   ) {
     try {
+      await this.requireFileWrite(user);
       if (!body.actualizaciones || !Array.isArray(body.actualizaciones)) {
         throw new BadRequestException('Se requiere array de actualizaciones');
       }
@@ -3227,6 +3452,22 @@ export class EmpleadosController {
       this.logger.log(
         `💾 Confirmando ${body.actualizaciones.length} actualizaciones de IBANs...`,
       );
+
+      const scopeIban = await this.empleadoGrupoScopeService.resolveScopeFilter(
+        this.scopeUser(user),
+      );
+      if (scopeIban) {
+        for (const item of body.actualizaciones) {
+          const empIban = await this.empleadosService.getEmpleadoByCodigo(
+            item.codigo,
+          );
+          this.empleadoGrupoScopeService.assertEmpleadoAccessible(
+            scopeIban,
+            item.codigo,
+            empIban?.GRUPO ?? empIban?.grupo,
+          );
+        }
+      }
 
       const resultado = await this.empleadosService.confirmarActualizacionIbans(
         body.actualizaciones,
@@ -3242,6 +3483,7 @@ export class EmpleadosController {
         `❌ Error confirmando actualización de IBANs: ${error.message}`,
         error.stack,
       );
+      if (error instanceof ForbiddenException) throw error;
       if (error instanceof BadRequestException) {
         throw error;
       }

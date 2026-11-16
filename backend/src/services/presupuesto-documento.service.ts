@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -7,6 +7,10 @@ import PDFDocument from 'pdfkit';
 import { PresupuestosGuardadosService } from './presupuestos-guardados.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { clampPresupuestoDescuentoGlobalPct } from '../utils/presupuesto-descuento-pct';
+import {
+  buildPresupuestoFirmarUrl,
+  readPresupuestoFirmaConfig,
+} from './presupuesto-firma-access';
 import {
   AUXILIARES_OPERATIVA_IDS,
   filterAuxiliaresOperativaLines,
@@ -6733,7 +6737,21 @@ export class PresupuestoDocumentoService {
             process.env.FIRMAR_BASE_URL ||
             this.getCompany().frontendAppUrl ||
             '';
-          const firmarUrl = `${firmarBaseUrl}/firmar.html?id=${id}`;
+          let firmarUrl: string;
+          try {
+            firmarUrl = buildPresupuestoFirmarUrl(
+              firmarBaseUrl,
+              id,
+              readPresupuestoFirmaConfig(process.env),
+              new Date(),
+            );
+          } catch (err) {
+            throw new BadRequestException(
+              err instanceof Error
+                ? err.message
+                : 'No se puede generar el enlace de firma',
+            );
+          }
           const btnW = 200;
           const btnH = 32;
           const btnX = (PAGE_WIDTH - btnW) / 2;

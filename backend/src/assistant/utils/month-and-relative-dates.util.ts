@@ -325,11 +325,14 @@ export function looksLikeShortTemporalFollowUp(raw: string): boolean {
   if (patch.mes || patch.year) {
     return true;
   }
+  const startOnly = new Set(['si', 'y', 'și']);
   for (const cue of FOLLOW_UP_CUES) {
     const c = normalizeForMatch(cue);
-    if (n.startsWith(c) || n.includes(` ${c}`)) {
-      return true;
+    if (startOnly.has(c)) {
+      if (n === c || n.startsWith(`${c} `)) return true;
+      continue;
     }
+    if (n.startsWith(c) || n.includes(` ${c}`)) return true;
   }
   return false;
 }

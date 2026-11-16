@@ -12,6 +12,8 @@ import { EmpleadoGrupoScopeService } from '../services/empleado-grupo-scope.serv
 import { NotificationsService } from '../services/notifications.service';
 import { EmailService } from '../services/email.service';
 import { SentEmailsService } from '../services/sent-emails.service';
+import { isImplicitAdmin } from '../services/empleados-operation-access';
+import { permissionFlag } from '../services/pedidos-access-policy';
 
 const MODULE_MANAGE = 'tareas';
 const MODULE_MINE = 'mis-tareas';
@@ -50,41 +52,30 @@ export class TareasService {
     ).trim();
   }
 
-  private async hasModule(grupo: string, module: string): Promise<boolean> {
-    if (!grupo) return false;
+  private async hasModule(user: any, module: string): Promise<boolean> {
+    const grupo = this.grupoOf(user);
+    const role = String(user?.role || user?.ROLE || '').trim();
     if (
-      (grupo === 'Developer' ||
-        grupo === 'Admin' ||
-        grupo === 'Manager' ||
-        grupo === 'Supervisor') &&
+      isImplicitAdmin({ grupo, role }) &&
       (module === MODULE_MANAGE || module === MODULE_MINE)
     ) {
-      const explicit = await this.prisma.permissions.findFirst({
-        where: { grupo_module: `${grupo}_${module}` },
-      });
-      if (explicit && String(explicit.permitted).toLowerCase() === 'false') {
-        return false;
-      }
-      if (explicit && String(explicit.permitted).toLowerCase() === 'true') {
-        return true;
-      }
       return true;
     }
+    if (!grupo) return false;
     const row = await this.prisma.permissions.findFirst({
       where: { grupo_module: `${grupo}_${module}` },
     });
-    return Boolean(row && String(row.permitted).toLowerCase() === 'true');
+    return permissionFlag(row?.permitted);
   }
 
   async assertCanManage(user: any): Promise<void> {
-    const ok = await this.hasModule(this.grupoOf(user), MODULE_MANAGE);
+    const ok = await this.hasModule(user, MODULE_MANAGE);
     if (!ok) throw new ForbiddenException('Sin permiso para gestionar Tareas');
   }
 
   async assertCanViewMine(user: any): Promise<void> {
-    const grupo = this.grupoOf(user);
-    const mine = await this.hasModule(grupo, MODULE_MINE);
-    const manage = await this.hasModule(grupo, MODULE_MANAGE);
+    const mine = await this.hasModule(user, MODULE_MINE);
+    const manage = await this.hasModule(user, MODULE_MANAGE);
     if (!mine && !manage) {
       throw new ForbiddenException('Sin permiso para Mis Tareas');
     }
@@ -502,7 +493,7 @@ export class TareasService {
     if (!tarea) throw new NotFoundException('Tarea no encontrada');
 
     const codigo = this.codigoOf(user);
-    const canManage = await this.hasModule(this.grupoOf(user), MODULE_MANAGE);
+    const canManage = await this.hasModule(user, MODULE_MANAGE);
     const isAssignee = tarea.codigo_asignado === codigo;
 
     if (!canManage && !isAssignee) {
@@ -608,7 +599,7 @@ export class TareasService {
     if (!tarea) throw new NotFoundException('Tarea no encontrada');
 
     const codigo = this.codigoOf(user);
-    const canManage = await this.hasModule(this.grupoOf(user), MODULE_MANAGE);
+    const canManage = await this.hasModule(user, MODULE_MANAGE);
     const isAssignee = tarea.codigo_asignado === codigo;
     if (!canManage && !isAssignee) {
       throw new ForbiddenException('Sin permiso para completar esta tarea');
@@ -651,7 +642,7 @@ export class TareasService {
     if (!tarea) throw new NotFoundException('Tarea no encontrada');
 
     const codigo = this.codigoOf(user);
-    const canManage = await this.hasModule(this.grupoOf(user), MODULE_MANAGE);
+    const canManage = await this.hasModule(user, MODULE_MANAGE);
     const isAssignee = tarea.codigo_asignado === codigo;
     if (!canManage && !isAssignee) {
       throw new ForbiddenException('Sin permiso para subir fotos a esta tarea');
@@ -753,7 +744,7 @@ export class TareasService {
     if (!foto) throw new NotFoundException('Foto no encontrada');
 
     const codigo = this.codigoOf(user);
-    const canManage = await this.hasModule(this.grupoOf(user), MODULE_MANAGE);
+    const canManage = await this.hasModule(user, MODULE_MANAGE);
     if (!canManage && foto.tarea.codigo_asignado !== codigo) {
       throw new ForbiddenException('Sin permiso');
     }

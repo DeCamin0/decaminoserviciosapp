@@ -401,7 +401,7 @@ const EmpleadoPedidosPage: React.FC = () => {
     };
 
     fetchEmpleadoCompleto();
-  }, [user?.CODIGO, user?.email]);
+  }, [user?.CODIGO, user?.email, setActiveTab]);
 
   // Funcție pentru adăugarea de notificări
   const addToast = (type: ToastType, title: string, message: string, duration?: number) => {

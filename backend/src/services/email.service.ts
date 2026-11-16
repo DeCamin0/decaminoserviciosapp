@@ -1,6 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
+import { PrismaService } from '../prisma/prisma.service';
+
+export type OutgoingMailRecord = {
+  senderId?: string;
+  recipientType?: 'empleado' | 'gestoria' | 'grupo' | 'toti' | 'cliente';
+  recipientId?: string;
+  recipientName?: string;
+  attachmentNote?: string;
+};
 
 @Injectable()
 export class EmailService {
@@ -8,8 +17,53 @@ export class EmailService {
   private transporter: nodemailer.Transporter | null = null;
   private pedidosTransporter: nodemailer.Transporter | null = null;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {
     this.initializeTransporter();
+  }
+
+  private async archiveOutgoing(input: {
+    to: string;
+    subject: string;
+    html: string;
+    status: 'sent' | 'failed';
+    errorMessage?: string;
+    record?: OutgoingMailRecord;
+  }): Promise<void> {
+    if (!input.record) return;
+    const email = String(input.to || '').trim();
+    if (!email) return;
+    try {
+      await this.prisma.sentEmail.create({
+        data: {
+          sender_id: String(input.record.senderId || 'sistema').slice(0, 50),
+          recipient_type: input.record.recipientType || 'empleado',
+          recipient_id: input.record.recipientId
+            ? String(input.record.recipientId).slice(0, 50)
+            : null,
+          recipient_email: email.slice(0, 255),
+          recipient_name: input.record.recipientName
+            ? String(input.record.recipientName).slice(0, 255)
+            : null,
+          subject: String(input.subject || '').slice(0, 500),
+          message: input.html || '',
+          additional_message: input.record.attachmentNote
+            ? String(input.record.attachmentNote).slice(0, 2000)
+            : null,
+          status: input.status,
+          error_message: input.errorMessage
+            ? String(input.errorMessage).slice(0, 2000)
+            : null,
+          sent_at: input.status === 'sent' ? new Date() : null,
+        },
+      });
+    } catch (error: any) {
+      this.logger.warn(
+        `No se pudo guardar el correo enviado a ${email}: ${error?.message || error}`,
+      );
+    }
   }
 
   /**
@@ -73,6 +127,7 @@ export class EmailService {
       from?: string;
       cc?: string[];
       bcc?: string[];
+      record?: OutgoingMailRecord;
     },
   ): Promise<void> {
     if (!this.transporter) {
@@ -112,7 +167,28 @@ export class EmailService {
       this.logger.log(`   CC: ${ccList}`);
       this.logger.log(`   BCC: ${bccList}`);
       this.logger.log(`   MessageId: ${info.messageId}`);
+      await this.archiveOutgoing({
+        to,
+        subject,
+        html,
+        status: 'sent',
+        record: options?.record
+          ? {
+              ...options.record,
+              attachmentNote:
+                options.record.attachmentNote || `Adjunto: ${pdfFileName}`,
+            }
+          : undefined,
+      });
     } catch (error: any) {
+      await this.archiveOutgoing({
+        to,
+        subject,
+        html,
+        status: 'failed',
+        errorMessage: error?.message || String(error),
+        record: options?.record,
+      });
       this.logger.error(`❌ Error sending email to ${to}:`, error);
       throw new Error(`Failed to send email: ${error.message}`);
     }
@@ -134,6 +210,7 @@ export class EmailService {
       from?: string;
       cc?: string[];
       bcc?: string[];
+      record?: OutgoingMailRecord;
     },
   ): Promise<void> {
     if (!this.transporter) {
@@ -175,7 +252,29 @@ export class EmailService {
         `   Attachments: ${attachments.map((a) => a.filename).join(', ')}`,
       );
       this.logger.log(`   MessageId: ${info.messageId}`);
+      await this.archiveOutgoing({
+        to,
+        subject,
+        html,
+        status: 'sent',
+        record: options?.record
+          ? {
+              ...options.record,
+              attachmentNote:
+                options.record.attachmentNote ||
+                `Adjuntos: ${attachments.map((item) => item.filename).join(', ')}`,
+            }
+          : undefined,
+      });
     } catch (error: any) {
+      await this.archiveOutgoing({
+        to,
+        subject,
+        html,
+        status: 'failed',
+        errorMessage: error?.message || String(error),
+        record: options?.record,
+      });
       this.logger.error(`❌ Error sending email to ${to}:`, error);
       throw new Error(`Failed to send email: ${error.message}`);
     }
@@ -192,6 +291,7 @@ export class EmailService {
       from?: string;
       cc?: string[];
       bcc?: string[];
+      record?: OutgoingMailRecord;
     },
   ): Promise<void> {
     if (!this.transporter) {
@@ -223,7 +323,22 @@ export class EmailService {
       this.logger.log(`   CC: ${ccList}`);
       this.logger.log(`   BCC: ${bccList}`);
       this.logger.log(`   MessageId: ${info.messageId}`);
+      await this.archiveOutgoing({
+        to,
+        subject,
+        html,
+        status: 'sent',
+        record: options?.record,
+      });
     } catch (error: any) {
+      await this.archiveOutgoing({
+        to,
+        subject,
+        html,
+        status: 'failed',
+        errorMessage: error?.message || String(error),
+        record: options?.record,
+      });
       this.logger.error(`❌ Error sending email to ${to}:`, error);
       throw new Error(`Failed to send email: ${error.message}`);
     }

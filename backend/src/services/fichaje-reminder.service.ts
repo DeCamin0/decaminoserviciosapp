@@ -12,12 +12,19 @@ import {
   PunchTipo,
   TodaySchedule,
 } from './fichaje-schedule-resolver.service';
+import { FestivosZonaService } from './festivos-zona.service';
+import { restrictReminderRows } from './fichaje-reminder-manual';
 
 export type ReminderProcessOptions = {
   /** If true (or env FICHAJE_REMINDER_DRY_RUN), log only — no push / no dedup insert */
   dryRun?: boolean;
-  /** Override window minutes (else env / schedule margins) */
+  /** Override window minutes (else env / schedule margins). Apelul manual nu îl trimite. */
   windowMinutes?: number;
+  /**
+   * null / lipsă = toată firma (cron, Admin/Developer, fără rânduri de scope).
+   * Lista, inclusiv goală, limitează angajații citiți și notificați.
+   */
+  allowedCodigos?: string[] | null;
 };
 
 export type ReminderSkipReason =
@@ -100,12 +107,15 @@ type FichajeRow = {
 @Injectable()
 export class FichajeReminderService {
   private readonly logger = new Logger(FichajeReminderService.name);
+  /** Pauză în proces, pe CODIGO real, ca două rulări să nu trimită de două ori. */
+  private readonly reminderClaims = new Map<string, number>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly notificationsService: NotificationsService,
     private readonly resolver: FichajeScheduleResolverService,
+    private readonly festivosZona: FestivosZonaService,
   ) {}
 
   async processReminders(
@@ -143,10 +153,15 @@ export class FichajeReminderService {
     };
 
     const now = this.resolver.getMadridNow();
-    const [employees, extrabajadores] = await Promise.all([
+    const loaded = await Promise.all([
       this.loadActiveEmployees(),
       this.loadActiveExtrabajadores(),
     ]);
+    const employees = restrictReminderRows(loaded[0], options.allowedCodigos);
+    const extrabajadores = restrictReminderRows(
+      loaded[1],
+      options.allowedCodigos,
+    );
     result.scanned = employees.length;
 
     for (const ex of extrabajadores) {
@@ -170,9 +185,9 @@ export class FichajeReminderService {
     const schedules = await this.resolver.resolveForEmployees(employees, now);
     const codes = employees.map((e) => e.codigo);
 
-    const [fiesta, bajaMap, ausenciaMap, fichajesByCode, lastSentMap] =
+    const [fiestaMap, bajaMap, ausenciaMap, fichajesByCode, lastSentMap] =
       await Promise.all([
-        this.loadTodayFiesta(now.dateStr),
+        this.loadFiestaMap(codes, now.dateStr),
         this.loadEnBajaToday(codes, now.dateStr),
         this.loadEnAusenciaNow(codes, now),
         this.loadFichajesToday(codes, now.dateStr),
@@ -184,7 +199,10 @@ export class FichajeReminderService {
         await this.processOne({
           schedule,
           now,
-          fiesta,
+          fiesta: fiestaMap.get(schedule.codigo) ?? {
+            isFiesta: false,
+            name: null,
+          },
           bajaInfo: bajaMap.get(schedule.codigo) ?? null,
           ausenciaInfo: ausenciaMap.get(schedule.codigo) ?? null,
           fichajes: fichajesByCode.get(schedule.codigo) ?? [],
@@ -247,12 +265,14 @@ export class FichajeReminderService {
 
     const schedules = await this.resolver.resolveForEmployees(employees, now);
     const codes = employees.map((e) => e.codigo);
-    const [fiesta, bajaMap, ausenciaMap, fichajesByCode] = await Promise.all([
-      this.loadTodayFiesta(now.dateStr),
-      this.loadEnBajaToday(codes, now.dateStr),
-      this.loadEnAusenciaNow(codes, now),
-      this.loadFichajesToday(codes, now.dateStr),
-    ]);
+    const [fiestaMap, bajaMap, ausenciaMap, fichajesByCode] = await Promise.all(
+      [
+        this.loadFiestaMap(codes, now.dateStr),
+        this.loadEnBajaToday(codes, now.dateStr),
+        this.loadEnAusenciaNow(codes, now),
+        this.loadFichajesToday(codes, now.dateStr),
+      ],
+    );
 
     const programados: string[] = [];
     const pendientes: string[] = [];
@@ -265,6 +285,10 @@ export class FichajeReminderService {
       const trabajaFestivos = String(schedule.trabajaFestivos || '')
         .trim()
         .toUpperCase();
+      const fiesta = fiestaMap.get(schedule.codigo) ?? {
+        isFiesta: false,
+        name: null,
+      };
       if (
         fiesta.isFiesta &&
         (trabajaFestivos === 'NO' || trabajaFestivos === 'N')
@@ -285,7 +309,11 @@ export class FichajeReminderService {
         schedule.intervals,
         now.minutesOfDay,
       );
-      if (needed.status !== 'needs' || needed.tipo !== 'Entrada' || !needed.interval) {
+      if (
+        needed.status !== 'needs' ||
+        needed.tipo !== 'Entrada' ||
+        !needed.interval
+      ) {
         continue;
       }
 
@@ -325,7 +353,7 @@ export class FichajeReminderService {
   private async processOne(ctx: {
     schedule: TodaySchedule;
     now: MadridNow;
-    fiesta: { isFiesta: boolean; name: string | null };
+    fiesta: { isFiesta: boolean; name: string | null; kind?: string | null };
     bajaInfo: { situacion: string | null } | null;
     ausenciaInfo: { tipo: string | null } | null;
     fichajes: FichajeRow[];
@@ -378,8 +406,12 @@ export class FichajeReminderService {
     const trabajaFestivos = String(schedule.trabajaFestivos || '')
       .trim()
       .toUpperCase();
+    const localPartial =
+      ctx.fiesta.kind === 'local' &&
+      schedule.intervals.some((interval) => interval.centro);
     if (
       ctx.fiesta.isFiesta &&
+      !localPartial &&
       (trabajaFestivos === 'NO' || trabajaFestivos === 'N')
     ) {
       result.skippedFiesta += 1;
@@ -495,6 +527,24 @@ export class FichajeReminderService {
       ? `Recordatorio: aún no ha fichado correctamente. ${baseMensaje}`
       : baseMensaje;
 
+    if (
+      !ctx.dryRun &&
+      !this.tryClaimReminder(
+        schedule.codigo,
+        now.dateStr,
+        tipKey,
+        ctx.retryMinutes,
+      )
+    ) {
+      result.skippedDedup += 1;
+      pushSkip(
+        'ya_notificado',
+        'Ya avisado — otro envío está en curso o acaba de salir',
+        tipo,
+      );
+      return;
+    }
+
     const candidate = {
       codigo: schedule.codigo,
       nombre: schedule.nombre,
@@ -516,21 +566,26 @@ export class FichajeReminderService {
       return;
     }
 
-    await this.sendReminderPush({
-      codigo: schedule.codigo,
-      nombre: schedule.nombre,
-      estado: punchStatus.estado,
-      tipo,
-      horario,
-      mensaje,
-      centro: schedule.centro,
-      grupo: schedule.grupo,
-      fichajeHora: punchStatus.fichajeHora,
-      fichajeTipo: punchStatus.fichajeTipo,
-      isRetry,
-    });
+    try {
+      await this.sendReminderPush({
+        codigo: schedule.codigo,
+        nombre: schedule.nombre,
+        estado: punchStatus.estado,
+        tipo,
+        horario,
+        mensaje,
+        centro: schedule.centro,
+        grupo: schedule.grupo,
+        fichajeHora: punchStatus.fichajeHora,
+        fichajeTipo: punchStatus.fichajeTipo,
+        isRetry,
+      });
 
-    await this.markSent(schedule.codigo, now.dateStr, tipKey);
+      await this.markSent(schedule.codigo, now.dateStr, tipKey);
+    } catch (err) {
+      this.releaseReminderClaim(schedule.codigo, now.dateStr, tipKey);
+      throw err;
+    }
     if (tipKey === 'entrada') ctx.lastSent.entradaElapsedMin = 0;
     else ctx.lastSent.salidaElapsedMin = 0;
     result.sent += 1;
@@ -771,9 +826,7 @@ export class FichajeReminderService {
   ): Promise<void> {
     const empleadoId = this.codigoToEmpleadoId(codigo);
     if (empleadoId == null) {
-      this.logger.warn(
-        `Cannot dedup NotificariFichaje for non-mappable CODIGO=${codigo}`,
-      );
+      // CODIGO-ul nenumeric rămâne în notifications.user_id, scris de notifyUser.
       return;
     }
 
@@ -826,18 +879,141 @@ export class FichajeReminderService {
         if (!code) continue;
         const tip = String(row.tip || '').toLowerCase();
         if (tip !== 'entrada' && tip !== 'salida') continue;
-        const entry = map.get(code) ?? {};
         const elapsed = Number(row.elapsed_min);
         if (!Number.isFinite(elapsed)) continue;
-        if (tip === 'entrada') entry.entradaElapsedMin = elapsed;
-        else entry.salidaElapsedMin = elapsed;
-        map.set(code, entry);
+        this.rememberElapsed(map, code, tip, elapsed);
       }
     } catch (err: any) {
       this.logger.error(`loadLastSentToday failed: ${err.message}`);
     }
 
+    await this.mergeNotificationDedup(map, codes, dateStr);
     return map;
+  }
+
+  /**
+   * Dedup pe CODIGO-ul real din notifications.user_id.
+   * Acoperă codurile nenumerice, care nu încap în NotificariFichaje.empleado_id.
+   */
+  private async mergeNotificationDedup(
+    map: Map<string, { entradaElapsedMin?: number; salidaElapsedMin?: number }>,
+    codes: string[],
+    dateStr: string,
+  ): Promise<void> {
+    const clean = [
+      ...new Set(codes.map((c) => String(c).trim()).filter(Boolean)),
+    ];
+    if (clean.length === 0) return;
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<
+        Array<{
+          codigo: string;
+          data: string | null;
+          elapsed_min: number | null;
+        }>
+      >(
+        `SELECT TRIM(user_id) AS codigo,
+                data,
+                TIMESTAMPDIFF(MINUTE, created_at, NOW()) AS elapsed_min
+         FROM notifications
+         WHERE DATE(created_at) = ${this.escapeSql(dateStr)}
+           AND TRIM(user_id) IN (${this.codesInList(clean)})
+           AND data LIKE '%"kind":"FICHAJE_REMINDER"%'`,
+      );
+      for (const row of rows ?? []) {
+        const codigo = String(row.codigo || '').trim();
+        const tip = this.reminderTipFromPayload(row.data);
+        const elapsed = Number(row.elapsed_min);
+        if (!codigo || !tip || !Number.isFinite(elapsed)) continue;
+        this.rememberElapsed(map, codigo, tip, elapsed);
+      }
+    } catch (err: any) {
+      this.logger.error(`mergeNotificationDedup failed: ${err.message}`);
+    }
+  }
+
+  private reminderTipFromPayload(
+    data: string | null,
+  ): 'entrada' | 'salida' | null {
+    if (!data) return null;
+    try {
+      const parsed = JSON.parse(data) as { tipo?: unknown };
+      const tipo = String(parsed?.tipo || '').toLowerCase();
+      if (tipo.startsWith('entrada')) return 'entrada';
+      if (tipo.startsWith('salida')) return 'salida';
+    } catch {
+      const tipo = String(data).toLowerCase();
+      if (
+        tipo.includes('"tipo":"salida"') ||
+        tipo.includes('"tipo": "salida"')
+      ) {
+        return 'salida';
+      }
+      if (
+        tipo.includes('"tipo":"entrada"') ||
+        tipo.includes('"tipo": "entrada"')
+      ) {
+        return 'entrada';
+      }
+    }
+    return null;
+  }
+
+  private rememberElapsed(
+    map: Map<string, { entradaElapsedMin?: number; salidaElapsedMin?: number }>,
+    codigo: string,
+    tip: 'entrada' | 'salida',
+    elapsed: number,
+  ): void {
+    const entry = map.get(codigo) ?? {};
+    if (tip === 'entrada') {
+      entry.entradaElapsedMin =
+        entry.entradaElapsedMin == null
+          ? elapsed
+          : Math.min(entry.entradaElapsedMin, elapsed);
+    } else {
+      entry.salidaElapsedMin =
+        entry.salidaElapsedMin == null
+          ? elapsed
+          : Math.min(entry.salidaElapsedMin, elapsed);
+    }
+    map.set(codigo, entry);
+  }
+
+  private claimKey(
+    codigo: string,
+    dateStr: string,
+    tip: 'entrada' | 'salida',
+  ): string {
+    return `${dateStr}|${tip}|${String(codigo).trim()}`;
+  }
+
+  private tryClaimReminder(
+    codigo: string,
+    dateStr: string,
+    tip: 'entrada' | 'salida',
+    retryMinutes: number,
+  ): boolean {
+    const key = this.claimKey(codigo, dateStr, tip);
+    const now = Date.now();
+    const windowMs = Math.max(1, retryMinutes) * 60_000;
+    const prev = this.reminderClaims.get(key);
+    if (prev != null && now - prev < windowMs) return false;
+    this.reminderClaims.set(key, now);
+    if (this.reminderClaims.size > 4000) {
+      for (const [stored, ts] of this.reminderClaims) {
+        if (now - ts >= windowMs) this.reminderClaims.delete(stored);
+      }
+    }
+    return true;
+  }
+
+  private releaseReminderClaim(
+    codigo: string,
+    dateStr: string,
+    tip: 'entrada' | 'salida',
+  ): void {
+    this.reminderClaims.delete(this.claimKey(codigo, dateStr, tip));
   }
 
   private async loadActiveEmployees(): Promise<EmployeeRow[]> {
@@ -892,6 +1068,28 @@ export class FichajeReminderService {
     } catch (err: any) {
       this.logger.error(`loadActiveExtrabajadores failed: ${err.message}`);
       return [];
+    }
+  }
+
+  private async loadFiestaMap(
+    codes: string[],
+    dateStr: string,
+  ): Promise<
+    Map<
+      string,
+      { isFiesta: boolean; name: string | null; kind?: string | null }
+    >
+  > {
+    try {
+      if (!(await this.festivosZona.hasSchema())) {
+        const one = await this.loadTodayFiesta(dateStr);
+        return new Map(codes.map((codigo) => [codigo, one]));
+      }
+      return await this.festivosZona.fiestaForEmployees(codes, dateStr);
+    } catch (err: any) {
+      this.logger.error(`loadFiestaMap failed: ${err.message}`);
+      const one = await this.loadTodayFiesta(dateStr);
+      return new Map(codes.map((codigo) => [codigo, one]));
     }
   }
 
@@ -1122,20 +1320,16 @@ export class FichajeReminderService {
     return map;
   }
 
-  /** Map CODIGO → Int for NotificariFichaje.empleado_id */
+  /**
+   * Doar CODIGO numeric, în INT semnat.
+   * Codurile nenumerice nu se transformă în hash: s-ar putea ciocni cu un id real.
+   */
   codigoToEmpleadoId(codigo: string): number | null {
     const raw = String(codigo).trim();
-    if (/^\d+$/.test(raw)) {
-      const n = Number(raw);
-      return Number.isSafeInteger(n) ? n : null;
-    }
-    // stable 31-bit hash for alphanumeric codes
-    let h = 0;
-    for (let i = 0; i < raw.length; i++) {
-      h = (Math.imul(31, h) + raw.charCodeAt(i)) | 0;
-    }
-    const abs = Math.abs(h);
-    return abs === 0 ? 1 : abs;
+    if (!/^\d+$/.test(raw)) return null;
+    const n = Number(raw);
+    if (!Number.isSafeInteger(n) || n <= 0 || n > 2147483647) return null;
+    return n;
   }
 
   private minuteDistance(a: number, b: number): number {

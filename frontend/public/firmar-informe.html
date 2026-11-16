@@ -98,25 +98,35 @@
   <script>
     (function() {
       var params = new URLSearchParams(window.location.search);
+      var firmaToken = params.get('t') || '';
       var informeId = params.get('id') ? parseInt(params.get('id'), 10) : null;
       var API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
         ? 'http://localhost:3000'
         : (window.location.origin || '%VITE_API_URL%');
 
-      if (!informeId) {
+      function applyDatos(data) {
+        if (!data) return;
+        if (data.id) informeId = data.id;
+        document.getElementById('id-info').textContent = 'Informe ' + (data.numero_informe || informeId || '');
+        if (data.cliente_nombre) document.getElementById('nombre_comunidad').value = data.cliente_nombre;
+        if (data.cif) document.getElementById('cif').value = data.cif;
+        if (data.direccion) document.getElementById('direccion').value = data.direccion;
+      }
+
+      if (firmaToken) {
+        document.getElementById('id-info').textContent = 'Informe';
+        fetch(API_BASE + '/api/informes-firma/datos-firma?t=' + encodeURIComponent(firmaToken))
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .then(applyDatos)
+          .catch(function() {});
+      } else if (!informeId) {
         document.getElementById('id-info').textContent = 'No se ha indicado informe (falta ?id= en la URL).';
       } else {
         document.getElementById('id-info').textContent = 'Informe nº ' + informeId;
         fetch(API_BASE + '/api/informes-firma/' + informeId + '/datos-firma')
           .then(function(r) { return r.ok ? r.json() : null; })
-          .then(function(data) {
-            if (data) {
-              document.getElementById('id-info').textContent = 'Informe ' + (data.numero_informe || informeId);
-              if (data.cliente_nombre) document.getElementById('nombre_comunidad').value = data.cliente_nombre;
-              if (data.cif) document.getElementById('cif').value = data.cif;
-              if (data.direccion) document.getElementById('direccion').value = data.direccion;
-            }
-          }).catch(function() {});
+          .then(applyDatos)
+          .catch(function() {});
       }
 
       var canvas = document.getElementById('signature-pad');
@@ -147,7 +157,7 @@
 
       document.getElementById('form').addEventListener('submit', function(e) {
         e.preventDefault();
-        if (!informeId) { showMsg('Falta el identificador del informe en la URL.', true); return; }
+        if (!informeId && !firmaToken) { showMsg('Falta el identificador del informe en la URL.', true); return; }
         if (!allValid()) { showMsg('Complete todos los campos y firme.', true); return; }
 
         var payload = {
@@ -160,7 +170,8 @@
           cargo: document.getElementById('cargo').value,
           email: document.getElementById('email').value.trim(),
           telefono: document.getElementById('telefono').value.trim(),
-          firma_base64: signaturePad.toDataURL('image/png')
+          firma_base64: signaturePad.toDataURL('image/png'),
+          token: firmaToken || undefined
         };
 
         var btn = document.getElementById('btn-submit');

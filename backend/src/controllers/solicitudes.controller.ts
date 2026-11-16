@@ -17,19 +17,81 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { contentDisposition } from '../services/content-disposition';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SolicitudesService } from '../services/solicitudes.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { EmpleadoGrupoScopeService } from '../services/empleado-grupo-scope.service';
+import {
+  isImplicitAdmin,
+  matrixModuleEnabled,
+} from '../services/empleados-operation-access';
+import {
+  isSolicitudStaff,
+  type SolicitudActor,
+} from '../services/solicitudes-actor-policy';
+import { PermisoRetribuidoDurationService } from '../services/permiso-retribuido-duration.service';
+import { canConfirmPermisoDuracion } from '../services/permiso-retribuido-duration.logic';
 
 @Controller('api/solicitudes')
 @UseGuards(JwtAuthGuard)
 export class SolicitudesController {
   private readonly logger = new Logger(SolicitudesController.name);
 
-  constructor(private readonly solicitudesService: SolicitudesService) {}
+  constructor(
+    private readonly solicitudesService: SolicitudesService,
+    private readonly prisma: PrismaService,
+    private readonly empleadoGrupoScopeService: EmpleadoGrupoScopeService,
+    private readonly permisoDuracion: PermisoRetribuidoDurationService,
+  ) {}
+
+  private async actorOf(user: any): Promise<SolicitudActor> {
+    const grupo = String(user?.grupo || user?.GRUPO || '').trim();
+    const role = String(user?.role || user?.ROLE || '').trim();
+    const solicitudesAdmin =
+      isImplicitAdmin({ grupo, role }) ||
+      (await matrixModuleEnabled(this.prisma, grupo, 'solicitudes-admin'));
+    return {
+      userId: String(user?.userId || user?.CODIGO || '').trim(),
+      email: user?.email,
+      grupo,
+      role,
+      solicitudesAdmin,
+    };
+  }
+
+  private async assertSolicitudesAdmin(user: any, message: string) {
+    const actor = await this.actorOf(user);
+    if (!isSolicitudStaff(actor)) {
+      throw new BadRequestException(message);
+    }
+    return actor;
+  }
+
+  /** null = toată firma. [] = niciun rând. Lista = codurile din scope, inclusiv propriul cod. */
+  private async listRestriction(user: any): Promise<string[] | null> {
+    const actor = await this.actorOf(user);
+    const self = String(actor.userId || '').trim();
+    if (!isSolicitudStaff(actor)) return self ? [self] : [];
+    if (isImplicitAdmin(actor)) return null;
+    const scope = await this.empleadoGrupoScopeService.resolveScopeFilter({
+      userId: actor.userId,
+      grupo: actor.grupo,
+      role: actor.role,
+    });
+    if (!scope?.grupos?.length) return null;
+    const allowed =
+      await this.empleadoGrupoScopeService.listAllowedCodigosForPayload({
+        userId: actor.userId,
+        grupo: actor.grupo,
+        role: actor.role,
+      });
+    return allowed ?? [];
+  }
 
   @Get()
   @Throttle({
@@ -37,6 +99,7 @@ export class SolicitudesController {
     medium: { ttl: 60000, limit: 200 }, // 200 request-uri / minut (în loc de 100)
   })
   async getSolicitudes(
+    @CurrentUser() user: any,
     @Query('email') email?: string,
     @Query('codigo') codigo?: string,
     @Query('MES') mes?: string,
@@ -58,13 +121,21 @@ export class SolicitudesController {
         }
       }
 
+      const codigosPermitidos = await this.listRestriction(user);
+      const ownOnly =
+        Array.isArray(codigosPermitidos) && codigosPermitidos.length === 1
+          ? !(await this.actorOf(user)).solicitudesAdmin &&
+            !isImplicitAdmin(await this.actorOf(user))
+          : false;
       const solicitudes = await this.solicitudesService.getSolicitudes({
-        email,
-        codigo,
+        email: ownOnly ? undefined : email,
+        codigo: ownOnly ? codigosPermitidos?.[0] : codigo,
         MES: mes,
         TIPO: tipo,
         ESTADO: estado,
         limit: limitNum,
+        codigosPermitidos,
+        includePermisoDuracion: true,
       });
 
       return solicitudes;
@@ -72,6 +143,39 @@ export class SolicitudesController {
       this.logger.error('❌ Error getting solicitudes:', error);
       throw error;
     }
+  }
+
+  @Post('permiso-retribuido/preview')
+  async previewPermisoRetribuido(
+    @CurrentUser() user: any,
+    @Body()
+    body: { codigo?: string; fecha_inicio?: string; fecha_fin?: string },
+  ) {
+    const actor = await this.actorOf(user);
+    const codigo = String(body?.codigo || actor.userId || '').trim();
+    if (!codigo || !body?.fecha_inicio || !body?.fecha_fin) {
+      throw new BadRequestException(
+        'codigo, fecha_inicio y fecha_fin son obligatorios',
+      );
+    }
+    if (!canConfirmPermisoDuracion(actor) && codigo !== actor.userId) {
+      throw new BadRequestException(
+        'No puedes consultar el permiso de otro empleado',
+      );
+    }
+    if (canConfirmPermisoDuracion(actor)) {
+      const allowed = await this.listRestriction(user);
+      if (Array.isArray(allowed) && !allowed.includes(codigo)) {
+        throw new BadRequestException(
+          'No puedes consultar el permiso de este empleado',
+        );
+      }
+    }
+    return this.permisoDuracion.evaluate(
+      codigo,
+      body.fecha_inicio,
+      body.fecha_fin,
+    );
   }
 
   @Post()
@@ -102,14 +206,9 @@ export class SolicitudesController {
         ip = '127.0.0.1';
       }
 
-      const actorGrupo = String(user?.grupo || user?.GRUPO || '').trim();
-      // Same roles as /me isManager — bypass calendar limits like create with origen=MANAGER
-      const skipCalendarRestrictions = [
-        'Developer',
-        'Admin',
-        'Manager',
-        'Supervisor',
-      ].includes(actorGrupo);
+      const actor = await this.actorOf(user);
+      const actorGrupo = String(actor.grupo || '').trim();
+      const skipCalendarRestrictions = isSolicitudStaff(actor);
 
       this.logger.log(
         `📝 POST solicitud request - accion: ${accion}, id: ${body.id || 'N/A'}, ip: ${ip}, actorGrupo: ${actorGrupo || 'N/A'}, skipCalendar: ${skipCalendarRestrictions}`,
@@ -117,26 +216,30 @@ export class SolicitudesController {
 
       if (accion === 'create') {
         // Creează solicitare nouă
-        const result = await this.solicitudesService.createSolicitud({
-          id: String(body.id),
-          email: body.email,
-          codigo: body.codigo,
-          nombre: body.nombre || '',
-          tipo: body.tipo,
-          estado: body.estado || 'Aprobada',
-          motivo: body.motivo,
-          fecha_inicio: body.fecha_inicio,
-          fecha_fin: body.fecha_fin,
-          ip: ip,
-          fecha_ultimo_dia_trabajo: body.fecha_ultimo_dia_trabajo,
-          origen: body.origen,
-          creado_por: body.creado_por,
-          creado_por_email: body.creado_por_email,
-          tipo_justificante: body.tipo_justificante,
-          hora_cita: body.hora_cita,
-          centro_medico: body.centro_medico,
-          descripcion_otro: body.descripcion_otro,
-        });
+        const result = await this.solicitudesService.createSolicitud(
+          {
+            id: String(body.id),
+            email: body.email,
+            codigo: body.codigo,
+            nombre: body.nombre || '',
+            tipo: body.tipo,
+            estado: body.estado,
+            motivo: body.motivo,
+            fecha_inicio: body.fecha_inicio,
+            fecha_fin: body.fecha_fin,
+            ip: ip,
+            fecha_ultimo_dia_trabajo: body.fecha_ultimo_dia_trabajo,
+            origen: body.origen,
+            creado_por: body.creado_por,
+            creado_por_email: body.creado_por_email,
+            tipo_justificante: body.tipo_justificante,
+            hora_cita: body.hora_cita,
+            centro_medico: body.centro_medico,
+            descripcion_otro: body.descripcion_otro,
+            duracion_confirmada: body.duracion_confirmada,
+          },
+          actor,
+        );
 
         return result;
       } else if (accion === 'update') {
@@ -155,7 +258,10 @@ export class SolicitudesController {
             ip: ip,
             mensajePersonalizado: body.mensajePersonalizado, // Mesaj personalizat opțional pentru rechazar
             skipCalendarRestrictions,
+            duracion_confirmada: body.duracion_confirmada,
+            forzar_duracion: body.forzar_duracion === true,
           },
+          actor,
         );
 
         return result;
@@ -165,6 +271,7 @@ export class SolicitudesController {
           String(body.id),
           body.codigo,
           body.mensajePersonalizado, // Mesaj personalizat opțional
+          actor,
         );
 
         return result;
@@ -196,10 +303,12 @@ export class SolicitudesController {
     },
   ) {
     try {
-      // Verifică permisiuni - doar ADMIN/Developer
-      const grupo = user?.GRUPO || user?.grupo || '';
-      const allowedGroups = ['Admin', 'Developer'];
-      if (!allowedGroups.includes(grupo)) {
+      if (
+        !isImplicitAdmin({
+          grupo: user?.GRUPO || user?.grupo,
+          role: user?.role,
+        })
+      ) {
         throw new BadRequestException(
           'Acceso restringido. Solo administradores pueden crear despidos improcedentes.',
         );
@@ -265,10 +374,12 @@ export class SolicitudesController {
     },
   ) {
     try {
-      // Verifică permisiuni - doar ADMIN/Developer
-      const grupo = user?.GRUPO || user?.grupo || '';
-      const allowedGroups = ['Admin', 'Developer'];
-      if (!allowedGroups.includes(grupo)) {
+      if (
+        !isImplicitAdmin({
+          grupo: user?.GRUPO || user?.grupo,
+          role: user?.role,
+        })
+      ) {
         throw new BadRequestException(
           'Acceso restringido. Solo administradores pueden confirmar despidos.',
         );
@@ -336,18 +447,14 @@ export class SolicitudesController {
     @Res() res: Response,
   ) {
     try {
-      // Verifică permisiuni - doar manageri
-      const grupo = user?.GRUPO || user?.grupo || '';
-      const allowedGroups = ['Admin', 'Developer', 'Manager', 'Supervisor'];
-      if (!allowedGroups.includes(grupo)) {
-        throw new BadRequestException(
-          'Acceso restringido. Solo managers pueden ver el preview del PDF.',
-        );
-      }
+      await this.assertSolicitudesAdmin(
+        user,
+        'Acceso restringido. Solo managers pueden ver el preview del PDF.',
+      );
 
-      // Obține solicitarea
       const solicitudes = await this.solicitudesService.getSolicitudes({
         limit: 1000,
+        codigosPermitidos: await this.listRestriction(user),
       });
       const solicitud = solicitudes.find((s) => s.id === solicitudId);
 
@@ -371,7 +478,10 @@ export class SolicitudesController {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader(
         'Content-Disposition',
-        `inline; filename="Baja_Voluntaria_${solicitud.codigo}_preview.pdf"`,
+        contentDisposition(
+          'inline',
+          `Baja_Voluntaria_${solicitud.codigo}_preview.pdf`,
+        ),
       );
       res.send(pdfBuffer);
     } catch (error: any) {
@@ -392,13 +502,10 @@ export class SolicitudesController {
     @CurrentUser() user: any,
     @Body() body: { porcentaje?: number },
   ) {
-    const grupo = user?.GRUPO || user?.grupo || '';
-    const allowed = ['Admin', 'Developer', 'Manager', 'Supervisor'];
-    if (!allowed.includes(grupo)) {
-      throw new BadRequestException(
-        'Solo managers pueden cambiar el porcentaje de disponibilidad de vacaciones.',
-      );
-    }
+    await this.assertSolicitudesAdmin(
+      user,
+      'Solo managers pueden cambiar el porcentaje de disponibilidad de vacaciones.',
+    );
     if (body?.porcentaje === undefined || body?.porcentaje === null) {
       throw new BadRequestException('porcentaje es obligatorio');
     }
@@ -410,13 +517,10 @@ export class SolicitudesController {
   /** Lista perioadelor blocate pentru vacanțe (luni/intervale) – doar manageri. */
   @Get('vacation-blocked-periods')
   async getVacationBlockedPeriods(@CurrentUser() user: any) {
-    const grupo = user?.GRUPO || user?.grupo || '';
-    const allowed = ['Admin', 'Developer', 'Manager', 'Supervisor'];
-    if (!allowed.includes(grupo)) {
-      throw new BadRequestException(
-        'Solo managers pueden ver los periodos bloqueados.',
-      );
-    }
+    await this.assertSolicitudesAdmin(
+      user,
+      'Solo managers pueden ver los periodos bloqueados.',
+    );
     return this.solicitudesService.getVacationBlockedPeriods();
   }
 
@@ -426,13 +530,10 @@ export class SolicitudesController {
     @CurrentUser() user: any,
     @Body() body: { fecha_inicio: string; fecha_fin: string },
   ) {
-    const grupo = user?.GRUPO || user?.grupo || '';
-    const allowed = ['Admin', 'Developer', 'Manager', 'Supervisor'];
-    if (!allowed.includes(grupo)) {
-      throw new BadRequestException(
-        'Solo managers pueden crear periodos bloqueados.',
-      );
-    }
+    await this.assertSolicitudesAdmin(
+      user,
+      'Solo managers pueden crear periodos bloqueados.',
+    );
     if (!body?.fecha_inicio || !body?.fecha_fin) {
       throw new BadRequestException(
         'fecha_inicio y fecha_fin son obligatorios',
@@ -447,13 +548,10 @@ export class SolicitudesController {
     @CurrentUser() user: any,
     @Param('id', ParseIntPipe) id: number,
   ) {
-    const grupo = user?.GRUPO || user?.grupo || '';
-    const allowed = ['Admin', 'Developer', 'Manager', 'Supervisor'];
-    if (!allowed.includes(grupo)) {
-      throw new BadRequestException(
-        'Solo managers pueden eliminar periodos bloqueados.',
-      );
-    }
+    await this.assertSolicitudesAdmin(
+      user,
+      'Solo managers pueden eliminar periodos bloqueados.',
+    );
     await this.solicitudesService.deleteVacationBlockedPeriod(id);
     return { success: true };
   }
@@ -479,13 +577,10 @@ export class SolicitudesController {
     @Body()
     body: { max_personas_dia?: number; dias_anuales?: number },
   ) {
-    const grupo = user?.GRUPO || user?.grupo || '';
-    const allowed = ['Admin', 'Developer', 'Manager', 'Supervisor'];
-    if (!allowed.includes(grupo)) {
-      throw new BadRequestException(
-        'Solo managers pueden cambiar la config de Asuntos Propios.',
-      );
-    }
+    await this.assertSolicitudesAdmin(
+      user,
+      'Solo managers pueden cambiar la config de Asuntos Propios.',
+    );
     const hasPersonas =
       body?.max_personas_dia !== undefined && body?.max_personas_dia !== null;
     const hasDias =
@@ -504,13 +599,10 @@ export class SolicitudesController {
     @CurrentUser() user: any,
     @Body() body: { fecha_inicio: string; fecha_fin: string },
   ) {
-    const grupo = user?.GRUPO || user?.grupo || '';
-    const allowed = ['Admin', 'Developer', 'Manager', 'Supervisor'];
-    if (!allowed.includes(grupo)) {
-      throw new BadRequestException(
-        'Solo managers pueden crear periodos bloqueados para Asuntos Propios.',
-      );
-    }
+    await this.assertSolicitudesAdmin(
+      user,
+      'Solo managers pueden crear periodos bloqueados para Asuntos Propios.',
+    );
     if (!body?.fecha_inicio || !body?.fecha_fin) {
       throw new BadRequestException(
         'fecha_inicio y fecha_fin son obligatorios',
@@ -524,13 +616,10 @@ export class SolicitudesController {
     @CurrentUser() user: any,
     @Param('id', ParseIntPipe) id: number,
   ) {
-    const grupo = user?.GRUPO || user?.grupo || '';
-    const allowed = ['Admin', 'Developer', 'Manager', 'Supervisor'];
-    if (!allowed.includes(grupo)) {
-      throw new BadRequestException(
-        'Solo managers pueden eliminar periodos bloqueados para Asuntos Propios.',
-      );
-    }
+    await this.assertSolicitudesAdmin(
+      user,
+      'Solo managers pueden eliminar periodos bloqueados para Asuntos Propios.',
+    );
     await this.solicitudesService.deleteAsuntoPropioBlockedPeriod(id);
     return { success: true };
   }

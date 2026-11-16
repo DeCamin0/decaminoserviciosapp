@@ -11,6 +11,11 @@ import { EmpleadosService } from './empleados.service';
 import { SentEmailsService } from './sent-emails.service';
 import * as ExcelJS from 'exceljs';
 import { sheetToJson } from '../utils/excel-helper';
+import {
+  decideEmployeeAnnounce,
+  decideMutuaAbsorption,
+  type BajaEpisode,
+} from './bajas-medicas-episode.logic';
 
 type ManualBajaInput = {
   codigoEmpleado: string;
@@ -27,6 +32,7 @@ type BajasConflict = {
   fechaBaja?: string | null;
   fechaAltaManual?: string | null;
   fechaAltaMutua?: string | null;
+  avisoFuente?: string;
   manual: { idCaso: string; idPosicion: string };
   mutua: { idCaso: string; idPosicion: string };
 };
@@ -246,6 +252,170 @@ export class BajasMedicasService {
     return result;
   }
 
+  private async listEpisodesByCodigo(codigo: string): Promise<BajaEpisode[]> {
+    const mapRows = (rows: any[], withAnnounced: boolean): BajaEpisode[] =>
+      (rows || [])
+        .map((row) => ({
+          idCaso: String(row.idCaso || ''),
+          idPosicion: String(row.idPosicion || ''),
+          codigo: String(row.codigo || ''),
+          fuente: String(row.fuente || ''),
+          fechaBaja: this.formatDbDateToISO(row.fechaBaja) || '',
+          fechaAlta: this.formatDbDateToISO(row.fechaAlta),
+          altaAnunciada: withAnnounced
+            ? this.formatDbDateToISO(row.altaAnunciada)
+            : null,
+        }))
+        .filter((row) => row.fechaBaja);
+
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT
+          \`Id.Caso\` as idCaso,
+          \`Id.Posición\` as idPosicion,
+          \`Codigo_Empleado\` as codigo,
+          \`fuente\` as fuente,
+          \`Fecha baja\` as fechaBaja,
+          \`Fecha de alta\` as fechaAlta,
+          \`alta_anunciada\` as altaAnunciada
+        FROM \`MutuaCasos\`
+        WHERE \`Codigo_Empleado\` = ${this.escapeSql(codigo)}
+      `);
+      return mapRows(rows, true);
+    } catch (error: any) {
+      this.logger.warn(
+        `alta_anunciada no está disponible todavía: ${error.message}`,
+      );
+      const rows = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT
+          \`Id.Caso\` as idCaso,
+          \`Id.Posición\` as idPosicion,
+          \`Codigo_Empleado\` as codigo,
+          \`fuente\` as fuente,
+          \`Fecha baja\` as fechaBaja,
+          \`Fecha de alta\` as fechaAlta
+        FROM \`MutuaCasos\`
+        WHERE \`Codigo_Empleado\` = ${this.escapeSql(codigo)}
+      `);
+      return mapRows(rows, false);
+    }
+  }
+
+  async announceEmpleadoAlta(
+    codigoEmpleadoRaw: string,
+    fechaAlta: string,
+  ): Promise<{ message: string; idCaso: string; idPosicion: string }> {
+    const codigoEmpleado = this.normalizeCodigoEmpleado(codigoEmpleadoRaw);
+    if (!codigoEmpleado) {
+      throw new BadRequestException('codigoEmpleado es obligatorio');
+    }
+    if (this.parseExcelDate(fechaAlta) === 'NULL') {
+      throw new BadRequestException(
+        'fechaAlta inválida. Usa YYYY-MM-DD (ej: 2026-01-10)',
+      );
+    }
+    const open = (await this.listEpisodesByCodigo(codigoEmpleado)).filter(
+      (row) => !row.fechaAlta,
+    );
+    if (open.length === 0) {
+      throw new BadRequestException(
+        'No tienes una baja abierta para anunciar el alta.',
+      );
+    }
+    if (open.length > 1) {
+      throw new BadRequestException(
+        'Hay más de una baja abierta. Avisa a la oficina para indicar el alta.',
+      );
+    }
+    const episode = open[0];
+    if (fechaAlta < episode.fechaBaja) {
+      throw new BadRequestException(
+        'La fecha de alta no puede ser anterior a la fecha de baja.',
+      );
+    }
+    await this.prisma.$executeRawUnsafe(`
+      UPDATE \`MutuaCasos\`
+      SET \`alta_anunciada\` = ${this.parseExcelDate(fechaAlta)},
+          \`Situación\` = ${this.escapeSql('Baja')},
+          \`updated_at\` = NOW()
+      WHERE \`Id.Caso\` = ${this.escapeSql(episode.idCaso)}
+        AND \`Id.Posición\` = ${this.escapeSql(episode.idPosicion)}
+        AND \`Codigo_Empleado\` = ${this.escapeSql(codigoEmpleado)}
+        AND \`Fecha de alta\` IS NULL
+    `);
+    return {
+      message:
+        'Alta anunciada. Se tiene en cuenta para la vuelta al trabajo hasta que llegue la alta de la mutua.',
+      idCaso: episode.idCaso,
+      idPosicion: episode.idPosicion,
+    };
+  }
+
+  private async absorbEmployeeAnnouncements(input: {
+    codigo: string;
+    fechaBaja: string;
+    fechaAlta: string | null;
+    mutuaIdCaso: string;
+    mutuaIdPosicion: string;
+    trabajador?: string;
+  }): Promise<BajasConflict[]> {
+    const episodes = (await this.listEpisodesByCodigo(input.codigo)).filter(
+      (row) => row.fuente === 'EMPLEADO',
+    );
+    const decision = decideMutuaAbsorption(episodes, {
+      codigo: input.codigo,
+      fechaBaja: input.fechaBaja,
+      fechaAlta: input.fechaAlta,
+    });
+    if (decision.action === 'none') return [];
+    if (decision.action === 'conflict') {
+      return decision.rows.map((row) => ({
+        codigoEmpleado: input.codigo,
+        trabajador: input.trabajador,
+        fechaBaja: input.fechaBaja,
+        fechaAltaManual: row.altaAnunciada,
+        fechaAltaMutua: input.fechaAlta,
+        avisoFuente: 'EMPLEADO',
+        manual: { idCaso: row.idCaso, idPosicion: row.idPosicion },
+        mutua: {
+          idCaso: input.mutuaIdCaso,
+          idPosicion: input.mutuaIdPosicion,
+        },
+      }));
+    }
+    const row = decision.row;
+    if (!input.fechaAlta && row.altaAnunciada) {
+      await this.prisma.$executeRawUnsafe(`
+        UPDATE \`MutuaCasos\`
+        SET \`alta_anunciada\` = ${this.parseExcelDate(row.altaAnunciada)},
+            \`updated_at\` = NOW()
+        WHERE \`Id.Caso\` = ${this.escapeSql(input.mutuaIdCaso)}
+          AND \`Id.Posición\` = ${this.escapeSql(input.mutuaIdPosicion)}
+          AND \`Fecha de alta\` IS NULL
+      `);
+    }
+    if (input.fechaAlta) {
+      await this.prisma.$executeRawUnsafe(`
+        UPDATE \`MutuaCasos\`
+        SET \`alta_anunciada\` = NULL,
+            \`updated_at\` = NOW()
+        WHERE \`Id.Caso\` = ${this.escapeSql(input.mutuaIdCaso)}
+          AND \`Id.Posición\` = ${this.escapeSql(input.mutuaIdPosicion)}
+      `);
+    }
+    await this.prisma.$executeRawUnsafe(`
+      DELETE FROM \`MutuaCasos\`
+      WHERE \`Id.Caso\` = ${this.escapeSql(row.idCaso)}
+        AND \`Id.Posición\` = ${this.escapeSql(row.idPosicion)}
+        AND \`fuente\` = 'EMPLEADO'
+        AND \`Codigo_Empleado\` = ${this.escapeSql(input.codigo)}
+    `);
+    this.logger.log(
+      `Anuncio del empleado ${row.idCaso} sustituido por la mutua ${input.mutuaIdCaso} (${input.codigo})`,
+    );
+    return [];
+  }
+
   async createEmpleadoBaja(input: ManualBajaInput): Promise<{
     message: string;
     idCaso: string;
@@ -261,6 +431,14 @@ export class BajasMedicasService {
       }
 
       const empleado = await this.getEmpleadoSnapshotByCodigo(codigoEmpleado);
+      const episodes = await this.listEpisodesByCodigo(codigoEmpleado);
+      const announce = decideEmployeeAnnounce(episodes, {
+        codigo: codigoEmpleado,
+        fechaBaja: input.fechaBaja,
+      });
+      if (announce.ok === false) {
+        throw new BadRequestException(announce.message);
+      }
 
       const idCaso = this.generateManualIdCaso();
       const idPosicion = '1';
@@ -272,27 +450,19 @@ export class BajasMedicasService {
         );
       }
 
-      const fechaAltaSQL = input.fechaAlta
-        ? this.parseExcelDate(input.fechaAlta)
-        : 'NULL';
-
-      // Only compute days if both dates are present and valid
-      const diasBaja =
-        input.fechaAlta && fechaAltaSQL !== 'NULL'
-          ? this.calculateInclusiveDays(input.fechaBaja, input.fechaAlta)
-          : null;
-      if (input.fechaAlta && fechaAltaSQL !== 'NULL' && diasBaja === null) {
+      if (
+        input.fechaAlta &&
+        this.parseExcelDate(input.fechaAlta) !== 'NULL' &&
+        input.fechaAlta < input.fechaBaja
+      ) {
         throw new BadRequestException(
-          'fechaAlta inválida (o anterior a fechaBaja). Usa YYYY-MM-DD (ej: 2026-01-10)',
+          'La fecha de alta no puede ser anterior a la fecha de baja.',
         );
       }
 
-      const situacion =
-        input.situacion && input.situacion.trim() !== ''
-          ? input.situacion.trim()
-          : fechaAltaSQL !== 'NULL'
-            ? 'Alta'
-            : 'Baja';
+      const fechaAltaSQL = 'NULL';
+      const diasBaja = null;
+      const situacion = 'Baja';
 
       const query = `
         INSERT INTO \`MutuaCasos\` (
@@ -331,6 +501,16 @@ export class BajasMedicasService {
       `;
 
       await this.prisma.$executeRawUnsafe(query);
+
+      if (input.fechaAlta && this.parseExcelDate(input.fechaAlta) !== 'NULL') {
+        await this.prisma.$executeRawUnsafe(`
+          UPDATE \`MutuaCasos\`
+          SET \`alta_anunciada\` = ${this.parseExcelDate(input.fechaAlta)},
+              \`updated_at\` = NOW()
+          WHERE \`Id.Caso\` = ${this.escapeSql(idCaso)}
+            AND \`Id.Posición\` = ${this.escapeSql(idPosicion)}
+        `);
+      }
 
       // Trimite notificare Telegram către gestoria
       try {
@@ -803,6 +983,48 @@ ${diasBaja !== null ? `📊 *Días de baja:* ${diasBaja}` : ''}
               `⚠️ Conflict detection failed for Id.Caso=${idCaso}, Id.Posición=${idPosicion}: ${conflictError.message}`,
             );
           }
+
+          try {
+            const saved = await this.prisma.$queryRawUnsafe<any[]>(`
+              SELECT
+                \`Codigo_Empleado\` as codigoEmpleado,
+                \`Trabajador\` as trabajador,
+                \`Fecha baja\` as fechaBaja,
+                \`Fecha de alta\` as fechaAlta
+              FROM \`MutuaCasos\`
+              WHERE \`Id.Caso\` = ${this.escapeSql(idCaso)}
+                AND \`Id.Posición\` = ${this.escapeSql(idPosicion)}
+              LIMIT 1
+            `);
+            const savedRow = saved?.[0];
+            const savedCodigo = savedRow?.codigoEmpleado
+              ? String(savedRow.codigoEmpleado).trim()
+              : '';
+            const savedBaja = this.formatDbDateToISO(savedRow?.fechaBaja);
+            if (savedCodigo && savedBaja) {
+              const absorbed = await this.absorbEmployeeAnnouncements({
+                codigo: savedCodigo,
+                fechaBaja: savedBaja,
+                fechaAlta: this.formatDbDateToISO(savedRow?.fechaAlta),
+                mutuaIdCaso: String(idCaso),
+                mutuaIdPosicion: String(idPosicion),
+                trabajador: savedRow?.trabajador
+                  ? String(savedRow.trabajador)
+                  : undefined,
+              });
+              for (const item of absorbed) {
+                const key = `${item.manual.idCaso}_${item.manual.idPosicion}__${item.mutua.idCaso}_${item.mutua.idPosicion}`;
+                if (!conflictsSeen.has(key)) {
+                  conflictsSeen.add(key);
+                  conflicts.push(item);
+                }
+              }
+            }
+          } catch (absorbError: any) {
+            this.logger.warn(
+              `⚠️ No se pudo cerrar el anuncio del empleado para Id.Caso=${idCaso}: ${absorbError.message}`,
+            );
+          }
         } catch (rowError: any) {
           errors++;
           this.logger.warn(
@@ -1001,6 +1223,25 @@ ${diasBaja !== null ? `📊 *Días de baja:* ${diasBaja}` : ''}
           `);
           if (Number(updateRes) > 0) updatedMutua++;
         }
+      }
+
+      const avisoRows = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT \`alta_anunciada\` as altaAnunciada, \`fuente\` as fuente
+        FROM \`MutuaCasos\`
+        WHERE \`Id.Caso\` = ${this.escapeSql(manualIdCaso)}
+          AND \`Id.Posición\` = ${this.escapeSql(manualIdPos)}
+        LIMIT 1
+      `);
+      const announced = this.formatDbDateToISO(avisoRows?.[0]?.altaAnunciada);
+      if (announced && !fechaAltaMutuaISO) {
+        await this.prisma.$executeRawUnsafe(`
+          UPDATE \`MutuaCasos\`
+          SET \`alta_anunciada\` = ${this.escapeSql(announced)},
+              \`updated_at\` = NOW()
+          WHERE \`Id.Caso\` = ${this.escapeSql(mutuaIdCaso)}
+            AND \`Id.Posición\` = ${this.escapeSql(mutuaIdPos)}
+            AND \`Fecha de alta\` IS NULL
+        `);
       }
 
       // Always delete MANUAL duplicate after resolution

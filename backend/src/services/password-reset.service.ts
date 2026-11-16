@@ -17,6 +17,8 @@ import {
   PASSWORD_RESET_TTL_MS,
 } from '../utils/password-reset.util';
 import { hashPassword, validateNewPasswordPair } from '../utils/password.util';
+import { writeActivityLog } from '../utils/activity-log-write';
+import { revokeAllRefreshSessions } from './refresh-session';
 
 @Injectable()
 export class PasswordResetService {
@@ -30,6 +32,36 @@ export class PasswordResetService {
 
   getGenericMessage(): string {
     return FORGOT_GENERIC_MESSAGE;
+  }
+
+  private async recordPasswordResetEmail(input: {
+    codigo: string;
+    email: string;
+    subject: string;
+    status: 'sent' | 'failed';
+    errorMessage?: string;
+  }): Promise<void> {
+    const message =
+      '<p>Se ha enviado un enlace para restablecer la contraseña. El enlace no se guarda en este registro.</p>';
+    try {
+      await this.prisma.sentEmail.create({
+        data: {
+          sender_id: 'sistema',
+          recipient_type: 'empleado',
+          recipient_id: String(input.codigo || '').slice(0, 50) || null,
+          recipient_email: input.email,
+          subject: input.subject,
+          message,
+          status: input.status,
+          error_message: input.errorMessage || null,
+          sent_at: input.status === 'sent' ? new Date() : null,
+        },
+      });
+    } catch (error: any) {
+      this.logger.warn(
+        `[forgot-password] No se pudo guardar el registro del correo: ${error?.message || error}`,
+      );
+    }
   }
 
   private frontendBaseUrl(): string {
@@ -114,6 +146,7 @@ export class PasswordResetService {
         select: {
           CODIGO: true,
           CORREO_ELECTRONICO: true,
+          NOMBRE_APELLIDOS: true,
           ESTADO: true,
         },
       });
@@ -129,10 +162,25 @@ export class PasswordResetService {
         return { message: FORGOT_GENERIC_MESSAGE };
       }
 
+      const recordRequested = () =>
+        writeActivityLog(this.prisma, {
+          action: 'password_reset_requested',
+          user: user.NOMBRE_APELLIDOS || user.CODIGO,
+          email: user.CORREO_ELECTRONICO,
+          updateby: user.CODIGO,
+          ip: opts.ip,
+          url: '/api/auth/forgot-password',
+          details: {
+            codigo: user.CODIGO,
+            hecho: 'Ha solicitado restablecer la contraseña.',
+          },
+        });
+
       if (!this.emailService.isConfigured()) {
         this.logger.warn(
           '[forgot-password] SMTP not configured; returning generic OK',
         );
+        await recordRequested();
         return { message: FORGOT_GENERIC_MESSAGE };
       }
 
@@ -174,6 +222,8 @@ export class PasswordResetService {
         ttlMinutes,
       });
 
+      let status: 'sent' | 'failed' = 'sent';
+      let errorMessage: string | undefined;
       try {
         await this.emailService.sendEmail(
           user.CORREO_ELECTRONICO,
@@ -181,10 +231,20 @@ export class PasswordResetService {
           mail.html,
         );
       } catch (smtpErr: any) {
+        status = 'failed';
+        errorMessage = String(smtpErr?.message || smtpErr).slice(0, 500);
         this.logger.warn(
-          `[forgot-password] SMTP failure (generic response kept): ${smtpErr?.message || smtpErr}`,
+          `[forgot-password] SMTP failure (generic response kept): ${errorMessage}`,
         );
       }
+      await this.recordPasswordResetEmail({
+        codigo: user.CODIGO,
+        email: user.CORREO_ELECTRONICO,
+        subject: mail.subject,
+        status,
+        errorMessage,
+      });
+      await recordRequested();
 
       return { message: FORGOT_GENERIC_MESSAGE };
     } catch (err: any) {
@@ -257,6 +317,7 @@ export class PasswordResetService {
       });
     });
 
+    await revokeAllRefreshSessions(this.prisma, row.userCodigo);
     this.logger.log(
       `[reset-password] Password updated for user_codigo=${row.userCodigo}`,
     );

@@ -7,6 +7,7 @@ import {
   UseGuards,
   Logger,
   BadRequestException,
+  ForbiddenException,
   NotFoundException,
   Res,
   UseInterceptors,
@@ -19,7 +20,9 @@ import { Request } from 'express';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { SkipThrottle } from '@nestjs/throttler';
+import { contentDisposition } from '../services/content-disposition';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { DocumentosService } from '../services/documentos.service';
 
 /** Rate limit dezactivat: listarea/descărcarea documentelor e apelată în batch per empleado (Todas/Aprobación) și provoca 429 Too Many Requests. */
@@ -35,15 +38,17 @@ export class DocumentosController {
   async getDocumentos(
     @Query('empleadoId') empleadoId?: string,
     @Query('email') email?: string,
+    @CurrentUser() user?: any,
   ) {
     try {
       this.logger.log(
-        `📝 Get documentos request - empleadoId: ${empleadoId || 'N/A'}, email: ${email || 'N/A'}`,
+        `📝 Get documentos request - empleadoId: ${empleadoId || 'N/A'}, email: ${email || 'N/A'}, actor: ${user?.userId || 'none'}`,
       );
 
       const documentos = await this.documentosService.getDocumentos(
         empleadoId,
         email,
+        user,
       );
 
       return {
@@ -52,9 +57,13 @@ export class DocumentosController {
       };
     } catch (error: any) {
       this.logger.error('Error in DocumentosController.getDocumentos:', error);
-      throw error instanceof BadRequestException
-        ? error
-        : new BadRequestException('Error al obtener los documentos');
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
+        throw error;
+      }
+      throw new BadRequestException('Error al obtener los documentos');
     }
   }
 
@@ -70,6 +79,7 @@ export class DocumentosController {
     @Query('email') email?: string,
     @Query('fileName') fileName?: string,
     @Query('preview') preview?: string,
+    @CurrentUser() user?: any,
   ) {
     try {
       const documentIdNumber = parseInt(documentId, 10);
@@ -83,7 +93,7 @@ export class DocumentosController {
       const isPreview = preview === 'true' || preview === '1';
 
       this.logger.log(
-        `📥 Download documento request - documentId: ${documentIdNumber}, id: ${id || 'N/A'}, email: ${email || 'N/A'}, fileName: ${fileName || 'N/A'}, preview: ${isPreview}`,
+        `📥 Download documento request - documentId: ${documentIdNumber}, id: ${id || 'N/A'}, email: ${email || 'N/A'}, fileName: ${fileName || 'N/A'}, preview: ${isPreview}, actor: ${user?.userId || 'none'}`,
       );
 
       const { archivo, tipo_mime, nombre_archivo } =
@@ -92,6 +102,7 @@ export class DocumentosController {
           id,
           email,
           fileName,
+          user,
         );
 
       // Setează headers pentru download sau preview
@@ -100,9 +111,7 @@ export class DocumentosController {
       // Pentru download, folosește 'attachment'
       res.setHeader(
         'Content-Disposition',
-        isPreview
-          ? `inline; filename="${nombre_archivo}"`
-          : `attachment; filename="${nombre_archivo}"`,
+        contentDisposition(isPreview ? 'inline' : 'attachment', nombre_archivo),
       );
       res.setHeader('Content-Length', archivo.length.toString());
 
@@ -115,6 +124,7 @@ export class DocumentosController {
       );
       if (
         error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
         error instanceof NotFoundException
       ) {
         throw error;
@@ -181,6 +191,7 @@ export class DocumentosController {
     },
     @Req() req: Request,
     @Body() body: any,
+    @CurrentUser() user?: any,
   ) {
     try {
       // Collect all files in order
@@ -219,6 +230,7 @@ export class DocumentosController {
       const result = await this.documentosService.uploadDocumento(
         allFiles,
         formDataBody,
+        user,
       );
 
       return {
@@ -228,7 +240,10 @@ export class DocumentosController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error uploading documentos:', error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -243,7 +258,7 @@ export class DocumentosController {
    * Accepts body: { id: string|number, nombre_archivo?: string, filename?: string, fileName?: string }
    */
   @Post('delete')
-  async deleteDocumentoPost(@Body() body: any) {
+  async deleteDocumentoPost(@Body() body: any, @CurrentUser() user?: any) {
     try {
       // Extract id (required)
       const id = body.id || body.facturald || body.facturaId;
@@ -273,6 +288,7 @@ export class DocumentosController {
         id,
         nombreArchivo,
         body.doc_id ?? body.docId ?? body.documentId ?? null,
+        user,
       );
 
       // Return format matching n8n response
@@ -294,6 +310,7 @@ export class DocumentosController {
       );
       if (
         error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
         error instanceof NotFoundException
       ) {
         throw error;
@@ -312,6 +329,7 @@ export class DocumentosController {
   async deleteDocumento(
     @Param('id') id: string,
     @Query('nombre_archivo') nombreArchivo: string,
+    @CurrentUser() user?: any,
   ) {
     try {
       if (!nombreArchivo) {
@@ -327,6 +345,8 @@ export class DocumentosController {
       const result = await this.documentosService.deleteDocumento(
         id,
         nombreArchivo,
+        null,
+        user,
       );
 
       return {
@@ -341,6 +361,7 @@ export class DocumentosController {
       );
       if (
         error instanceof BadRequestException ||
+        error instanceof ForbiddenException ||
         error instanceof NotFoundException
       ) {
         throw error;

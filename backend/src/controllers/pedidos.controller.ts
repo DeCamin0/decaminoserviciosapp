@@ -13,14 +13,24 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { SkipThrottle } from '@nestjs/throttler';
+import { contentDisposition } from '../services/content-disposition';
 import { PedidosService } from '../services/pedidos.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { EmpleadosService } from '../services/empleados.service';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  canCreatePedido,
+  pedidoInScope,
+  permissionFlag,
+  resolvePedidosAccessFromUser,
+  type PedidosScope,
+} from '../services/pedidos-access-policy';
 
 @UseGuards(JwtAuthGuard)
 /** Fără rate limit global: listări/refetch frecvente pe Pedidos (mai multe GET /api/pedidos per tab) + NAT birou → 429. */
@@ -32,7 +42,89 @@ export class PedidosController {
   constructor(
     private readonly pedidosService: PedidosService,
     private readonly empleadosService: EmpleadosService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  private async resolveAccess(user: any): Promise<{
+    scope: PedidosScope;
+    userId: string;
+    centro: string;
+  }> {
+    return resolvePedidosAccessFromUser(
+      user,
+      async (grupo) => {
+        const rows = await this.prisma.permissions.findMany({
+          where: {
+            grupo_module: {
+              in: [
+                `${grupo}_pedidos-admin`,
+                `${grupo}_pedidos-empleados`,
+                `${grupo}_pedidos`,
+              ],
+            },
+          },
+          select: { grupo_module: true, permitted: true },
+        });
+        let pedidosAdmin = false;
+        let pedidosEmpleados = false;
+        let pedidosLegacy = false;
+        for (const row of rows) {
+          if (!permissionFlag(row.permitted)) continue;
+          if (row.grupo_module.endsWith('_pedidos-admin')) pedidosAdmin = true;
+          else if (row.grupo_module.endsWith('_pedidos-empleados')) {
+            pedidosEmpleados = true;
+          } else if (row.grupo_module.endsWith('_pedidos')) {
+            pedidosLegacy = true;
+          }
+        }
+        return { pedidosAdmin, pedidosEmpleados, pedidosLegacy };
+      },
+      async (codigo) => {
+        const empleado =
+          await this.empleadosService.getEmpleadoByCodigo(codigo);
+        return String(
+          empleado?.['CENTRO TRABAJO'] ||
+            empleado?.CENTRO_TRABAJO ||
+            empleado?.CENTRO ||
+            '',
+        );
+      },
+    );
+  }
+
+  private denyPedidos(): never {
+    throw new ForbiddenException('No puedes acceder a los pedidos');
+  }
+
+  private async requireAccess(user: any) {
+    const access = await this.resolveAccess(user);
+    if (access.scope === 'none') this.denyPedidos();
+    return access;
+  }
+
+  private async requirePedido(user: any, pedidoUid: string) {
+    const access = await this.requireAccess(user);
+    if (access.scope === 'all') return access;
+    const pedido = await this.pedidosService.getPedidoByUid(pedidoUid);
+    if (
+      !pedidoInScope(access.scope, access.userId, access.centro, {
+        empleadoId: pedido?.empleado?.id,
+        comunidadNombre: pedido?.comunidad?.nombre,
+      })
+    ) {
+      this.denyPedidos();
+    }
+    return access;
+  }
+
+  private async requirePedidoList(user: any, uids: string[] | undefined) {
+    const access = await this.requireAccess(user);
+    if (access.scope === 'all') return access;
+    for (const uid of uids || []) {
+      await this.requirePedido(user, uid);
+    }
+    return access;
+  }
 
   private async resolveUserInfo(user: any): Promise<string> {
     try {
@@ -62,6 +154,10 @@ export class PedidosController {
 
   @Post()
   async savePedido(@Body() body: any, @CurrentUser() user: any) {
+    const access = await this.requireAccess(user);
+    if (!canCreatePedido(access.scope, access.userId, body?.empleado?.id)) {
+      this.denyPedidos();
+    }
     this.logger.log(
       `Received request to save pedido for empleado: ${body.empleado?.id || 'N/A'}`,
     );
@@ -73,16 +169,29 @@ export class PedidosController {
   }
 
   @Get()
-  async getAllPedidos(@Query('estado') estado?: string) {
+  async getAllPedidos(
+    @Query('estado') estado?: string,
+    @CurrentUser() user?: any,
+  ) {
     this.logger.log(
       `📦 [PedidosController] Getting all pedidos${estado ? ` with estado: ${estado}` : ''}`,
     );
     try {
+      const access = await this.requireAccess(user);
       const result = await this.pedidosService.getAllPedidos(estado);
+      const visible =
+        access.scope === 'all'
+          ? result
+          : result.filter((pedido) =>
+              pedidoInScope(access.scope, access.userId, access.centro, {
+                empleadoId: pedido?.empleado?.id,
+                comunidadNombre: pedido?.comunidad?.nombre,
+              }),
+            );
       this.logger.log(
-        `📦 [PedidosController] Returning ${result.length} pedidos`,
+        `📦 [PedidosController] Returning ${visible.length} pedidos`,
       );
-      return result;
+      return visible;
     } catch (error: any) {
       this.logger.error(`❌ [PedidosController] Error getting pedidos:`, error);
       throw error;
@@ -105,6 +214,7 @@ export class PedidosController {
     );
     try {
       const decodedUid = decodeURIComponent(pedidoUid);
+      await this.requirePedido(user, decodedUid);
       const userInfo = await this.resolveUserInfo(user);
       return await this.pedidosService.deletePedido(decodedUid, {
         actor: this.buildLogActor(user, userInfo),
@@ -121,8 +231,12 @@ export class PedidosController {
    * Lista metadatelor albaranes (fără fișiere).
    */
   @Get(':pedidoUid/albaranes')
-  async listAlbaranes(@Param('pedidoUid') pedidoUid: string) {
+  async listAlbaranes(
+    @Param('pedidoUid') pedidoUid: string,
+    @CurrentUser() user: any,
+  ) {
     const decodedUid = decodeURIComponent(pedidoUid);
+    await this.requirePedido(user, decodedUid);
     return this.pedidosService.listAlbaranes(decodedUid);
   }
 
@@ -136,9 +250,11 @@ export class PedidosController {
     @Param('pedidoUid') pedidoUid: string,
     @Query('preview') preview: string | undefined,
     @Query('id') albaranIdParam: string | undefined,
+    @CurrentUser() user: any,
     @Res() res: Response,
   ) {
     const decodedUid = decodeURIComponent(pedidoUid);
+    await this.requirePedido(user, decodedUid);
     const parsed = albaranIdParam ? parseInt(albaranIdParam, 10) : NaN;
     const albaranId = !Number.isNaN(parsed) && parsed > 0 ? parsed : undefined;
     const { archivo, nombre_archivo, tipo_mime } =
@@ -148,9 +264,7 @@ export class PedidosController {
     res.setHeader('Content-Type', tipo_mime);
     res.setHeader(
       'Content-Disposition',
-      isPreview
-        ? `inline; filename="${safeName}"`
-        : `attachment; filename="${safeName}"`,
+      contentDisposition(isPreview ? 'inline' : 'attachment', safeName),
     );
     res.send(archivo);
   }
@@ -166,6 +280,7 @@ export class PedidosController {
     @CurrentUser() user: any,
   ) {
     const decodedUid = decodeURIComponent(pedidoUid);
+    await this.requirePedido(user, decodedUid);
     const parsed = albaranIdParam ? parseInt(albaranIdParam, 10) : NaN;
     if (Number.isNaN(parsed) || parsed < 1) {
       throw new BadRequestException('Se requiere id de albarán válido (?id=)');
@@ -197,8 +312,12 @@ export class PedidosController {
   }
 
   @Get(':pedidoUid')
-  async getPedidoByUid(@Param('pedidoUid') pedidoUid: string) {
+  async getPedidoByUid(
+    @Param('pedidoUid') pedidoUid: string,
+    @CurrentUser() user: any,
+  ) {
     const decodedUid = decodeURIComponent(pedidoUid);
+    await this.requirePedido(user, decodedUid);
     this.logger.log(
       `📦 [PedidosController] Getting pedido with UID: ${decodedUid}`,
     );
@@ -212,6 +331,7 @@ export class PedidosController {
     @CurrentUser() user: any,
   ) {
     const decodedUid = decodeURIComponent(pedidoUid);
+    await this.requirePedido(user, decodedUid);
     const userInfo = await this.resolveUserInfo(user);
 
     this.logger.log(
@@ -240,6 +360,7 @@ export class PedidosController {
     @CurrentUser() user: any,
   ) {
     const decodedUid = decodeURIComponent(pedidoUid);
+    await this.requirePedido(user, decodedUid);
     const userInfo = await this.resolveUserInfo(user);
     this.logger.log(
       `📦 [PedidosController] Updating pedido ${decodedUid} dirección de envío`,
@@ -270,6 +391,7 @@ export class PedidosController {
   ) {
     // Decodează UID-ul dacă este encodat
     const decodedUid = decodeURIComponent(pedidoUid);
+    await this.requirePedido(user, decodedUid);
     const userInfo = await this.resolveUserInfo(user);
     this.logger.log(
       `📦 [PedidosController] Updating pedido ${decodedUid} items (${body.items?.length || 0} items)`,
@@ -297,6 +419,7 @@ export class PedidosController {
     @CurrentUser() user: any,
   ) {
     const decodedUid = decodeURIComponent(pedidoUid);
+    await this.requirePedido(user, decodedUid);
     const userInfo = await this.resolveUserInfo(user);
     this.logger.log(
       `📝 [PedidosController] Updating notas for pedido ${decodedUid}`,
@@ -311,11 +434,13 @@ export class PedidosController {
   @Post('generar-excel')
   async generarExcelPedidos(
     @Body() body: { pedidos: string[] },
+    @CurrentUser() user: any,
     @Res() res: any,
   ) {
     this.logger.log(
       `📊 [PedidosController] Generando Excel para ${body.pedidos?.length || 0} pedidos`,
     );
+    await this.requirePedidoList(user, body.pedidos);
 
     // Generează Excel-ul fără să marcheze ca enviado
     const buffer = await this.pedidosService.generarExcelPedidos(body.pedidos);
@@ -349,6 +474,7 @@ export class PedidosController {
     const senderId = String(
       user?.CODIGO || user?.codigo || user?.userId || 'system',
     );
+    await this.requirePedidoList(user, body.pedidos);
     const userInfo = await this.resolveUserInfo(user);
 
     // Trimite mesajul la provider (dacă este specificat) și marchează ca enviado
@@ -369,6 +495,7 @@ export class PedidosController {
     @CurrentUser() user: any,
   ) {
     const decodedUid = decodeURIComponent(pedidoUid);
+    await this.requirePedido(user, decodedUid);
 
     if (!file) {
       throw new BadRequestException('Se requiere un archivo para el albarán');

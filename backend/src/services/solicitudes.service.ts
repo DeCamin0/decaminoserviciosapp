@@ -1,4 +1,9 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from './telegram.service';
@@ -9,6 +14,24 @@ import { EmpleadosService } from './empleados.service';
 import { BajaVoluntariaPdfService } from './baja-voluntaria-pdf.service';
 import { DocumentosService } from './documentos.service';
 import { AusenciasService } from './ausencias.service';
+import {
+  guardSolicitudCreate,
+  guardSolicitudDelete,
+  guardSolicitudUpdate,
+  type SolicitudActor,
+} from './solicitudes-actor-policy';
+import { PermisoRetribuidoDurationService } from './permiso-retribuido-duration.service';
+import {
+  canConfirmPermisoDuracion,
+  decidePermisoSave,
+  isPermisoRetribuido,
+  madridIsoDate,
+} from './permiso-retribuido-duration.logic';
+import {
+  exactDuplicateMessage,
+  isExactSolicitudDuplicate,
+  solicitudCalendarRange,
+} from './solicitudes-duplicate.logic';
 
 @Injectable()
 export class SolicitudesService {
@@ -28,6 +51,7 @@ export class SolicitudesService {
     private readonly documentosService: DocumentosService,
     private readonly ausenciasService: AusenciasService,
     private readonly configService: ConfigService,
+    private readonly permisoDuracion: PermisoRetribuidoDurationService,
   ) {}
 
   private getSolicitudesEmail(): string {
@@ -1096,6 +1120,9 @@ export class SolicitudesService {
     TIPO?: string;
     ESTADO?: string;
     limit?: number;
+    /** null = fără restricție suplimentară. [] = niciun rând. */
+    codigosPermitidos?: string[] | null;
+    includePermisoDuracion?: boolean;
   }): Promise<any[]> {
     try {
       const conditions: string[] = [];
@@ -1108,6 +1135,19 @@ export class SolicitudesService {
       // Filtrare pe codigo
       if (filters.codigo && filters.codigo.trim() !== '') {
         conditions.push(`codigo = ${this.escapeSql(filters.codigo.trim())}`);
+      }
+
+      if (Array.isArray(filters.codigosPermitidos)) {
+        const codes = filters.codigosPermitidos
+          .map((code) => String(code || '').trim())
+          .filter(Boolean);
+        if (codes.length === 0) {
+          conditions.push('1=0');
+        } else {
+          conditions.push(
+            `codigo IN (${codes.map((code) => this.escapeSql(code)).join(', ')})`,
+          );
+        }
       }
 
       // Filtrare pe tip (TIPO)
@@ -1173,18 +1213,24 @@ export class SolicitudesService {
       );
 
       // Transformă datele pentru compatibilitate cu frontend
-      return rows.map((row) => ({
+      const mapped = rows.map((row) => ({
         id: row.id || row.ID,
         codigo: row.codigo || row.CODIGO,
         nombre: row.nombre || row.NOMBRE,
         email: row.email || row.EMAIL || row.CORREO_ELECTRONICO,
         tipo: row.tipo || row.TIPO,
         estado: row.estado || row.ESTADO,
-        fecha_inicio:
-          row.fecha_inicio instanceof Date
+        fecha_inicio: isPermisoRetribuido(row.tipo || row.TIPO)
+          ? madridIsoDate(row.fecha_inicio) ||
+            (row.fecha_inicio instanceof Date
+              ? row.fecha_inicio.toISOString().split('T')[0]
+              : row.fecha_inicio || row.FECHA_INICIO)
+          : row.fecha_inicio instanceof Date
             ? row.fecha_inicio.toISOString().split('T')[0]
             : row.fecha_inicio || row.FECHA_INICIO,
-        fecha_fin: row.fecha_fin || row.FECHA_FIN,
+        fecha_fin: isPermisoRetribuido(row.tipo || row.TIPO)
+          ? madridIsoDate(row.fecha_fin) || row.fecha_fin || row.FECHA_FIN
+          : row.fecha_fin || row.FECHA_FIN,
         motivo: row.motivo || row.MOTIVO,
         fecha_solicitud:
           row.fecha_solicitud instanceof Date
@@ -1208,7 +1254,17 @@ export class SolicitudesService {
         hora_cita: row.hora_cita ?? null,
         centro_medico: row.centro_medico ?? null,
         descripcion_otro: row.descripcion_otro ?? null,
+        permiso_fecha_inicio: isPermisoRetribuido(row.tipo || row.TIPO)
+          ? madridIsoDate(row.fecha_inicio)
+          : null,
+        permiso_fecha_fin: isPermisoRetribuido(row.tipo || row.TIPO)
+          ? madridIsoDate(row.fecha_fin)
+          : null,
       }));
+      if (filters.includePermisoDuracion) {
+        await this.permisoDuracion.attachSolicitudes(mapped);
+      }
+      return mapped;
     } catch (error: any) {
       this.logger.error('❌ Error retrieving solicitudes:', error);
       if (error instanceof BadRequestException) {
@@ -1220,31 +1276,176 @@ export class SolicitudesService {
     }
   }
 
+  private confirmedPermisoDays(value: unknown): number | null {
+    if (value == null || value === '') return null;
+    const parsed =
+      typeof value === 'number' ? value : Number(String(value).trim());
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      throw new BadRequestException(
+        'La duración confirmada debe ser un número entero de días.',
+      );
+    }
+    return parsed;
+  }
+
+  private async permisoSaveForApproval(input: {
+    tipo: string;
+    codigo: string;
+    inicio: unknown;
+    fin: unknown;
+    actor?: SolicitudActor;
+    duracionConfirmada?: unknown;
+    forzar?: boolean;
+    replaceStored?: boolean;
+    solicitudId?: string;
+  }): Promise<{
+    dias: number;
+    unidad: 'dias' | 'dias_manual';
+    inicio: string;
+    fin: string;
+  }> {
+    const inicio = madridIsoDate(input.inicio);
+    const fin = madridIsoDate(input.fin);
+    if (!inicio || !fin) {
+      throw new BadRequestException(
+        'Duración pendiente de verificar. Faltan las fechas del permiso.',
+      );
+    }
+    const confirmed = this.confirmedPermisoDays(input.duracionConfirmada);
+    if (confirmed != null && !canConfirmPermisoDuracion(input.actor)) {
+      throw new ForbiddenException(
+        'No puedes confirmar la duración de este permiso',
+      );
+    }
+    let existingUnidad: string | null = null;
+    let existingDias: number | null = null;
+    if (input.solicitudId) {
+      const rows = await this.prisma.$queryRawUnsafe<
+        Array<{ DURACION: unknown; UNIDAD_DURACION: unknown }>
+      >(
+        `SELECT DURACION, UNIDAD_DURACION
+         FROM Ausencias
+         WHERE solicitud_id = ${this.escapeSql(input.solicitudId)}
+           AND CODIGO = ${this.escapeSql(input.codigo)}
+         LIMIT 1`,
+      );
+      if (rows?.[0]) {
+        existingUnidad = String(rows[0].UNIDAD_DURACION || '');
+        const text =
+          rows[0].DURACION == null ? '' : String(rows[0].DURACION).trim();
+        const dias = Number(text);
+        existingDias = text !== '' && Number.isFinite(dias) ? dias : null;
+      }
+    }
+    const preview = await this.permisoDuracion.evaluate(
+      input.codigo,
+      inicio,
+      fin,
+    );
+    const decision = decidePermisoSave({
+      tipo: input.tipo,
+      preview,
+      duracionConfirmada: confirmed,
+      existingUnidad,
+      existingDias,
+      forzar: input.forzar === true,
+      replaceStored: input.replaceStored === true,
+    });
+    if (!decision.applies) {
+      throw new BadRequestException('Duración pendiente de verificar.');
+    }
+    if (decision.action === 'reject') {
+      throw new BadRequestException(decision.message);
+    }
+    return {
+      dias: decision.dias,
+      unidad: decision.unidad,
+      inicio,
+      fin,
+    };
+  }
+
+  /**
+   * Blochează o a doua cerere activă cu același angajat, tip, interval și număr de zile.
+   * Aceeași zi de început cu alt sfârșit rămâne permisă.
+   */
+  private async assertNoExactDuplicateSolicitud(input: {
+    codigo: string;
+    tipo: string;
+    fechaInicio: unknown;
+    fechaFin: unknown;
+    estado: string;
+    excludeId?: string;
+  }): Promise<void> {
+    if (input.estado !== 'Pendiente' && input.estado !== 'Aprobada') return;
+    const range = solicitudCalendarRange(input.fechaInicio, input.fechaFin);
+    const codigo = String(input.codigo || '').trim();
+    const tipo = String(input.tipo || '').trim();
+    if (!range || !codigo || !tipo) return;
+
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        id: unknown;
+        codigo: unknown;
+        tipo: unknown;
+        estado: unknown;
+        fecha_inicio: unknown;
+        fecha_fin: unknown;
+      }>
+    >(
+      `SELECT id, codigo, tipo, estado, fecha_inicio, fecha_fin
+       FROM solicitudes
+       WHERE codigo = ${this.escapeSql(codigo)}
+         AND estado IN ('Pendiente', 'Aprobada')`,
+    );
+
+    const hit = (rows || []).find((row) =>
+      isExactSolicitudDuplicate(row, {
+        id: input.excludeId,
+        codigo,
+        tipo,
+        fecha_inicio: input.fechaInicio,
+        fecha_fin: input.fechaFin,
+      }),
+    );
+    if (hit) {
+      throw new BadRequestException(
+        exactDuplicateMessage(tipo, range.inicio, range.fin, range.dias),
+      );
+    }
+  }
+
   /**
    * Creează o solicitare nouă
    * INSEREAZĂ în ambele tabele: solicitudes + Ausencias (dacă estado = 'Aprobada')
    */
-  async createSolicitud(data: {
-    id: string;
-    email: string;
-    codigo: string;
-    nombre: string;
-    tipo: string;
-    estado: string;
-    motivo?: string;
-    fecha_inicio: string;
-    fecha_fin: string;
-    ip?: string; // IP pentru LOCACION în Ausencias
-    fecha_ultimo_dia_trabajo?: string; // Pentru BAJA_VOLUNTARIA
-    origen?: string; // 'EMPLEADO' sau 'MANAGER'
-    creado_por?: string; // Numele managerului care a creat solicitarea
-    creado_por_email?: string; // Email-ul managerului care a creat solicitarea
-    tipo_justificante?: string; // Ausencia justificada
-    hora_cita?: string;
-    centro_medico?: string;
-    descripcion_otro?: string;
-  }): Promise<any> {
+  async createSolicitud(
+    data: {
+      id: string;
+      email: string;
+      codigo: string;
+      nombre: string;
+      tipo: string;
+      estado: string;
+      motivo?: string;
+      fecha_inicio: string;
+      fecha_fin: string;
+      ip?: string; // IP pentru LOCACION în Ausencias
+      fecha_ultimo_dia_trabajo?: string; // Pentru BAJA_VOLUNTARIA
+      origen?: string; // 'EMPLEADO' sau 'MANAGER'
+      creado_por?: string; // Numele managerului care a creat solicitarea
+      creado_por_email?: string; // Email-ul managerului care a creat solicitarea
+      tipo_justificante?: string; // Ausencia justificada
+      hora_cita?: string;
+      centro_medico?: string;
+      descripcion_otro?: string;
+      duracion_confirmada?: number | string | null;
+    },
+    actor?: SolicitudActor,
+  ): Promise<any> {
     try {
+      data = guardSolicitudCreate(actor, data);
+
       // Validează câmpurile obligatorii
       if (!data.id || !data.email || !data.codigo || !data.tipo) {
         throw new BadRequestException(
@@ -1353,6 +1554,14 @@ export class SolicitudesService {
         `📝 Create solicitud: ${data.id} (${data.tipo}), estado: ${estado}, origen: ${origen}`,
       );
 
+      await this.assertNoExactDuplicateSolicitud({
+        codigo: data.codigo,
+        tipo: data.tipo,
+        fechaInicio: data.fecha_inicio,
+        fechaFin: data.fecha_fin,
+        estado,
+      });
+
       // Quincena: ±15 zile în jurul altei vacanțe (aceeași persoană)
       if (
         !isManagerCreated &&
@@ -1430,6 +1639,18 @@ export class SolicitudesService {
         }
       }
 
+      const permisoAprobado =
+        estado === 'Aprobada' && isPermisoRetribuido(data.tipo)
+          ? await this.permisoSaveForApproval({
+              tipo: data.tipo,
+              codigo: data.codigo,
+              inicio: data.fecha_inicio,
+              fin: data.fecha_fin,
+              actor,
+              duracionConfirmada: data.duracion_confirmada,
+            })
+          : null;
+
       // Execută operațiile în tranzacție
       await this.prisma.$transaction(async (tx) => {
         // 1) INSERT în solicitudes
@@ -1437,157 +1658,17 @@ export class SolicitudesService {
 
         // 2) INSERT în Ausencias (doar dacă estado = 'Aprobada' și NU este BAJA_VOLUNTARIA)
         if (estado === 'Aprobada' && data.tipo !== 'BAJA_VOLUNTARIA') {
-          // Pentru "Permiso Retribuido", calculează zilele lucrătoare
-          // Pentru restul tipurilor, calculează toate zilele
-          const esPermisoRetribuido = data.tipo
-            .toLowerCase()
-            .includes('permiso retribuido');
+          // Permiso Retribuido: días según el programa. El resto: días naturales.
           let duracionSQL = `TIMESTAMPDIFF(DAY, ${fechaInicioSQL}, ${fechaFinSQL}) + 1`;
           let unidadDuracionSQL = "'dias'";
+          let permisoInicioSQL = fechaInicioSQL;
+          let permisoFinSQL = fechaFinSQL;
 
-          if (
-            esPermisoRetribuido &&
-            fechaInicioSQL !== 'NULL' &&
-            fechaFinSQL !== 'NULL'
-          ) {
-            // Calculează zilele lucrătoare pentru Permiso Retribuido
-            const diasLaborablesQuery = `
-              WITH RECURSIVE fechas AS (
-                SELECT ${fechaInicioSQL} AS d
-                UNION ALL
-                SELECT DATE_ADD(d, INTERVAL 1 DAY) FROM fechas 
-                WHERE d < ${fechaFinSQL}
-              ),
-              empleado_ccaa AS (
-                SELECT '' AS ccaa
-              ),
-              empleado_trabaja_festivos AS (
-                SELECT 
-                  CASE 
-                    WHEN LOWER(TRIM(TrabajaFestivos)) IN ('si','sí','s','1','true','da','y') THEN 1
-                    ELSE 0
-                  END AS trabaja_festivos
-                FROM DatosEmpleados
-                WHERE CODIGO = ${this.escapeSql(data.codigo)}
-                LIMIT 1
-              ),
-              cuadrante_dia AS (
-                SELECT 
-                  f.d AS fecha,
-                  CASE 
-                    WHEN cq.CODIGO IS NOT NULL THEN
-                      CASE DAY(f.d)
-                        WHEN 1 THEN cq.ZI_1 WHEN 2 THEN cq.ZI_2 WHEN 3 THEN cq.ZI_3 WHEN 4 THEN cq.ZI_4
-                        WHEN 5 THEN cq.ZI_5 WHEN 6 THEN cq.ZI_6 WHEN 7 THEN cq.ZI_7 WHEN 8 THEN cq.ZI_8
-                        WHEN 9 THEN cq.ZI_9 WHEN 10 THEN cq.ZI_10 WHEN 11 THEN cq.ZI_11 WHEN 12 THEN cq.ZI_12
-                        WHEN 13 THEN cq.ZI_13 WHEN 14 THEN cq.ZI_14 WHEN 15 THEN cq.ZI_15 WHEN 16 THEN cq.ZI_16
-                        WHEN 17 THEN cq.ZI_17 WHEN 18 THEN cq.ZI_18 WHEN 19 THEN cq.ZI_19 WHEN 20 THEN cq.ZI_20
-                        WHEN 21 THEN cq.ZI_21 WHEN 22 THEN cq.ZI_22 WHEN 23 THEN cq.ZI_23 WHEN 24 THEN cq.ZI_24
-                        WHEN 25 THEN cq.ZI_25 WHEN 26 THEN cq.ZI_26 WHEN 27 THEN cq.ZI_27 WHEN 28 THEN cq.ZI_28
-                        WHEN 29 THEN cq.ZI_29 WHEN 30 THEN cq.ZI_30 WHEN 31 THEN cq.ZI_31
-                        ELSE NULL
-                      END
-                    ELSE NULL
-                  END AS val_cuadrante
-                FROM fechas f
-                LEFT JOIN cuadrante cq 
-                  ON BINARY cq.CODIGO = ${this.escapeSql(data.codigo)}
-                  AND BINARY cq.LUNA = DATE_FORMAT(f.d, '%Y-%m')
-              ),
-              horario_dia AS (
-                SELECT 
-                  f.d AS fecha,
-                  CASE DAYOFWEEK(f.d)
-                    WHEN 2 THEN h.lun_in1 WHEN 3 THEN h.mar_in1 WHEN 4 THEN h.mie_in1
-                    WHEN 5 THEN h.joi_in1 WHEN 6 THEN h.vin_in1
-                    WHEN 7 THEN h.sam_in1 WHEN 1 THEN h.dum_in1
-                    ELSE NULL
-                  END AS hora_in_planificata
-                FROM fechas f
-                LEFT JOIN DatosEmpleados de ON de.CODIGO = ${this.escapeSql(data.codigo)}
-                LEFT JOIN horarios h
-                  ON h.centro_nombre = de.\`CENTRO TRABAJO\`
-                  AND h.grupo_nombre = de.GRUPO
-                  AND h.vigente_desde <= f.d
-                  AND (h.vigente_hasta IS NULL OR f.d <= h.vigente_hasta)
-              ),
-              horario_multicentro_dia AS (
-                SELECT 
-                  f.d AS fecha,
-                  CASE 
-                    WHEN hm.CODIGO IS NOT NULL THEN
-                      CASE DAY(f.d)
-                        WHEN 1 THEN hm.ZI_1 WHEN 2 THEN hm.ZI_2 WHEN 3 THEN hm.ZI_3 WHEN 4 THEN hm.ZI_4
-                        WHEN 5 THEN hm.ZI_5 WHEN 6 THEN hm.ZI_6 WHEN 7 THEN hm.ZI_7 WHEN 8 THEN hm.ZI_8
-                        WHEN 9 THEN hm.ZI_9 WHEN 10 THEN hm.ZI_10 WHEN 11 THEN hm.ZI_11 WHEN 12 THEN hm.ZI_12
-                        WHEN 13 THEN hm.ZI_13 WHEN 14 THEN hm.ZI_14 WHEN 15 THEN hm.ZI_15 WHEN 16 THEN hm.ZI_16
-                        WHEN 17 THEN hm.ZI_17 WHEN 18 THEN hm.ZI_18 WHEN 19 THEN hm.ZI_19 WHEN 20 THEN hm.ZI_20
-                        WHEN 21 THEN hm.ZI_21 WHEN 22 THEN hm.ZI_22 WHEN 23 THEN hm.ZI_23 WHEN 24 THEN hm.ZI_24
-                        WHEN 25 THEN hm.ZI_25 WHEN 26 THEN hm.ZI_26 WHEN 27 THEN hm.ZI_27 WHEN 28 THEN hm.ZI_28
-                        WHEN 29 THEN hm.ZI_29 WHEN 30 THEN hm.ZI_30 WHEN 31 THEN hm.ZI_31
-                        ELSE NULL
-                      END
-                    ELSE NULL
-                  END AS val_multicentro
-                FROM fechas f
-                LEFT JOIN horario_multicentro hm 
-                  ON BINARY hm.CODIGO = ${this.escapeSql(data.codigo)}
-                  AND BINARY hm.LUNA = DATE_FORMAT(f.d, '%Y-%m')
-              )
-              SELECT COUNT(*) AS dias_laborables
-              FROM fechas f
-              CROSS JOIN empleado_ccaa ec
-              CROSS JOIN empleado_trabaja_festivos etf
-              LEFT JOIN cuadrante_dia cd ON cd.fecha = f.d
-              LEFT JOIN horario_dia hd ON hd.fecha = f.d
-              LEFT JOIN horario_multicentro_dia hmd ON hmd.fecha = f.d
-              WHERE DAYOFWEEK(f.d) BETWEEN 2 AND 6  -- Luni-Vineri
-                AND NOT EXISTS (
-                  SELECT 1 FROM fiestas fi
-                  WHERE DATE(COALESCE(fi.observed_date, fi.date)) = f.d
-                    AND fi.active = 1
-                    AND (
-                      LOWER(fi.scope) IN ('nacional', 'national')
-                      OR (LOWER(fi.scope) IN ('autonómico', 'autonomico', 'ccaa') 
-                          AND BINARY fi.ccaa_code = BINARY ec.ccaa)
-                    )
-                    AND etf.trabaja_festivos = 0
-                )
-                AND (
-                  -- Are cuadrante cu valoare validă (nu LIB/LIBRE/etc.)
-                  (cd.val_cuadrante IS NOT NULL 
-                   AND TRIM(cd.val_cuadrante) != ''
-                   AND UPPER(TRIM(cd.val_cuadrante)) NOT IN ('LIB','LIBRE','L','DESCANSO','FESTIVO','VAC','VACACIONES','BAJA','X')
-                   AND (cd.val_cuadrante LIKE '%:%-%:%' OR cd.val_cuadrante REGEXP '^[0-9]+h'))
-                  OR
-                  -- Sau are horario_multicentro cu valoare validă
-                  (cd.val_cuadrante IS NULL 
-                   AND hmd.val_multicentro IS NOT NULL 
-                   AND TRIM(hmd.val_multicentro) != ''
-                   AND UPPER(TRIM(hmd.val_multicentro)) NOT IN ('LIB','LIBRE','L','DESCANSO','FESTIVO','VAC','VACACIONES','BAJA','X')
-                   AND (hmd.val_multicentro LIKE '%:%-%:%' OR hmd.val_multicentro REGEXP '^[0-9]+h'))
-                  OR
-                  -- Sau are horario programat
-                  (cd.val_cuadrante IS NULL AND hmd.val_multicentro IS NULL AND hd.hora_in_planificata IS NOT NULL)
-                )
-            `;
-
-            try {
-              const diasLaborablesResult =
-                await tx.$queryRawUnsafe<any[]>(diasLaborablesQuery);
-              const diasLaborables =
-                Number(diasLaborablesResult[0]?.dias_laborables) || 0;
-              duracionSQL = String(diasLaborables);
-              this.logger.log(
-                `📊 Permiso Retribuido - Zile lucrătoare calculate: ${diasLaborables} (${fechaInicioSQL} - ${fechaFinSQL})`,
-              );
-            } catch (error: any) {
-              this.logger.error(
-                `❌ Error calculând zilele lucrătoare pentru Permiso Retribuido: ${error.message}`,
-              );
-              // Fallback la calcul simplu dacă query-ul eșuează
-              duracionSQL = `TIMESTAMPDIFF(DAY, ${fechaInicioSQL}, ${fechaFinSQL}) + 1`;
-            }
+          if (permisoAprobado) {
+            duracionSQL = String(permisoAprobado.dias);
+            unidadDuracionSQL = this.escapeSql(permisoAprobado.unidad);
+            permisoInicioSQL = this.escapeSql(permisoAprobado.inicio);
+            permisoFinSQL = this.escapeSql(permisoAprobado.fin);
           }
 
           const insertAusenciaQuery = `
@@ -1598,7 +1679,7 @@ export class SolicitudesService {
               ${this.escapeSql(data.codigo)},
               ${this.escapeSql(data.nombre || '')},
               ${this.escapeSql(data.tipo)},
-              CONCAT(${fechaInicioSQL}, ' - ', ${fechaFinSQL}),
+              CONCAT(${permisoInicioSQL}, ' - ', ${permisoFinSQL}),
               TIME_FORMAT(NOW(), '%H:%i:%s'),
               ${ip ? this.escapeSql(ip) : "''"},
               ${data.motivo ? this.escapeSql(data.motivo) : 'NULL'},
@@ -1757,7 +1838,10 @@ export class SolicitudesService {
     } catch (error: any) {
       this.logger.error('❌ Error creating solicitud:', error);
       // Prisma $transaction face automat rollback la eroare, nu e nevoie de manual rollback
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -1822,7 +1906,10 @@ export class SolicitudesService {
       mensajePersonalizado?: string; // Mesaj personalizat pentru rechazar
       /** Same bypass as create with origen=MANAGER (Developer/Admin/Manager/Supervisor). */
       skipCalendarRestrictions?: boolean;
+      duracion_confirmada?: number | string | null;
+      forzar_duracion?: boolean;
     },
+    actor?: SolicitudActor,
   ): Promise<any> {
     try {
       if (!id) {
@@ -1849,6 +1936,8 @@ export class SolicitudesService {
         const beforeUpdate = await this.getSolicitudes({ limit: 1000 });
         solicitudBefore = beforeUpdate.find((s) => s.id === id);
       }
+
+      data = guardSolicitudUpdate(actor, solicitudBefore, data);
 
       const codigo = data.codigo || solicitudBefore?.codigo || '';
 
@@ -1967,6 +2056,23 @@ export class SolicitudesService {
         }
       }
 
+      const duplicateInicio =
+        data.fecha_inicio !== undefined
+          ? data.fecha_inicio
+          : solicitudBefore?.fecha_inicio;
+      const duplicateFin =
+        data.fecha_fin !== undefined
+          ? data.fecha_fin
+          : solicitudBefore?.fecha_fin;
+      await this.assertNoExactDuplicateSolicitud({
+        codigo,
+        tipo,
+        fechaInicio: duplicateInicio,
+        fechaFin: duplicateFin,
+        estado,
+        excludeId: id,
+      });
+
       // Query 1: UPDATE în solicitudes
       const updateSolicitudQuery = `
         UPDATE solicitudes
@@ -2070,6 +2176,36 @@ export class SolicitudesService {
         }
       }
 
+      const permisoInicio =
+        data.fecha_inicio !== undefined
+          ? data.fecha_inicio
+          : solicitudBefore?.fecha_inicio;
+      const permisoFin =
+        data.fecha_fin !== undefined
+          ? data.fecha_fin
+          : solicitudBefore?.fecha_fin;
+      const permisoDatesChanged =
+        madridIsoDate(permisoInicio) !==
+          madridIsoDate(solicitudBefore?.fecha_inicio) ||
+        madridIsoDate(permisoFin) !== madridIsoDate(solicitudBefore?.fecha_fin);
+      const permisoAprobado =
+        estado === 'Aprobada' && isPermisoRetribuido(tipo)
+          ? await this.permisoSaveForApproval({
+              tipo,
+              codigo,
+              inicio: permisoInicio,
+              fin: permisoFin,
+              actor,
+              duracionConfirmada: data.duracion_confirmada,
+              forzar: data.forzar_duracion,
+              replaceStored:
+                data.forzar_duracion === true ||
+                permisoDatesChanged ||
+                !isPermisoRetribuido(solicitudBefore?.tipo),
+              solicitudId: id,
+            })
+          : null;
+
       // Execută operațiile în tranzacție
       await this.prisma.$transaction(async (tx) => {
         // 1) UPDATE în solicitudes
@@ -2077,8 +2213,36 @@ export class SolicitudesService {
 
         // 2) UPSERT sau DELETE în Ausencias (NU pentru BAJA_VOLUNTARIA)
         if (estado === 'Aprobada' && tipo !== 'BAJA_VOLUNTARIA') {
-          // UPSERT în Ausencias
-          const upsertAusenciaQuery = `
+          const upsertAusenciaQuery = permisoAprobado
+            ? `
+            INSERT INTO Ausencias (
+              solicitud_id, CODIGO, NOMBRE, TIPO, FECHA, HORA, LOCACION, MOTIVO, DURACION, UNIDAD_DURACION, created_at
+            )
+            SELECT
+              ${this.escapeSql(id)},
+              ${this.escapeSql(codigo)},
+              ${this.escapeSql(nombre)},
+              ${this.escapeSql(tipo)},
+              ${this.escapeSql(`${permisoAprobado.inicio} - ${permisoAprobado.fin}`)} AS FECHA,
+              TIME_FORMAT(NOW(), '%H:%i:%s') AS HORA,
+              ${ip ? this.escapeSql(ip) : "''"} AS LOCACION,
+              ${motivo ? this.escapeSql(motivo) : 'NULL'} AS MOTIVO,
+              ${permisoAprobado.dias} AS DURACION,
+              ${this.escapeSql(permisoAprobado.unidad)} AS UNIDAD_DURACION,
+              NOW()
+            FROM DUAL
+            WHERE ${this.escapeSql(estado)} = 'Aprobada'
+            ON DUPLICATE KEY UPDATE
+              NOMBRE   = VALUES(NOMBRE),
+              TIPO     = VALUES(TIPO),
+              FECHA    = VALUES(FECHA),
+              HORA     = VALUES(HORA),
+              LOCACION = VALUES(LOCACION),
+              MOTIVO   = VALUES(MOTIVO),
+              DURACION = VALUES(DURACION),
+              UNIDAD_DURACION = VALUES(UNIDAD_DURACION)
+          `
+            : `
             INSERT INTO Ausencias (
               solicitud_id, CODIGO, NOMBRE, TIPO, FECHA, HORA, LOCACION, MOTIVO, DURACION, created_at
             )
@@ -2764,7 +2928,10 @@ export class SolicitudesService {
       };
     } catch (error: any) {
       this.logger.error('❌ Error updating solicitud:', error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -2781,6 +2948,7 @@ export class SolicitudesService {
     id: string,
     codigo?: string,
     mensajePersonalizado?: string,
+    actor?: SolicitudActor,
   ): Promise<any> {
     try {
       if (!id) {
@@ -2790,17 +2958,27 @@ export class SolicitudesService {
       // Obține informațiile solicitării înainte de ștergere pentru notificare Telegram
       let solicitudInfo: any = null;
       try {
-        const beforeDelete = await this.getSolicitudes({ limit: 1000 });
-        solicitudInfo = beforeDelete.find((s) => s.id === id);
-        // Dacă nu avem codigo, îl luăm din solicitarea găsită
-        if (!codigo && solicitudInfo) {
-          codigo = solicitudInfo.codigo;
-        }
-      } catch {
+        const beforeQuery = `SELECT * FROM solicitudes WHERE id = ${this.escapeSql(id)} LIMIT 1`;
+        const beforeResult = await this.prisma.$queryRawUnsafe(beforeQuery);
+        solicitudInfo =
+          Array.isArray(beforeResult) && beforeResult.length > 0
+            ? beforeResult[0]
+            : null;
+      } catch (error: any) {
         this.logger.warn(
-          '⚠️ Could not fetch solicitud info for Telegram notification',
+          `⚠️ Could not fetch solicitud info before delete: ${error.message}`,
         );
+        try {
+          const beforeDelete = await this.getSolicitudes({ limit: 1000 });
+          solicitudInfo = beforeDelete.find((s) => s.id === id);
+        } catch {
+          this.logger.warn(
+            '⚠️ Could not fetch solicitud info for Telegram notification',
+          );
+        }
       }
+
+      codigo = guardSolicitudDelete(actor, solicitudInfo, codigo);
 
       if (!codigo) {
         throw new BadRequestException('El codigo es obligatorio para eliminar');
@@ -2889,7 +3067,10 @@ export class SolicitudesService {
     } catch (error: any) {
       this.logger.error('❌ Error deleting solicitud:', error);
       // Prisma $transaction face automat rollback la eroare, nu e nevoie de manual rollback
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(

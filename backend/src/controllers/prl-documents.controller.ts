@@ -23,6 +23,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { PrlDocumentsService } from '../services/prl-documents.service';
 import { Response } from 'express';
+import { contentDisposition } from '../services/content-disposition';
 import AdmZip from 'adm-zip';
 
 @Controller('api/prl')
@@ -510,7 +511,7 @@ export class PrlDocumentsController {
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${template.nombre_archivo}"`,
+        contentDisposition('attachment', template.nombre_archivo),
       );
 
       res.send(template.archivo);
@@ -605,7 +606,7 @@ export class PrlDocumentsController {
       res.setHeader('Content-Type', contentType);
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${documento.nombre_archivo}"`,
+        contentDisposition('attachment', documento.nombre_archivo),
       );
 
       res.send(documento.archivo);
@@ -680,14 +681,17 @@ export class PrlDocumentsController {
       res.setHeader('Content-Length', documento.archivo.length.toString());
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${documento.nombre_archivo}"`,
+        contentDisposition('attachment', documento.nombre_archivo),
       );
 
       // Folosește writeHead pentru a forța header-urile (înainte de send)
       res.writeHead(200, {
         'Content-Type': contentType,
         'Content-Length': documento.archivo.length.toString(),
-        'Content-Disposition': `attachment; filename="${documento.nombre_archivo}"`,
+        'Content-Disposition': contentDisposition(
+          'attachment',
+          documento.nombre_archivo,
+        ),
       });
 
       res.end(documento.archivo);
@@ -782,8 +786,7 @@ export class PrlDocumentsController {
 
       return {
         success: true,
-        message:
-          'Solicitud enviada. Pendiente de aprobación del responsable.',
+        message: 'Solicitud enviada. Pendiente de aprobación del responsable.',
       };
     } catch (error: any) {
       this.logger.error(
@@ -1260,7 +1263,10 @@ export class PrlDocumentsController {
       res.setHeader('Content-Type', contentType);
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${encodeURIComponent(nombreArchivo || `prl-${documentoIdNum}`)}"`,
+        contentDisposition(
+          'attachment',
+          nombreArchivo || `prl-${documentoIdNum}`,
+        ),
       );
       res.send(documento.archivo);
     } catch (error: any) {
@@ -1321,7 +1327,10 @@ export class PrlDocumentsController {
       res.setHeader('Content-Type', contentType);
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${encodeURIComponent(nombreArchivo || `prl-firmado-${documentoIdNum}`)}"`,
+        contentDisposition(
+          'attachment',
+          nombreArchivo || `prl-firmado-${documentoIdNum}`,
+        ),
       );
       res.send(documento.archivo);
     } catch (error: any) {

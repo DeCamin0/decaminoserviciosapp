@@ -9,21 +9,39 @@ import {
   UseGuards,
   Logger,
   BadRequestException,
+  HttpException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { FichajesService } from '../services/fichajes.service';
 import { EmpleadoGrupoScopeService } from '../services/empleado-grupo-scope.service';
 import { FichajeReminderCronService } from '../services/fichaje-reminder-cron.service';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  assertFichajeWrite,
+  loadEmpleadoModuleFlags,
+  resolvePunchReadCodigos,
+  resolvePunchWriteCodigos,
+  toEmpleadoActor,
+} from '../services/empleados-operation-access';
+import {
+  assertManualReminderPermission,
+  ManualReminderLimiter,
+  reminderAudienceCodigos,
+  resolveManualReminderMode,
+  wantsRealReminderSend,
+} from '../services/fichaje-reminder-manual';
 
 @Controller('api/registros')
 export class FichajesController {
   private readonly logger = new Logger(FichajesController.name);
+  private readonly manualReminderLimiter = new ManualReminderLimiter();
 
   constructor(
     private readonly fichajesService: FichajesService,
     private readonly empleadoGrupoScopeService: EmpleadoGrupoScopeService,
     private readonly fichajeReminderCronService: FichajeReminderCronService,
+    private readonly prisma: PrismaService,
   ) {}
 
   private scopePayload(user: any) {
@@ -32,6 +50,36 @@ export class FichajesController {
       role: user?.role,
       grupo: user?.grupo,
     };
+  }
+
+  private async punchContext(user: any) {
+    const actor = toEmpleadoActor(user);
+    const flags = await loadEmpleadoModuleFlags(user?.grupo, (keys) =>
+      this.prisma.permissions.findMany({
+        where: { grupo_module: { in: keys } },
+        select: { grupo_module: true, permitted: true },
+      }),
+    );
+    const payload = this.scopePayload(user);
+    const bypass = this.empleadoGrupoScopeService.bypassesScope(payload);
+    const scope =
+      await this.empleadoGrupoScopeService.resolveScopeFilter(payload);
+    return {
+      actor,
+      flags,
+      bypass,
+      scope,
+      listScopeCodigos: () =>
+        this.empleadoGrupoScopeService.listAllowedCodigosForPayload(payload),
+    };
+  }
+
+  private async readCodigos(user: any) {
+    return resolvePunchReadCodigos(await this.punchContext(user));
+  }
+
+  private async writeCodigos(user: any) {
+    return resolvePunchWriteCodigos(await this.punchContext(user));
   }
 
   @Get()
@@ -46,10 +94,7 @@ export class FichajesController {
         `📝 Get registros request - codigo: ${codigo || 'missing'}, mes: ${mes || 'missing'}`,
       );
 
-      const allowed =
-        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
-          this.scopePayload(user),
-        );
+      const allowed = await this.readCodigos(user);
       this.empleadoGrupoScopeService.assertCodigoEnAmbito(allowed, codigo);
 
       const registros = await this.fichajesService.getRegistros(codigo, mes);
@@ -72,10 +117,7 @@ export class FichajesController {
         `📝 Get ultimo registro request - codigo: ${codigo || 'missing'}`,
       );
 
-      const allowed =
-        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
-          this.scopePayload(user),
-        );
+      const allowed = await this.readCodigos(user);
       this.empleadoGrupoScopeService.assertCodigoEnAmbito(allowed, codigo);
 
       const ultimoRegistro =
@@ -100,10 +142,7 @@ export class FichajesController {
         `📝 Get registros empleados request - mes: ${mes || 'missing'}`,
       );
 
-      const allowed =
-        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
-          this.scopePayload(user),
-        );
+      const allowed = await this.readCodigos(user);
       const registros = await this.fichajesService.getRegistrosEmpleados(
         mes,
         allowed,
@@ -129,10 +168,7 @@ export class FichajesController {
         `📝 Get registros periodo request - fecha_inicio: ${fechaInicio || 'missing'}, fecha_fin: ${fechaFin || 'missing'}, codigo: ${codigo || 'all'}`,
       );
 
-      const allowed =
-        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
-          this.scopePayload(user),
-        );
+      const allowed = await this.readCodigos(user);
       if (codigo?.trim()) {
         this.empleadoGrupoScopeService.assertCodigoEnAmbito(allowed, codigo);
       }
@@ -157,10 +193,7 @@ export class FichajesController {
     try {
       this.logger.log('📝 Get all fichajes request (for statistics)');
 
-      const allowed =
-        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
-          this.scopePayload(user),
-        );
+      const allowed = await this.readCodigos(user);
       const fichajes = await this.fichajesService.getAllFichajes(allowed);
 
       return fichajes;
@@ -178,10 +211,9 @@ export class FichajesController {
         `📝 Add fichaje request - ID: ${body.id || 'missing'}, CODIGO: ${body.codigo || 'missing'}, TIPO: ${body.tipo || 'missing'}`,
       );
 
-      const allowed =
-        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
-          this.scopePayload(user),
-        );
+      const context = await this.punchContext(user);
+      assertFichajeWrite(context.actor, context.flags, body.codigo);
+      const allowed = await resolvePunchWriteCodigos(context);
 
       const result = await this.fichajesService.addFichaje(
         {
@@ -218,10 +250,9 @@ export class FichajesController {
         throw new BadRequestException('ID is required for update');
       }
 
-      const allowed =
-        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
-          this.scopePayload(user),
-        );
+      const context = await this.punchContext(user);
+      assertFichajeWrite(context.actor, context.flags, body.codigo);
+      const allowed = await resolvePunchWriteCodigos(context);
 
       const result = await this.fichajesService.updateFichaje(
         body.id,
@@ -258,10 +289,7 @@ export class FichajesController {
         throw new BadRequestException('ID is required for delete');
       }
 
-      const allowed =
-        await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
-          this.scopePayload(user),
-        );
+      const allowed = await this.writeCodigos(user);
 
       const result = await this.fichajesService.deleteFichaje(body.id, allowed);
 
@@ -273,37 +301,64 @@ export class FichajesController {
   }
 
   /**
-   * Manual trigger for fichaje reminder cron (dry-run by default).
-   * Query: dryRun=true|false (default true), windowMinutes=number
+   * Rulare manuală a reminderului de pontaj.
+   * dryRun lipsește sau este true: doar previzualizare.
+   * dryRun=false: trimitere, doar dacă reminderul este pornit pe server.
+   * Fereastra de minute rămâne în configurația serverului.
    */
   @Post('fichaje-reminder/test-trigger')
   @UseGuards(JwtAuthGuard)
   async triggerFichajeReminder(
+    @CurrentUser() user: any,
     @Query('dryRun') dryRun?: string,
-    @Query('windowMinutes') windowMinutes?: string,
   ) {
+    const actor = toEmpleadoActor(user);
+    const flags = await loadEmpleadoModuleFlags(user?.grupo, (keys) =>
+      this.prisma.permissions.findMany({
+        where: { grupo_module: { in: keys } },
+        select: { grupo_module: true, permitted: true },
+      }),
+    );
+    assertManualReminderPermission(actor, flags);
+
+    const requestedReal = wantsRealReminderSend(dryRun);
+    const mode = resolveManualReminderMode({
+      requestedReal,
+      enabled: this.fichajeReminderCronService.isEnabled(),
+      envForcesDryRun: this.fichajeReminderCronService.isEnvDryRun(),
+    });
+
+    const payload = this.scopePayload(user);
+    const bypass = this.empleadoGrupoScopeService.bypassesScope(payload);
+    const scope =
+      await this.empleadoGrupoScopeService.resolveScopeFilter(payload);
+    const allowedCodigos = reminderAudienceCodigos(
+      bypass,
+      !!scope?.grupos?.length,
+      bypass || !scope?.grupos?.length
+        ? null
+        : await this.empleadoGrupoScopeService.listAllowedCodigosForPayload(
+            payload,
+          ),
+    );
+
+    this.manualReminderLimiter.start(
+      actor.userId || '',
+      requestedReal,
+      Date.now(),
+      this.fichajeReminderCronService.retryCooldownMs(),
+    );
+    let armRealCooldown = false;
     try {
-      const dry =
-        dryRun == null || dryRun === ''
-          ? true
-          : !['0', 'false', 'no', 'off'].includes(
-              String(dryRun).trim().toLowerCase(),
-            );
-      const window =
-        windowMinutes != null && windowMinutes !== ''
-          ? Number(windowMinutes)
-          : undefined;
-
       this.logger.log(
-        `🧪 Manual trigger: fichaje reminder dryRun=${dry} windowMinutes=${window ?? 'default'}`,
+        `🧪 Manual trigger: fichaje reminder dryRun=${mode.dryRun} user=${actor.userId}`,
       );
-
       const result = await this.fichajeReminderCronService.runReminders({
-        dryRun: dry,
-        windowMinutes:
-          window != null && Number.isFinite(window) ? window : undefined,
+        dryRun: mode.dryRun,
+        allowedCodigos,
+        manual: true,
       });
-
+      armRealCooldown = requestedReal && result.dryRun === false;
       return {
         ok: true,
         enabled: this.fichajeReminderCronService.isEnabled(),
@@ -311,8 +366,15 @@ export class FichajesController {
       };
     } catch (error: any) {
       this.logger.error('❌ Error triggering fichaje reminder:', error);
+      if (error instanceof HttpException) throw error;
       throw new BadRequestException(
         `Error al trigger reminder fichaje: ${error.message}`,
+      );
+    } finally {
+      this.manualReminderLimiter.finish(
+        actor.userId || '',
+        armRealCooldown,
+        Date.now(),
       );
     }
   }

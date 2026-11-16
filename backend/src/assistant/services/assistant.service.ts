@@ -9,6 +9,9 @@ import { ResponseGeneratorService } from './response-generator.service';
 import { EscalationService } from './escalation.service';
 import { AuditService } from './audit.service';
 import { AiResponseService } from './ai-response.service';
+import { AssistantToolRouterService } from './assistant-tool-router.service';
+import { AssistantConductorService } from './assistant-conductor.service';
+import { AssistantConversationService } from './assistant-conversation.service';
 import { ConversationContextService } from './conversation-context.service';
 import { AssistantUserPreferencesService } from './assistant-user-preferences.service';
 import { AssistantValidatedFaqService } from './assistant-validated-faq.service';
@@ -29,11 +32,17 @@ import {
   isAssistantTabularExportIntent,
   resolveAssistantTools,
 } from '../utils/assistant-intent-tools.util';
+import {
+  honestFallbackText,
+  isJornadaBootstrap,
+  runConductorTurn,
+} from '../utils/assistant-conductor.logic';
 import { deepCloneForAssistantExport } from '../utils/assistant-export-payload.util';
 import { ASSISTANT_TABULAR_PREVIEW_ROWS } from '../constants/assistant-session.constants';
 import type { KbQueryMeta } from '../types/kb-query.types';
 import {
   extractNaturalPeriodEntityPatch,
+  extractRelativeDayIso,
   messageImpliesWholeMonthSchedule,
 } from '../utils/month-and-relative-dates.util';
 import {
@@ -64,6 +73,11 @@ import {
   getVagueAppHelpClarificationReply,
   messageIsVeryVagueAppHelp,
 } from '../utils/assistant-vague-message.util';
+import { proceduralHowToReply } from '../utils/assistant-howto.util';
+import {
+  messageAsksOwnSchedule,
+  replyForSingleDaySchedule,
+} from '../utils/assistant-day-schedule.util';
 
 @Injectable()
 export class AssistantService {
@@ -187,7 +201,18 @@ export class AssistantService {
     private readonly rbacService: RbacService,
     private readonly operationalAlerts: AssistantOperationalAlertService,
     private readonly validatedFaq: AssistantValidatedFaqService,
+    private readonly toolRouter: AssistantToolRouterService,
+    private readonly conductor: AssistantConductorService,
+    private readonly conversations: AssistantConversationService,
   ) {}
+
+  /** 1 / true readuce fluxul vechi, pe cuvinte. Implicit conduce modelul. */
+  private useLegacyPipeline(): boolean {
+    const flag = String(process.env.ASSISTANT_LEGACY_PIPELINE ?? '')
+      .trim()
+      .toLowerCase();
+    return flag === '1' || flag === 'true' || flag === 'yes';
+  }
 
   /**
    * Procesează un mesaj și returnează răspuns
@@ -224,6 +249,15 @@ export class AssistantService {
         userId: usuario.id,
         requestedScope: assistantDataScope,
       });
+
+      if (!this.useLegacyPipeline()) {
+        return await this.conductTurn({
+          messageDto,
+          uiLocale,
+          startTime,
+          assistantDataScope,
+        });
+      }
 
       // 1. Clasifică intenția
       const intentResult = await this.intentClassifier.classifyIntent(mensaje);
@@ -360,7 +394,51 @@ export class AssistantService {
         assistantDataScope,
       });
 
-      // 3. Solo respuesta genérica sin tools si intent explícitamente desconocido.
+      // 3. Lista de cuvinte nu a recunoscut întrebarea: agentul alege o unealtă existentă.
+      if (
+        intent === IntentType.DESCONOCIDO &&
+        !messageIsVeryVagueAppHelp(mensaje)
+      ) {
+        const routed = await this.toolRouter.route(mensaje);
+        if (routed) {
+          intent = routed.intent;
+          confianza = routed.confianza;
+          entidades = {
+            ...(entidades ?? {}),
+            ...routed.entidades,
+          };
+          intentForAudit = intent;
+          this.logAssistantPipeline('tool_router', {
+            userId: usuario.id,
+            intent,
+            entities: this.snapshotEntitiesForLog(entidades),
+          });
+        }
+      }
+
+      // „hoy” / „azi” este o zi, chiar dacă modelul a ales cuadrante fără dată.
+      if (
+        intent === IntentType.CUADRANTE &&
+        !messageImpliesWholeMonthSchedule(mensaje)
+      ) {
+        const day = extractRelativeDayIso(mensaje);
+        if (day) {
+          entidades = { ...(entidades ?? {}), fecha: day };
+        }
+      }
+
+      if (
+        intent === IntentType.CUADRANTE &&
+        usuario.id &&
+        messageAsksOwnSchedule(mensaje)
+      ) {
+        const own = { ...(entidades ?? {}) } as IntentResult['entidades'];
+        own.codigo = String(usuario.id);
+        delete own.nombre;
+        entidades = own;
+      }
+
+      // Solo respuesta genérica sin tools si intent explícitamente desconocido.
       // (La confianza baja con intent conocido seguimos al pipeline de datos — read-only + RBAC.)
       if (intent === IntentType.DESCONOCIDO) {
         if (messageIsVeryVagueAppHelp(mensaje)) {
@@ -752,6 +830,63 @@ export class AssistantService {
         });
       }
 
+      const howToDirect = proceduralHowToReply(mensaje, uiLocale);
+      if (howToDirect) {
+        const durationMsHow = Date.now() - startTime;
+        await this.auditService.logInteraction({
+          usuario_id: usuario.id,
+          usuario_nombre: usuario.nombre,
+          usuario_rol: usuario.rol,
+          mensaje,
+          intent_detectado: IntentType.PROCEDIMIENTOS,
+          confianza,
+          respuesta: howToDirect,
+          escalado: false,
+          auditMetrics: {
+            durationMs: durationMsHow,
+            resultCount: 0,
+            tools: ['static_procedural'],
+            responseStatus: 'success',
+            responseType: 'generated_summary',
+          },
+        });
+        this.emitAssistantOpsLog({
+          outcome: 'success',
+          userId: usuario.id,
+          intent: IntentType.PROCEDIMIENTOS,
+          status: 'success',
+          responseType: 'generated_summary',
+          ms: durationMsHow,
+          tools: ['static_procedural'],
+          resultCount: 0,
+          escalated: false,
+        });
+        this.contextService.saveContext(
+          usuario.id,
+          IntentType.PROCEDIMIENTOS,
+          null,
+          mensaje,
+          {},
+        );
+        return buildAssistantResponse({
+          respuesta: howToDirect,
+          confianza: Math.min(Math.max(confianza, 0.86), 1),
+          escalado: false,
+          status: 'success',
+          responseType: 'generated_summary',
+          responseSource: resolveAssistantResponseSource({
+            kind: 'validated_faq',
+          }),
+          sources: [
+            {
+              type: 'generated_summary',
+              label: 'Guía fija',
+              detail: 'procedural:howto',
+            },
+          ],
+        });
+      }
+
       // 4d. Pedidos / albarán: guía fija sin read_tools (evita listar pedidos como "cómo subir albarán")
       const pedidosProc = resolvePedidosProceduralStaticReply(
         mensaje,
@@ -1045,6 +1180,17 @@ export class AssistantService {
           );
         }
 
+        const dayReply = replyForSingleDaySchedule(
+          mensaje,
+          entidades?.fecha,
+          data,
+          uiLocale,
+        );
+        if (dayReply) {
+          aiResponse = dayReply;
+          this.logger.log('Assistant: cuadrante de un día → texto fijo');
+        }
+
         // Acțiuni din template + payload util pentru client (ex. id-uri nóminas)
         let acciones = structuredResponse.acciones || [];
         acciones = acciones.map((a) => {
@@ -1187,21 +1333,38 @@ export class AssistantService {
           entidades,
         );
 
+        const howTo = procKbSinArticulos
+          ? proceduralHowToReply(mensaje, uiLocale)
+          : null;
+
         let aiResponse: string;
-        try {
-          aiResponse = await this.aiResponseService.generateNaturalResponse(
-            mensaje,
-            intent,
-            procKbSinArticulos ? [] : null,
-            confianza,
-            usuario.rol,
-            assistantPrefs,
-            aiLanguage,
-            entidades,
-          );
-        } catch (e: any) {
-          this.logger.warn(`⚠️ AI sin datos fallback: ${e?.message ?? e}`);
-          aiResponse = structuredEmpty.respuesta;
+        const dayReplyEmpty = replyForSingleDaySchedule(
+          mensaje,
+          entidades?.fecha,
+          data,
+          uiLocale,
+        );
+
+        if (howTo) {
+          aiResponse = howTo;
+        } else if (dayReplyEmpty) {
+          aiResponse = dayReplyEmpty;
+        } else {
+          try {
+            aiResponse = await this.aiResponseService.generateNaturalResponse(
+              mensaje,
+              intent,
+              procKbSinArticulos ? [] : null,
+              confianza,
+              usuario.rol,
+              assistantPrefs,
+              aiLanguage,
+              entidades,
+            );
+          } catch (e: any) {
+            this.logger.warn(`⚠️ AI sin datos fallback: ${e?.message ?? e}`);
+            aiResponse = structuredEmpty.respuesta;
+          }
         }
 
         if (procKbSinArticulos) {
@@ -1410,6 +1573,223 @@ export class AssistantService {
     }
   }
 
+  private async conductTurn(args: {
+    messageDto: MessageDto;
+    uiLocale: AssistantLocale;
+    startTime: number;
+    assistantDataScope: AssistantDataScope;
+  }): Promise<AssistantResponseDto> {
+    const { messageDto, uiLocale, startTime, assistantDataScope } = args;
+    const usuario = messageDto.usuario;
+    const unavailable = (limitation: string): AssistantResponseDto =>
+      buildAssistantResponse({
+        respuesta: honestFallbackText(uiLocale),
+        confianza: 0,
+        escalado: false,
+        status: 'error',
+        responseType: 'fallback',
+        responseSource: 'fallback',
+        sources: [
+          {
+            type: 'generated_summary',
+            label: 'Asistente no disponible',
+            detail: 'fallback:openai',
+          },
+        ],
+        limitations: [limitation],
+      });
+
+    if (!usuario?.id) {
+      return unavailable('usuario_sin_id');
+    }
+
+    try {
+      let history: { role: 'user' | 'assistant'; content: string }[] = [];
+      if (messageDto.conversationId) {
+        try {
+          const rows = await this.conversations.getMessagesForUser(
+            usuario.id,
+            messageDto.conversationId,
+          );
+          history = rows
+            .filter((row) => row.role === 'user' || row.role === 'assistant')
+            .map((row) => ({
+              role: row.role,
+              content: row.content,
+            }));
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : 'error';
+          this.logger.warn(
+            `[assistant:conductor] history unavailable: ${message}`,
+          );
+        }
+      }
+
+      let hint = 'ninguno';
+      try {
+        const classified = await this.intentClassifier.classifyIntent(
+          messageDto.mensaje,
+        );
+        hint = `${classified.intent} (${classified.confianza.toFixed(2)})`;
+      } catch {
+        hint = 'ninguno';
+      }
+
+      const turn = await runConductorTurn({
+        mensaje: messageDto.mensaje,
+        history,
+        locale: uiLocale,
+        hint,
+        userId: String(usuario.id),
+        decide: (messages) => this.conductor.completeDecision(messages),
+        phrase: (messages) => this.conductor.completePhrase(messages),
+        runTool: async (intent, entidades) => {
+          const question = isJornadaBootstrap(messageDto.mensaje)
+            ? ''
+            : messageDto.mensaje;
+          const queried = await this.runAssistantReadToolsForIntent(
+            question,
+            {
+              id: usuario.id,
+              nombre: usuario.nombre,
+              rol: usuario.rol,
+            },
+            intent,
+            entidades,
+            assistantDataScope,
+          );
+          return {
+            data: queried.data,
+            tool: queried.executedReadTool,
+            error: queried.queryError,
+          };
+        },
+      });
+
+      let acciones: AssistantResponseDto['acciones'];
+      if (
+        turn.intentType &&
+        turn.resultCount > 0 &&
+        isAssistantTabularExportIntent(turn.intentType)
+      ) {
+        try {
+          const legacy = await this.responseGenerator.generateResponse(
+            turn.intentType,
+            turn.toolData,
+            0.8,
+            turn.entidades,
+          );
+          acciones = legacy.acciones;
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : 'error';
+          this.logger.warn(
+            `[assistant:conductor] export actions skipped: ${message}`,
+          );
+        }
+      }
+
+      const sources =
+        turn.answerAuthor === 'fallback'
+          ? [
+              {
+                type: 'generated_summary' as const,
+                label: turn.limitations?.includes('sin_modelo')
+                  ? 'Sin modelo'
+                  : 'Asistente no disponible',
+                detail: turn.limitations?.includes('sin_modelo')
+                  ? 'datos y procedimientos de la app'
+                  : 'fallback:openai',
+              },
+            ]
+          : turn.responseType === 'knowledge_base'
+            ? [
+                {
+                  type: 'knowledge_base' as const,
+                  label: 'Procedimiento documentado',
+                  detail: turn.intentLabel,
+                },
+                {
+                  type: 'generated_summary' as const,
+                  label: 'Redacción del modelo',
+                  detail: 'gpt-4o-mini',
+                },
+              ]
+            : turn.tools.length > 0
+              ? [
+                  {
+                    type: 'live_data' as const,
+                    label: 'Datos en vivo',
+                    detail: 'Consulta de solo lectura (RBAC)',
+                  },
+                  {
+                    type: 'generated_summary' as const,
+                    label: 'Redacción del modelo',
+                    detail: 'gpt-4o-mini',
+                  },
+                ]
+              : [
+                  {
+                    type: 'generated_summary' as const,
+                    label: 'Redacción del modelo',
+                    detail: 'gpt-4o-mini',
+                  },
+                ];
+
+      try {
+        await this.auditService.logInteraction({
+          usuario_id: usuario.id,
+          usuario_nombre: usuario.nombre ?? '',
+          usuario_rol: usuario.rol ?? null,
+          mensaje: messageDto.mensaje,
+          intent_detectado: turn.intentLabel,
+          confianza: turn.answerAuthor === 'model' ? 0.8 : 0,
+          respuesta: turn.respuesta,
+          escalado: false,
+          auditMetrics: {
+            durationMs: Date.now() - startTime,
+            resultCount: turn.resultCount,
+            tools: turn.tools,
+            responseStatus: turn.status,
+            responseType: turn.responseType,
+            answerAuthor: turn.answerAuthor,
+            queryError: turn.limitations?.includes('consulta_no_disponible'),
+          },
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'error';
+        this.logger.warn(`[assistant:conductor] audit skipped: ${message}`);
+      }
+
+      this.emitAssistantOpsLog({
+        outcome: turn.status,
+        userId: usuario.id,
+        intent: turn.intentLabel,
+        status: turn.status,
+        responseType: turn.responseType,
+        ms: Date.now() - startTime,
+        tools: turn.tools,
+        resultCount: turn.resultCount,
+        escalated: false,
+      });
+
+      return buildAssistantResponse({
+        respuesta: turn.respuesta,
+        acciones,
+        confianza: turn.answerAuthor === 'model' ? 0.8 : 0,
+        escalado: false,
+        status: turn.status,
+        responseType: turn.responseType,
+        responseSource: turn.responseSource,
+        sources,
+        limitations: turn.limitations,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'error';
+      this.logger.error(`[assistant:conductor] ${message}`);
+      return unavailable('conductor_error');
+    }
+  }
+
   private async runAssistantReadToolsForIntent(
     mensaje: string,
     usuario: NonNullable<MessageDto['usuario']>,
@@ -1458,16 +1838,21 @@ export class AssistantService {
           }
           break;
 
-        case IntentType.CUADRANTE:
-          if (entidades?.fecha) {
+        case IntentType.CUADRANTE: {
+          const day =
+            entidades?.fecha ||
+            (!messageImpliesWholeMonthSchedule(mensaje)
+              ? extractRelativeDayIso(mensaje) || undefined
+              : undefined);
+          if (day) {
             executedReadTool = 'plan_trabajo_dia';
             this.logger.log(
-              `[Assistant] CUADRANTE → plan_trabajo_dia fecha=${entidades.fecha} codigo=${entidades.codigo ?? '-'} nombre=${entidades.nombre ? String(entidades.nombre).slice(0, 48) : '-'}`,
+              `[Assistant] CUADRANTE → plan_trabajo_dia fecha=${day} codigo=${entidades?.codigo ?? '-'} nombre=${entidades?.nombre ? String(entidades.nombre).slice(0, 48) : '-'}`,
             );
             data = await this.readTools.planTrabajoDia(
               usuario.id,
               usuario.rol,
-              entidades.fecha,
+              day,
               dataScope,
               entidades?.codigo || entidades?.nombre || entidades?.centro
                 ? {
@@ -1490,6 +1875,7 @@ export class AssistantService {
             );
           }
           break;
+        }
 
         case IntentType.PEDIDOS:
           executedReadTool = 'pedidos_resumen';

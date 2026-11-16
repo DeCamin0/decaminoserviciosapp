@@ -11,6 +11,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { FestivosService } from '../services/festivos.service';
+import { FestivosZonaService } from '../services/festivos-zona.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('api/festivos')
@@ -18,7 +19,16 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 export class FestivosController {
   private readonly logger = new Logger(FestivosController.name);
 
-  constructor(private readonly festivosService: FestivosService) {}
+  constructor(
+    private readonly festivosService: FestivosService,
+    private readonly festivosZonaService: FestivosZonaService,
+  ) {}
+
+  private empleadoCodigo(req: any): string {
+    return String(
+      req?.user?.CODIGO || req?.user?.codigo || req?.user?.userId || '',
+    ).trim();
+  }
 
   private assertAdminOrDeveloper(req: any) {
     const grupo = req?.user?.GRUPO || req?.user?.grupo;
@@ -92,7 +102,35 @@ export class FestivosController {
             years,
           },
         );
-        return result;
+        const local = await this.festivosZonaService.syncLocalHolidays(
+          years || [new Date().getFullYear(), new Date().getFullYear() + 1],
+        );
+        return { ...result, local };
+      }
+
+      if (accion === 'zonas') {
+        await this.festivosZonaService.assertCanManageZonas(req?.user);
+        if (!(await this.festivosZonaService.hasSchema())) {
+          return { catalog: [], zonas: [], schemaPending: true };
+        }
+        const year = query.year
+          ? parseInt(query.year, 10)
+          : new Date().getFullYear();
+        const [catalog, zonas] = await Promise.all([
+          this.festivosZonaService.listCatalog(year),
+          this.festivosZonaService.getZonas(),
+        ]);
+        return { catalog, zonas, schemaPending: false };
+      }
+
+      if (accion === 'mi-calendario') {
+        const year = query.year
+          ? parseInt(query.year, 10)
+          : new Date().getFullYear();
+        return this.festivosZonaService.calendarioForEmpleado(
+          this.empleadoCodigo(req),
+          year,
+        );
       }
 
       // CREATE - Creare zi festivă nouă (acceptă și GET pentru compatibilitate cu n8n)
@@ -168,7 +206,10 @@ export class FestivosController {
       throw new BadRequestException(`Invalid accion '${accion}'`);
     } catch (error: any) {
       this.logger.error('❌ Error in handleFestivos:', error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(
@@ -209,7 +250,23 @@ export class FestivosController {
             years,
           },
         );
-        return result;
+        const local = await this.festivosZonaService.syncLocalHolidays(
+          years || [new Date().getFullYear(), new Date().getFullYear() + 1],
+        );
+        return { ...result, local };
+      }
+
+      if (accion === 'zonas') {
+        await this.festivosZonaService.assertCanManageZonas(req?.user);
+        const ines = Array.isArray(body?.ines) ? body.ines : [];
+        return this.festivosZonaService.setZonas(ines);
+      }
+
+      if (accion === 'elegir-zona') {
+        return this.festivosZonaService.elegirZonaHoy(
+          this.empleadoCodigo(req),
+          body?.ine || query.ine,
+        );
       }
 
       // CREATE - Creare zi festivă nouă
@@ -280,7 +337,10 @@ export class FestivosController {
       );
     } catch (error: any) {
       this.logger.error('❌ Error in handleFestivosPost:', error);
-      if (error instanceof BadRequestException) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       throw new BadRequestException(

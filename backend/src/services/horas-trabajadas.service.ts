@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { FestivosZonaService } from './festivos-zona.service';
 import * as mysql from 'mysql2/promise';
 
 @Injectable()
@@ -10,6 +11,7 @@ export class HorasTrabajadasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly festivosZona: FestivosZonaService,
   ) {}
 
   /**
@@ -54,7 +56,8 @@ export class HorasTrabajadasService {
     rows: T[],
     allowedCodigos: string[] | null | undefined,
   ): T[] {
-    if (!allowedCodigos?.length) return rows;
+    if (allowedCodigos == null) return rows;
+    if (allowedCodigos.length === 0) return [];
     const set = new Set(allowedCodigos.map((c) => String(c).trim()));
     return rows.filter((r) => set.has(String(r.empleadoId ?? '').trim()));
   }
@@ -111,6 +114,8 @@ export class HorasTrabajadasService {
       const codigoFilter = codigo
         ? `SET @codigo_filtro = '${codigo.replace(/'/g, "''")}';`
         : 'SET @codigo_filtro = NULL;';
+      const localFiestaOr =
+        await this.festivosZona.localFiestaOrSql('ec.empleadoId');
       const query = `
         SET @lunaselectata = '${mes}';
         SET @ccaa_default  = 'ES-MD';
@@ -362,22 +367,27 @@ export class HorasTrabajadasService {
           ${codigo ? 'AND de.CODIGO = @codigo_filtro' : ''}
         ),
         fiestas_dia AS (
-          SELECT 
-            ec.empleadoId,
-            f.d AS fecha,
-            CASE 
-              WHEN fi.active=1
-               AND DATE(COALESCE(fi.observed_date, fi.date)) = f.d
-               AND (
-                    LOWER(fi.scope) IN ('nacional','national')
-                 OR (LOWER(fi.scope) IN ('autonómico','autonomico','ccaa') AND fi.ccaa_code = ec.ccaa)
-               )
-              THEN 1 ELSE 0
-            END AS es_fiesta
-          FROM empleado_ccaa ec
-          JOIN fechas f
-          LEFT JOIN fiestas fi
-            ON DATE(COALESCE(fi.observed_date, fi.date)) = f.d
+          SELECT empleadoId, fecha, MAX(es_fiesta) AS es_fiesta
+          FROM (
+            SELECT
+              ec.empleadoId,
+              f.d AS fecha,
+              CASE
+                WHEN fi.active=1
+                 AND DATE(COALESCE(fi.observed_date, fi.date)) = f.d
+                 AND (
+                      LOWER(fi.scope) IN ('nacional','national')
+                   OR (LOWER(fi.scope) IN ('autonómico','autonomico','ccaa') AND fi.ccaa_code = ec.ccaa)
+                   ${localFiestaOr}
+                 )
+                THEN 1 ELSE 0
+              END AS es_fiesta
+            FROM empleado_ccaa ec
+            JOIN fechas f
+            LEFT JOIN fiestas fi
+              ON DATE(COALESCE(fi.observed_date, fi.date)) = f.d
+          ) fiesta_raw
+          GROUP BY empleadoId, fecha
         ),
         bajas_intervalos AS (
           SELECT
@@ -938,6 +948,8 @@ export class HorasTrabajadasService {
       const codigoFilter = codigo
         ? `SET @codigo_filtro = '${codigo.replace(/'/g, "''")}';`
         : 'SET @codigo_filtro = NULL;';
+      const localFiestaOr =
+        await this.festivosZona.localFiestaOrSql('ec.empleadoId');
       const query = `
         SET @ano := CAST('${ano}' AS UNSIGNED);
         SET @ccaa_default := 'ES-MD';
@@ -1069,17 +1081,22 @@ export class HorasTrabajadasService {
           ${codigo ? 'AND de.CODIGO = @codigo_filtro' : ''}
         ),
         fiestas_dia AS (
-          SELECT ec.empleadoId, f.d AS fecha,
-                 CASE 
-                   WHEN fi.active=1
-                    AND DATE(COALESCE(fi.observed_date, fi.date)) = f.d
-                    AND (LOWER(fi.scope) IN ('nacional','national')
-                      OR (LOWER(fi.scope) IN ('autonómico','autonomico','ccaa') AND fi.ccaa_code = ec.ccaa))
-                   THEN 1 ELSE 0
-                 END AS es_fiesta
-          FROM empleado_ccaa ec
-          JOIN fechas f
-          LEFT JOIN fiestas fi ON DATE(COALESCE(fi.observed_date, fi.date)) = f.d
+          SELECT empleadoId, fecha, MAX(es_fiesta) AS es_fiesta
+          FROM (
+            SELECT ec.empleadoId, f.d AS fecha,
+                   CASE
+                     WHEN fi.active=1
+                      AND DATE(COALESCE(fi.observed_date, fi.date)) = f.d
+                      AND (LOWER(fi.scope) IN ('nacional','national')
+                        OR (LOWER(fi.scope) IN ('autonómico','autonomico','ccaa') AND fi.ccaa_code = ec.ccaa)
+                        ${localFiestaOr})
+                     THEN 1 ELSE 0
+                   END AS es_fiesta
+            FROM empleado_ccaa ec
+            JOIN fechas f
+            LEFT JOIN fiestas fi ON DATE(COALESCE(fi.observed_date, fi.date)) = f.d
+          ) fiesta_raw
+          GROUP BY empleadoId, fecha
         ),
         empleado_flags AS (
           SELECT CAST(de.CODIGO AS CHAR) AS empleadoId,

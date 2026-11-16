@@ -23,6 +23,12 @@ describe('resolveAssistantResponseSource', () => {
     );
   });
 
+  it('fallback → fallback', () => {
+    expect(resolveAssistantResponseSource({ kind: 'fallback' })).toBe(
+      'fallback',
+    );
+  });
+
   it('pipeline_empty_no_data → no_data', () => {
     expect(
       resolveAssistantResponseSource({ kind: 'pipeline_empty_no_data' }),

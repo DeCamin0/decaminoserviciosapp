@@ -1150,6 +1150,8 @@ export default function ActivityLog() {
           isOpen={showLogModal}
           onClose={closeLogModal}
           title="Detalles del Registro de Actividad"
+          className="app-modal--activity-log"
+          showCloseButton={false}
         >
           <div className="space-y-6">
             {/* Encabezado con la acción */}
@@ -1174,17 +1176,17 @@ export default function ActivityLog() {
                   👤 Información del Usuario
                 </h4>
                 <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Usuario:</span>
-                    <span className="font-medium">{selectedLog.user || 'N/A'}</span>
+                  <div className="activity-log-kv">
+                    <span className="activity-log-kv__label">Usuario</span>
+                    <span className="activity-log-kv__value">{selectedLog.user || 'N/A'}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Email:</span>
-                    <span className="font-medium">{selectedLog.email || 'N/A'}</span>
+                  <div className="activity-log-kv">
+                    <span className="activity-log-kv__label">Email</span>
+                    <span className="activity-log-kv__value">{selectedLog.email || 'N/A'}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Grupo:</span>
-                    <span className="font-medium">{selectedLog.grupo || selectedLog.details?.grupo || 'N/A'}</span>
+                  <div className="activity-log-kv">
+                    <span className="activity-log-kv__label">Grupo</span>
+                    <span className="activity-log-kv__value">{selectedLog.grupo || selectedLog.details?.grupo || 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -1194,23 +1196,23 @@ export default function ActivityLog() {
                   🌐 Información Técnica
                 </h4>
                 <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">IP:</span>
-                    <span className="font-medium">{selectedLog.ip || 'N/A'}</span>
+                  <div className="activity-log-kv">
+                    <span className="activity-log-kv__label">IP</span>
+                    <span className="activity-log-kv__value">{selectedLog.ip || 'N/A'}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">ID de Sesión:</span>
-                    <span className="font-medium text-xs">{selectedLog.sessionId || 'N/A'}</span>
+                  <div className="activity-log-kv">
+                    <span className="activity-log-kv__label">ID de sesión</span>
+                    <span className="activity-log-kv__value">{selectedLog.sessionId || 'N/A'}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">URL:</span>
-                    <span className="font-medium text-xs truncate max-w-32">
+                  <div className="activity-log-kv">
+                    <span className="activity-log-kv__label">URL</span>
+                    <span className="activity-log-kv__value">
                       {selectedLog.url || selectedLog.details?.url || 'N/A'}
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">User Agent:</span>
-                    <span className="font-medium text-xs truncate max-w-32">
+                  <div className="activity-log-kv">
+                    <span className="activity-log-kv__label">User Agent</span>
+                    <span className="activity-log-kv__value">
                       {selectedLog.userAgent || selectedLog.details?.userAgent || 'N/A'}
                     </span>
                   </div>
@@ -1276,7 +1278,7 @@ export default function ActivityLog() {
                   📋 Detalles Adicionales (JSON)
                 </h4>
                 <div className="bg-gray-50 p-4 rounded-lg">
-                  <pre className="text-xs text-gray-700 whitespace-pre-wrap">
+                  <pre className="activity-log-json text-gray-700">
                     {JSON.stringify(selectedLog.details, null, 2)}
                   </pre>
                 </div>
@@ -1284,7 +1286,7 @@ export default function ActivityLog() {
             )}
 
             {/* Acciones */}
-            <div className="flex justify-end space-x-3 pt-4 border-t">
+            <div className="activity-log-modal__actions pt-4 border-t">
               <Button
                 variant="outline"
                 onClick={closeLogModal}

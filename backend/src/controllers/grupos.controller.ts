@@ -21,6 +21,11 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { EmpleadoGrupoScopeService } from '../services/empleado-grupo-scope.service';
 import type { JwtUserLike } from '../services/empleado-grupo-scope.service';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  isImplicitAdmin,
+  matrixModuleEnabled,
+} from '../services/empleados-operation-access';
 
 @Controller('api/grupos')
 @UseGuards(JwtAuthGuard)
@@ -30,7 +35,38 @@ export class GruposController {
   constructor(
     private readonly gruposService: GruposService,
     private readonly empleadoGrupoScopeService: EmpleadoGrupoScopeService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  private async canReadEmployeeCatalog(user: any): Promise<boolean> {
+    const grupo = String(user?.grupo || user?.GRUPO || '').trim();
+    const role = String(user?.role || user?.ROLE || '').trim();
+    if (isImplicitAdmin({ grupo, role })) return true;
+    const empleados = await matrixModuleEnabled(
+      this.prisma,
+      grupo,
+      'empleados',
+    );
+    const admin = await matrixModuleEnabled(this.prisma, grupo, 'admin');
+    return empleados || admin;
+  }
+
+  private async assertCatalog(user: any, tipo?: string) {
+    const grupo = String(user?.grupo || user?.GRUPO || '').trim();
+    const role = String(user?.role || user?.ROLE || '').trim();
+    if (tipo === 'servicio_presupuesto') {
+      if (
+        isImplicitAdmin({ grupo, role }) ||
+        (await matrixModuleEnabled(this.prisma, grupo, 'presupuestos-informes'))
+      ) {
+        return;
+      }
+      throw new ForbiddenException('Sin permiso para tipos de servicio');
+    }
+    if (!(await this.canReadEmployeeCatalog(user))) {
+      throw new ForbiddenException('Sin permiso para grupos de empleados');
+    }
+  }
 
   private payloadFromRequestUser(user: any): JwtUserLike {
     return {
@@ -69,16 +105,32 @@ export class GruposController {
 
   @Get('completos')
   async getGruposCompletos(
+    @CurrentUser() user: any,
     @Query('tipo') tipo?: 'grupo_empleado' | 'servicio_presupuesto',
   ) {
     try {
+      await this.assertCatalog(user, tipo);
       this.logger.log(
         `📝 Get grupos completos request${tipo ? ` (tipo: ${tipo})` : ''}`,
       );
 
       const grupos = await this.gruposService.getGruposCompletos(tipo);
-
-      return { success: true, grupos };
+      if (tipo === 'servicio_presupuesto') {
+        return { success: true, grupos };
+      }
+      const allowed =
+        await this.empleadoGrupoScopeService.listGruposRestrictivosForPayload(
+          this.payloadFromRequestUser(user),
+        );
+      if (!allowed?.length) {
+        return { success: true, grupos };
+      }
+      return {
+        success: true,
+        grupos: grupos.filter((g) =>
+          this.empleadoGrupoScopeService.grupoMatches(g.nombre, allowed),
+        ),
+      };
     } catch (error: any) {
       this.logger.error('❌ Error getting grupos completos:', error);
       throw error;
@@ -86,11 +138,27 @@ export class GruposController {
   }
 
   @Get(':id')
-  async getGrupoById(@Param('id', ParseIntPipe) id: number) {
+  async getGrupoById(
+    @CurrentUser() user: any,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
     try {
       this.logger.log(`📝 Get grupo by id request: ${id}`);
 
       const grupo = await this.gruposService.getGrupoById(id);
+      await this.assertCatalog(user, grupo?.tipo);
+      if (grupo?.tipo !== 'servicio_presupuesto') {
+        const allowed =
+          await this.empleadoGrupoScopeService.listGruposRestrictivosForPayload(
+            this.payloadFromRequestUser(user),
+          );
+        if (
+          allowed?.length &&
+          !this.empleadoGrupoScopeService.grupoMatches(grupo?.nombre, allowed)
+        ) {
+          throw new ForbiddenException('Grupo fuera de ámbito');
+        }
+      }
 
       return { success: true, grupo };
     } catch (error: any) {

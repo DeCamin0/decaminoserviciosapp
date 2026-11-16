@@ -17,6 +17,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
+import { contentDisposition } from '../services/content-disposition';
 import * as path from 'path';
 import * as fs from 'fs';
 import { PresupuestosGuardadosService } from '../services/presupuestos-guardados.service';
@@ -45,7 +46,7 @@ export class PresupuestosGuardadosController {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      contentDisposition('inline', filename),
     );
     const pdfBuffer =
       await this.presupuestosGuardadosService.getSignedPdfBuffer(id);
@@ -79,11 +80,10 @@ export class PresupuestosGuardadosController {
       await this.presupuestoDocumentoService.generarPdf(id, {
         ...(companyKey && { companyKey }),
       });
-    const safeName = encodeURIComponent(filename);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${filename}"; filename*=UTF-8''${safeName}`,
+      contentDisposition('attachment', filename),
     );
     res.setHeader('Content-Length', buffer.length);
     res.send(buffer);
@@ -111,11 +111,10 @@ export class PresupuestosGuardadosController {
         ...(companyKey && { companyKey }),
         ...(snap ? { payloadSnapshot: snap } : {}),
       });
-    const safeName = encodeURIComponent(filename);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${filename}"; filename*=UTF-8''${safeName}`,
+      contentDisposition('attachment', filename),
     );
     res.setHeader('Content-Length', buffer.length);
     res.send(buffer);
@@ -253,6 +252,14 @@ export class PresupuestosGuardadosController {
       html,
       pdfBuffer,
       filename,
+      {
+        record: {
+          senderId: 'sistema',
+          recipientType: 'cliente',
+          recipientName: 'Cliente',
+          attachmentNote: `Adjunto: ${filename}`,
+        },
+      },
     );
     this.logger.log(
       `Presupuesto ${id} enviado por email a ${email} (${filename})`,

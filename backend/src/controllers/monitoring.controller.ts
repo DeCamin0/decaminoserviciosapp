@@ -14,12 +14,19 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { MonitoringService } from '../services/monitoring.service';
 import { TelegramService } from '../services/telegram.service';
 import { EmailService } from '../services/email.service';
 import { SentEmailsService } from '../services/sent-emails.service';
 import { ActivityLogsService } from '../services/activity-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  bannerConfirmationRecipient,
+  escapeMonitoringHtml,
+  resolveTelegramBot,
+  type MonitoringActor,
+} from '../services/monitoring-message-policy';
 
 /**
  * Controller pentru raportarea erorilor din frontend
@@ -408,6 +415,7 @@ export class MonitoringController {
    * Poate fi apelat din frontend când apare o eroare critică
    */
   @Post('frontend-error')
+  @UseGuards(JwtAuthGuard)
   async reportFrontendError(
     @Body()
     errorData: {
@@ -418,6 +426,7 @@ export class MonitoringController {
       userId?: string;
       timestamp?: string;
     },
+    @CurrentUser() user?: MonitoringActor,
   ) {
     // Folosim bot-ul general pentru erori (dacă e configurat)
     // Altfel folosim bot-ul de gestoria ca fallback
@@ -432,7 +441,7 @@ export class MonitoringController {
 
 ❌ *Mensaje:* ${errorData.message}
 🔗 *URL:* ${errorData.url || 'N/A'}
-👤 *Usuario:* ${errorData.userId || 'Anónimo'}
+👤 *Usuario:* ${user?.userId || 'sesión'} (${user?.email || 'sin correo'})
 🌐 *User Agent:* ${errorData.userAgent?.substring(0, 100) || 'N/A'}
 
 \`\`\`
@@ -468,18 +477,24 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
    * @param botType - 'gestoria' (default) sau 'general' pentru a alege bot-ul
    */
   @Post('telegram')
+  @UseGuards(JwtAuthGuard)
   async sendTelegramMessage(
     @Body()
     data: {
       message: string;
-      botType?: 'gestoria' | 'general'; // Nou: permite alegerea bot-ului
+      botType?: 'gestoria' | 'general';
       userId?: string;
       userName?: string;
       userEmail?: string;
       userGrupo?: string;
     },
+    @CurrentUser() user?: MonitoringActor,
   ) {
-    const botType = data.botType || 'gestoria';
+    const message = String(data?.message || '').trim();
+    if (!message) {
+      throw new BadRequestException('El mensaje es obligatorio');
+    }
+    const botType = resolveTelegramBot(user, data?.botType);
 
     // Verifică configurarea bot-ului ales
     const isConfigured =
@@ -496,9 +511,13 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
 
     try {
       if (botType === 'general') {
-        await this.telegramService.sendGeneralMessage(data.message);
+        await this.telegramService.sendGeneralMessage(
+          `${message}\n\n— Sesión: ${user?.userId || ''} ${user?.email || ''}`.trim(),
+        );
       } else {
-        await this.telegramService.sendMessage(data.message);
+        await this.telegramService.sendMessage(
+          `${message}\n\n— Sesión: ${user?.userId || ''} ${user?.email || ''}`.trim(),
+        );
       }
       return { success: true };
     } catch (error: any) {
@@ -512,6 +531,7 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
    * Trimite email către angajat + BCC din company config (getDefaultBcc)
    */
   @Post('banner-baja-medica-confirmation')
+  @UseGuards(JwtAuthGuard)
   async sendBannerConfirmationEmail(
     @Body()
     data: {
@@ -520,12 +540,15 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
       userCodigo: string;
       userGrupo?: string;
     },
+    @CurrentUser() user?: MonitoringActor,
   ) {
     if (!this.emailService.isConfigured()) {
       return { success: false, message: 'Email service not configured' };
     }
 
-    if (!data.userEmail || !data.userName) {
+    const userEmail = bannerConfirmationRecipient(user, data.userEmail);
+    const userName = escapeMonitoringHtml(String(data.userName || '').trim());
+    if (!userName) {
       return {
         success: false,
         message: 'userEmail and userName are required',
@@ -556,7 +579,7 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
   </div>
   
   <div class="content">
-    <p>Estimado/a <strong>${data.userName}</strong>,</p>
+    <p>Estimado/a <strong>${userName}</strong>,</p>
     
     <p>Le confirmamos que ha tomado conocimiento del recordatorio sobre la <strong class="highlight">obligación de comunicar bajas médicas</strong> a través de la aplicación.</p>
     
@@ -585,7 +608,7 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
       `.trim();
 
       // Trimite email către angajat cu BCC din company config
-      await this.emailService.sendEmail(data.userEmail, subject, html, {
+      await this.emailService.sendEmail(userEmail, subject, html, {
         bcc: this.emailService.getDefaultBcc(),
       });
 
@@ -594,9 +617,9 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
         await this.sentEmailsService.saveSentEmail({
           senderId: 'system',
           recipientType: 'empleado',
-          recipientId: data.userCodigo,
-          recipientEmail: data.userEmail,
-          recipientName: data.userName,
+          recipientId: user?.userId || data.userCodigo,
+          recipientEmail: userEmail,
+          recipientName: userName,
           subject,
           message: html,
           status: 'sent',
@@ -613,9 +636,9 @@ ${errorData.stack?.substring(0, 500) || 'No stack trace'}
         await this.sentEmailsService.saveSentEmail({
           senderId: 'system',
           recipientType: 'empleado',
-          recipientId: data.userCodigo,
-          recipientEmail: data.userEmail,
-          recipientName: data.userName,
+          recipientId: user?.userId || data.userCodigo,
+          recipientEmail: userEmail,
+          recipientName: userName,
           subject: '✅ Confirmación de conocimiento - Baja Médica',
           message: '',
           status: 'failed',

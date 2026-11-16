@@ -215,6 +215,99 @@ const solicitudSolapaAnio = (s, year) => {
   return end >= yearStart && start <= yearEnd;
 };
 
+const canonicalSolicitudTipo = (tipo) => {
+  const text = String(tipo ?? '').trim();
+  const lower = text.toLowerCase();
+  if (text === 'Asuntos Propios' || text === 'Asunto Propio') return 'Asunto Propio';
+  if (text === 'Vacación' || text === 'Vacaciones') return 'Vacaciones';
+  if (lower === 'ausencias justificada' || lower === 'ausencia justificada') return 'Ausencias justificada';
+  return text;
+};
+
+const solicitudIsoDay = (value) => {
+  if (value == null || value === '') return '';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Madrid',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(value);
+  }
+  const text = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  if (/^\d{4}-\d{2}-\d{2}[T ]/.test(text)) {
+    const parsed = new Date(text.includes(' ') ? text.replace(' ', 'T') : text);
+    if (!Number.isNaN(parsed.getTime())) {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Madrid',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(parsed);
+    }
+  }
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : '';
+};
+
+const solicitudRangeFromRow = (row) => {
+  const fecha = row?.FECHA || row?.fecha;
+  if (typeof fecha === 'string' && fecha.includes(' - ')) {
+    const [startText, endText] = fecha.split(' - ');
+    const inicio = solicitudIsoDay(startText);
+    const fin = solicitudIsoDay(endText) || inicio;
+    if (inicio && fin) return { inicio, fin };
+  }
+  const inicio = solicitudIsoDay(row?.fecha_inicio || row?.FECHA_INICIO || row?.fecha);
+  const fin = solicitudIsoDay(row?.fecha_fin || row?.FECHA_FIN) || inicio;
+  return { inicio, fin };
+};
+
+const solicitudDayCount = (inicio, fin) => {
+  if (!inicio || !fin) return 0;
+  const [y1, m1, d1] = inicio.split('-').map(Number);
+  const [y2, m2, d2] = fin.split('-').map(Number);
+  if (![y1, m1, d1, y2, m2, d2].every((n) => Number.isFinite(n))) return 0;
+  return Math.floor((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000) + 1;
+};
+
+const linkedSolicitudId = (row) =>
+  row?.solicitud_id || row?.SOLICITUD_ID || row?.raw?.solicitud_id || row?.raw?.SOLICITUD_ID || '';
+
+const exactDuplicateText = (tipo, inicio, fin) => {
+  const dias = solicitudDayCount(inicio, fin);
+  const label = canonicalSolicitudTipo(tipo);
+  const es = (iso) => {
+    const [year, month, day] = iso.split('-');
+    return `${day}/${month}/${year}`;
+  };
+  const when = inicio === fin ? es(inicio) : `${es(inicio)} - ${es(fin)}`;
+  return `Ya existe una solicitud de ${label} con las mismas fechas (${when}, ${dias} día${dias === 1 ? '' : 's'}). No se puede registrar otra igual.`;
+};
+
+const findExactActiveDuplicate = (rows, incoming) => {
+  const inicio = solicitudIsoDay(incoming.inicio);
+  const fin = solicitudIsoDay(incoming.fin);
+  const dias = solicitudDayCount(inicio, fin);
+  if (!inicio || !fin || dias < 1) return null;
+  const ownId = String(incoming.id ?? '').trim();
+  const tipo = canonicalSolicitudTipo(incoming.tipo);
+  const codigo = String(incoming.codigo ?? '').trim();
+  return (rows || []).find((row) => {
+    const rowId = String(row?.id || row?.ID || '').trim();
+    const linked = String(linkedSolicitudId(row) || '').trim();
+    if (ownId && (rowId === ownId || linked === ownId)) return false;
+    const estado = String(row?.estado || row?.ESTADO || 'Aprobada').trim();
+    if (estado !== 'Pendiente' && estado !== 'Aprobada') return false;
+    if (canonicalSolicitudTipo(row?.tipo || row?.TIPO) !== tipo) return false;
+    const rowCodigo = String(row?.codigo || row?.CODIGO || '').trim();
+    if (codigo && rowCodigo && rowCodigo !== codigo) return false;
+    const range = solicitudRangeFromRow(row);
+    return range.inicio === inicio && range.fin === fin && solicitudDayCount(range.inicio, range.fin) === dias;
+  }) || null;
+};
+
 /** YYYY-MM-DD local (calendario). */
 const toLocalYmd = (d = new Date()) => {
   const x = d instanceof Date ? d : new Date(d);
@@ -269,7 +362,20 @@ const getSolicitudSortTs = (s, field) => {
   return 0;
 };
 
+const isPermisoRetribuidoItem = (item) =>
+  String(item?.tipo || item?.TIPO || '')
+    .trim()
+    .toLowerCase() === 'permiso retribuido';
+
 const getSolicitudDuracionDias = (s) => {
+  if (isPermisoRetribuidoItem(s)) {
+    const permiso = s.permiso_duracion;
+    if (permiso && (permiso.manual || permiso.status === 'calculated')) {
+      const days = Number(permiso.workingDays);
+      return Number.isFinite(days) ? days : 0;
+    }
+    return 0;
+  }
   const n = Number(s.duracion ?? s.DURACION);
   if (Number.isFinite(n) && n > 0) return n;
   const range = getSolicitudRangoFechasLocal(s);
@@ -527,6 +633,10 @@ const formatBajaRecord = (item) => {
     diasBajaDetalle: item?.['Días de baja'] ?? item?.dias_baja ?? '',
     fechaBaja: fechaBajaRaw,
     fechaAlta: fechaAltaRaw,
+    altaAnunciada:
+      item?.alta_anunciada ??
+      item?.altaAnunciada ??
+      '',
     fuente,
     updatedAt: item?.updated_at ?? item?.updatedAt ?? '',
     tipo: 'Baja Médica',
@@ -1997,6 +2107,8 @@ export default function SolicitudesPage() {
   const [tipo, setTipo] = useState('Asuntos Propios');
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
+  const [permisoPreview, setPermisoPreview] = useState(null);
+  const [permisoPreviewLoading, setPermisoPreviewLoading] = useState(false);
   const [fechaUltimoDiaTrabajo, setFechaUltimoDiaTrabajo] = useState('');
   const [bajaVoluntariaDocumento, setBajaVoluntariaDocumento] = useState(null); // Fișier pentru BAJA_VOLUNTARIA
   const [motivo, setMotivo] = useState('');
@@ -2134,6 +2246,48 @@ export default function SolicitudesPage() {
   // State pentru editare bajas médicas
   const [editingBaja, setEditingBaja] = useState(null); // { idCaso, idPosicion, field: 'fechaBaja' | 'fechaAlta' | 'situacion' }
   const [editingBajaValue, setEditingBajaValue] = useState('');
+
+  useEffect(() => {
+    if (tipo !== 'Permiso Retribuido') {
+      setPermisoPreview(null);
+      return undefined;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaInicio || '') || !/^\d{4}-\d{2}-\d{2}$/.test(fechaFin || '')) {
+      setPermisoPreview(null);
+      return undefined;
+    }
+    let codigo = authUser?.CODIGO || authUser?.codigo || '';
+    if (editingSolicitud != null) {
+      const original = [...solicitudes, ...allSolicitudes].find((item) => item.id === editingSolicitud);
+      codigo = original?.codigo || original?.CODIGO || codigo;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setPermisoPreviewLoading(true);
+      const base = routes.getSolicitudesByEmail || `${config.BACKEND_BASE || config.API_URL || ''}/api/solicitudes`;
+      const result = await callApi(`${String(base).replace(/\/$/, '')}/permiso-retribuido/preview`, {
+        method: 'POST',
+        body: JSON.stringify({
+          codigo,
+          fecha_inicio: fechaInicio,
+          fecha_fin: fechaFin,
+        }),
+      });
+      if (cancelled) return;
+      setPermisoPreview(result.success ? result.data : {
+        status: 'needs_verification',
+        headline: 'Duración pendiente de verificar',
+        intervalo: '',
+        detail: 'No se pudo consultar el programa.',
+        text: 'Duración pendiente de verificar. No se pudo consultar el programa.',
+      });
+      setPermisoPreviewLoading(false);
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [tipo, fechaInicio, fechaFin, editingSolicitud, authUser, solicitudes, allSolicitudes, callApi]);
 
   // Deep-link filters (vista sync via useSyncedTab): seccion/periodo/estado from Inicio KPI
   useEffect(() => {
@@ -3783,6 +3937,7 @@ export default function SolicitudesPage() {
           duracion: ausencia.duracion || ausencia.DURACION || '',
           no_necesita_justificante: ausencia.no_necesita_justificante || ausencia.NO_NECESITA_JUSTIFICANTE || false,
           ausencia_asociada_id: ausencia.ausencia_asociada_id || null,
+          solicitud_id: ausencia.solicitud_id || ausencia.SOLICITUD_ID || null,
           fuente: 'ausencias',
           raw: ausencia
         }));
@@ -3822,10 +3977,22 @@ export default function SolicitudesPage() {
         });
         
         for (const s of solicitudesUser) {
-          const already = transformedData.some(
-            a => String(a.id) === String(s.id) || 
-              ((a.tipo || a.TIPO) === (s.tipo || s.TIPO) && (a.fecha_inicio || a.FECHA_INICIO) === (s.fecha_inicio || s.FECHA_INICIO) && (a.codigo || a.CODIGO) === (s.codigo || s.CODIGO))
-          );
+          const sid = String(s.id || s.ID || '');
+          const incomingRange = solicitudRangeFromRow(s);
+          const already = transformedData.some((a) => {
+            if (sid && String(a.id) === sid) return true;
+            const linked = String(linkedSolicitudId(a) || '');
+            if (sid && linked === sid) return true;
+            if (a.fuente !== 'ausencias') return false;
+            if (!incomingRange.inicio || !incomingRange.fin) return false;
+            const ausenciaRange = solicitudRangeFromRow(a);
+            const sameTipo = canonicalSolicitudTipo(a.tipo || a.TIPO) === canonicalSolicitudTipo(s.tipo || s.TIPO);
+            const sameCodigo = String(a.codigo || a.CODIGO || '') === String(s.codigo || s.CODIGO || '');
+            return sameTipo
+              && sameCodigo
+              && ausenciaRange.inicio === incomingRange.inicio
+              && ausenciaRange.fin === incomingRange.fin;
+          });
           if (!already) transformedData.push(normalizeSolicitud(s));
         }
         
@@ -4940,8 +5107,28 @@ export default function SolicitudesPage() {
         },
       });
 
+      const payload = result.data || {};
+      if (result.success && payload.requiresForce) {
+        const accepted = window.confirm(
+          `${payload.message}\n\n¿Quieres sustituir la duración confirmada por el cálculo del programa?`,
+        );
+        if (!accepted) return;
+        const forced = await callApi(routes.recalcularDuracion(ausenciaId), {
+          method: 'PATCH',
+          body: JSON.stringify({ forzar: true }),
+        });
+        if (!forced.success) {
+          setErrorMsg(forced.error || 'Error al recalcular duración');
+          return;
+        }
+        setSuccessMsg(forced.data?.message || 'Duración recalculada.');
+        setTimeout(() => setSuccessMsg(''), 5000);
+        await fetchAllAusencias();
+        await fetchSolicitudes();
+        return;
+      }
       if (result.success) {
-        setSuccessMsg(result.message || `✅ Duración recalculada: ${result.duracion} ${result.duracion === 1 ? 'día' : 'días'}`);
+        setSuccessMsg(payload.message || result.message || 'Duración recalculada.');
         setTimeout(() => setSuccessMsg(''), 5000);
         // Reîncarcă listele
         await fetchAllAusencias();
@@ -6203,6 +6390,24 @@ export default function SolicitudesPage() {
       }
     }
 
+    const duplicateInicio = tipo === 'BAJA_VOLUNTARIA' ? fechaUltimoDiaTrabajo : fechaInicio;
+    const duplicateFin = tipo === 'BAJA_VOLUNTARIA' ? fechaUltimoDiaTrabajo : fechaFin;
+    if (duplicateInicio && duplicateFin) {
+      const tipoPayload = tipo === 'Asuntos Propios' ? 'Asunto Propio' : tipo;
+      const codigo = authUser?.['CODIGO'] || authUser?.codigo || '';
+      const dup = findExactActiveDuplicate([...solicitudes, ...allSolicitudes], {
+        id: editingSolicitud,
+        tipo: tipoPayload,
+        codigo,
+        inicio: duplicateInicio,
+        fin: duplicateFin,
+      });
+      if (dup) {
+        setErrorMsg(exactDuplicateText(tipoPayload, solicitudIsoDay(duplicateInicio), solicitudIsoDay(duplicateFin)));
+        return false;
+      }
+    }
+
     return true;
   };
 
@@ -6373,6 +6578,19 @@ export default function SolicitudesPage() {
         id: solicitud.id || solicitud.ID,
         estado: 'Aprobada',
       };
+      const preview = solicitud.permiso_duracion;
+      if (preview?.status === 'needs_verification' && !preview.manual) {
+        const raw = window.prompt(
+          `Duración pendiente de verificar.\n${preview.intervalo || ''}\n${preview.detail || ''}\nEscribe los días laborables confirmados:`,
+          '',
+        );
+        if (raw == null) return;
+        if (!/^\d+$/.test(String(raw).trim())) {
+          setErrorMsg('Indica un número entero de días laborables.');
+          return;
+        }
+        data.duracion_confirmada = Number(String(raw).trim());
+      }
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -6384,7 +6602,14 @@ export default function SolicitudesPage() {
       });
 
       if (!response.ok) {
-        throw new Error('Error al aprobar el permiso retribuido');
+        let message = 'Error al aprobar el permiso retribuido';
+        try {
+          const errorBody = await response.json();
+          message = errorBody?.message || errorBody?.error || message;
+        } catch {
+          /* el estado ya explica el fallo */
+        }
+        throw new Error(Array.isArray(message) ? message.join(' ') : message);
       }
 
       const result = await response.json();
@@ -6872,11 +7097,12 @@ export default function SolicitudesPage() {
           }
         }, 1000);
       } else {
-        setErrorMsg('No se pudo guardar la solicitud.');
-        setServerResp(`Error: ${result.error || responseData?.error || 'Error desconocido'}`);
+        const saveError = result.error || responseData?.error || responseData?.message || 'Error desconocido';
+        setErrorMsg(saveError);
+        setServerResp(`Error: ${saveError}`);
       }
     } catch (e) {
-      setErrorMsg('No se pudo guardar la solicitud en línea');
+      setErrorMsg(e.message || 'No se pudo guardar la solicitud en línea');
       setServerResp('Error: ' + (e.message || e.toString()));
     } finally {
       // Oprește loading-ul întotdeauna, indiferent de rezultat
@@ -6928,6 +7154,20 @@ export default function SolicitudesPage() {
       return;
     }
 
+    const managerDuplicateInicio = managerTipo === 'BAJA_VOLUNTARIA' ? managerFechaUltimoDiaTrabajo : managerFechaInicio;
+    const managerDuplicateFin = managerTipo === 'BAJA_VOLUNTARIA' ? managerFechaUltimoDiaTrabajo : managerFechaFin;
+    const managerTipoPayload = managerTipo === 'Asuntos Propios' ? 'Asunto Propio' : managerTipo;
+    const managerDup = findExactActiveDuplicate([...solicitudes, ...allSolicitudes], {
+      tipo: managerTipoPayload,
+      codigo: managerSelectedEmpleado.codigo,
+      inicio: managerDuplicateInicio,
+      fin: managerDuplicateFin,
+    });
+    if (managerDup) {
+      setErrorMsg(exactDuplicateText(managerTipoPayload, solicitudIsoDay(managerDuplicateInicio), solicitudIsoDay(managerDuplicateFin)));
+      return;
+    }
+
     setOperationLoading('submit-manager', true);
     
     const tipoPayload = managerTipo === 'Asuntos Propios' ? 'Asunto Propio' : managerTipo;
@@ -6959,6 +7199,35 @@ export default function SolicitudesPage() {
         fecha_ultimo_dia_trabajo: managerFechaUltimoDiaTrabajo
       } : {}),
     };
+
+    if (tipoPayload === 'Permiso Retribuido' && managerAutoApprove) {
+      const base = routes.getSolicitudesByEmail || `${config.BACKEND_BASE || config.API_URL || ''}/api/solicitudes`;
+      const previewResult = await callApi(`${String(base).replace(/\/$/, '')}/permiso-retribuido/preview`, {
+        method: 'POST',
+        body: JSON.stringify({
+          codigo: solicitudCodigo,
+          fecha_inicio: managerFechaInicio,
+          fecha_fin: managerFechaFin,
+        }),
+      });
+      const preview = previewResult.success ? previewResult.data : null;
+      if (!preview || (preview.status === 'needs_verification' && !preview.manual)) {
+        const raw = window.prompt(
+          `Duración pendiente de verificar.\n${preview?.intervalo || ''}\n${preview?.detail || 'No se pudo consultar el programa.'}\nEscribe los días laborables confirmados:`,
+          '',
+        );
+        if (raw == null) {
+          setOperationLoading('submit-manager', false);
+          return;
+        }
+        if (!/^\d+$/.test(String(raw).trim())) {
+          setErrorMsg('Indica un número entero de días laborables.');
+          setOperationLoading('submit-manager', false);
+          return;
+        }
+        data.duracion_confirmada = Number(String(raw).trim());
+      }
+    }
 
     console.log('📤 [Manager] Creando solicitud para empleado:', data);
 
@@ -6993,11 +7262,12 @@ export default function SolicitudesPage() {
           }
         }, 1000);
       } else {
-        setErrorMsg('No se pudo guardar la solicitud.');
-        setServerResp(`Error: ${result.error || responseData?.error || 'Error desconocido'}`);
+        const saveError = result.error || responseData?.error || responseData?.message || 'Error desconocido';
+        setErrorMsg(saveError);
+        setServerResp(`Error: ${saveError}`);
       }
     } catch (e) {
-      setErrorMsg('No se pudo guardar la solicitud en línea');
+      setErrorMsg(e.message || 'No se pudo guardar la solicitud en línea');
       setServerResp('Error: ' + (e.message || e.toString()));
     } finally {
       setOperationLoading('submit-manager', false);
@@ -8114,37 +8384,6 @@ export default function SolicitudesPage() {
     return list;
   }, [fechaInicio, fechaFin, dateAvailability, editingSolicitud]);
 
-  // Calculează zilele lucrătoare (exclude weekend-urile, Luni-Vineri)
-  const calculateWorkingDays = (fechaInicio, fechaFin) => {
-    if (!fechaInicio || !fechaFin || fechaInicio === '-' || fechaFin === '-' || fechaInicio === '' || fechaFin === '') return 0;
-    try {
-      const [y1, m1, d1] = fechaInicio.split('-').map(Number);
-      const [y2, m2, d2] = fechaFin.split('-').map(Number);
-      const start = new Date(y1, m1 - 1, d1);
-      const end = new Date(y2, m2 - 1, d2);
-      if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
-      
-      start.setHours(0, 0, 0, 0);
-      end.setHours(0, 0, 0, 0);
-      
-      let workingDays = 0;
-      const currentDate = new Date(start);
-      
-      while (currentDate <= end) {
-        const dayOfWeek = currentDate.getDay(); // 0 = Duminică, 1 = Luni, ..., 6 = Sâmbătă
-        // Luni-Vineri (1-5) sunt zile lucrătoare
-        if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-          workingDays++;
-        }
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
-      
-      return workingDays;
-    } catch {
-      return 0;
-    }
-  };
-
   // Funcție pentru calculul zilelor din FECHA combinată (ex: "2025-10-09 - 2025-10-23")
   const calculateDaysFromCombinedDate = (fechaCombinada) => {
     if (!fechaCombinada || fechaCombinada === '-' || fechaCombinada === '') return 0;
@@ -8311,6 +8550,13 @@ export default function SolicitudesPage() {
 
   const getAusenciaDurationDisplay = (item) => {
     const tipo = getFirstValue(item, ['TIPO', 'tipo']);
+    if (isPermisoRetribuidoItem(item)) {
+      const permiso = item?.permiso_duracion;
+      return {
+        isDayBased: true,
+        text: permiso?.text || 'Duración pendiente de verificar',
+      };
+    }
     const unidad = getFirstValue(item, ['UNIDAD_DURACION', 'unidad_duracion']);
     const duracion = getFirstValue(item, ['DURACION', 'duracion']);
     
@@ -13079,6 +13325,11 @@ export default function SolicitudesPage() {
                                   {formatDate(item.fechaAlta)}
                                 </p>
                               )}
+                              {!item.fechaAlta && item.altaAnunciada ? (
+                                <p className="text-xs font-semibold text-amber-700 mt-1">
+                                  Alta anunciada por el empleado el {formatDate(item.altaAnunciada)}. Esperando el alta de la mutua.
+                                </p>
+                              ) : null}
                             </div>
                             <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Pago delegado</span>
@@ -13205,12 +13456,26 @@ export default function SolicitudesPage() {
                             </div>
                             <div className="app-card app-card--pad">
                               <span className="block text-xs font-medium text-gray-600 mb-1">Duración</span>
+                              {isPermisoRetribuidoItem(item) ? (
+                                <>
+                                  <p className="text-sm font-bold text-purple-600">
+                                    {item.permiso_duracion?.headline || 'Duración pendiente de verificar'}
+                                  </p>
+                                  {item.permiso_duracion?.intervalo ? (
+                                    <p className="text-xs text-gray-600 mt-1">{item.permiso_duracion.intervalo}</p>
+                                  ) : null}
+                                  {item.permiso_duracion?.detail ? (
+                                    <p className="text-xs text-amber-700 mt-1">{item.permiso_duracion.detail}</p>
+                                  ) : null}
+                                </>
+                              ) : (
                               <p className="text-sm font-bold text-purple-600">
                                 {item.FECHA
                                   ? calculateDaysFromCombinedDate(item.FECHA)
                                   : calculateDays(item.fecha_inicio || item['fecha inicio'] || item.fecha, item.fecha_fin || item['fecha fin'])}{' '}
                                 días
                               </p>
+                              )}
                             </div>
                           </>
                         )}
@@ -15055,10 +15320,13 @@ export default function SolicitudesPage() {
                         <span className="text-2xl mr-3">⏱️</span>
                         {tipo === 'Permiso Retribuido' ? (
                           <>
-                            <span>Días laborables:</span>
-                            <span className="ml-2 text-2xl text-green-600">{calculateWorkingDays(fechaInicio, fechaFin)}</span>
-                            <span className="ml-2 text-lg">días</span>
-                            <span className="ml-2 text-sm text-gray-600">({calculateDays(fechaInicio, fechaFin)} días totales)</span>
+                            <span>{permisoPreviewLoading ? 'Consultando programa...' : (permisoPreview?.headline || 'Duración pendiente de verificar')}</span>
+                            {permisoPreview?.intervalo ? (
+                              <span className="ml-2 text-sm text-gray-600">{permisoPreview.intervalo}</span>
+                            ) : null}
+                            {permisoPreview?.detail ? (
+                              <span className="block text-sm text-amber-700 mt-1">{permisoPreview.detail}</span>
+                            ) : null}
                           </>
                         ) : (
                           <>
@@ -15797,20 +16065,20 @@ export default function SolicitudesPage() {
                           Fecha baja: <b>{formatDate(c?.fechaBaja)}</b>
                         </div>
                       </div>
-                      <div className="text-xs text-gray-500">
-                        MANUAL: {c?.manual?.idCaso}/{c?.manual?.idPosicion} · MUTUA: {c?.mutua?.idCaso}/{c?.mutua?.idPosicion}
-                      </div>
+                        <div className="text-xs text-gray-500">
+                          {(c?.avisoFuente === 'EMPLEADO' ? 'Empleado' : 'Manual')}: {c?.manual?.idCaso}/{c?.manual?.idPosicion} · Mutua: {c?.mutua?.idCaso}/{c?.mutua?.idPosicion}
+                        </div>
                     </div>
 
                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                        <div className="text-xs font-semibold text-amber-800">Fecha alta (MANUAL)</div>
+                        <div className="text-xs font-semibold text-amber-800">Fecha de alta ({c?.avisoFuente === 'EMPLEADO' ? 'empleado' : 'manual'})</div>
                         <div className="text-sm font-bold text-amber-900">
                           {formatDate(c?.fechaAltaManual) || '-'}
                         </div>
                       </div>
                       <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-                        <div className="text-xs font-semibold text-emerald-800">Fecha alta (MUTUA)</div>
+                        <div className="text-xs font-semibold text-emerald-800">Fecha de alta (mutua)</div>
                         <div className="text-sm font-bold text-emerald-900">
                           {formatDate(c?.fechaAltaMutua) || '-'}
                         </div>

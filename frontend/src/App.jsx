@@ -23,6 +23,7 @@ import { useErrorHandler } from './hooks/useErrorHandler';
 import { setSessionExpiredCallback } from './utils/tokenRefresh';
 import { useTokenMonitor } from './hooks/useTokenMonitor';
 import { config } from './config/env';
+import activityLogger from './utils/activityLogger';
 
 // Tab title mereu din setări (.env: VITE_APP_NAME sau VITE_COMPANY_NAME)
 if (typeof document !== 'undefined') {
@@ -188,8 +189,19 @@ function App() {
   );
 }
 
+const PAGE_ACCESS_PATHS = new Set([
+  '/inicio',
+  '/fichaje',
+  '/datos',
+  '/aprobaciones',
+  '/cuadrantes',
+  '/cuadrantes-empleado',
+  '/presupuestos-v2',
+  '/presupuestos-informes',
+]);
+
 function AppRoutes() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
   const location = useLocation();
   const { errors, clearError, clearAllErrors } = useErrorHandler();
 
@@ -197,6 +209,15 @@ function AppRoutes() {
   useEffect(() => {
     console.log('Current location:', location.pathname);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    const path = location.pathname;
+    const isComunicado =
+      path === '/comunicados' || path.startsWith('/comunicados/');
+    if (!PAGE_ACCESS_PATHS.has(path) && !isComunicado) return;
+    activityLogger.logPageAccess(path, user).catch(() => {});
+  }, [isAuthenticated, location.pathname, user]);
 
   if (loading) {
     return (

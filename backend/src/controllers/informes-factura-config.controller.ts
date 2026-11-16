@@ -16,6 +16,7 @@ import { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { InformePdfService } from '../services/informe-pdf.service';
 import { EmailService } from '../services/email.service';
+import { contentDisposition } from '../services/content-disposition';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { InformesFirmasStorageService } from '../services/informes-firmas-storage.service';
 
@@ -202,7 +203,10 @@ export class InformesFacturaConfigController {
     }
     const filename = `informe-${numId}-firmado.pdf`;
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader(
+      'Content-Disposition',
+      contentDisposition('attachment', filename),
+    );
     res.send(buffer);
   }
 
@@ -291,6 +295,14 @@ export class InformesFacturaConfigController {
       html,
       buffer,
       filename,
+      {
+        record: {
+          senderId: 'sistema',
+          recipientType: 'cliente',
+          recipientName: 'Cliente',
+          attachmentNote: `Adjunto: ${filename}`,
+        },
+      },
     );
     return {
       success: true,
@@ -305,11 +317,10 @@ export class InformesFacturaConfigController {
     if (Number.isNaN(numId)) throw new NotFoundException('ID inválido');
     const { buffer, filename } =
       await this.informePdfService.generatePdf(numId);
-    const safeName = encodeURIComponent(filename);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${filename}"; filename*=UTF-8''${safeName}`,
+      contentDisposition('attachment', filename),
     );
     res.setHeader('Content-Length', buffer.length);
     res.send(buffer);

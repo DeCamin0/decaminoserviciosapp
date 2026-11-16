@@ -8,6 +8,7 @@ import { routes } from '../utils/routes.js';
 import ScheduleEditor from '../components/ScheduleEditor';
 import CuadrantesMobileMatrix from './cuadrantes-admin/CuadrantesMobileMatrix';
 import CuadrantesFestivosList from './cuadrantes-admin/CuadrantesFestivosList';
+import FestivosZonasPanel from './cuadrantes-admin/FestivosZonasPanel';
 import CuadrantesMulticentroMobile from './cuadrantes-admin/CuadrantesMulticentroMobile';
 import { toMinutes } from '../types/schedule';
 import { calculateCuadranteHours } from '../utils/cuadrante-hours-helper';
@@ -1697,6 +1698,7 @@ export default function CuadrantesPage() {
                 (item.scope || item.ambito || item.tipo || 'General')?.toString() ??
                 'General',
               ccaa: item.ccaa_code || item.ccaa || item.comunidad || null,
+              municipio: item.municipio_nombre || item.municipio || null,
               observedDate: item.observed_date || item.observedDate || null,
               notes: item.notes || item.descripcion || null,
               active:
@@ -4707,6 +4709,7 @@ export default function CuadrantesPage() {
 
         {activeTab === 'festivos' && (
           <div className="space-y-6">
+            <FestivosZonasPanel onSaved={() => loadFestivos(festivosYear, { force: true })} />
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
                 <label
@@ -4755,7 +4758,7 @@ export default function CuadrantesPage() {
 
               <div className="flex items-end justify-between gap-2">
                 <div className="text-sm text-gray-500">
-                  Nacional + Comunidad de Madrid. Sync automático mensual o manual.
+                  Nacional, Comunidad de Madrid y los festivos locales de las zonas marcadas.
                 </div>
                 <div className="flex items-center gap-2">
                   <Button

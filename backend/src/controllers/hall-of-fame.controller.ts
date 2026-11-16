@@ -12,8 +12,8 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { Public } from '../auth/public.decorator';
 import { HallOfFameService } from '../services/hall-of-fame.service';
+import { canDebugCuadrante } from '../services/hall-of-fame-debug-access';
 
 @Controller('api/hall-of-fame')
 @UseGuards(JwtAuthGuard)
@@ -326,15 +326,20 @@ export class HallOfFameController {
 
   /**
    * GET /api/hall-of-fame/debug/cuadrante/:codigo?mes=YYYY-MM
-   * Debug endpoint pentru a vedea exact cum se calculează cuadrante pentru un angajat
-   * Public endpoint - nu necesită autentificare (doar pentru debug)
+   * Debug de calcul. Doar Developer, la fel ca rutele de calcul.
+   * Clasamentele și calculele rămân pe rutele lor.
    */
-  @Public()
   @Get('debug/cuadrante/:codigo')
   async debugCuadrante(
     @Param('codigo') codigo: string,
     @Query('mes') mes?: string,
+    @CurrentUser() user?: any,
   ) {
+    if (!canDebugCuadrante(user)) {
+      throw new ForbiddenException(
+        'No tienes permisos para depurar cuadrantes.',
+      );
+    }
     if (!codigo) {
       throw new BadRequestException('codigo is required');
     }

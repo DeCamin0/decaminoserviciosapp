@@ -310,6 +310,12 @@ function getApprovedHoursLabel(item) {
 
 function getAusenciaDurationDisplay(item) {
   const isDayBased = isDayBasedAbsenceType(item?.tipo);
+  if (String(item?.tipo || item?.TIPO || '').trim() === 'Permiso Retribuido') {
+    return {
+      isDayBased: true,
+      text: item?.permiso_duracion?.text || 'Duración pendiente de verificar',
+    };
+  }
   if (isDayBased) {
     const days = getApprovedDaysCount(item);
     return {
@@ -715,6 +721,15 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   const { user: authUser, isAuthenticated } = useAuth();
   const { callApi } = useApi();
   const { isMobile } = useBreakpoint();
+  const [centrosDia, setCentrosDia] = useState(null);
+  const [savingCentro, setSavingCentro] = useState(false);
+
+  const horarioDeCentros =
+    !cuadranteAsignado &&
+    !horarioMulticentroAsignado &&
+    centrosDia?.mode === 'multiple' &&
+    Array.isArray(centrosDia.intervals) &&
+    centrosDia.intervals.length > 0;
   
   // Calculează orarul zilei curente (similar cu componenta părinte, dar folosind props-urile)
   const currentDaySchedule = useMemo(() => {
@@ -747,6 +762,14 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         }
       }
       return null;
+    } else if (
+      centrosDia?.mode === 'multiple' &&
+      Array.isArray(centrosDia.intervals) &&
+      centrosDia.intervals.length > 0
+    ) {
+      return centrosDia.intervals
+        .map((interval) => `${interval.horaIn} - ${interval.horaOut} (${interval.centro})`)
+        .join(' / ');
     } else if (horarioAsignado && horarioAsignado.days) {
       const today = new Date().getDay();
       const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][today];
@@ -784,7 +807,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       return null;
     }
     return null;
-  }, [cuadranteAsignado, horarioMulticentroAsignado, horarioAsignado]);
+  }, [cuadranteAsignado, horarioMulticentroAsignado, horarioAsignado, centrosDia]);
 
   // Funcție pentru a calcula orele zilnice din orarul curent
   const getCurrentDayHours = () => {
@@ -810,6 +833,19 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         return hours > 0 ? hours.toFixed(2) : '0.00';
       }
       return '0.00';
+    } else if (
+      centrosDia?.mode === 'multiple' &&
+      Array.isArray(centrosDia.intervals) &&
+      centrosDia.intervals.length > 0
+    ) {
+      const minutes = centrosDia.intervals.reduce((sum, interval) => {
+        const start = String(interval.horaIn || '').split(':').map(Number);
+        const end = String(interval.horaOut || '').split(':').map(Number);
+        const a = (start[0] || 0) * 60 + (start[1] || 0);
+        const b = (end[0] || 0) * 60 + (end[1] || 0);
+        return sum + Math.max(0, b - a);
+      }, 0);
+      return (minutes / 60).toFixed(2);
     } else if (horarioAsignado && horarioAsignado.days) {
       const today = new Date().getDay();
       const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][today];
@@ -931,6 +967,9 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   // State pentru festivos
   const [festivos, setFestivos] = useState([]);
   const [isTodayFestivo, setIsTodayFestivo] = useState(false);
+  const [zoneChoice, setZoneChoice] = useState({ needs: false, zonas: [], zona: null });
+  const [zonePromptDismissed, setZonePromptDismissed] = useState(false);
+  const [savingZone, setSavingZone] = useState(false);
 
   // State pentru modal-ul de confirmare fichaje
   const [showFichajeConfirmModal, setShowFichajeConfirmModal] = useState(false);
@@ -994,7 +1033,9 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         if (!baja || typeof baja !== 'object') return false;
         
         const fechaInicio = baja.fecha_inicio || baja.fechaInicio || baja.FECHA_INICIO || baja['Fecha baja'] || baja['Fecha Baja'] || baja['Fecha de baja'] || baja.fecha_baja || baja.fechaBaja || baja['FECHA BAJA'] || '';
-        const fechaFin = baja.fecha_fin || baja.fechaFin || baja.FECHA_FIN || baja['Fecha de alta'] || baja['Fecha de Alta'] || baja['Fecha alta'] || baja['Fecha Alta'] || baja.fecha_alta || baja.fechaAlta || baja['FECHA ALTA'] || '';
+        const fechaOficial = baja.fecha_fin || baja.fechaFin || baja.FECHA_FIN || baja['Fecha de alta'] || baja['Fecha de Alta'] || baja['Fecha alta'] || baja['Fecha Alta'] || baja.fecha_alta || baja.fechaAlta || baja['FECHA ALTA'] || '';
+        const fechaAnunciada = baja.alta_anunciada || baja.altaAnunciada || '';
+        const fechaFin = fechaOficial || fechaAnunciada;
         
         if (!fechaInicio) return false;
         
@@ -1032,7 +1073,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       setCurrentAbsenceType('Baja Médica');
       setCurrentBajaMedica({
         startDate: normalizeDateInput(currentBaja.fecha_inicio || currentBaja.fechaInicio || currentBaja.FECHA_INICIO || currentBaja['Fecha baja'] || currentBaja['Fecha Baja'] || currentBaja['Fecha de baja'] || currentBaja.fecha_baja || currentBaja.fechaBaja || currentBaja['FECHA BAJA'] || ''),
-        endDate: normalizeDateInput(currentBaja.fecha_fin || currentBaja.fechaFin || currentBaja.FECHA_FIN || currentBaja['Fecha de alta'] || currentBaja['Fecha de Alta'] || currentBaja['Fecha alta'] || currentBaja['Fecha Alta'] || currentBaja.fecha_alta || currentBaja.fechaAlta || currentBaja['FECHA ALTA'] || ''),
+        endDate: normalizeDateInput(currentBaja.fecha_fin || currentBaja.fechaFin || currentBaja.FECHA_FIN || currentBaja['Fecha de alta'] || currentBaja['Fecha de Alta'] || currentBaja['Fecha alta'] || currentBaja['Fecha Alta'] || currentBaja.fecha_alta || currentBaja.fechaAlta || currentBaja['FECHA ALTA'] || currentBaja.alta_anunciada || currentBaja.altaAnunciada || ''),
         situacion: currentBaja.Situacion || currentBaja.situacion || currentBaja['Situación'] || currentBaja.estado || '',
         motivo: currentBaja.Motivo || currentBaja.motivo || 'Baja médica'
       });
@@ -1162,7 +1203,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   const fetchFestivos = useCallback(async () => {
     try {
       const currentYear = new Date().getFullYear();
-      const url = `${routes.getFestivos}?accion=get&ano=${currentYear}`;
+      const url = `${routes.getFestivos}?accion=mi-calendario&year=${currentYear}`;
       const token = localStorage.getItem('auth_token');
       const headers = { 'Content-Type': 'application/json' };
       if (token) {
@@ -1171,16 +1212,48 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       loggerDebug('🔍 Fetching festivos from:', url);
       const res = await fetch(url, { headers });
       const data = await res.json();
-      const festivosList = Array.isArray(data) ? data : [];
+      const festivosList = Array.isArray(data?.festivos)
+        ? data.festivos
+        : Array.isArray(data)
+          ? data
+          : [];
       loggerDebug('✅ Festivos loaded for year', currentYear, ':', festivosList.length, 'festivos');
-      loggerDebug('📋 Festivos list:', festivosList);
       setFestivos(festivosList);
+      setZoneChoice({
+        needs: !!data?.needsZoneChoice,
+        zonas: Array.isArray(data?.zonas) ? data.zonas : [],
+        zona: data?.zona || null,
+      });
     } catch (error) {
       logError('❌ Error fetching festivos:', error);
       setFestivos([]);
     }
   }, []);
   
+  const elegirZonaHoy = useCallback(async (ine) => {
+    setSavingZone(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(`${routes.getFestivos}?accion=elegir-zona`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ine }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.message || 'No se pudo guardar la zona');
+      }
+      setZonePromptDismissed(false);
+      await fetchFestivos();
+    } catch (error) {
+      logError('Error eligiendo zona:', error);
+    } finally {
+      setSavingZone(false);
+    }
+  }, [fetchFestivos]);
+
   // Verifică dacă ziua curentă este festivo
   const checkTodayFestivo = useCallback(() => {
     const today = new Date();
@@ -1294,12 +1367,46 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       fetchFestivos();
     }
   }, [authUser, fetchFestivos]);
+
+  const fetchCentrosDia = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(routes.centrosEmpleadoHoy, { headers });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+      setCentrosDia(data);
+    } catch (error) {
+      logError('Error cargando centros del día:', error);
+    }
+  }, []);
+
+  const elegirCentroHoy = useCallback(async (centro) => {
+    setSavingCentro(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(routes.centrosEmpleadoHoy, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ centro }),
+      });
+      if (!res.ok) return;
+      await fetchCentrosDia();
+    } finally {
+      setSavingCentro(false);
+    }
+  }, [fetchCentrosDia]);
+
+  useEffect(() => {
+    if (authUser && !authUser?.isDemo) fetchCentrosDia();
+  }, [authUser, fetchCentrosDia]);
   
   // Verifică dacă ziua curentă este festivo când se schimbă festivos
   useEffect(() => {
-    if (festivos.length > 0) {
-      checkTodayFestivo();
-    }
+    checkTodayFestivo();
   }, [festivos, checkTodayFestivo]);
 
   const fetchMonthlyAlerts = useCallback(async (month, notifyOnResult = false) => {
@@ -2766,9 +2873,25 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
            (hasSalidaToday && hasEntradaYesterday && isOvernightShiftToday);
   }, [logs, cuadranteAsignado]);
 
+  const diaFestivoCompleto = isTodayFestivo && !(
+    horarioDeCentros && centrosDia?.wholeDayFestivo === false
+  );
+
+  const isTimeForCentros = useCallback((tipo) => {
+    if (!horarioDeCentros) return isTimeWithinSchedule(tipo);
+    const now = new Date();
+    const currentTime = now.getHours() * 60 + now.getMinutes();
+    return centrosDia.intervals.some((interval) => {
+      const mark = tipo === 'Entrada' ? interval.horaIn : interval.horaOut;
+      const parts = String(mark || '').split(':').map(Number);
+      const minutes = (parts[0] || 0) * 60 + (parts[1] || 0);
+      return currentTime >= minutes - 10;
+    });
+  }, [horarioDeCentros, centrosDia, isTimeWithinSchedule]);
+
   const isEntradaAllowed = useMemo(() => {
     // Verifică dacă ziua curentă este festivo și utilizatorul nu lucrează în festivos
-    if (isTodayFestivo) {
+    if (diaFestivoCompleto) {
       const trabajaFestivos = authUser?.['TrabajaFestivos'] || authUser?.trabajaFestivos || 'NO';
       const trabajaFestivosLower = String(trabajaFestivos).toLowerCase().trim();
       const trabajaEnFestivos = ['si', 'sí', 's', '1', 'true', 'da', 'y', 'yes'].includes(trabajaFestivosLower);
@@ -2788,7 +2911,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     }
     
     // Verifică dacă există orar pentru ziua curentă (pentru horario)
-    if (horarioAsignado && !cuadranteAsignado) {
+    if (horarioAsignado && !cuadranteAsignado && !horarioDeCentros) {
       const now = new Date();
       const currentDay = now.getDay();
       const dayKey = ['D', 'L', 'M', 'X', 'J', 'V', 'S'][currentDay];
@@ -2808,15 +2931,15 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     
     // Dacă tura este completă, verifică doar dacă este timpul corect pentru următoarea tură
     if (isShiftComplete) {
-      return isTimeWithinSchedule('Entrada');
+      return isTimeForCentros('Entrada');
     }
     // Dacă tura nu este completă și există orar, permite oricând (pentru cazul când uită să ficheze)
     return true;
-  }, [isTimeWithinSchedule, isShiftComplete, horarioAsignado, cuadranteAsignado, isTodayFestivo, authUser]);
+  }, [isTimeForCentros, isShiftComplete, horarioAsignado, cuadranteAsignado, diaFestivoCompleto, isTodayFestivo, horarioDeCentros, authUser]);
 
   const isSalidaAllowed = useMemo(() => {
     // Verifică dacă ziua curentă este festivo și utilizatorul nu lucrează în festivos
-    if (isTodayFestivo) {
+    if (diaFestivoCompleto) {
       const trabajaFestivos = authUser?.['TrabajaFestivos'] || authUser?.trabajaFestivos || 'NO';
       const trabajaFestivosLower = String(trabajaFestivos).toLowerCase().trim();
       const trabajaEnFestivos = ['si', 'sí', 's', '1', 'true', 'da', 'y', 'yes'].includes(trabajaFestivosLower);
@@ -2829,6 +2952,11 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
       }
     }
     
+    if (horarioDeCentros) {
+      if (isShiftComplete) return false;
+      return isTimeForCentros('Salida');
+    }
+
     // Pentru turnurile compartite (horarioAsignado cu mai multe intervale), nu folosim isShiftComplete global
     // ci verificăm fiecare interval individual prin isTimeWithinSchedule
     if (horarioAsignado && !cuadranteAsignado) {
@@ -2845,8 +2973,8 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
         if (daySchedule.in3 && daySchedule.out3) intervalCount++;
         
         // Dacă există mai mult de un interval (turn compartit), nu folosim isShiftComplete global
-        if (intervalCount > 1) {
-          return isTimeWithinSchedule('Salida');
+        if (intervalCount > 1 || horarioDeCentros) {
+          return isTimeForCentros('Salida');
         }
       }
     }
@@ -2858,7 +2986,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
     }
     // Dacă tura nu este completă, verifică programul normal
     return isTimeWithinSchedule('Salida');
-  }, [isTimeWithinSchedule, isShiftComplete, isTodayFestivo, authUser, horarioAsignado, cuadranteAsignado]);
+  }, [isTimeWithinSchedule, isTimeForCentros, isShiftComplete, diaFestivoCompleto, isTodayFestivo, horarioDeCentros, authUser, horarioAsignado, cuadranteAsignado]);
 
   // Memoizează rezultatul calculului pentru mesajul informativ (evită recalculare la fiecare secundă)
   const timeRestrictionMessage = useMemo(() => {
@@ -3080,11 +3208,12 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
   }, [logs, cuadranteAsignado, horarioAsignado, isEntradaAllowed, isSalidaAllowed, isShiftComplete, getTimeRestrictionMessage]);
 
   // Dacă utilizatorul nu este autentificat, afișează un mesaj
-  const scheduleCenter =
-    cuadranteAsignado?.CENTRO ||
-    horarioAsignado?.centroNombre ||
-    horarioMulticentroAsignado?.CLIENTE ||
-    null;
+  const scheduleCenter = horarioDeCentros
+    ? [...new Set(centrosDia.intervals.map((interval) => interval.centro))].join(' · ')
+    : cuadranteAsignado?.CENTRO ||
+      horarioAsignado?.centroNombre ||
+      horarioMulticentroAsignado?.CLIENTE ||
+      null;
   const hasScheduleSource = !!(cuadranteAsignado || horarioAsignado || horarioMulticentroAsignado);
 
   return (
@@ -3236,8 +3365,67 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             </div>
           )}
 
+          {zoneChoice.needs && !zonePromptDismissed && !isOnVacationOrAbsence && !isOnBajaMedica && (
+            <div className="fichaje-hoy__banner">
+              <AlertBanner compact variant="warning" title="Elige la zona de hoy">
+                <p>No tienes un centro asignado y la empresa trabaja en varias zonas. Elige dónde estás hoy para aplicar el festivo local. Si cierras este aviso, el día sigue como hasta ahora.</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {zoneChoice.zonas.map((zona) => (
+                    <button
+                      key={zona.ine}
+                      type="button"
+                      disabled={savingZone}
+                      onClick={() => elegirZonaHoy(zona.ine)}
+                      className="rounded-full border border-amber-300 bg-white px-3 py-1 text-sm"
+                    >
+                      {zona.nombre}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setZonePromptDismissed(true)}
+                    className="rounded-full px-3 py-1 text-sm text-gray-600"
+                  >
+                    Ahora no
+                  </button>
+                </div>
+              </AlertBanner>
+            </div>
+          )}
+
+          {centrosDia?.mode === 'multiple' && centrosDia.conflict && !cuadranteAsignado && !horarioMulticentroAsignado && (
+            <div className="fichaje-hoy__banner">
+              <AlertBanner compact variant="warning" title="Elige el centro de hoy">
+                <p>Los dos centros piden la misma hora. Elige uno: no se abren dos turnos.</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(centrosDia.opciones || []).map((centro) => (
+                    <button
+                      key={centro}
+                      type="button"
+                      disabled={savingCentro}
+                      onClick={() => elegirCentroHoy(centro)}
+                      className="rounded-full bg-white px-3 py-1 text-sm ring-1 ring-amber-300"
+                    >
+                      {centro}
+                    </button>
+                  ))}
+                </div>
+              </AlertBanner>
+            </div>
+          )}
+
+          {horarioDeCentros && Array.isArray(centrosDia?.festivosLocales) && centrosDia.festivosLocales.length > 0 && (
+            <div className="fichaje-hoy__banner">
+              <AlertBanner compact variant="info" title="Festivo local en un centro">
+                {centrosDia.festivosLocales.map((item) => (
+                  <p key={item.centro}>{item.name}: no se trabaja el bloque de {item.centro}.</p>
+                ))}
+              </AlertBanner>
+            </div>
+          )}
+
           {/* Avertisment pentru festivo */}
-          {isTodayFestivo && !isOnVacationOrAbsence && !isOnBajaMedica && (() => {
+          {diaFestivoCompleto && !isOnVacationOrAbsence && !isOnBajaMedica && (() => {
             const trabajaFestivos = authUser?.['TrabajaFestivos'] || authUser?.trabajaFestivos || 'NO';
             const trabajaFestivosLower = String(trabajaFestivos).toLowerCase().trim();
             const trabajaEnFestivos = ['si', 'sí', 's', '1', 'true', 'da', 'y', 'yes'].includes(trabajaFestivosLower);
@@ -3351,7 +3539,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
               title={
                 isOnVacationOrAbsence 
                   ? `No puedes fichar durante ${currentAbsenceType}` 
-                  : isTodayFestivo && (() => {
+                  : diaFestivoCompleto && (() => {
                       const trabajaFestivos = authUser?.['TrabajaFestivos'] || authUser?.trabajaFestivos || 'NO';
                       const trabajaFestivosLower = String(trabajaFestivos).toLowerCase().trim();
                       const trabajaEnFestivos = ['si', 'sí', 's', '1', 'true', 'da', 'y', 'yes'].includes(trabajaFestivosLower);
@@ -3375,7 +3563,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
               title={
                 isOnVacationOrAbsence 
                   ? `No puedes fichar durante ${currentAbsenceType}` 
-                  : isTodayFestivo && (() => {
+                  : diaFestivoCompleto && (() => {
                       const trabajaFestivos = authUser?.['TrabajaFestivos'] || authUser?.trabajaFestivos || 'NO';
                       const trabajaFestivosLower = String(trabajaFestivos).toLowerCase().trim();
                       const trabajaEnFestivos = ['si', 'sí', 's', '1', 'true', 'da', 'y', 'yes'].includes(trabajaFestivosLower);
@@ -3891,15 +4079,41 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             recaida: false,
           });
         }}
-        title="Anunciar baja médica"
+        title={(bajasMedicas || []).some((baja) => baja && (baja['Fecha baja'] || baja.fechaBaja || baja.fecha_baja) && !(baja['Fecha de alta'] || baja.fechaAlta || baja.fecha_alta || baja['Fecha alta'])) ? 'Anunciar alta' : 'Anunciar baja médica'}
         size="md"
         showCloseButton={false}
       >
         <div className="space-y-4">
-          <AlertBanner compact variant="danger" title="Información importante">
-            Anuncia tu baja médica. El sistema registrará automáticamente tu ausencia por motivos médicos. Esta información será visible para los gestores y se sincronizará con el sistema de bajas médicas.
-          </AlertBanner>
+          {(() => {
+            const openBaja = (bajasMedicas || []).find((baja) => {
+              if (!baja) return false;
+              const oficial = baja['Fecha de alta'] || baja.fechaAlta || baja.fecha_alta || baja['Fecha alta'] || '';
+              const inicio = baja['Fecha baja'] || baja.fechaBaja || baja.fecha_baja || '';
+              return inicio && !oficial;
+            });
+            if (!openBaja) {
+              return (
+                <AlertBanner compact variant="danger" title="Información importante">
+                  Anuncia tu baja médica. El sistema registrará automáticamente tu ausencia por motivos médicos. Esta información será visible para los gestores y se sincronizará con el sistema de bajas médicas.
+                </AlertBanner>
+              );
+            }
+            const fuente = String(openBaja.fuente || '').toUpperCase();
+            const anunciada = openBaja.alta_anunciada || openBaja.altaAnunciada || '';
+            const fechaEs = String(anunciada).match(/^(\d{4})-(\d{2})-(\d{2})/);
+            const anunciadaEs = fechaEs ? `${fechaEs[3]}/${fechaEs[2]}/${fechaEs[1]}` : anunciada;
+            return (
+              <AlertBanner compact variant="info" title={fuente === 'MUTUA' ? 'Ya tenemos la baja de la mutua' : 'Ya has anunciado esta baja'}>
+                {fuente === 'MUTUA'
+                  ? 'No hace falta abrir otra. Si te han dado el alta, indícanos la fecha. Se usa para tu vuelta hasta que llegue el alta de la mutua.'
+                  : 'No puedes abrir otra baja mientras esta siga abierta. Si te han dado el alta, indícanos la fecha. Se usa para tu vuelta hasta que llegue el alta de la mutua.'}
+                {anunciadaEs ? ` Alta anunciada: ${anunciadaEs}.` : ''}
+              </AlertBanner>
+            );
+          })()}
 
+          {!(bajasMedicas || []).some((baja) => baja && (baja['Fecha baja'] || baja.fechaBaja || baja.fecha_baja) && !(baja['Fecha de alta'] || baja.fechaAlta || baja.fecha_alta || baja['Fecha alta'])) && (
+          <>
           <div>
             <label htmlFor="baja-fecha-baja" className="app-modal__label">
               Fecha de baja <span className="text-red-500">*</span>
@@ -3913,22 +4127,32 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
               className="app-modal__input"
             />
           </div>
+          </>
+          )}
 
           <div>
             <label htmlFor="baja-fecha-alta" className="app-modal__label">
-              Fecha de alta (opcional)
+              {(bajasMedicas || []).some((baja) => baja && (baja['Fecha baja'] || baja.fechaBaja || baja.fecha_baja) && !(baja['Fecha de alta'] || baja.fechaAlta || baja.fecha_alta || baja['Fecha alta']))
+                ? <>Fecha de alta <span className="text-red-500">*</span></>
+                : 'Fecha de alta (opcional)'}
             </label>
             <input
               id="baja-fecha-alta"
               type="date"
               value={bajaMedicaForm.fechaAlta}
               onChange={(e) => setBajaMedicaForm({ ...bajaMedicaForm, fechaAlta: e.target.value })}
-              min={bajaMedicaForm.fechaBaja}
+              min={bajaMedicaForm.fechaBaja || undefined}
               className="app-modal__input"
             />
-            <p className="text-xs text-gray-500 mt-1">Si no conoces la fecha de alta, déjala vacía</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {(bajasMedicas || []).some((baja) => baja && (baja['Fecha baja'] || baja.fechaBaja || baja.fecha_baja) && !(baja['Fecha de alta'] || baja.fechaAlta || baja.fecha_alta || baja['Fecha alta']))
+                ? 'Esta fecha se usa para tu vuelta hasta que llegue el alta de la mutua. La baja sigue abierta.'
+                : 'Si no conoces la fecha de alta, déjala vacía'}
+            </p>
           </div>
 
+          {!(bajasMedicas || []).some((baja) => baja && (baja['Fecha baja'] || baja.fechaBaja || baja.fecha_baja) && !(baja['Fecha de alta'] || baja.fechaAlta || baja.fecha_alta || baja['Fecha alta'])) && (
+          <>
           <div>
             <label htmlFor="baja-tipo" className="app-modal__label">
               Tipo de baja (opcional)
@@ -3991,6 +4215,8 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             )}
             <p className="text-xs text-gray-500 mt-1">Puedes subir el documento médico si lo tienes disponible</p>
           </div>
+          </>
+          )}
 
           <div className="app-modal__actions">
             <button
@@ -4010,6 +4236,64 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
             </button>
             <button
               onClick={async () => {
+                const openBaja = (bajasMedicas || []).find((baja) => {
+                  if (!baja) return false;
+                  const oficial = baja['Fecha de alta'] || baja.fechaAlta || baja.fecha_alta || baja['Fecha alta'] || '';
+                  const inicio = baja['Fecha baja'] || baja.fechaBaja || baja.fecha_baja || '';
+                  return inicio && !oficial;
+                });
+                if (openBaja) {
+                  if (!bajaMedicaForm.fechaAlta) {
+                    setNotification({
+                      type: 'error',
+                      message: 'Indica la fecha de alta',
+                    });
+                    return;
+                  }
+                  setSubmittingBajaMedica(true);
+                  try {
+                    const token = localStorage.getItem('auth_token');
+                    const response = await fetch(routes.announceBajaMedicaAlta, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        ...(token && { Authorization: `Bearer ${token}` }),
+                      },
+                      body: JSON.stringify({ fechaAlta: bajaMedicaForm.fechaAlta }),
+                    });
+                    const raw = await response.text();
+                    let payload = null;
+                    try { payload = raw ? JSON.parse(raw) : null; } catch { payload = null; }
+                    if (!response.ok || payload?.success === false) {
+                      const message = payload?.message || raw || `HTTP ${response.status}`;
+                      throw new Error(Array.isArray(message) ? message.join(' ') : message);
+                    }
+                    setNotification({
+                      type: 'success',
+                      message: payload?.message || 'Alta anunciada',
+                    });
+                    setShowBajaMedicaModal(false);
+                    setBajaMedicaForm({ fechaBaja: '', fechaAlta: '', tipo: '', recaida: false });
+                    const empleadoCodigo = authUser?.['CODIGO'] || authUser?.codigo || '';
+                    if (empleadoCodigo && routes.getBajasMedicas) {
+                      const reload = await fetch(`${routes.getBajasMedicas}${routes.getBajasMedicas.includes('?') ? '&' : '?'}codigo=${encodeURIComponent(empleadoCodigo)}`, {
+                        headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+                      });
+                      if (reload.ok) {
+                        const lista = await reload.json();
+                        setBajasMedicas(Array.isArray(lista) ? lista : []);
+                      }
+                    }
+                  } catch (err) {
+                    setNotification({
+                      type: 'error',
+                      message: err?.message || 'No se pudo anunciar el alta',
+                    });
+                  } finally {
+                    setSubmittingBajaMedica(false);
+                  }
+                  return;
+                }
                 if (!bajaMedicaForm.fechaBaja) {
                   setNotification({
                     type: 'error',
@@ -4039,7 +4323,10 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
 
                   if (!response.ok) {
                     const errorText = await response.text();
-                    throw new Error(errorText || `HTTP ${response.status}`);
+                    let parsedError = null;
+                    try { parsedError = errorText ? JSON.parse(errorText) : null; } catch { parsedError = null; }
+                    const parsedMessage = parsedError?.message || errorText || `HTTP ${response.status}`;
+                    throw new Error(Array.isArray(parsedMessage) ? parsedMessage.join(' ') : parsedMessage);
                   }
 
                   const result = await response.json();
@@ -4139,7 +4426,7 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                   setSubmittingBajaMedica(false);
                 }
               }}
-              disabled={submittingBajaMedica || !bajaMedicaForm.fechaBaja}
+              disabled={submittingBajaMedica || ((bajasMedicas || []).some((baja) => baja && (baja['Fecha baja'] || baja.fechaBaja || baja.fecha_baja) && !(baja['Fecha de alta'] || baja.fechaAlta || baja.fecha_alta || baja['Fecha alta'])) ? !bajaMedicaForm.fechaAlta : !bajaMedicaForm.fechaBaja)}
               className="app-modal__btn app-modal__btn--primary disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submittingBajaMedica ? (
@@ -4148,7 +4435,11 @@ function MiFichajeScreen({ onFicharIncidencia, incidenciaMessage, onLogsUpdate, 
                   <span>Enviando...</span>
                 </>
               ) : (
-                <span>Anunciar baja médica</span>
+                <span>
+                  {(bajasMedicas || []).some((baja) => baja && (baja['Fecha baja'] || baja.fechaBaja || baja.fecha_baja) && !(baja['Fecha de alta'] || baja.fechaAlta || baja.fecha_alta || baja['Fecha alta']))
+                    ? 'Anunciar el alta'
+                    : 'Anunciar baja médica'}
+                </span>
               )}
             </button>
           </div>

@@ -17,6 +17,7 @@ import SendNotificationModal from '../components/SendNotificationModal';
 import { getBirthdayGreeting } from '../utils/birthdayGreeting';
 import {
   Cake,
+  CheckCircle,
   ChevronDown,
   Phone,
 } from 'lucide-react';

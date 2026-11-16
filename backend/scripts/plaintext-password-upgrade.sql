@@ -1,0 +1,30 @@
+-- Procedură SEPARATĂ. Nu face parte din pornirea aplicației și nu se execută acum.
+-- Nu șterge parole și nu elimină coloana Contraseña.
+--
+-- Decizie 2026-11-10: așteptăm să treacă toți pe bcrypt. O singură coloană de parolă
+-- în fișa angajatului, DatosEmpleados.Contraseña. Nu se șterge până numărul de
+-- mai jos este 0, inclusiv pentru angajații inactivi, și până există o aprobare.
+--
+-- Numărătoare 2026-11-10, fără valori de parolă:
+--   decamino_db: 254 angajați, 142 bcrypt, 112 în clar, din care 10 activi.
+--   hera_facility_db: 76 angajați, 67 bcrypt, 9 în clar, din care 2 activi.
+-- La login reușit, parola în clar se rescrie bcrypt cost 12.
+--
+-- 1. Numără conturile a căror parolă nu este încă bcrypt ($2a$, $2b$ sau $2y$):
+--
+-- SELECT COUNT(*) AS parole_in_clar
+-- FROM DatosEmpleados
+-- WHERE Contraseña IS NOT NULL
+--   AND TRIM(Contraseña) <> ''
+--   AND Contraseña NOT LIKE '$2a$%'
+--   AND Contraseña NOT LIKE '$2b$%'
+--   AND Contraseña NOT LIKE '$2y$%';
+--
+-- 2. După validarea numărului, transformarea se face în aplicație (bcrypt cost 12),
+--    nu cu un UPDATE SQL care ar stoca hash-ul greșit. La fiecare rescriere se
+--    incrementează AUTH_VERSION, ca sesiunile vechi să pice.
+-- 3. Abia după ce numărul de la pasul 1 este 0 și după o aprobare separată se poate
+--    scoate ramura de compatibilitate din verifyPassword și, ulterior, coloana veche.
+--
+-- Până atunci login-ul continuă să accepte parola în clar și o rescrie ca bcrypt
+-- la prima autentificare reușită.

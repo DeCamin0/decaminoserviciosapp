@@ -9,6 +9,8 @@ export type AssistantAuditMetrics = {
   responseStatus?: string;
   responseType?: string;
   queryError?: boolean;
+  /** model = fraza e scrisă de GPT. fallback = rezervă, nu e răspunsul modelului. */
+  answerAuthor?: 'model' | 'fallback';
 };
 
 @Injectable()
@@ -37,6 +39,9 @@ export class AuditService {
     }
     if (m?.queryError === true) {
       payload.queryError = true;
+    }
+    if (m?.answerAuthor === 'model' || m?.answerAuthor === 'fallback') {
+      payload.answerAuthor = m.answerAuthor;
     }
     const rc =
       m?.resultCount !== undefined

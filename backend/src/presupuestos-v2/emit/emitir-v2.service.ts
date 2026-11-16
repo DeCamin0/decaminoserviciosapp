@@ -128,7 +128,7 @@ export class EmitirV2Service {
           } as Prisma.InputJsonValue,
         },
       });
-    } catch (e) {
+    } catch {
       // ignore — audit dedicat rămâne sursa de adevăr
     }
   }

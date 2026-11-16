@@ -1,12 +1,57 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  canManageContractTypes,
+  isContractTypeStaff,
+  type ContractTypeActor,
+} from '../services/contract-types-access';
 
 @Controller('api/contract-types')
+@UseGuards(JwtAuthGuard)
 export class ContractTypesController {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async actorCanManage(
+    actor: ContractTypeActor | null | undefined,
+  ): Promise<boolean> {
+    if (isContractTypeStaff(actor)) return true;
+    const grupo = String(actor?.grupo || '').trim();
+    if (!grupo) return false;
+    try {
+      const row = await this.prisma.permissions.findUnique({
+        where: { grupo_module: `${grupo}_empleados` },
+        select: { permitted: true },
+      });
+      const permitted = String(row?.permitted ?? '')
+        .trim()
+        .toLowerCase();
+      return canManageContractTypes(
+        actor,
+        permitted === 'true' || permitted === '1',
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private async assertCanManage(actor: ContractTypeActor | undefined) {
+    if (!(await this.actorCanManage(actor))) {
+      throw new ForbiddenException('No puedes gestionar los tipos de contrato');
+    }
+  }
+
   @Get()
-  async getContractTypes() {
+  async getContractTypes(@CurrentUser() user?: ContractTypeActor) {
+    await this.assertCanManage(user);
     try {
       const contractTypes = await this.prisma.tiposContrato.findMany({
         orderBy: {
@@ -14,13 +59,12 @@ export class ContractTypesController {
         },
       });
 
-      // Mapăm datele pentru compatibilitate cu frontend-ul
-      // Frontend-ul așteaptă formatul: { id: number, tipo: string }
       return contractTypes.map((ct) => ({
         id: ct.id,
         tipo: ct.tipo,
       }));
     } catch (error: any) {
+      if (error instanceof ForbiddenException) throw error;
       console.error('[ContractTypesController] Error:', error);
       return {
         success: false,
@@ -30,7 +74,11 @@ export class ContractTypesController {
   }
 
   @Post()
-  async createContractType(@Body() body: { tipo?: string }) {
+  async createContractType(
+    @Body() body: { tipo?: string },
+    @CurrentUser() user?: ContractTypeActor,
+  ) {
+    await this.assertCanManage(user);
     const tipo = (body?.tipo ?? '').trim();
     if (!tipo) {
       return { success: false, error: 'tipo es obligatorio' };
@@ -41,6 +89,7 @@ export class ContractTypesController {
       });
       return { id: created.id, tipo: created.tipo };
     } catch (error: any) {
+      if (error instanceof ForbiddenException) throw error;
       if (error?.code === 'P2002') {
         return {
           success: false,

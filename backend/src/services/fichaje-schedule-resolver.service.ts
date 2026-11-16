@@ -1,11 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmpleadoCentrosService } from './empleado-centros.service';
 
 export type PunchTipo = 'Entrada' | 'Salida';
 
 export type ScheduleInterval = {
   horaIn: string; // HH:MM
   horaOut: string; // HH:MM
+  centro?: string;
 };
 
 export type ScheduleSource = 'cuadrante' | 'multicentro' | 'horarios' | 'none';
@@ -59,7 +61,10 @@ const TIME_RANGE_RE = /(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/g;
 export class FichajeScheduleResolverService {
   private readonly logger = new Logger(FichajeScheduleResolverService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly centros: EmpleadoCentrosService,
+  ) {}
 
   /** Current wall-clock in Europe/Madrid. */
   getMadridNow(ref: Date = new Date()): MadridNow {
@@ -266,10 +271,14 @@ export class FichajeScheduleResolverService {
     const ziCol = `ZI_${now.day}`;
     const luna = now.lunaYyyyMm;
 
-    const [cuadrantes, multicentros, horarios] = await Promise.all([
+    const [cuadrantes, multicentros, horarios, dayCtx] = await Promise.all([
       this.loadCuadrantesToday(codes, luna, ziCol),
       this.loadMulticentroToday(codes, luna, ziCol),
       this.loadHorariosVigentes(now.dateStr),
+      this.centros.loadDayContext(codes, now.dateStr).catch((err: any) => {
+        this.logger.error(`loadDayContext failed: ${err?.message || err}`);
+        return null;
+      }),
     ]);
 
     const cuMap = new Map(cuadrantes.map((r) => [r.codigo, r]));
@@ -334,7 +343,32 @@ export class FichajeScheduleResolverService {
         };
       }
 
-      // 3) weekly horarios by centro + grupo
+      // 3) weekly horarios by centro + grupo.
+      //    Cuadrante și multicentro au câștigat deja mai sus.
+      //    Două centre aduc două horarios doar dacă orele nu se calcă.
+      if (dayCtx && emp.centro && emp.grupo) {
+        const merged = this.centros.mergeForEmployee({
+          codigo: emp.codigo,
+          centro: emp.centro,
+          grupo: emp.grupo,
+          prefix: weekdayPrefix,
+          horarios: horarios as Array<Record<string, unknown>>,
+          ctx: dayCtx,
+        });
+        if (merged) {
+          return {
+            ...base,
+            source: 'horarios' as const,
+            slotRaw: merged.slotRaw || null,
+            intervals: merged.intervals,
+            isOff: merged.intervals.length === 0,
+            entryMarginMinutes: merged.entryMarginMinutes,
+            exitMarginMinutes: merged.exitMarginMinutes,
+            centro: merged.intervals[0]?.centro || emp.centro,
+          };
+        }
+      }
+
       if (emp.centro && emp.grupo) {
         const key = `${emp.centro.trim()}||${emp.grupo.trim()}`.toLowerCase();
         const h = horarios.find(
@@ -414,9 +448,16 @@ export class FichajeScheduleResolverService {
 
   private normalizeSqlTime(value: unknown): string | null {
     if (value == null) return null;
+    // Prisma returns TIME as a Date on 1970-01-01 UTC. String(date) uses the
+    // server timezone and shifts 09:00 to 10:00 in Spain.
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return this.padHm(
+        String(value.getUTCHours()),
+        String(value.getUTCMinutes()),
+      );
+    }
     const s = String(value).trim();
     if (!s || s.toLowerCase() === 'null') return null;
-    // TIME / Date / "HH:MM:SS" / "HH:MM"
     const match = s.match(/(\d{1,2}):(\d{2})/);
     if (!match) return null;
     return this.padHm(match[1], match[2]);

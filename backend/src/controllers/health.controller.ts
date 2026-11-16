@@ -1,8 +1,13 @@
 import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
-import { N8nProxyService } from '../services/n8n-proxy.service';
 import { TelegramService } from '../services/telegram.service';
+import { publicHealthBody } from '../services/public-health-body';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
+import {
+  assertHealthTelegramTest,
+  type MonitoringActor,
+} from '../services/monitoring-message-policy';
 
 /**
  * Health check controller
@@ -10,19 +15,12 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
  */
 @Controller('health')
 export class HealthController {
-  constructor(
-    private readonly n8nProxyService: N8nProxyService,
-    private readonly telegramService: TelegramService,
-  ) {}
+  constructor(private readonly telegramService: TelegramService) {}
 
   @SkipThrottle() // Health checks nu trebuie să fie rate-limited
   @Get()
   getHealth() {
-    return {
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      n8nBaseUrl: this.n8nProxyService.getBaseUrl(),
-    };
+    return publicHealthBody(new Date());
   }
 
   /**
@@ -50,12 +48,13 @@ export class HealthController {
 
   /**
    * GET /health/telegram/test
-   * Trimite un mesaj de test pe Telegram (GET pentru testare ușoară din browser)
-   * Fără autentificare pentru testare rapidă (doar în development)
+   * Mesaj de probă. Necesită sesiune de personal autorizat.
    */
   @SkipThrottle()
   @Get('telegram/test')
-  async testTelegramGet() {
+  @UseGuards(JwtAuthGuard)
+  async testTelegramGet(@CurrentUser() user?: MonitoringActor) {
+    assertHealthTelegramTest(user);
     const testMessage = `🧪 Test Telegram - ${new Date().toLocaleString('es-ES')}`;
 
     try {
@@ -91,7 +90,11 @@ export class HealthController {
   @SkipThrottle()
   @Post('telegram/test')
   @UseGuards(JwtAuthGuard)
-  async testTelegramPost(@Body() body?: { message?: string }) {
+  async testTelegramPost(
+    @CurrentUser() user?: MonitoringActor,
+    @Body() body?: { message?: string },
+  ) {
+    assertHealthTelegramTest(user);
     const testMessage =
       body?.message ||
       `🧪 Test Telegram - ${new Date().toLocaleString('es-ES')}`;

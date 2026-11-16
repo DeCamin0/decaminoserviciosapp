@@ -67,9 +67,14 @@ describe('password.util', () => {
   });
 
   it('generates complex temporary passwords', () => {
-    const p = generateTemporaryPassword(12);
-    expect(p.length).toBe(12);
-    expect(validatePasswordComplexity(p).ok).toBe(true);
+    const passwords = new Set(
+      Array.from({ length: 8 }, () => generateTemporaryPassword(12)),
+    );
+    expect(passwords.size).toBeGreaterThan(1);
+    for (const p of passwords) {
+      expect(p).toHaveLength(12);
+      expect(validatePasswordComplexity(p).ok).toBe(true);
+    }
   });
 
   it('uses bcrypt cost 12', () => {

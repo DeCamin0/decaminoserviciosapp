@@ -1,7 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
-import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { publicDbHealthBody } from '../services/public-health-body';
 
 /**
  * Rute:
@@ -10,10 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 @Controller('api')
 export class DbHealthController {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly configService: ConfigService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   @SkipThrottle() // Health checks nu trebuie să fie rate-limited
   @Get('db/health')
@@ -33,23 +30,14 @@ export class DbHealthController {
       const result = await this.prisma.$queryRawUnsafe('SELECT 1 AS ok');
       const latencyMs = Date.now() - started;
 
-      const dbConfig = this.configService.get('database');
-
-      return {
-        ok: true,
-        dbHost: dbConfig?.host,
-        dbName: dbConfig?.database,
-        latencyMs,
-        result:
-          Array.isArray(result) && (result as any)[0]?.ok
-            ? (result as any)[0]?.ok
-            : 1,
-      };
-    } catch (error: any) {
-      return {
-        ok: false,
-        error: error?.message || 'DB health check failed',
-      };
+      const rows = result as Array<{ ok?: number }>;
+      const alive = Array.isArray(rows) && Number(rows[0]?.ok) === 1;
+      return publicDbHealthBody({
+        ok: alive,
+        latencyMs: alive ? latencyMs : undefined,
+      });
+    } catch {
+      return publicDbHealthBody({ ok: false });
     }
   }
 }

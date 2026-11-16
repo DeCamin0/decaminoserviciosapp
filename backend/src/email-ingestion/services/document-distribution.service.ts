@@ -125,6 +125,13 @@ export class DocumentDistributionService {
 
       await this.emailService.sendEmail(employeeEmail, subject, html, {
         bcc: this.emailService.getDefaultBcc(),
+        record: {
+          senderId: 'sistema',
+          recipientType: 'empleado',
+          recipientId: employeeId,
+          recipientName:
+            this.empleadosService.getFormattedNombre(empleado) || employeeId,
+        },
       });
 
       this.logger.log(

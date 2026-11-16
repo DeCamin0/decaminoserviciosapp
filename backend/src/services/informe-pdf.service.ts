@@ -1,9 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
 import PDFDocument from 'pdfkit';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  buildInformeFirmarUrl,
+  readInformeFirmaConfig,
+} from './presupuesto-firma-access';
 
 const MARGIN = 50;
 const PAGE_WIDTH = 595;
@@ -967,7 +975,21 @@ export class InformePdfService {
         // Botón "ACEPTAR INFORME" en el PDF (enlace a firmar-informe.html), como en presupuesto
         const firmarBaseUrl =
           process.env.FIRMAR_BASE_URL || this.getCompany().frontendAppUrl || '';
-        const firmarUrl = `${firmarBaseUrl}/firmar-informe.html?id=${informeId}`;
+        let firmarUrl: string;
+        try {
+          firmarUrl = buildInformeFirmarUrl(
+            firmarBaseUrl,
+            informeId,
+            readInformeFirmaConfig(process.env),
+            new Date(),
+          );
+        } catch (err) {
+          throw new BadRequestException(
+            err instanceof Error
+              ? err.message
+              : 'No se puede generar el enlace de firma',
+          );
+        }
         const btnW = 160;
         const btnH = 28;
         const btnX = firmaClienteX + (firmaLineW - btnW) / 2;
