@@ -12,6 +12,7 @@ import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { isCorsOriginAllowed } from '../cors-origins';
 
 /**
  * WebSocket Gateway pentru notificări în timp real
@@ -22,7 +23,12 @@ import { ConfigService } from '@nestjs/config';
  */
 @WebSocketGateway({
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      callback(null, isCorsOriginAllowed(origin));
+    },
     credentials: true,
   },
   namespace: '/notifications',

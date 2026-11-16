@@ -46,6 +46,7 @@ if (wantClient2) {
 process.env.ENV_FILE = envFileResolved;
 loadEnv({ path: envPathResolved });
 import { validateEnv } from './env.validation';
+import { buildUniqueCorsOrigins } from './cors-origins';
 validateEnv();
 const dbName = process.env.DB_NAME || '(not set)';
 const clientLabel = wantClient2
@@ -76,52 +77,6 @@ import { json, urlencoded } from 'express';
 import { GlobalExceptionFilter } from './filters/global-exception.filter';
 import { TelegramService } from './services/telegram.service';
 import { SecurityAlertService } from './services/security-alert.service';
-/**
- * Lista finală de origini permise pentru CORS.
- * - CORS_ORIGINS / CORS_ORIGIN (separate prin virgulă)
- * - FRONTEND_APP_URL și APP_URL (doar scheme://host, fără path) — evită 500 când lipsește un domeniu din listă explicită
- * - În dev, dacă nu e nimic în env: localhost:5173
- */
-function buildUniqueCorsOrigins(): string[] {
-  const fromList = (s?: string) =>
-    s?.trim()
-      ? s
-          .split(',')
-          .map((o) => o.trim())
-          .filter(Boolean)
-      : [];
-
-  const explicit = fromList(
-    process.env.CORS_ORIGINS || process.env.CORS_ORIGIN,
-  );
-  const implicitDefaults =
-    explicit.length > 0
-      ? []
-      : process.env.NODE_ENV === 'production'
-        ? []
-        : ['http://localhost:5173'];
-
-  const originFromBaseUrl = (raw?: string): string[] => {
-    const u = raw?.trim();
-    if (!u) return [];
-    try {
-      const parsed = new URL(u);
-      return [`${parsed.protocol}//${parsed.host}`];
-    } catch {
-      return [];
-    }
-  };
-
-  return [
-    ...new Set([
-      ...explicit,
-      ...implicitDefaults,
-      ...originFromBaseUrl(process.env.FRONTEND_APP_URL),
-      ...originFromBaseUrl(process.env.APP_URL),
-    ]),
-  ];
-}
-
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const uniqueCorsOrigins = buildUniqueCorsOrigins();

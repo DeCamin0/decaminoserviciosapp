@@ -44,12 +44,14 @@ export const useWebSocket = (namespace = '/notifications') => {
       return;
     }
 
-    // Dacă există deja o conexiune, o închidem curat
-    if (socketRef.current) {
-      // Elimină event listener-ele pentru a evita warning-uri
-      socketRef.current.removeAllListeners();
-      // Închide conexiunea fără reconectare
-      socketRef.current.disconnect();
+    const current = socketRef.current;
+    if (current) {
+      const sameToken = current.auth?.token === token;
+      if (sameToken && (current.connected || current.active)) {
+        return;
+      }
+      current.removeAllListeners();
+      current.disconnect();
       socketRef.current = null;
     }
 

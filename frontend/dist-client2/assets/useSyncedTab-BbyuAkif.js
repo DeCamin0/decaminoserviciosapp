@@ -1,2 +1,0 @@
-import{Z as R,r as n}from"./react-core-D5FSMzs-.js";function y(t,r,c,{replace:o=!0,keepDefaultInUrl:i=!0}={}){const[u,w]=R(),b=n.useRef(r);b.current=r;const h=r.join("|"),a=n.useMemo(()=>{const s=u.get(t),P=h.split("|");return s&&P.includes(s)?s:c},[u,t,h,c]),d=n.useCallback(s=>{const S=b.current.includes(s)?s:c;w(v=>{const e=new URLSearchParams(v);return!i&&S===c?e.delete(t):e.set(t,S),e},{replace:o})},[c,i,t,o,w]);return[a,d]}export{y as u};
-//# sourceMappingURL=useSyncedTab-BbyuAkif.js.map

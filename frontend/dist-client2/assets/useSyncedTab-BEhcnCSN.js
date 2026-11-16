@@ -1,0 +1,2 @@
+import{Z as S,r as w}from"./react-core-qVdVAywA.js";function T(t,b,c,{replace:r=!0,keepDefaultInUrl:n=!0}={}){const[i,a]=S(),e=b.join("|"),d=w.useMemo(()=>{const s=i.get(t),l=e.split("|");return s&&l.includes(s)?s:c},[i,t,e,c]),h=w.useCallback(s=>{const u=e.split("|").includes(s)?s:c;a(P=>{const o=new URLSearchParams(P);return!n&&u===c?o.delete(t):o.set(t,u),o},{replace:r})},[e,c,n,t,r,a]);return[d,h]}export{T as u};
+//# sourceMappingURL=useSyncedTab-BEhcnCSN.js.map

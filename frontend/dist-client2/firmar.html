@@ -488,7 +488,9 @@
   <script>
     (function() {
       var params = new URLSearchParams(window.location.search);
-      var quotationId = params.get('id') ? parseInt(params.get('id'), 10) : null;
+      var firmaToken = params.get('t');
+      var hasFirmaToken = firmaToken !== null;
+      var quotationId = !hasFirmaToken && params.get('id') ? parseInt(params.get('id'), 10) : null;
       var numeroPresupuesto = null;
       var API_BASE = ('https://api.herafs.com' && 'https://api.herafs.com'.trim()) || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? 'http://localhost:3000'
@@ -876,44 +878,61 @@
         syncHorarioFirmaSection();
       }
 
-      if (!quotationId) {
+      function applyDatosFirma(data) {
+        numeroPresupuesto = data.numero_presupuesto || null;
+        var num = numeroPresupuesto || quotationId;
+        document.getElementById('id-info').textContent = 'Presupuesto nº ' + (num || '');
+        if (data.cliente_nombre) document.getElementById('nombre_comunidad').value = data.cliente_nombre;
+        if (data.cif) document.getElementById('cif').value = data.cif;
+        if (data.direccion) document.getElementById('direccion').value = data.direccion;
+        if (data.iban) document.getElementById('iban').value = data.iban;
+        if (data.recuperacion_agua_precio != null && !isNaN(Number(data.recuperacion_agua_precio))) {
+          window.recuperacionAguaPrecio = Number(data.recuperacion_agua_precio);
+          RECUPERACION_AGUA_ROW = buildRecuperacionAguaRow(window.recuperacionAguaPrecio);
+        } else {
+          window.recuperacionAguaPrecio = 650;
+        }
+        if (data.presupuesto_descuento_global_pct != null && !isNaN(Number(data.presupuesto_descuento_global_pct))) {
+          pctFidelidadFirma = Math.min(100, Math.max(0, Math.round(Number(data.presupuesto_descuento_global_pct))));
+        } else {
+          pctFidelidadFirma = 0;
+        }
+        if (data.oferta_economica && data.oferta_economica.length > 0) {
+          ofertaOriginal = data.oferta_economica;
+          ofertaEconomicaRows = data.oferta_economica.slice();
+          esSoloPiscina = !!data.es_solo_piscina;
+          renderServiciosContractados(ofertaEconomicaRows, data.es_solo_piscina);
+        }
+        if (data.piscina_horarios_firma && typeof FirmarPiscinaHorario !== 'undefined') {
+          window.__PISCINA_HORARIOS_FIRMA = data.piscina_horarios_firma;
+          FirmarPiscinaHorario.setServerData(data.piscina_horarios_firma);
+          syncHorarioFirmaSection();
+        }
+        if (typeof updateSubmitState === 'function') updateSubmitState();
+      }
+
+      if (hasFirmaToken) {
+        document.getElementById('id-info').textContent = 'Cargando presupuesto...';
+        fetch(API_BASE + '/api/presupuestos/datos-firma?t=' + encodeURIComponent(firmaToken))
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .then(function(data) {
+            if (!data) {
+              document.getElementById('id-info').textContent = 'El enlace no es válido o ha caducado.';
+              return;
+            }
+            applyDatosFirma(data);
+          })
+          .catch(function() {
+            document.getElementById('id-info').textContent = 'El enlace no es válido o ha caducado.';
+          });
+      } else if (!quotationId) {
         document.getElementById('id-info').textContent = 'No se ha indicado presupuesto (falta ?id= en la URL).';
       } else {
         document.getElementById('id-info').textContent = 'Presupuesto nº ' + quotationId;
         fetch(API_BASE + '/api/presupuestos/' + quotationId + '/datos-firma')
           .then(function(r) { return r.ok ? r.json() : null; })
           .then(function(data) {
-            if (data) {
-              numeroPresupuesto = data.numero_presupuesto || null;
-              var num = numeroPresupuesto || quotationId;
-              document.getElementById('id-info').textContent = 'Presupuesto nº ' + num;
-              if (data.cliente_nombre) document.getElementById('nombre_comunidad').value = data.cliente_nombre;
-              if (data.cif) document.getElementById('cif').value = data.cif;
-              if (data.direccion) document.getElementById('direccion').value = data.direccion;
-              if (data.iban) document.getElementById('iban').value = data.iban;
-              if (data.recuperacion_agua_precio != null && !isNaN(Number(data.recuperacion_agua_precio))) {
-                window.recuperacionAguaPrecio = Number(data.recuperacion_agua_precio);
-                RECUPERACION_AGUA_ROW = buildRecuperacionAguaRow(window.recuperacionAguaPrecio);
-              } else {
-                window.recuperacionAguaPrecio = 650;
-              }
-              if (data.presupuesto_descuento_global_pct != null && !isNaN(Number(data.presupuesto_descuento_global_pct))) {
-                pctFidelidadFirma = Math.min(100, Math.max(0, Math.round(Number(data.presupuesto_descuento_global_pct))));
-              } else {
-                pctFidelidadFirma = 0;
-              }
-              if (data.oferta_economica && data.oferta_economica.length > 0) {
-                ofertaOriginal = data.oferta_economica;
-                ofertaEconomicaRows = data.oferta_economica.slice();
-                esSoloPiscina = !!data.es_solo_piscina;
-                renderServiciosContractados(ofertaEconomicaRows, data.es_solo_piscina);
-              }
-              if (data.piscina_horarios_firma && typeof FirmarPiscinaHorario !== 'undefined') {
-                window.__PISCINA_HORARIOS_FIRMA = data.piscina_horarios_firma;
-                FirmarPiscinaHorario.setServerData(data.piscina_horarios_firma);
-                syncHorarioFirmaSection();
-              }
-            }
+            if (data) applyDatosFirma(data);
             if (typeof updateSubmitState === 'function') updateSubmitState();
           })
           .catch(function() {})
@@ -1002,7 +1021,7 @@
 
       document.getElementById('form').addEventListener('submit', function(e) {
         e.preventDefault();
-        if (!quotationId) {
+        if (!quotationId && !hasFirmaToken) {
           showMessage('Falta el identificador del presupuesto en la URL.', true);
           return;
         }
@@ -1059,8 +1078,7 @@
         var now = new Date();
         var fechaHora = now.toISOString();
         var payload = {
-          quotation_id: quotationId,
-          numero_presupuesto: numeroPresupuesto || String(quotationId),
+          numero_presupuesto: numeroPresupuesto || (quotationId ? String(quotationId) : ''),
           fecha_hora: fechaHora,
           nombre_comunidad: document.getElementById('nombre_comunidad').value.trim(),
           cif: document.getElementById('cif').value.trim(),
@@ -1075,6 +1093,8 @@
           selected_oferta_indices: selectedOfertaIndices,
           selected_oferta_index: selectedOfertaIndices.length > 0 ? selectedOfertaIndices[0] : (recuperacionAgua ? -1 : 0)
         };
+        if (hasFirmaToken) payload.firma_token = firmaToken;
+        else payload.quotation_id = quotationId;
         if (recuperacionAgua) payload.recuperacion_agua = true;
         if (esSoloPiscina) {
           payload.nombre_presidente = document.getElementById('nombre_presidente').value.trim();
@@ -1105,7 +1125,7 @@
           payload.pdf_base64 = pdfStr;
           var a = document.createElement('a');
           a.href = pdfDataUrl;
-          a.download = 'aceptacion-presupuesto-' + quotationId + '.pdf';
+          a.download = 'aceptacion-presupuesto-' + (numeroPresupuesto || quotationId || 'firmado') + '.pdf';
           a.click();
           return fetch(API_BASE + '/api/presupuestos/firmado', {
             method: 'POST',

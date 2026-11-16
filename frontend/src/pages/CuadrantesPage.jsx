@@ -2065,11 +2065,12 @@ export default function CuadrantesPage() {
 
     try {
       
-      // Use same authenticated headers pattern as useAdminApi.getAllUsers
+      const token = localStorage.getItem('auth_token');
       const response = await fetch(routes.getEmpleados, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
           'X-App-Source': 'DeCamino-Web-App',
           'X-App-Version': import.meta.env.VITE_APP_VERSION || '1.0.0',
           'X-Client-Type': 'web-browser',
