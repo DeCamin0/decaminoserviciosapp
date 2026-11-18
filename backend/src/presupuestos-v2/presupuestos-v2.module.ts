@@ -1,5 +1,9 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
+import { PresupuestoDocumentoService } from '../services/presupuesto-documento.service';
+import { PresupuestosGuardadosService } from '../services/presupuestos-guardados.service';
+import { PresupuestosFirmasStorageService } from '../services/presupuestos-firmas-storage.service';
+import { EmailService } from '../services/email.service';
 import { PresupuestosV2Service } from './presupuestos-v2.service';
 import {
   PresupuestosV2Controller,
@@ -21,8 +25,12 @@ import { ContenidoSeedService } from './config/contenido-seed.service';
     EmitirV2Service,
     PresupuestosV2PdfService,
     PresupuestosV2StorageService,
+    PresupuestoDocumentoService,
+    PresupuestosGuardadosService,
+    PresupuestosFirmasStorageService,
     PresupuestosV2ConfigAdminService,
     ContenidoSeedService,
+    EmailService,
   ],
   exports: [
     PresupuestosV2Service,

@@ -415,6 +415,8 @@ export const routes = {
     `${BACKEND_BASE}/api/v2/presupuestos/${id}/calcular`,
   v2PresupuestoEmitir: (id) =>
     `${BACKEND_BASE}/api/v2/presupuestos/${id}/emitir`,
+  v2PresupuestoEnviarEmail: (id) =>
+    `${BACKEND_BASE}/api/v2/presupuestos/${id}/enviar-email`,
   v2PresupuestoPdfPreview: (id) =>
     `${BACKEND_BASE}/api/v2/presupuestos/${id}/pdf-preview`,
   v2PresupuestoPdf: (id) => `${BACKEND_BASE}/api/v2/presupuestos/${id}/pdf`,

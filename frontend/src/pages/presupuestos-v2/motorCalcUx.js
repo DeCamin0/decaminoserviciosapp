@@ -182,8 +182,8 @@ export function pairSubtotalGastosFijoLimp(b, B4, resultado) {
   };
 }
 
-export function pairSubtotalNoctOrFds(b, c, resultadoKey, resultado) {
-  const product = fromBreakdown(resultado, resultadoKey, n(b) * n(c));
+export function pairSubtotalNoctOrFds(b, c) {
+  const product = n(b) * n(c);
   return {
     product,
     text: `${fmtQty(b, 4)} × ${fmtQty(c, 4)} = ${moneyYear(product)}`,

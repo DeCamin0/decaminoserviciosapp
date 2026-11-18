@@ -19,7 +19,7 @@ export function defaultInputsAuxiliares(): Record<string, unknown> {
     sinFestivos: false,
     horasACubrirPorSemana: 168,
     aplicaNocturnidad: false,
-    nocturnidad: { b: 0, c: 0.77 },
+    nocturnidad: { b: 8 * 365, c: 0.77 },
     aplicaFinDeSemana: false,
     finDeSemana: { b: 952, c: 0.22 },
     aplicaServiciosExtra: false,

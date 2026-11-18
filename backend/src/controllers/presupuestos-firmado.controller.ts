@@ -23,9 +23,12 @@ import {
 import { PresupuestosGuardadosService } from '../services/presupuestos-guardados.service';
 import { PresupuestosFirmasStorageService } from '../services/presupuestos-firmas-storage.service';
 import {
+  FIRMA_PURPOSE_PRESUPUESTO_V2,
   readPresupuestoFirmaConfig,
   resolveFirmaAccess,
+  verifyFirmaToken,
 } from '../services/presupuesto-firma-access';
+import { PresupuestosV2PdfService } from '../presupuestos-v2/pdf/presupuestos-v2-pdf.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -118,6 +121,7 @@ export interface PresupuestoFirmadoDto {
   email: string;
   telefono: string;
   iban?: string;
+  forma_pago?: 'domiciliacion' | 'transferencia';
   /** Fecha de inicio del servicio (YYYY-MM-DD desde el formulario de firma). */
   fecha_inicio_servicio?: string;
   firma_base64: string;
@@ -161,7 +165,20 @@ export class PresupuestosFirmadoController {
     private readonly presupuestoDocumentoService: PresupuestoDocumentoService,
     private readonly presupuestosGuardadosService: PresupuestosGuardadosService,
     private readonly presupuestosFirmasStorage: PresupuestosFirmasStorageService,
+    private readonly pdfV2: PresupuestosV2PdfService,
   ) {}
+
+  /** Token de Presupuestos V2. Un token V1 no verifica con este propósito. */
+  private v2IdFromToken(token: string | null | undefined): number | null {
+    if (!token) return null;
+    const result = verifyFirmaToken(
+      token,
+      readPresupuestoFirmaConfig(process.env),
+      new Date(),
+      FIRMA_PURPOSE_PRESUPUESTO_V2,
+    );
+    return result.ok ? result.id : null;
+  }
 
   private presentedToken(value: unknown): string | null | undefined {
     if (value === undefined || value === null) return undefined;
@@ -228,6 +245,8 @@ export class PresupuestosFirmadoController {
     if (typeof token !== 'string') {
       throw new NotFoundException('Presupuesto no encontrado');
     }
+    const v2Id = this.v2IdFromToken(token);
+    if (v2Id) return this.pdfV2.datosFirmaPublicos(v2Id);
     const id = await this.authorizedPresupuestoId(token, null);
     return this.loadDatosFirma(id);
   }
@@ -408,6 +427,70 @@ export class PresupuestosFirmadoController {
     };
   }
 
+  /** El cliente rechaza un presupuesto V2. No modifica el PDF enviado. */
+  @Post('rechazar')
+  async rechazar(
+    @Body() body: { firma_token?: string; motivo?: string },
+    @Req() req: Request,
+  ) {
+    const v2Id = this.v2IdFromToken(this.presentedToken(body?.firma_token));
+    if (!v2Id) {
+      throw new NotFoundException('Presupuesto no encontrado');
+    }
+    const ip =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+      req.socket?.remoteAddress ||
+      '';
+    const userAgent = req.headers['user-agent'] || '';
+    const result = await this.pdfV2.rechazarOferta(v2Id, body?.motivo || '', {
+      ip,
+      userAgent,
+    });
+    let emailEnviado = false;
+    if (result.notifyEmail) {
+      const escape = (value: string) =>
+        value
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      const cliente = result.clienteNombre
+        ? ` de <strong>${escape(result.clienteNombre)}</strong>`
+        : '';
+      try {
+        await this.emailService.sendEmail(
+          result.notifyEmail,
+          `Oferta rechazada — presupuesto nº ${result.numero}`,
+          `<p>El cliente ha rechazado el presupuesto nº <strong>${escape(result.numero)}</strong>${cliente}.</p>
+           <p><strong>Motivo:</strong></p>
+           <p style="white-space:pre-wrap;">${escape(result.motivo)}</p>
+           <p>El documento enviado no se ha modificado. El enlace de firma queda cerrado.</p>`,
+          {
+            record: {
+              senderId: 'sistema',
+              recipientName: result.companyName,
+              attachmentNote: 'Rechazo de oferta',
+            },
+          },
+        );
+        emailEnviado = true;
+      } catch (err: any) {
+        this.logger.warn(
+          'No se pudo avisar del rechazo: ' + (err?.message || String(err)),
+        );
+      }
+    } else {
+      this.logger.warn(
+        `Rechazo del presupuesto ${result.numero} sin email de empresa`,
+      );
+    }
+    return {
+      success: true,
+      message: 'Rechazo registrado',
+      email_enviado: emailEnviado,
+    };
+  }
+
   /** Endpoint público (sin JWT): recibe los datos de la firma y los guarda en BD + opcionalmente el PDF en disco. */
   @Post('firmado')
   async firmado(@Body() body: PresupuestoFirmadoDto, @Req() req: Request) {
@@ -418,6 +501,9 @@ export class PresupuestosFirmadoController {
     const userAgent = req.headers['user-agent'] || '';
 
     const token = this.presentedToken(body.firma_token);
+    const v2Id = this.v2IdFromToken(token);
+    if (v2Id) return this.firmadoV2(v2Id, body, ip, userAgent);
+
     const requestedId = this.parseRequestedId(body.quotation_id);
     if (token === undefined && requestedId === null) {
       throw new BadRequestException('Falta quotation_id');
@@ -502,6 +588,7 @@ export class PresupuestosFirmadoController {
 
     let pdfPath: string | null = null;
     let pdfBuffer: Buffer | null = null;
+    let signedFilename: string | null = null;
     let storageKey: string | null = null;
     let storageBucket: string | null = null;
     let tamanoBytes: number | null = null;
@@ -529,6 +616,11 @@ export class PresupuestosFirmadoController {
         direccion: direccion || undefined,
         cif: (body.cif || '').trim() || undefined,
         iban: (body.iban || '').trim() || undefined,
+        forma_pago:
+          body.forma_pago === 'transferencia' ||
+          body.forma_pago === 'domiciliacion'
+            ? body.forma_pago
+            : undefined,
         fecha_inicio_servicio:
           (body.fecha_inicio_servicio || '').trim() || undefined,
         telefono: (body.telefono || '').trim() || undefined,
@@ -563,6 +655,7 @@ export class PresupuestosFirmadoController {
 
       pdfBuffer = pdfBufferFinal;
       const fileName = `presupuesto-${presupuestoId}-firmado-${Date.now()}.pdf`;
+      signedFilename = fileName;
 
       if (this.presupuestosFirmasStorage.isWriteEnabled()) {
         try {
@@ -715,6 +808,64 @@ export class PresupuestosFirmadoController {
       message: 'Firma registrada correctamente',
       quotation_id: presupuestoId,
       email_enviado: emailEnviado,
+      filename: signedFilename,
+      pdf_base64: pdfBuffer?.length ? pdfBuffer.toString('base64') : null,
+    };
+  }
+
+  /** Firma de un presupuesto V2. El PDF queda en v2_presupuesto_documentos. */
+  private async firmadoV2(
+    presupuestoId: number,
+    body: PresupuestoFirmadoDto,
+    ip: string,
+    userAgent: string,
+  ) {
+    const result = await this.pdfV2.generarYGuardarFirmado(
+      presupuestoId,
+      body as unknown as Record<string, any>,
+      { ip, userAgent },
+    );
+    const emailCliente = (body.email || '').trim();
+    let emailEnviado = false;
+    if (result.buffer?.length && emailCliente) {
+      try {
+        const nombre = (body.nombre_representante || '').trim() || 'cliente';
+        const subject = `Aceptación de presupuesto nº ${result.numero} - ${result.companyName}`;
+        const html = `
+          <p>Estimado/a ${nombre},</p>
+          <p>Adjuntamos el documento de aceptación del presupuesto nº <strong>${result.numero}</strong>, firmado electrónicamente.</p>
+          <p>Puede conservar este PDF como comprobante.</p>
+          <p>Saludos cordiales,<br/><strong>${result.companyName}</strong></p>
+        `;
+        await this.emailService.sendEmailWithAttachment(
+          emailCliente,
+          subject,
+          html,
+          result.buffer,
+          result.filename,
+          {
+            record: {
+              senderId: 'sistema',
+              recipientType: 'cliente',
+              recipientName: nombre,
+              attachmentNote: `Adjunto: ${result.filename}`,
+            },
+          },
+        );
+        emailEnviado = true;
+      } catch (err: any) {
+        this.logger.warn(
+          'No se pudo enviar el PDF firmado V2: ' + (err?.message || String(err)),
+        );
+      }
+    }
+    return {
+      success: true,
+      message: 'Firma registrada correctamente',
+      quotation_id: presupuestoId,
+      email_enviado: emailEnviado,
+      filename: result.filename,
+      pdf_base64: result.buffer?.length ? result.buffer.toString('base64') : null,
     };
   }
 }

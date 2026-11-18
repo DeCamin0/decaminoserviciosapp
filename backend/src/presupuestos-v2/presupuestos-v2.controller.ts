@@ -320,6 +320,28 @@ export class PresupuestosV2Controller {
     res.send(buffer);
   }
 
+  /** Envía el PDF oficial del emitido al email del cliente. */
+  @Post(':id/enviar-email')
+  async enviarEmail(
+    @Request() req: any,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { email?: string; mensaje?: string; cuenta_cobro_id?: string },
+  ) {
+    await this.service.assertCanAccess(req.user);
+    const data = await this.service.enviarEmail(
+      req.user,
+      id,
+      body?.email,
+      body?.mensaje,
+      body?.cuenta_cobro_id,
+    );
+    return {
+      success: true,
+      message: `Presupuesto enviado correctamente a ${data.email}`,
+      data,
+    };
+  }
+
   @Post(':id/cliente/refresh')
   async refreshCliente(
     @Request() req: any,

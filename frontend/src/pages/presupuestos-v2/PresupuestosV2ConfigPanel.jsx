@@ -4,6 +4,25 @@ import { MotorInputsForm } from './MotorCalcForms';
 import { DigitalesEditor } from './JornadaDigitalesEditors';
 import { motorLabel, slugifyCodigo } from './v2UiHelpers';
 
+function cuentasIniciales(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((cuenta, index) => ({
+    id: cuenta?.id || `c${index + 1}`,
+    banco: cuenta?.banco || '',
+    iban: cuenta?.iban || '',
+  }));
+}
+
+function normalizarCuentas(raw) {
+  return cuentasIniciales(raw)
+    .map((cuenta) => ({
+      id: String(cuenta.id || '').trim(),
+      banco: String(cuenta.banco || '').trim(),
+      iban: String(cuenta.iban || '').replace(/\s+/g, '').toUpperCase(),
+    }))
+    .filter((cuenta) => cuenta.banco && cuenta.iban);
+}
+
 function BrandLogoPreview({ brandId, bust, hasLogo }) {
   const fetchKey = `${brandId}:${bust}:${hasLogo}`;
   const [url, setUrl] = useState(null);
@@ -171,6 +190,7 @@ export default function PresupuestosV2ConfigPanel({
   const [paramEdits, setParamEdits] = useState({});
   const [serieEdits, setSerieEdits] = useState({});
   const [companyEdits, setCompanyEdits] = useState({});
+  const [cuentasEdits, setCuentasEdits] = useState({});
   const [brandEdits, setBrandEdits] = useState({});
 
   const loadAll = useCallback(async ({ notifyParent = true } = {}) => {
@@ -192,6 +212,7 @@ export default function PresupuestosV2ConfigPanel({
       setSeries(ser.data || []);
       setPresets(pre.data || []);
       setCompanies(co.data || []);
+      setCuentasEdits({});
       setBrands(b.data || []);
       setParamAudit(aud.data || []);
       setBloques(bl.data || []);
@@ -427,6 +448,35 @@ export default function PresupuestosV2ConfigPanel({
       .replace('{SEQ}', String(seq).padStart(pad, '0'));
   };
 
+  const cuentasDe = (company) =>
+    cuentasEdits[company.id] ||
+    cuentasIniciales(company.datos_fiscales_json?.cuentas_cobro);
+
+  const fijarCuentas = (company, next) => {
+    setCuentasEdits((prev) => ({ ...prev, [company.id]: next }));
+  };
+
+  const actualizarCuenta = (company, index, patch) => {
+    const next = cuentasDe(company).map((cuenta, i) =>
+      i === index ? { ...cuenta, ...patch } : cuenta,
+    );
+    fijarCuentas(company, next);
+  };
+
+  const quitarCuenta = (company, index) => {
+    fijarCuentas(
+      company,
+      cuentasDe(company).filter((_, i) => i !== index),
+    );
+  };
+
+  const anadirCuenta = (company) => {
+    fijarCuentas(company, [
+      ...cuentasDe(company),
+      { id: `c${Date.now()}`, banco: '', iban: '' },
+    ]);
+  };
+
   const saveCompany = async (company) => {
     const edit = companyEdits[company.id] || {};
     const fiscales = {
@@ -438,6 +488,10 @@ export default function PresupuestosV2ConfigPanel({
       telefono: edit.telefono ?? company.datos_fiscales_json?.telefono ?? '',
       email: edit.email ?? company.datos_fiscales_json?.email ?? '',
       web: edit.web ?? company.datos_fiscales_json?.web ?? '',
+      cuentas_cobro: normalizarCuentas(
+        cuentasEdits[company.id] ??
+          company.datos_fiscales_json?.cuentas_cobro,
+      ),
     };
     onBusy?.(true, 'Guardando empresa…');
     try {
@@ -1218,6 +1272,49 @@ export default function PresupuestosV2ConfigPanel({
                       />
                     </label>
                   ))}
+                </div>
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold text-slate-900">Cuentas de cobro</h4>
+                  <p className="text-xs text-slate-500">
+                    Si el cliente elige pago por transferencia, ve una de estas cuentas.
+                    La cuenta concreta se elige al enviar el presupuesto.
+                  </p>
+                  {(cuentasEdits[company.id] ||
+                    cuentasIniciales(company.datos_fiscales_json?.cuentas_cobro)
+                  ).map((cuenta, index) => (
+                    <div key={cuenta.id || index} className="grid sm:grid-cols-[1fr_1.4fr_auto] gap-2">
+                      <input
+                        className="border rounded-xl px-3 py-2 text-sm"
+                        placeholder="Banco"
+                        value={cuenta.banco}
+                        onChange={(e) =>
+                          actualizarCuenta(company, index, { banco: e.target.value })
+                        }
+                      />
+                      <input
+                        className="border rounded-xl px-3 py-2 text-sm"
+                        placeholder="IBAN"
+                        value={cuenta.iban}
+                        onChange={(e) =>
+                          actualizarCuenta(company, index, { iban: e.target.value })
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="px-3 py-2 rounded-xl border text-sm text-slate-600"
+                        onClick={() => quitarCuenta(company, index)}
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded-xl border text-sm"
+                    onClick={() => anadirCuenta(company)}
+                  >
+                    Añadir cuenta
+                  </button>
                 </div>
                 <button
                   type="button"

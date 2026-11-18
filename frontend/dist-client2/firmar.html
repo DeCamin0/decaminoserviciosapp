@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" href="./LOGO_hera.png" />
+  <link rel="icon" href="./logo-hera.svg" />
   <title>Aceptación de Presupuesto - HERA FACILITY SERVICES SL</title>
   <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -74,6 +74,23 @@
       font-weight: 600;
       margin-bottom: 20px;
     }
+    .pago-titulo { margin: 16px 0 4px; font-weight: 600; font-size: 0.875rem; }
+    .pago-opcion {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      font-weight: 500;
+    }
+    .pago-opcion input { width: auto; padding: 0; }
+    .cuenta-empresa {
+      margin-top: 10px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #f4f7fb;
+      border: 1px solid #dbe3ee;
+    }
+    .cuenta-empresa strong { display: block; letter-spacing: 0.03em; font-size: 1rem; }
     label {
       display: block;
       margin-top: 14px;
@@ -142,6 +159,34 @@
       box-shadow: 0 6px 18px rgba(220, 38, 38, 0.45);
     }
     .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+    .rechazo-box { margin-top: 18px; }
+    .btn-rechazar {
+      width: 100%;
+      background: #fff;
+      color: #9f1239;
+      border: 1px solid #fecdd3;
+      padding: 12px;
+    }
+    .btn-rechazar:hover { background: #fff1f2; }
+    .rechazo-form { margin-top: 12px; }
+    .rechazo-form textarea {
+      width: 100%;
+      min-height: 96px;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 12px;
+      font: inherit;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    .btn-rechazar-enviar {
+      width: 100%;
+      background: #9f1239;
+      color: #fff;
+      margin-top: 12px;
+      padding: 12px;
+    }
+    .btn-rechazar-enviar:disabled { opacity: 0.6; cursor: not-allowed; }
     .checkbox-wrap {
       margin: 20px 0;
       display: flex;
@@ -371,7 +416,7 @@
   <div class="main">
   <div class="page-wrap">
     <div class="logo-wrap">
-      <img src="./LOGO_hera.png" alt="HERA FACILITY SERVICES SL" onerror="this.style.display='none'" />
+      <img src="./logo-hera.svg" alt="HERA FACILITY SERVICES SL" onerror="this.style.display='none'" />
     </div>
     <div class="card">
       <h1 class="card-title">Aceptación de Presupuesto</h1>
@@ -419,8 +464,24 @@
     <label for="telefono">Teléfono <span class="req">*</span></label>
     <input type="tel" id="telefono" name="telefono" required placeholder="Obligatorio" />
 
-    <label for="iban">IBAN <span class="req">*</span></label>
-    <input type="text" id="iban" name="iban" required placeholder="Ej. ES64 0081 5585 3600 0107 1512" />
+    <p class="pago-titulo">Forma de pago <span class="req">*</span></p>
+    <label class="pago-opcion">
+      <input type="radio" name="forma_pago" id="pago-domiciliacion" value="domiciliacion" />
+      Domiciliación bancaria
+    </label>
+    <label class="pago-opcion">
+      <input type="radio" name="forma_pago" id="pago-transferencia" value="transferencia" disabled />
+      Pago por transferencia
+    </label>
+    <div id="iban-cliente-wrap" style="display:none;">
+      <label for="iban">IBAN de domiciliación <span class="req">*</span></label>
+      <input type="text" id="iban" name="iban" placeholder="IBAN del cliente" />
+    </div>
+    <div id="iban-empresa-wrap" class="cuenta-empresa" style="display:none;">
+      <span>El pago se realizará por transferencia a:</span>
+      <strong id="cuenta-empresa-iban"></strong>
+      <span id="cuenta-empresa-banco"></span>
+    </div>
 
     <label for="fecha_inicio_servicio">Fecha inicio servicio <span class="req">*</span></label>
     <input type="date" id="fecha_inicio_servicio" name="fecha_inicio_servicio" required />
@@ -460,22 +521,32 @@
     <button type="submit" class="btn btn-submit" id="btn-submit" disabled>Firmar y aceptar</button>
   </form>
 
+  <div id="rechazo-box" class="rechazo-box" style="display:none;">
+    <button type="button" class="btn btn-rechazar" id="btn-rechazar-abrir">Rechazar oferta</button>
+    <div id="rechazo-form" class="rechazo-form" style="display:none;">
+      <label for="motivo-rechazo">Motivo del rechazo <span class="req">*</span></label>
+      <textarea id="motivo-rechazo" maxlength="2000" placeholder="Indica por qué no acepta la oferta"></textarea>
+      <button type="button" class="btn btn-rechazar-enviar" id="btn-rechazar-enviar">Enviar rechazo</button>
+    </div>
+  </div>
+
   <p id="message" class="error" style="display:none;"></p>
   <p id="success" class="success" style="display:none;"></p>
+  <a id="descarga-firmado" class="btn btn-submit" style="display:none;" href="#">Descargar presupuesto firmado</a>
     </div>
   </div>
   </div>
 
   <footer class="firmar-footer">
     <p class="footer-credits">Este sistema ha sido diseñado y desarrollado por DeCamino</p>
-    <a href="https://herafs.com" target="_blank" rel="noopener noreferrer" class="footer-logo-link" title="Visita el sitio web de DeCamino">
+    <a href="https://www.herafacility.com" target="_blank" rel="noopener noreferrer" class="footer-logo-link" title="Visita el sitio web de DeCamino">
       <div class="footer-logo-circle">
         <img src="/DeCamino-04.svg" alt="DeCamino Logo" />
       </div>
     </a>
     <div class="footer-copy">
       <span>© <span id="footer-year"></span></span>
-      <a href="https://herafs.com" target="_blank" rel="noopener noreferrer" title="DeCamino">
+      <a href="https://www.herafacility.com" target="_blank" rel="noopener noreferrer" title="DeCamino">
         <div class="mini-logo">
           <img src="/DeCamino-04.svg" alt="DeCamino" />
         </div>
@@ -492,13 +563,14 @@
       var hasFirmaToken = firmaToken !== null;
       var quotationId = !hasFirmaToken && params.get('id') ? parseInt(params.get('id'), 10) : null;
       var numeroPresupuesto = null;
-      var API_BASE = ('https://api.herafs.com' && 'https://api.herafs.com'.trim()) || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      var API_BASE = ('http://localhost:3002' && 'http://localhost:3002'.trim()) || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? 'http://localhost:3000'
         : '');
 
       var ofertaEconomicaRows = null;
       var ofertaOriginal = null;
       var esSoloPiscina = false;
+      var cuentaTransferencia = null;
       var pctFidelidadFirma = 0;
       function buildRecuperacionAguaRow(precioSinIva) {
         var p = (precioSinIva != null && !isNaN(Number(precioSinIva))) ? Number(precioSinIva) : 650;
@@ -886,6 +958,7 @@
         if (data.cif) document.getElementById('cif').value = data.cif;
         if (data.direccion) document.getElementById('direccion').value = data.direccion;
         if (data.iban) document.getElementById('iban').value = data.iban;
+        pintarCuentaTransferencia(data.cuenta_transferencia);
         if (data.recuperacion_agua_precio != null && !isNaN(Number(data.recuperacion_agua_precio))) {
           window.recuperacionAguaPrecio = Number(data.recuperacion_agua_precio);
           RECUPERACION_AGUA_ROW = buildRecuperacionAguaRow(window.recuperacionAguaPrecio);
@@ -909,6 +982,20 @@
           syncHorarioFirmaSection();
         }
         if (typeof updateSubmitState === 'function') updateSubmitState();
+        if (data.rechazo) {
+          cerrarOferta('Esta oferta ya fue rechazada.' + (data.rechazo.motivo ? ' Motivo: ' + data.rechazo.motivo : ''));
+          return;
+        }
+        var rechazoBox = document.getElementById('rechazo-box');
+        if (rechazoBox) rechazoBox.style.display = data.puede_rechazar && !data.ya_firmado ? 'block' : 'none';
+      }
+
+      function cerrarOferta(mensaje) {
+        var form = document.getElementById('form');
+        if (form) form.style.display = 'none';
+        var box = document.getElementById('rechazo-box');
+        if (box) box.style.display = 'none';
+        showSuccess(mensaje);
       }
 
       if (hasFirmaToken) {
@@ -962,6 +1049,30 @@
 
       signaturePad.addEventListener('endStroke', updateSubmitState);
 
+      function formaPagoElegida() {
+        var el = document.querySelector('input[name="forma_pago"]:checked');
+        return el ? el.value : '';
+      }
+
+      function pintarCuentaTransferencia(cuenta) {
+        cuentaTransferencia = cuenta && cuenta.iban ? cuenta : null;
+        var radio = document.getElementById('pago-transferencia');
+        if (radio) radio.disabled = !cuentaTransferencia;
+        var ibanEl = document.getElementById('cuenta-empresa-iban');
+        var bancoEl = document.getElementById('cuenta-empresa-banco');
+        if (ibanEl) ibanEl.textContent = cuentaTransferencia ? cuentaTransferencia.iban : '';
+        if (bancoEl) bancoEl.textContent = cuentaTransferencia ? (cuentaTransferencia.banco || '') : '';
+      }
+
+      function syncFormaPago() {
+        var forma = formaPagoElegida();
+        var cliente = document.getElementById('iban-cliente-wrap');
+        var empresa = document.getElementById('iban-empresa-wrap');
+        if (cliente) cliente.style.display = forma === 'domiciliacion' ? 'block' : 'none';
+        if (empresa) empresa.style.display = forma === 'transferencia' ? 'block' : 'none';
+        updateSubmitState();
+      }
+
       function allRequiredFieldsValid() {
         var nombre_comunidad = document.getElementById('nombre_comunidad').value.trim();
         var cif = document.getElementById('cif').value.trim();
@@ -970,7 +1081,9 @@
         var cargo = document.getElementById('cargo').value;
         var email = document.getElementById('email').value.trim();
         var telefono = document.getElementById('telefono').value.trim();
+        var forma = formaPagoElegida();
         var iban = document.getElementById('iban').value.trim();
+        var pagoOk = forma === 'domiciliacion' ? !!iban : (forma === 'transferencia' && !!cuentaTransferencia);
         var fechaInicio = document.getElementById('fecha_inicio_servicio').value.trim();
         var signed = !signaturePad.isEmpty();
         var acepto = document.getElementById('acepto').checked;
@@ -987,7 +1100,7 @@
           var recogidaLlaves = document.getElementById('recogida_llaves') && document.getElementById('recogida_llaves').value.trim();
           piscinaOk = !!(nombrePres && dniPres && nViviendas && recogidaLlaves);
         }
-        return nombre_comunidad && cif && direccion && nombre_representante && cargo && email && telefono && iban && fechaInicio && signed && acepto && varianteOk && piscinaOk;
+        return nombre_comunidad && cif && direccion && nombre_representante && cargo && email && telefono && pagoOk && fechaInicio && signed && acepto && varianteOk && piscinaOk;
       }
 
       function updateSubmitState() {
@@ -1017,6 +1130,9 @@
           el.addEventListener('change', updateSubmitState);
         }
       });
+      document.querySelectorAll('input[name="forma_pago"]').forEach(function(el) {
+        el.addEventListener('change', syncFormaPago);
+      });
       updateSubmitState();
 
       document.getElementById('form').addEventListener('submit', function(e) {
@@ -1033,7 +1149,10 @@
         if (!document.getElementById('cargo').value) missing.push('Cargo');
         if (!document.getElementById('email').value.trim()) missing.push('Email');
         if (!document.getElementById('telefono').value.trim()) missing.push('Teléfono');
-        if (!document.getElementById('iban').value.trim()) missing.push('IBAN');
+        var forma = formaPagoElegida();
+        if (!forma) missing.push('Forma de pago');
+        else if (forma === 'domiciliacion' && !document.getElementById('iban').value.trim()) missing.push('IBAN');
+        else if (forma === 'transferencia' && !cuentaTransferencia) missing.push('Cuenta de transferencia');
         if (!document.getElementById('fecha_inicio_servicio').value.trim()) missing.push('Fecha inicio servicio');
         if (signaturePad.isEmpty()) missing.push('Firma');
         if (!document.getElementById('acepto').checked) missing.push('Aceptación de condiciones');
@@ -1087,7 +1206,8 @@
           cargo: document.getElementById('cargo').value,
           email: document.getElementById('email').value.trim(),
           telefono: document.getElementById('telefono').value.trim(),
-          iban: document.getElementById('iban').value.trim(),
+          forma_pago: formaPagoElegida(),
+          iban: formaPagoElegida() === 'domiciliacion' ? document.getElementById('iban').value.trim() : '',
           fecha_inicio_servicio: document.getElementById('fecha_inicio_servicio').value.trim(),
           firma_base64: signaturePad.toDataURL('image/png'),
           selected_oferta_indices: selectedOfertaIndices,
@@ -1136,19 +1256,50 @@
           if (!res.ok) throw new Error('Error al registrar la firma: ' + res.status);
           return res.json();
         }).then(function(data) {
-          var msg = 'Presupuesto aceptado y firmado correctamente. El documento de confirmación se ha descargado.';
+          var msg = 'Presupuesto aceptado y firmado correctamente. El justificante se ha descargado.';
+          if (data && data.pdf_base64) {
+            var urlFirmado = descargarPdfBase64(data.pdf_base64, data.filename);
+            var enlace = document.getElementById('descarga-firmado');
+            if (enlace && urlFirmado) {
+              enlace.href = urlFirmado;
+              enlace.download = data.filename || 'presupuesto-firmado.pdf';
+              enlace.style.display = 'inline-block';
+            }
+            msg = 'Presupuesto aceptado y firmado. Se han descargado el justificante y el presupuesto firmado.';
+          }
           if (data && data.email_enviado) {
             msg += ' Se ha enviado una copia a su correo electrónico.';
           }
           showSuccess(msg);
           btn.textContent = 'Completado';
           btn.disabled = true;
+          var rechazoBox = document.getElementById('rechazo-box');
+          if (rechazoBox) rechazoBox.style.display = 'none';
         }).catch(function(err) {
           showMessage(err.message || 'Error al enviar la firma. Compruebe la conexión.');
           btn.disabled = false;
           btn.textContent = 'Firmar y aceptar';
         });
       });
+
+      function descargarPdfBase64(base64, filename) {
+        try {
+          var bin = atob(base64);
+          var bytes = new Uint8Array(bin.length);
+          for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          var blob = new Blob([bytes], { type: 'application/pdf' });
+          var url = URL.createObjectURL(blob);
+          var link = document.createElement('a');
+          link.href = url;
+          link.download = filename || 'presupuesto-firmado.pdf';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          return url;
+        } catch (e) {
+          return '';
+        }
+      }
 
       function showMessage(text, hideSuccess) {
         var el = document.getElementById('message');
@@ -1161,6 +1312,51 @@
         el.textContent = text;
         el.style.display = text ? 'block' : 'none';
         if (hideError) document.getElementById('message').style.display = 'none';
+      }
+
+      var btnRechazarAbrir = document.getElementById('btn-rechazar-abrir');
+      var btnRechazarEnviar = document.getElementById('btn-rechazar-enviar');
+      if (btnRechazarAbrir) {
+        btnRechazarAbrir.addEventListener('click', function() {
+          document.getElementById('rechazo-form').style.display = 'block';
+          btnRechazarAbrir.style.display = 'none';
+        });
+      }
+      if (btnRechazarEnviar) {
+        btnRechazarEnviar.addEventListener('click', function() {
+          if (!hasFirmaToken) {
+            showMessage('El rechazo solo está disponible desde el enlace enviado.');
+            return;
+          }
+          var motivo = document.getElementById('motivo-rechazo').value.trim();
+          if (motivo.length < 3) {
+            showMessage('Indica el motivo del rechazo.');
+            return;
+          }
+          btnRechazarEnviar.disabled = true;
+          btnRechazarEnviar.textContent = 'Enviando...';
+          showMessage('', true);
+          fetch(API_BASE + '/api/presupuestos/rechazar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ firma_token: firmaToken, motivo: motivo })
+          }).then(function(res) {
+            if (!res.ok) {
+              return res.json().catch(function() { return {}; }).then(function(body) {
+                var msg = body && body.message ? body.message : ('Error ' + res.status);
+                if (Array.isArray(msg)) msg = msg.join(' ');
+                throw new Error(msg);
+              });
+            }
+            return res.json();
+          }).then(function() {
+            cerrarOferta('Has rechazado la oferta. Hemos registrado el motivo.');
+          }).catch(function(err) {
+            showMessage(err.message || 'No se pudo registrar el rechazo.');
+            btnRechazarEnviar.disabled = false;
+            btnRechazarEnviar.textContent = 'Enviar rechazo';
+          });
+        });
       }
 
       function generateAndDownloadPdf(payload, signedAt) {
@@ -1186,7 +1382,11 @@
           y += 6;
           doc.text('Email: ' + payload.email + '  Teléfono: ' + payload.telefono, 20, y);
           y += 6;
-          doc.text('IBAN: ' + (payload.iban || '-'), 20, y);
+          if (payload.forma_pago === 'transferencia' && cuentaTransferencia) {
+            doc.text('Pago por transferencia: ' + (cuentaTransferencia.banco || '') + ' ' + cuentaTransferencia.iban, 20, y);
+          } else {
+            doc.text('IBAN domiciliación: ' + (payload.iban || '-'), 20, y);
+          }
           y += 14;
           try {
             doc.addImage(payload.firma_base64, 'PNG', 20, y, 100, 40);

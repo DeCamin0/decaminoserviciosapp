@@ -42,6 +42,7 @@ export type FirmaAccessDecision =
  * Perioada de tranziție începe la PRESUPUESTO_FIRMA_ACTIVATED_AT, nu la data codului.
  */
 export const FIRMA_PURPOSE_PRESUPUESTO = 'presupuesto-firma-v1';
+export const FIRMA_PURPOSE_PRESUPUESTO_V2 = 'presupuesto-v2-firma-v1';
 export const FIRMA_PURPOSE_INFORME = 'informe-firma-v1';
 
 function readFirmaEnvConfig(
@@ -311,6 +312,32 @@ export function buildPresupuestoFirmarUrl(
     presupuestoId,
     now,
     FIRMA_PURPOSE_PRESUPUESTO,
+  );
+  return `${base}/firmar.html?t=${encodeURIComponent(token)}`;
+}
+
+/** Enlace de firma para un presupuesto V2. Siempre con token; el id no se publica. */
+export function buildPresupuestoV2FirmarUrl(
+  baseUrl: string,
+  presupuestoId: number,
+  config: PresupuestoFirmaConfig,
+  now: Date,
+): string {
+  const base = baseUrl.replace(/\/+$/g, '');
+  if (config.activatedAtError) {
+    throw new Error(config.activatedAtError);
+  }
+  if (config.mintError || !config.secret || !config.instanceId) {
+    throw new Error(
+      config.mintError ||
+        'No se puede emitir el token de firma para esta instancia',
+    );
+  }
+  const token = createFirmaToken(
+    config,
+    presupuestoId,
+    now,
+    FIRMA_PURPOSE_PRESUPUESTO_V2,
   );
   return `${base}/firmar.html?t=${encodeURIComponent(token)}`;
 }

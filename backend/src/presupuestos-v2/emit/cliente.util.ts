@@ -28,6 +28,14 @@ export type ClienteOverrides = {
   atencion_de?: string | null;
   observaciones_documento?: string | null;
   contacto_id?: number | null;
+  /** Bullets under «Condiciones económicas» on the offer page. Per presupuesto. */
+  condiciones_economicas?: string[] | null;
+  /** Cuenta de la empresa que se muestra si el cliente paga por transferencia. */
+  cuenta_cobro?: { id: string; banco: string; iban: string } | null;
+  /** Primera vez que el presupuesto se envió al cliente. La validez corre desde aquí. */
+  enviado_at?: string | null;
+  /** El cliente rechazó la oferta. El documento enviado no se modifica. */
+  rechazo?: { motivo: string; at: string } | null;
 };
 
 export type ClienteWorking = {
@@ -156,6 +164,9 @@ export function resolveClienteEfectivo(
     atencion_de: o.atencion_de ?? null,
     observaciones_documento: o.observaciones_documento ?? null,
     contacto_id: o.contacto_id ?? f.contacto_principal?.id ?? null,
+    condiciones_economicas: Array.isArray(o.condiciones_economicas)
+      ? o.condiciones_economicas
+      : null,
   };
 }
 

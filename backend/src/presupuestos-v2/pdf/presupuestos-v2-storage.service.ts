@@ -28,7 +28,7 @@ export class PresupuestosV2StorageService {
   buildKey(
     presupuestoId: number,
     filename: string,
-    kind: 'borrador' | 'emitido',
+    kind: 'borrador' | 'emitido' | 'firmado',
   ): string {
     const name = filename.toLowerCase().endsWith('.pdf')
       ? filename
@@ -52,7 +52,7 @@ export class PresupuestosV2StorageService {
     presupuestoId: number;
     buffer: Buffer;
     filename: string;
-    kind: 'borrador' | 'emitido';
+    kind: 'borrador' | 'emitido' | 'firmado';
   }): Promise<{
     storage_key: string;
     storage_bucket: string;

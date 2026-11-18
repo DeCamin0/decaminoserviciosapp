@@ -447,7 +447,7 @@ export class PresupuestosV2ConfigAdminService {
       // Floor: never below numbers already emitted for this prefix/year pattern
       const emitted = await this.prisma.v2Presupuesto.findMany({
         where: {
-          estado: 'EMITIDO',
+          estado: { not: 'BORRADOR' },
           numero: { not: null },
           brand_id: existing.brand_id,
         },

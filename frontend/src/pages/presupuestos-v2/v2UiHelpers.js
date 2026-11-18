@@ -91,7 +91,7 @@ export function clienteDisplayLines(cliente) {
 
 export function mergeClienteWorking(draft) {
   if (!draft) return null;
-  if (draft.estado === 'EMITIDO' && draft.snapshot_cliente_json) {
+  if (draft.estado !== 'BORRADOR' && draft.snapshot_cliente_json) {
     return draft.snapshot_cliente_json;
   }
   const w = draft.cliente_working_json || {};

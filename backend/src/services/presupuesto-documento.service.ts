@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { clampPresupuestoDescuentoGlobalPct } from '../utils/presupuesto-descuento-pct';
 import {
   buildPresupuestoFirmarUrl,
+  buildPresupuestoV2FirmarUrl,
   readPresupuestoFirmaConfig,
 } from './presupuesto-firma-access';
 import {
@@ -843,6 +844,21 @@ function normalizarModoGarajePayload(
   return 'fregadora';
 }
 
+const CONDICIONES_ECONOMICAS_OFERTA_DEFECTO = [
+  'Facturación mensual mediante recibo domiciliado.',
+  'El pago se realizará dentro de los últimos 5 días hábiles del mes en curso.',
+  'El presupuesto tiene una validez de 60 días desde su emisión.',
+];
+
+/** Absent = texto fijo de la plantilla. Array (incluso vacío) = lo guardado en el borrador. */
+function lineasCondicionesEconomicasOferta(
+  payload: Record<string, unknown>,
+): string[] {
+  const raw = payload.condicionesEconomicasOferta;
+  if (!Array.isArray(raw)) return CONDICIONES_ECONOMICAS_OFERTA_DEFECTO;
+  return raw.map((line) => String(line ?? '').trim()).filter(Boolean);
+}
+
 function esFilaDescuentoFidelidadOfertaPdf(descripcion: string): boolean {
   return String(descripcion || '').startsWith('Descuento por fidelidad');
 }
@@ -862,8 +878,6 @@ function redondeOfertaImportePdf(n: number): number {
  * dibuja bien U+2192 y en algunos visores aparece basura tipo !' encima del número).
  */
 const ARROW_OFERTA_PDF = ' -> ';
-/** Espacio horizontal entre segmentos (pt). */
-const GAP_X_OFERTA_PDF = 3;
 /** Cuerpo tabla 3.1 (propuesta económica): un punto más legible que 9 pt; el cálculo unificado baja hasta FS_MIN si no cabe. */
 const OFERTA_TABLA_FS_BASE = 10;
 const OFERTA_TABLA_FS_MIN = 6.5;
@@ -871,35 +885,106 @@ const OFERTA_TABLA_FS_ENCABEZADO = 11;
 
 type PdfDocOferta = InstanceType<typeof PDFDocument>;
 
-/** Comprueba si las dos líneas «antes -> neto» caben en maxW con Helvetica a fs. */
-function ofertaLineasFlechaCabenEnAncho(
+/** Parte el texto por espacios para que cada línea quepa en la celda. */
+function envolverTextoOfertaPdf(
+  doc: PdfDocOferta,
+  text: string,
+  maxW: number,
+): string[] {
+  const inner = Math.max(24, Number(maxW) || 0);
+  const words = String(text || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) return [];
+  const lines: string[] = [];
+  let cur = '';
+  const pushLong = (word: string) => {
+    if (cur) {
+      lines.push(cur);
+      cur = '';
+    }
+    let chunk = '';
+    for (const ch of word) {
+      const next = chunk + ch;
+      if (!chunk || doc.widthOfString(next) <= inner) chunk = next;
+      else {
+        lines.push(chunk);
+        chunk = ch;
+      }
+    }
+    cur = chunk;
+  };
+  for (const word of words) {
+    if (doc.widthOfString(word) > inner) {
+      pushLong(word);
+      continue;
+    }
+    const next = cur ? `${cur} ${word}` : word;
+    if (doc.widthOfString(next) <= inner) cur = next;
+    else {
+      if (cur) lines.push(cur);
+      cur = word;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+type LineaPrecioOfertaPdf = { text: string; color: string; bold: boolean };
+
+/**
+ * Precio anterior y precio con descuento, en líneas que caben en la celda.
+ * Si «antes -> neto» no entra en una línea, el neto baja y la fila crece.
+ */
+function planPreciosDescuentoOfertaPdf(
   doc: PdfDocOferta,
   maxW: number,
-  s1a: string,
-  s1n: string,
-  s2a: string,
-  s2n: string,
-  fs: number,
-): boolean {
-  const inner = Math.max(32, Math.min(Number(maxW) || 0, 800));
-  doc.save();
+  antesSin: number,
+  netoSin: number,
+  antesCon: number,
+  netoCon: number,
+  fmtNum: (n: number) => string,
+  uniformFs?: number,
+): { fs: number; lines: LineaPrecioOfertaPdf[] } {
+  const inner = Math.max(24, Math.min(Number(maxW) || 0, 800));
+  const fs =
+    uniformFs != null && Number.isFinite(uniformFs)
+      ? Math.min(12, Math.max(OFERTA_TABLA_FS_MIN, uniformFs))
+      : OFERTA_TABLA_FS_BASE;
   doc.font('Helvetica').fontSize(fs);
-  const w1 =
-    doc.widthOfString(s1a) +
-    GAP_X_OFERTA_PDF * 2 +
-    doc.widthOfString(ARROW_OFERTA_PDF) +
-    doc.widthOfString(s1n);
-  const w2 =
-    doc.widthOfString(s2a) +
-    GAP_X_OFERTA_PDF * 2 +
-    doc.widthOfString(ARROW_OFERTA_PDF) +
-    doc.widthOfString(s2n);
-  doc.restore();
-  return w1 <= inner && w2 <= inner;
+  const pares: Array<[string, string, string]> = [
+    [`${fmtNum(antesSin)}€+IVA`, `${fmtNum(netoSin)}€+IVA`, '#111827'],
+    [`${fmtNum(antesCon)}€`, `${fmtNum(netoCon)}€ IVA incluido`, '#065f46'],
+  ];
+  const lines: LineaPrecioOfertaPdf[] = [];
+  for (const [antes, neto, color] of pares) {
+    const junto = `${antes}${ARROW_OFERTA_PDF}${neto}`;
+    if (doc.widthOfString(junto) <= inner) {
+      lines.push({ text: junto, color, bold: false });
+      continue;
+    }
+    lines.push(
+      ...envolverTextoOfertaPdf(doc, antes, inner).map((text) => ({
+        text,
+        color: '#6b7280',
+        bold: false,
+      })),
+    );
+    lines.push(
+      ...envolverTextoOfertaPdf(doc, `-> ${neto}`, inner).map((text) => ({
+        text,
+        color,
+        bold: true,
+      })),
+    );
+  }
+  return { fs, lines };
 }
 
 /**
- * Una sola talla para todas las celdas de precio con flecha (evita fila servicio 6 pt y descuento 9 pt).
+ * Talla única de la tabla. El texto que no cabe se parte en líneas; la fila crece.
+ * Solo baja la fuente si una sola palabra no entra en la celda.
  */
 function calcularFontUnificadoTablaOfertaEconomicaPdf(
   doc: PdfDocOferta,
@@ -911,6 +996,7 @@ function calcularFontUnificadoTablaOfertaEconomicaPdf(
   fmtNum: (n: number) => string,
 ): number {
   const fMult = 1 - pct / 100;
+  const anchos = [wMens, ...(tieneColAnual ? [wAnual] : [])];
   for (
     let fsTry = OFERTA_TABLA_FS_BASE;
     fsTry >= OFERTA_TABLA_FS_MIN;
@@ -930,116 +1016,72 @@ function calcularFontUnificadoTablaOfertaEconomicaPdf(
       const mensCon = Number(row.mensualidadConIva) || 0;
       const anualSin = Number(row.anualidadSinIva) || 0;
       const anualCon = Number(row.anualidadConIva) || 0;
-      const netMS = redondeOfertaImportePdf(mensSin * fMult);
-      const netMC = redondeOfertaImportePdf(netMS * 1.21);
-      const netAS = redondeOfertaImportePdf(anualSin * fMult);
-      const netAC = redondeOfertaImportePdf(netAS * 1.21);
-      const s1aM = `${fmtNum(mensSin)}€+IVA`;
-      const s1nM = `${fmtNum(netMS)}€+IVA`;
-      const s2aM = `${fmtNum(mensCon)}€`;
-      const s2nM = `${fmtNum(netMC)}€ IVA incluido`;
-      if (
-        !ofertaLineasFlechaCabenEnAncho(
+      const importes = [
+        [mensSin, redondeOfertaImportePdf(mensSin * fMult), mensCon, redondeOfertaImportePdf(redondeOfertaImportePdf(mensSin * fMult) * 1.21)],
+        [anualSin, redondeOfertaImportePdf(anualSin * fMult), anualCon, redondeOfertaImportePdf(redondeOfertaImportePdf(anualSin * fMult) * 1.21)],
+      ];
+      anchos.forEach((ancho, i) => {
+        if (!ok || importes[i] == null) return;
+        const [aSin, nSin, aCon, nCon] = importes[i];
+        const plan = planPreciosDescuentoOfertaPdf(
           doc,
-          wMens,
-          s1aM,
-          s1nM,
-          s2aM,
-          s2nM,
+          ancho,
+          aSin,
+          nSin,
+          aCon,
+          nCon,
+          fmtNum,
           fsTry,
-        )
-      ) {
-        ok = false;
-        break;
-      }
-      if (tieneColAnual) {
-        const s1aA = `${fmtNum(anualSin)}€+IVA`;
-        const s1nA = `${fmtNum(netAS)}€+IVA`;
-        const s2aA = `${fmtNum(anualCon)}€`;
-        const s2nA = `${fmtNum(netAC)}€ IVA incluido`;
-        if (
-          !ofertaLineasFlechaCabenEnAncho(
-            doc,
-            wAnual,
-            s1aA,
-            s1nA,
-            s2aA,
-            s2nA,
-            fsTry,
-          )
-        ) {
+        );
+        doc.font('Helvetica-Bold').fontSize(fsTry);
+        if (plan.lines.some((line) => doc.widthOfString(line.text) > ancho + 0.5)) {
           ok = false;
-          break;
         }
-      }
+      });
+      if (!ok) break;
     }
     if (ok) return fsTry;
   }
   return OFERTA_TABLA_FS_MIN;
 }
 
-/**
- * Misma talla de fuente en ambas líneas (oferta 3.1: sin mezclar 9 pt y 8 pt ni bold distinto).
- * Reduce ambas a la vez si no caben en la celda.
- * Si `uniformFs` está definido, fuerza esa talla (tabla completa alineada).
- */
-function encajarFuentesCeldaPrecioDescuentoPdf(
-  doc: PdfDocOferta,
-  maxW: number,
-  s1a: string,
-  s1n: string,
-  s2a: string,
-  s2n: string,
-  uniformFs?: number,
-): { fs1: number; fs2: number } {
-  if (uniformFs != null && Number.isFinite(uniformFs) && uniformFs >= 5.5) {
-    const fs = Math.min(12, Math.max(5.5, uniformFs));
-    return { fs1: fs, fs2: fs };
-  }
-  const inner = Math.max(32, Math.min(Number(maxW) || 0, 800));
-  let fs = OFERTA_TABLA_FS_BASE;
-  for (let i = 0; i < 24; i++) {
-    doc.font('Helvetica').fontSize(fs);
-    const w1n = doc.widthOfString(s1n);
-    const w1 =
-      doc.widthOfString(s1a) +
-      GAP_X_OFERTA_PDF * 2 +
-      doc.widthOfString(ARROW_OFERTA_PDF) +
-      w1n;
-    doc.font('Helvetica').fontSize(fs);
-    const w2n = doc.widthOfString(s2n);
-    const w2 =
-      doc.widthOfString(s2a) +
-      GAP_X_OFERTA_PDF * 2 +
-      doc.widthOfString(ARROW_OFERTA_PDF) +
-      w2n;
-    if (w1 <= inner && w2 <= inner) return { fs1: fs, fs2: fs };
-    fs = Math.max(OFERTA_TABLA_FS_MIN, fs - 0.5);
-  }
-  return { fs1: OFERTA_TABLA_FS_MIN, fs2: OFERTA_TABLA_FS_MIN };
-}
-
 function alturaCeldaPreciosDescuentoOfertaPdf(
   doc: PdfDocOferta,
-  fs1: number,
-  fs2: number,
-  gapVert = 4,
+  maxW: number,
+  antesSin: number,
+  netoSin: number,
+  antesCon: number,
+  netoCon: number,
+  fmtNum: (n: number) => string,
+  uniformFs?: number,
 ): number {
-  doc.save();
-  const f1 = Number.isFinite(fs1) && fs1 >= 5.5 ? fs1 : OFERTA_TABLA_FS_BASE;
-  const f2 = Number.isFinite(fs2) && fs2 >= 5.5 ? fs2 : f1;
-  doc.font('Helvetica').fontSize(f1);
-  const lh1 = doc.currentLineHeight(true) || f1 * 1.2;
-  doc.font('Helvetica').fontSize(f2);
-  const lh2 = doc.currentLineHeight(true) || f2 * 1.2;
-  doc.restore();
-  const topPad = lh1 * 0.92;
-  return topPad + lh1 + gapVert + lh2 + 4;
+  const plan = planPreciosDescuentoOfertaPdf(
+    doc,
+    maxW,
+    antesSin,
+    netoSin,
+    antesCon,
+    netoCon,
+    fmtNum,
+    uniformFs,
+  );
+  doc.font('Helvetica').fontSize(plan.fs);
+  const lh = doc.currentLineHeight(true) || plan.fs * 1.2;
+  let alto = 2;
+  for (const line of plan.lines) {
+    doc.font(line.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(plan.fs);
+    alto +=
+      Math.max(
+        lh,
+        doc.heightOfString(line.text, { width: maxW, lineGap: 0 }),
+      ) + 1;
+  }
+  return alto;
 }
 
 /**
- * Dibuja mensualidad/anualidad: precio anterior (gris) -> precio final (negrita).
- * Sin línea tachada en PDF (evita artefactos y el usuario prefiere sin rayas).
+ * Dibuja mensualidad/anualidad dentro de la celda.
+ * El precio anterior queda en gris; el neto, en negrita. Si no caben en una línea, bajan.
  */
 function pintarCeldaPreciosDescuentoOfertaPdf(
   doc: PdfDocOferta,
@@ -1051,70 +1093,40 @@ function pintarCeldaPreciosDescuentoOfertaPdf(
   netoSin: number,
   antesCon: number,
   netoCon: number,
-  /** Misma talla que el resto de filas de la tabla 3.1 (mensual/anual/descuento/total). */
   uniformFs?: number,
 ): void {
   const x0 = Number.isFinite(x) ? x : MARGIN;
   const y0 = Number.isFinite(y) ? y : 0;
-  const innerW = Math.max(32, Math.min(Number(maxW) || 0, 800));
-  const aSin = Number.isFinite(Number(antesSin)) ? Number(antesSin) : 0;
-  const nSin = Number.isFinite(Number(netoSin)) ? Number(netoSin) : 0;
-  const aCon = Number.isFinite(Number(antesCon)) ? Number(antesCon) : 0;
-  const nCon = Number.isFinite(Number(netoCon)) ? Number(netoCon) : 0;
-  const s1a = `${fmtNum(aSin)}€+IVA`;
-  const s1n = `${fmtNum(nSin)}€+IVA`;
-  const s2a = `${fmtNum(aCon)}€`;
-  const s2n = `${fmtNum(nCon)}€ IVA incluido`;
-  const gap = 4;
-  const { fs1, fs2 } = encajarFuentesCeldaPrecioDescuentoPdf(
+  const innerW = Math.max(24, Math.min(Number(maxW) || 0, 800));
+  const plan = planPreciosDescuentoOfertaPdf(
     doc,
     innerW,
-    s1a,
-    s1n,
-    s2a,
-    s2n,
+    antesSin,
+    netoSin,
+    antesCon,
+    netoCon,
+    fmtNum,
     uniformFs,
   );
-  const fs1s = Number.isFinite(fs1) && fs1 >= 5.5 ? fs1 : OFERTA_TABLA_FS_BASE;
-  const fs2s = Number.isFinite(fs2) && fs2 >= 5.5 ? fs2 : fs1s;
-
-  doc.save();
-  doc.font('Helvetica').fontSize(fs1s);
-  const lh1 = doc.currentLineHeight(true) || fs1s * 1.2;
-  doc.restore();
-
-  const drawPrecioAnteriorFlechaNeto = (
-    antesStr: string,
-    netoStr: string,
-    fs: number,
-    netoColor: string,
-    yBaseline: number,
-  ): void => {
-    let cx = x0;
-    doc.font('Helvetica').fontSize(fs).fillColor('#6b7280');
-    const wAntes = doc.widthOfString(antesStr);
-    doc.text(antesStr, cx, yBaseline, { lineBreak: false });
-    cx += wAntes + GAP_X_OFERTA_PDF;
-    doc.font('Helvetica').fontSize(fs).fillColor('#6b7280');
-    doc.text(ARROW_OFERTA_PDF, cx, yBaseline, { lineBreak: false });
-    cx += doc.widthOfString(ARROW_OFERTA_PDF) + GAP_X_OFERTA_PDF;
-    doc.font('Helvetica').fontSize(fs).fillColor(netoColor);
-    doc.text(netoStr, cx, yBaseline, { lineBreak: false });
-  };
-
-  const yBase1 = y0 + lh1 * 0.92;
-  const yBase2 = yBase1 + lh1 + gap;
-  if (!Number.isFinite(yBase1) || !Number.isFinite(yBase2)) {
-    doc.font('Helvetica').fontSize(OFERTA_TABLA_FS_BASE).fillColor('#1a1a1a');
-    doc.text(`${s1a} -> ${s1n}\n${s2a} -> ${s2n}`, x0, y0, {
+  doc.font('Helvetica').fontSize(plan.fs);
+  const lh = doc.currentLineHeight(true) || plan.fs * 1.2;
+  let yLine = y0;
+  for (const line of plan.lines) {
+    doc
+      .font(line.bold ? 'Helvetica-Bold' : 'Helvetica')
+      .fontSize(plan.fs)
+      .fillColor(line.color);
+    const altoLinea = Math.max(
+      lh,
+      doc.heightOfString(line.text, { width: innerW, lineGap: 0 }),
+    );
+    doc.text(line.text, x0, yLine, {
       width: innerW,
-      lineGap: 2,
+      lineBreak: true,
+      lineGap: 0,
     });
-    doc.fillColor('#1a1a1a').font('Helvetica').fontSize(OFERTA_TABLA_FS_BASE);
-    return;
+    yLine += altoLinea + 1;
   }
-  drawPrecioAnteriorFlechaNeto(s1a, s1n, fs1s, '#111827', yBase1);
-  drawPrecioAnteriorFlechaNeto(s2a, s2n, fs2s, '#065f46', yBase2);
   doc.fillColor('#1a1a1a').font('Helvetica').fontSize(OFERTA_TABLA_FS_BASE);
 }
 
@@ -1512,6 +1524,10 @@ export interface DatosFirmaAceptacion {
   cif?: string;
   /** IBAN indicado en el formulario de firma; si no viene, se usa el de la BD del cliente. */
   iban?: string;
+  /** domiciliacion: IBAN del cliente. transferencia: se muestra la cuenta de la empresa. */
+  forma_pago?: 'domiciliacion' | 'transferencia';
+  banco_cobro?: string;
+  iban_cobro?: string;
   /** Fecha de inicio del servicio (YYYY-MM-DD). */
   fecha_inicio_servicio?: string;
   /** Solo piscina: nombre del presidente. */
@@ -1935,7 +1951,158 @@ export class PresupuestoDocumentoService {
     return numero;
   }
 
-  /** PDF: portadă + pagina 2 INDICE (serviciile din 2.1, 2.2... din oferta contractată). Si opciones?.datosFirma, la página ACEPTACIÓN se rellena con fecha, por el cliente, empresa (cliente), y la imagen de firma en la casilla CLIENTE. */
+  /**
+   * Páginas 2.x con el contenido comercial guardado en V2.
+   * La maqueta (logo, título, línea, pie) sigue siendo la de v1.
+   * Esos tipos se quitan para no imprimir el texto fijo de la plantilla.
+   */
+  private pintarContenidoV2SiHay(
+    doc: InstanceType<typeof PDFDocument>,
+    logoPath: string | null,
+    payload: Record<string, unknown>,
+    tiposIncluidos: { delete(tipo: string): void },
+  ) {
+    const items = payload.contenidoComercialV2;
+    if (!Array.isArray(items) || items.length === 0) return;
+
+    for (const raw of items) {
+      const item = raw as {
+        tipo?: string;
+        titulo?: string;
+        contenido?: Record<string, unknown>;
+      };
+      this.drawPaginaContenidoV2(
+        doc,
+        logoPath,
+        String(item.titulo || 'Servicio'),
+        item.contenido || {},
+      );
+      if (item.tipo) tiposIncluidos.delete(item.tipo);
+    }
+  }
+
+  private drawPaginaContenidoV2(
+    doc: InstanceType<typeof PDFDocument>,
+    logoPath: string | null,
+    titulo: string,
+    cc: Record<string, unknown>,
+  ) {
+    const fullWidth = PAGE_WIDTH - MARGIN * 2;
+    const contentWidth = 360;
+    const contentX = (PAGE_WIDTH - contentWidth) / 2;
+    const bottom = PAGE_NUM_Y - 28;
+
+    const openPage = (withTitle: boolean) => {
+      doc.addPage({ size: 'A4', margin: MARGIN });
+      if (logoPath) {
+        try {
+          doc.opacity(0.1);
+          doc.image(logoPath, (PAGE_WIDTH - 400) / 2, (PAGE_HEIGHT - 400) / 2, {
+            width: 400,
+            height: 400,
+          });
+          doc.opacity(1);
+          doc.image(logoPath, MARGIN, 40, { width: 56, height: 56 });
+        } catch {
+          doc.opacity(1);
+        }
+      }
+      let y = 108;
+      if (!withTitle) return y;
+      doc.fillColor('#1a1a1a').font('Helvetica-Bold').fontSize(22);
+      const h = doc.heightOfString(titulo, { width: fullWidth });
+      doc.text(titulo, MARGIN, y, { width: fullWidth, align: 'center' });
+      y += h + 12;
+      const lineW = fullWidth * 0.72;
+      doc.strokeColor(this.getCompany().brandRed).lineWidth(3);
+      doc
+        .moveTo((PAGE_WIDTH - lineW) / 2, y)
+        .lineTo((PAGE_WIDTH + lineW) / 2, y)
+        .stroke();
+      return y + 28;
+    };
+
+    let y = openPage(true);
+
+    const ensure = (need: number) => {
+      if (y + need > bottom) y = openPage(false);
+    };
+
+    const paragraph = (text: string) => {
+      const value = String(text || '').trim();
+      if (!value) return;
+      doc.font('Helvetica').fontSize(10).fillColor('#1a1a1a');
+      const h = doc.heightOfString(value, { width: contentWidth });
+      ensure(h + 8);
+      doc.text(value, contentX, y, { width: contentWidth, align: 'justify' });
+      y += h + 12;
+    };
+
+    const bullets = (heading: string, lines: unknown) => {
+      const list = Array.isArray(lines)
+        ? lines.map((x) => String(x || '').trim()).filter(Boolean)
+        : [];
+      if (!list.length) return;
+      ensure(28);
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#1a1a1a');
+      doc.text(heading, contentX, y, { width: contentWidth });
+      y += 18;
+      for (const line of list) {
+        doc.font('Helvetica').fontSize(10);
+        const h = doc.heightOfString(line, { width: contentWidth - 14 });
+        ensure(h + 6);
+        doc.fillColor(this.getCompany().brandRed).font('Helvetica-Bold');
+        doc.text('•', contentX, y, { width: 12, lineBreak: false });
+        doc.fillColor('#1a1a1a').font('Helvetica');
+        doc.text(line, contentX + 14, y, { width: contentWidth - 14 });
+        y += h + 4;
+      }
+      y += 10;
+    };
+
+    const descripcion = String(cc.descripcion_comercial || '').trim();
+    for (const part of descripcion.split(/\n{2,}/)) paragraph(part);
+
+    bullets('Operativa', cc.operativa);
+    bullets('Tareas', cc.tareas);
+    bullets('Tareas de Auxiliar de Servicios', cc.tareas_auxiliares);
+    bullets('Tareas de Limpieza', cc.tareas_limpieza);
+    const periodicos = Array.isArray(cc.servicios_periodicos)
+      ? (cc.servicios_periodicos as Array<Record<string, unknown>>).map(
+          (row) => {
+            const nombre = String(row?.nombre || '').trim();
+            const per = String(row?.periodicidad || '').trim();
+            const extra = String(row?.descripcion || '').trim();
+            return [nombre, per && `(${per})`, extra].filter(Boolean).join(' ');
+          },
+        )
+      : [];
+    bullets('Servicios periódicos', periodicos);
+    bullets('Condiciones específicas', cc.condiciones_especificas);
+
+    if (
+      !descripcion &&
+      !Array.isArray(cc.operativa) &&
+      !Array.isArray(cc.tareas) &&
+      !Array.isArray(cc.tareas_auxiliares) &&
+      !Array.isArray(cc.tareas_limpieza)
+    ) {
+      paragraph('Este servicio no tiene contenido comercial guardado en V2.');
+    }
+
+    doc.fontSize(7).fillColor('#333333').font('Helvetica');
+    doc.text(this.getCompany().legalRegistryText, MARGIN, FOOTER_Y, {
+      width: fullWidth,
+      align: 'center',
+      height: PAGE_HEIGHT - FOOTER_Y - 12,
+      ellipsis: true,
+    });
+  }
+
+  /**
+   * PDF cu plantilla v1 (portadă, indice, operativa, oferta, aceptare).
+   * `virtual` redă același document din datele V2, fără a scrie în presupuestos_guardados.
+   */
   async generarPdf(
     id: number,
     opciones?: {
@@ -1951,6 +2118,16 @@ export class PresupuestoDocumentoService {
       };
       /** Mezcla por clave sobre el payload guardado (p. ej. `ofertaEconomica` de la pantalla sin guardar). */
       payloadSnapshot?: Record<string, unknown>;
+      /** `v2` genera el enlace de firma con el token de Presupuestos V2, no el de presupuestos_guardados. */
+      enlaceFirma?: 'v1' | 'v2';
+      virtual?: {
+        numero: string;
+        cliente_nombre: string;
+        cliente_id?: number | null;
+        nombre?: string;
+        created_at?: Date | string | null;
+        payload: Record<string, unknown>;
+      };
     },
   ): Promise<{ buffer: Buffer; filename: string }> {
     const company = this.getCompany() as any;
@@ -1961,7 +2138,18 @@ export class PresupuestoDocumentoService {
         ? 'hera'
         : 'decamino';
     try {
-      const presupuesto = await this.presupuestosGuardadosService.findOne(id);
+      const virtual = opciones?.virtual;
+      const presupuesto = virtual
+        ? {
+            cliente_nombre: virtual.cliente_nombre,
+            nombre: virtual.nombre || 'Presupuesto',
+            cliente_id: virtual.cliente_id ?? null,
+            created_at: virtual.created_at
+              ? new Date(virtual.created_at)
+              : new Date(),
+            payload: virtual.payload,
+          }
+        : await this.presupuestosGuardadosService.findOne(id);
       const datosFirma = opciones?.datosFirma;
       const evidencias = opciones?.evidencias;
       const clienteNombre =
@@ -1970,7 +2158,9 @@ export class PresupuestoDocumentoService {
         /[/\\?%*:|"<>]/g,
         '-',
       );
-      const numeroPresupuesto = await this.getOrAssignNumeroPresupuesto(id);
+      const numeroPresupuesto = virtual
+        ? virtual.numero
+        : await this.getOrAssignNumeroPresupuesto(id);
       const basePayload = (presupuesto.payload || {}) as Record<
         string,
         unknown
@@ -2050,6 +2240,11 @@ export class PresupuestoDocumentoService {
         if (cp || pob)
           clienteDireccionLineas.push([cp, pob].filter(Boolean).join(' '));
         if (prov) clienteDireccionLineas.push(prov);
+        const nifPayload =
+          payload.presupuestoClienteNif != null
+            ? String(payload.presupuestoClienteNif).trim()
+            : '';
+        if (nifPayload) nifCliente = nifPayload;
       }
 
       // Si el PDF es el firmado, la portada usa nombre y dirección del formulario de firma (evita "test cliente" y direcciones duplicadas)
@@ -4294,6 +4489,10 @@ export class PresupuestoDocumentoService {
           });
         }
 
+        // Con V2, la descripción operativa sale del contenido comercial guardado,
+        // no de los textos fijos AUXILIARES_DECAMINO / LIMPIEZA_DECAMINO.
+        this.pintarContenidoV2SiHay(doc, logoPath, payload, tiposIncluidos);
+
         // ——— PÁGINA: DESCRIPCIÓN OPERATIVA - AUXILIARES (2.1)
         if (tiposIncluidos.has('auxiliares')) {
           doc.addPage({ size: 'A4', margin: MARGIN });
@@ -5401,8 +5600,8 @@ export class PresupuestoDocumentoService {
           colDescW = Math.round(ofertaFullWidth * 0.4);
           colMensW = ofertaFullWidth - colDescW;
         } else {
-          // Proporciones alineadas con la tabla web (DESCRIPCIÓN más ancha; MENSUALIDAD y ANUALIDAD iguales).
-          colDescW = Math.round(ofertaFullWidth * 0.5);
+          // Descripción envuelve el título largo; mensualidad y anualidad se reparten el resto.
+          colDescW = Math.round(ofertaFullWidth * 0.4);
           colMensW = Math.round((ofertaFullWidth - colDescW) / 2);
           colAnualW = ofertaFullWidth - colDescW - colMensW;
         }
@@ -5662,37 +5861,27 @@ export class PresupuestoDocumentoService {
             let hMens: number;
             let hAnual = 0;
             if (usaCeldaTachadoFlecha) {
-              const s1aM = `${fmtNum(mensSin)}€+IVA`;
-              const s1nM = `${fmtNum(netMS)}€+IVA`;
-              const s2aM = `${fmtNum(mensCon)}€`;
-              const s2nM = `${fmtNum(netMC)}€ IVA incluido`;
-              const { fs1: fs1m, fs2: fs2m } =
-                encajarFuentesCeldaPrecioDescuentoPdf(
+              hMens = alturaCeldaPreciosDescuentoOfertaPdf(
+                doc,
+                wMensOferta,
+                mensSin,
+                netMS,
+                mensCon,
+                netMC,
+                fmtNum,
+                fontTablaOferta,
+              );
+              if (tieneColAnual) {
+                hAnual = alturaCeldaPreciosDescuentoOfertaPdf(
                   doc,
-                  wMensOferta,
-                  s1aM,
-                  s1nM,
-                  s2aM,
-                  s2nM,
+                  wAnualOferta,
+                  anualSin,
+                  netAS,
+                  anualCon,
+                  netAC,
+                  fmtNum,
                   fontTablaOferta,
                 );
-              hMens = alturaCeldaPreciosDescuentoOfertaPdf(doc, fs1m, fs2m);
-              if (tieneColAnual) {
-                const s1aA = `${fmtNum(anualSin)}€+IVA`;
-                const s1nA = `${fmtNum(netAS)}€+IVA`;
-                const s2aA = `${fmtNum(anualCon)}€`;
-                const s2nA = `${fmtNum(netAC)}€ IVA incluido`;
-                const { fs1: fs1a, fs2: fs2a } =
-                  encajarFuentesCeldaPrecioDescuentoPdf(
-                    doc,
-                    wAnualOferta,
-                    s1aA,
-                    s1nA,
-                    s2aA,
-                    s2nA,
-                    fontTablaOferta,
-                  );
-                hAnual = alturaCeldaPreciosDescuentoOfertaPdf(doc, fs1a, fs2a);
               }
             } else {
               doc.font(rowBodyFont).fontSize(fontTablaOferta);
@@ -5733,6 +5922,7 @@ export class PresupuestoDocumentoService {
             doc.text(desc, MARGIN + cellPad, ofertaY + cellPad, {
               width: wDescOferta,
               lineGap: 2,
+              lineBreak: true,
             });
             if (usaCeldaTachadoFlecha) {
               pintarCeldaPreciosDescuentoOfertaPdf(
@@ -5773,6 +5963,7 @@ export class PresupuestoDocumentoService {
                 {
                   width: wMensOferta,
                   lineGap: 2,
+                  lineBreak: true,
                 },
               );
               if (tieneColAnual)
@@ -5780,7 +5971,7 @@ export class PresupuestoDocumentoService {
                   anualCell,
                   MARGIN + colDescW + colMensW + cellPad,
                   ofertaY + cellPad,
-                  { width: wAnualOferta, lineGap: 2 },
+                  { width: wAnualOferta, lineGap: 2, lineBreak: true },
                 );
             }
             // pintarCelda deja Helvetica-Bold y color del neto; resetea para la siguiente fila
@@ -5799,29 +5990,57 @@ export class PresupuestoDocumentoService {
             filasOfertaPdf.length > 0 &&
             !ofertaPdfTieneSubtotalesVarianteAux
           ) {
+            // Filas de servicio traen el bruto; el % se pinta tachado en la fila.
+            // Si ya hay una fila «Descuento por fidelidad», la suma bruta+descuento es el neto.
+            const fNetTotal = 1 - pctFidelidadPdf / 100;
+            const hayFilaDescuento = filasOfertaPdf.some((r) =>
+              esFilaDescuentoFidelidadOfertaPdf(String(r.descripcion || '')),
+            );
+            const netoSinFila = (bruto: number) =>
+              hayFilaDescuento
+                ? Number(bruto) || 0
+                : redondeOfertaImportePdf((Number(bruto) || 0) * fNetTotal);
             const tMS = redondeOfertaImportePdf(
               filasOfertaPdf.reduce(
-                (acc, r) => acc + (Number(r.mensualidadSinIva) || 0),
+                (acc, r) => acc + netoSinFila(r.mensualidadSinIva),
                 0,
               ),
             );
             const tMC = redondeOfertaImportePdf(
-              filasOfertaPdf.reduce(
-                (acc, r) => acc + (Number(r.mensualidadConIva) || 0),
-                0,
-              ),
+              hayFilaDescuento
+                ? filasOfertaPdf.reduce(
+                    (acc, r) => acc + (Number(r.mensualidadConIva) || 0),
+                    0,
+                  )
+                : filasOfertaPdf.reduce(
+                    (acc, r) =>
+                      acc +
+                      redondeOfertaImportePdf(
+                        netoSinFila(r.mensualidadSinIva) * 1.21,
+                      ),
+                    0,
+                  ),
             );
             const tAS = redondeOfertaImportePdf(
               filasOfertaPdf.reduce(
-                (acc, r) => acc + (Number(r.anualidadSinIva) || 0),
+                (acc, r) => acc + netoSinFila(r.anualidadSinIva),
                 0,
               ),
             );
             const tAC = redondeOfertaImportePdf(
-              filasOfertaPdf.reduce(
-                (acc, r) => acc + (Number(r.anualidadConIva) || 0),
-                0,
-              ),
+              hayFilaDescuento
+                ? filasOfertaPdf.reduce(
+                    (acc, r) => acc + (Number(r.anualidadConIva) || 0),
+                    0,
+                  )
+                : filasOfertaPdf.reduce(
+                    (acc, r) =>
+                      acc +
+                      redondeOfertaImportePdf(
+                        netoSinFila(r.anualidadSinIva) * 1.21,
+                      ),
+                    0,
+                  ),
             );
             const totDesc =
               'TOTAL (importe neto a pagar, incl. descuento por fidelidad)';
@@ -5864,17 +6083,19 @@ export class PresupuestoDocumentoService {
             doc.text(totDesc, MARGIN + cellPad, ofertaY + cellPad, {
               width: wDescOferta,
               lineGap: 2,
+              lineBreak: true,
             });
             doc.text(totM, MARGIN + colDescW + cellPad, ofertaY + cellPad, {
               width: wMensOferta,
               lineGap: 2,
+              lineBreak: true,
             });
             if (tieneColAnual)
               doc.text(
                 totA,
                 MARGIN + colDescW + colMensW + cellPad,
                 ofertaY + cellPad,
-                { width: wAnualOferta, lineGap: 2 },
+                { width: wAnualOferta, lineGap: 2, lineBreak: true },
               );
             doc
               .fillColor('#1a1a1a')
@@ -5948,9 +6169,9 @@ export class PresupuestoDocumentoService {
             const gapTituloLegalOferta = 14;
             const gapTrasRevisionOferta = 12;
             const bulletLegalOferta = '• ';
-            const bulletFacturacion = `${bulletLegalOferta}Facturación mensual mediante recibo domiciliado.`;
-            const bulletPago = `${bulletLegalOferta}El pago se realizará dentro de los últimos 5 días hábiles del mes en curso.`;
-            const bulletValidez = `${bulletLegalOferta}El presupuesto tiene una validez de 60 días desde su emisión.`;
+            const bulletsCondiciones = lineasCondicionesEconomicasOferta(
+              payload as Record<string, unknown>,
+            ).map((line) => `${bulletLegalOferta}${line}`);
 
             let altoColaLegalOferta = 0;
             if (pctFidelidadPdf > 0) {
@@ -5965,21 +6186,19 @@ export class PresupuestoDocumentoService {
               doc.heightOfString(textoPropuestaCondiciones, {
                 width: ofertaFullWidth,
               }) + 14;
-            doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
-            altoColaLegalOferta +=
-              doc.heightOfString('Condiciones económicas', {
-                width: ofertaFullWidth,
-              }) + 14;
-            doc.font('Helvetica').fontSize(9).fillColor('#333333');
-            altoColaLegalOferta +=
-              doc.heightOfString(bulletFacturacion, {
-                width: ofertaFullWidth,
-              }) + 3;
-            altoColaLegalOferta +=
-              doc.heightOfString(bulletPago, { width: ofertaFullWidth }) + 3;
-            altoColaLegalOferta +=
-              doc.heightOfString(bulletValidez, { width: ofertaFullWidth }) +
-              12;
+            if (bulletsCondiciones.length) {
+              doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
+              altoColaLegalOferta +=
+                doc.heightOfString('Condiciones económicas', {
+                  width: ofertaFullWidth,
+                }) + 14;
+              doc.font('Helvetica').fontSize(9).fillColor('#333333');
+              for (const bullet of bulletsCondiciones) {
+                altoColaLegalOferta +=
+                  doc.heightOfString(bullet, { width: ofertaFullWidth }) + 3;
+              }
+              altoColaLegalOferta += 9;
+            }
 
             doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
             const hTitRev = doc.heightOfString('Revisión de precios', {
@@ -6038,28 +6257,20 @@ export class PresupuestoDocumentoService {
                 width: ofertaFullWidth,
               }) + 14;
 
-            doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
-            doc.text('Condiciones económicas', MARGIN, ofertaY, {
-              width: ofertaFullWidth,
-            });
-            ofertaY += 14;
-            doc.font('Helvetica').fontSize(9).fillColor('#333333');
-            doc.text(bulletFacturacion, MARGIN, ofertaY, {
-              width: ofertaFullWidth,
-            });
-            ofertaY +=
-              doc.heightOfString(bulletFacturacion, {
+            if (bulletsCondiciones.length) {
+              doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
+              doc.text('Condiciones económicas', MARGIN, ofertaY, {
                 width: ofertaFullWidth,
-              }) + 3;
-            doc.text(bulletPago, MARGIN, ofertaY, { width: ofertaFullWidth });
-            ofertaY +=
-              doc.heightOfString(bulletPago, { width: ofertaFullWidth }) + 3;
-            doc.text(bulletValidez, MARGIN, ofertaY, {
-              width: ofertaFullWidth,
-            });
-            ofertaY +=
-              doc.heightOfString(bulletValidez, { width: ofertaFullWidth }) +
-              gapTrasRevisionOferta;
+              });
+              ofertaY += 14;
+              doc.font('Helvetica').fontSize(9).fillColor('#333333');
+              for (const bullet of bulletsCondiciones) {
+                doc.text(bullet, MARGIN, ofertaY, { width: ofertaFullWidth });
+                ofertaY +=
+                  doc.heightOfString(bullet, { width: ofertaFullWidth }) + 3;
+              }
+              ofertaY += gapTrasRevisionOferta - 3;
+            }
 
             doc.font('Helvetica-Bold').fontSize(10).fillColor('#1a1a1a');
             doc.text('Revisión de precios', MARGIN, ofertaY, {
@@ -6451,8 +6662,20 @@ export class PresupuestoDocumentoService {
             condGenY += titleH + condTitleGap;
             doc.font('Helvetica').fontSize(9).fillColor('#333333');
             for (const p of sec.parrafos) {
-              const h = doc.heightOfString(p, { width: condFullWidth });
+              const esAvisoImpago = /recargo del 1%/.test(p);
+              const pintarAviso = () => {
+                doc
+                  .font(esAvisoImpago ? 'Helvetica-Bold' : 'Helvetica')
+                  .fontSize(9)
+                  .fillColor(esAvisoImpago ? '#1a1a1a' : '#333333');
+              };
+              pintarAviso();
+              const h = doc.heightOfString(p, {
+                width: condFullWidth,
+                align: 'justify',
+              });
               if (condGenY + h > FOOTER_Y - 20) addCondPage();
+              pintarAviso();
               doc.text(p, MARGIN, condGenY, {
                 width: condFullWidth,
                 align: 'justify',
@@ -6595,7 +6818,19 @@ export class PresupuestoDocumentoService {
         const cifVal = datosFirma?.cif?.trim() || nifCliente;
         const ibanVal = datosFirma?.iban?.trim() || ibanCliente;
         drawAceptRow('CIF:', cifVal ?? undefined);
-        drawAceptRow('IBAN:', ibanVal ?? undefined);
+        if (datosFirma?.forma_pago === 'transferencia') {
+          drawAceptRow('Forma de pago:', 'Transferencia');
+          drawAceptRow('Banco:', datosFirma.banco_cobro?.trim() || undefined);
+          drawAceptRow(
+            'IBAN:',
+            datosFirma.iban_cobro?.trim() || undefined,
+          );
+        } else if (datosFirma?.forma_pago === 'domiciliacion') {
+          drawAceptRow('Forma de pago:', 'Domiciliación');
+          drawAceptRow('IBAN:', ibanVal ?? undefined);
+        } else {
+          drawAceptRow('IBAN:', ibanVal ?? undefined);
+        }
         if (esSoloPiscina && datosFirma) {
           aceptY += 10;
           doc.font('Helvetica-Bold').fontSize(8).fillColor('#555555');
@@ -6739,12 +6974,20 @@ export class PresupuestoDocumentoService {
             '';
           let firmarUrl: string;
           try {
-            firmarUrl = buildPresupuestoFirmarUrl(
-              firmarBaseUrl,
-              id,
-              readPresupuestoFirmaConfig(process.env),
-              new Date(),
-            );
+            firmarUrl =
+              opciones?.enlaceFirma === 'v2'
+                ? buildPresupuestoV2FirmarUrl(
+                    firmarBaseUrl,
+                    id,
+                    readPresupuestoFirmaConfig(process.env),
+                    new Date(),
+                  )
+                : buildPresupuestoFirmarUrl(
+                    firmarBaseUrl,
+                    id,
+                    readPresupuestoFirmaConfig(process.env),
+                    new Date(),
+                  );
           } catch (err) {
             throw new BadRequestException(
               err instanceof Error

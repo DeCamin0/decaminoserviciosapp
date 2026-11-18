@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { routes } from '../utils/routes';
 import { usePermissions } from '../hooks/usePermissions';
 import { Notification } from '../components/ui';
@@ -22,6 +22,58 @@ import {
 import { formatJornadaPreview } from './presupuestos-v2/JornadaDigitalesEditors.utils';
 import { ContenidoLineaEditor } from './presupuestos-v2/ContenidoLineaEditor';
 import { useSyncedTab } from '../hooks/useSyncedTab';
+
+function etiquetaEstado(estado) {
+  if (estado === 'ENVIADO') return 'Enviado';
+  if (estado === 'FIRMADO') return 'Firmado';
+  if (estado === 'NO_CONFIRMADO') return 'No confirmado';
+  if (estado === 'RECHAZADO') return 'Rechazado';
+  if (estado === 'EMITIDO') return 'Emitido';
+  return 'Borrador';
+}
+
+function claseEstado(estado) {
+  if (estado === 'ENVIADO') return 'bg-sky-100 text-sky-800';
+  if (estado === 'FIRMADO') return 'bg-emerald-100 text-emerald-800';
+  if (estado === 'NO_CONFIRMADO') return 'bg-slate-200 text-slate-700';
+  if (estado === 'RECHAZADO') return 'bg-rose-100 text-rose-800';
+  if (estado === 'EMITIDO') return 'bg-emerald-100 text-emerald-800';
+  return 'bg-amber-100 text-amber-800';
+}
+
+function ibanVisible(value) {
+  return String(value || '')
+    .replace(/\s+/g, '')
+    .toUpperCase()
+    .replace(/(.{4})/g, '$1 ')
+    .trim();
+}
+
+function diasRestantesOferta(presupuesto) {
+  const raw = presupuesto?.cliente_overrides_json?.enviado_at;
+  if (!raw) return null;
+  const inicio = new Date(raw);
+  if (Number.isNaN(inicio.getTime())) return null;
+  const brand = presupuesto.snapshot_brand_json || {};
+  const cfg = brand.config || brand.config_json || {};
+  const n = Number(cfg.validez_dias ?? cfg.validezDias);
+  const validez = Number.isFinite(n) && n > 0 ? Math.floor(n) : 60;
+  const fin = new Date(inicio);
+  fin.setUTCDate(fin.getUTCDate() + validez);
+  return Math.max(0, Math.ceil((fin.getTime() - Date.now()) / 86400000));
+}
+
+function cuentasDeEmpresa(company) {
+  const raw = company?.datos_fiscales_json?.cuentas_cobro;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((cuenta) => ({
+      id: String(cuenta?.id || ''),
+      banco: String(cuenta?.banco || '').trim(),
+      iban: ibanVisible(cuenta?.iban),
+    }))
+    .filter((cuenta) => cuenta.id && cuenta.banco && cuenta.iban);
+}
 
 function authHeaders() {
   const token = localStorage.getItem('auth_token');
@@ -54,6 +106,12 @@ async function apiJson(url, options = {}) {
   return data;
 }
 
+const CONDICIONES_ECONOMICAS_DEFECTO = [
+  'Facturación mensual mediante recibo domiciliado.',
+  'El pago se realizará dentro de los últimos 5 días hábiles del mes en curso.',
+  'El presupuesto tiene una validez de 60 días desde su emisión.',
+].join('\n');
+
 export default function PresupuestosV2Page() {
   const { hasPermission } = usePermissions();
   const canConfig = hasPermission('presupuestos-v2-config');
@@ -70,6 +128,18 @@ export default function PresupuestosV2Page() {
     type: 'success',
     title: '',
     message: '',
+  });
+  const [enviarModal, setEnviarModal] = useState({
+    open: false,
+    id: null,
+    email: '',
+    mensaje: '',
+    numero: '',
+    cliente: '',
+    cuentas: [],
+    cuentaId: '',
+    reenvio: false,
+    diasRestantes: null,
   });
   const [confirmModal, setConfirmModal] = useState({
     open: false,
@@ -141,6 +211,12 @@ export default function PresupuestosV2Page() {
   const [draft, setDraft] = useState(null);
   const [lineInputs, setLineInputs] = useState({}); // opcionId -> inputs
   const [lineResults, setLineResults] = useState({}); // opcionId -> resultado
+  const [liveSave, setLiveSave] = useState('');
+  const draftRef = useRef(null);
+  const lineInputsRef = useRef({});
+  const calcSeq = useRef(0);
+  draftRef.current = draft;
+  lineInputsRef.current = lineInputs;
   const [calcTotales, setCalcTotales] = useState(null);
   const [totalesDocumento, setTotalesDocumento] = useState(null);
   const [emitConflict, setEmitConflict] = useState(null);
@@ -151,6 +227,9 @@ export default function PresupuestosV2Page() {
     observaciones_documento: '',
     contacto_especifico: '',
   });
+  const [condicionesEconomicas, setCondicionesEconomicas] = useState(
+    CONDICIONES_ECONOMICAS_DEFECTO,
+  );
 
   const clearFlash = () => {
     setNotif((n) => ({ ...n, open: false }));
@@ -259,6 +338,11 @@ export default function PresupuestosV2Page() {
       observaciones_documento: o.observaciones_documento || '',
       contacto_especifico: o.contacto_especifico || '',
     });
+    setCondicionesEconomicas(
+      Array.isArray(o.condiciones_economicas)
+        ? o.condiciones_economicas.join('\n')
+        : CONDICIONES_ECONOMICAS_DEFECTO,
+    );
   };
 
   const openEdit = async (id) => {
@@ -312,43 +396,123 @@ export default function PresupuestosV2Page() {
     }
   };
 
-  const runCalcular = async () => {
-    if (!draft?.id || draft.estado === 'EMITIDO') return;
-    clearFlash();
-    setLoading(true);
-    try {
-      const lineas = [];
-      (draft.servicios || []).forEach((line) => {
-        const sid = line.servicio?.id || line.id;
-        const ops = line.opciones?.length ? line.opciones : [{ id: null, inputs_json: line.inputs_json }];
-        ops.forEach((op) => {
-          lineas.push({
-            servicio_comercial_id: sid,
-            opcion_id: op.id || undefined,
-            inputs: (op.id != null ? lineInputs[op.id] : null) || op.inputs_json || {},
-          });
+  const collectLineas = (sourceDraft, inputsMap) => {
+    const lineas = [];
+    (sourceDraft?.servicios || []).forEach((line) => {
+      const sid = line.servicio?.id || line.id;
+      const ops = line.opciones?.length
+        ? line.opciones
+        : [{ id: null, inputs_json: line.inputs_json }];
+      ops.forEach((op) => {
+        lineas.push({
+          servicio_comercial_id: sid,
+          opcion_id: op.id || undefined,
+          inputs:
+            (op.id != null ? inputsMap[op.id] : null) || op.inputs_json || {},
         });
       });
-      const res = await apiJson(routes.v2PresupuestoCalcular(draft.id), {
-        method: 'POST',
-        body: JSON.stringify({ lineas, persist: true }),
+    });
+    return lineas;
+  };
+
+  const netMoney = (bruto, pct) => {
+    const p = Number(pct) || 0;
+    if (!bruto || p <= 0) return bruto || null;
+    const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const cut = (n) => round2(n * (p / 100));
+    const d = {
+      mensualidad_sin_iva: cut(bruto.mensualidad_sin_iva),
+      mensualidad_con_iva: cut(bruto.mensualidad_con_iva),
+      anualidad_sin_iva: cut(bruto.anualidad_sin_iva),
+      anualidad_con_iva: cut(bruto.anualidad_con_iva),
+    };
+    return {
+      mensualidad_sin_iva: round2(bruto.mensualidad_sin_iva - d.mensualidad_sin_iva),
+      mensualidad_con_iva: round2(bruto.mensualidad_con_iva - d.mensualidad_con_iva),
+      anualidad_sin_iva: round2(bruto.anualidad_sin_iva - d.anualidad_sin_iva),
+      anualidad_con_iva: round2(bruto.anualidad_con_iva - d.anualidad_con_iva),
+    };
+  };
+
+  const applyCalcData = (data) => {
+    const results = {};
+    (data?.lineas || []).forEach((line) => {
+      (line.opciones || []).forEach((op) => {
+        if (op.opcion_id != null && op.resultado) {
+          results[op.opcion_id] = op.resultado;
+        }
       });
-      const data = res.data;
-      setCalcTotales(data.totales);
-      setTotalesDocumento(data.totales_documento || null);
-      setEmitConflict(null);
-      const refreshed = await apiJson(routes.v2Presupuesto(draft.id));
-      hydrateEditor(refreshed.data);
-      flashOk('Cálculo guardado en el borrador');
+    });
+    if (Object.keys(results).length) {
+      setLineResults((prev) => ({ ...prev, ...results }));
+    }
+    const doc = data?.totales_documento || null;
+    const pct =
+      Number(doc?.descuento_fidelidad_pct) ||
+      Number(draftRef.current?.descuento_fidelidad_pct) ||
+      0;
+    const bruto = doc?.totales_brutos || data?.totales || null;
+    const net = doc?.totales_brutos ? data?.totales : netMoney(bruto, pct);
+    setCalcTotales(net);
+    setTotalesDocumento(
+      doc
+        ? {
+            ...doc,
+            totales: net,
+            totales_sin_alternativas: net,
+            totales_brutos: bruto,
+            descuento_fidelidad_pct: pct,
+          }
+        : null,
+    );
+    setEmitConflict(null);
+  };
+
+  const persistCalculo = async ({ quiet }) => {
+    const source = draftRef.current;
+    if (!source?.id || source.estado !== 'BORRADOR') return;
+    const seq = ++calcSeq.current;
+    if (!quiet) {
+      clearFlash();
+      setLoading(true);
+    }
+    setLiveSave('guardando');
+    try {
+      const res = await apiJson(routes.v2PresupuestoCalcular(source.id), {
+        method: 'POST',
+        body: JSON.stringify({
+          lineas: collectLineas(source, lineInputsRef.current),
+          persist: true,
+        }),
+      });
+      if (seq !== calcSeq.current) return;
+      applyCalcData(res.data);
+      setLiveSave('guardado');
+      if (!quiet) flashOk('Cálculo guardado en este borrador');
     } catch (e) {
-      flashErr(e.message);
+      if (seq !== calcSeq.current) return;
+      setLiveSave('error');
+      if (!quiet) flashErr(e.message);
     } finally {
-      setLoading(false);
+      if (!quiet && seq === calcSeq.current) setLoading(false);
     }
   };
 
+  const runCalcular = () => persistCalculo({ quiet: false });
+
+  useEffect(() => {
+    const source = draftRef.current;
+    if (tab !== 'editor' || !source?.id || source.estado !== 'BORRADOR') return;
+    const timer = setTimeout(() => {
+      persistCalculo({ quiet: true });
+    }, 450);
+    return () => clearTimeout(timer);
+    // Recalcula el mismo borrador al editar inputs. No crea otro documento.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineInputs, tab, draft?.id, draft?.estado]);
+
   const addVariante = async (lineaId) => {
-    if (!draft?.id || draft.estado === 'EMITIDO') return;
+    if (!draft?.id || draft.estado !== 'BORRADOR') return;
     clearFlash();
     setLoading(true);
     try {
@@ -366,7 +530,7 @@ export default function PresupuestosV2Page() {
   };
 
   const renameOpcion = async (opcionId, etiqueta) => {
-    if (!draft?.id || draft.estado === 'EMITIDO') return;
+    if (!draft?.id || draft.estado !== 'BORRADOR') return;
     try {
       const res = await apiJson(routes.v2PresupuestoOpcion(draft.id, opcionId), {
         method: 'PUT',
@@ -379,7 +543,7 @@ export default function PresupuestosV2Page() {
   };
 
   const setSeleccionTipo = async (opcionId, seleccion_tipo) => {
-    if (!draft?.id || draft.estado === 'EMITIDO') return;
+    if (!draft?.id || draft.estado !== 'BORRADOR') return;
     try {
       const res = await apiJson(routes.v2PresupuestoOpcion(draft.id, opcionId), {
         method: 'PUT',
@@ -392,7 +556,7 @@ export default function PresupuestosV2Page() {
   };
 
   const saveJornada = async (opcionId, jornada) => {
-    if (!draft?.id || draft.estado === 'EMITIDO') return;
+    if (!draft?.id || draft.estado !== 'BORRADOR') return;
     setLoading(true);
     try {
       const res = await apiJson(routes.v2PresupuestoOpcion(draft.id, opcionId), {
@@ -409,7 +573,7 @@ export default function PresupuestosV2Page() {
   };
 
   const saveDigitales = async (servicios_digitales) => {
-    if (!draft?.id || draft.estado === 'EMITIDO') return;
+    if (!draft?.id || draft.estado !== 'BORRADOR') return;
     setLoading(true);
     try {
       const res = await apiJson(routes.v2PresupuestoDigitales(draft.id), {
@@ -426,7 +590,7 @@ export default function PresupuestosV2Page() {
   };
 
   const saveDescuentoFidelidad = async (pct) => {
-    if (!draft?.id || draft.estado === 'EMITIDO') return;
+    if (!draft?.id || draft.estado !== 'BORRADOR') return;
     setLoading(true);
     try {
       const res = await apiJson(routes.v2PresupuestoDescuentoFidelidad(draft.id), {
@@ -480,7 +644,7 @@ export default function PresupuestosV2Page() {
   };
 
   const deleteOpcion = async (opcionId) => {
-    if (!draft?.id || draft.estado === 'EMITIDO') return;
+    if (!draft?.id || draft.estado !== 'BORRADOR') return;
     askConfirm({
       title: 'Eliminar opción',
       message: '¿Eliminar esta variante del servicio?',
@@ -506,7 +670,7 @@ export default function PresupuestosV2Page() {
   };
 
   const duplicateOpcion = async (opcionId) => {
-    if (!draft?.id || draft.estado === 'EMITIDO') return;
+    if (!draft?.id || draft.estado !== 'BORRADOR') return;
     setLoading(true);
     try {
       const res = await apiJson(
@@ -576,8 +740,30 @@ export default function PresupuestosV2Page() {
     });
   };
 
+  const saveCondicionesEconomicas = async () => {
+    if (!draft?.id || draft.estado !== 'BORRADOR') return;
+    clearFlash();
+    setLoading(true);
+    try {
+      const lineas = condicionesEconomicas
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const res = await apiJson(routes.v2PresupuestoClienteOverrides(draft.id), {
+        method: 'PUT',
+        body: JSON.stringify({ condiciones_economicas: lineas }),
+      });
+      hydrateEditor(res.data);
+      flashOk('Condiciones económicas guardadas en este borrador');
+    } catch (e) {
+      flashErr(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const saveOverrides = async () => {
-    if (!draft?.id || draft.estado === 'EMITIDO') return;
+    if (!draft?.id || draft.estado !== 'BORRADOR') return;
     clearFlash();
     setLoading(true);
     try {
@@ -595,7 +781,7 @@ export default function PresupuestosV2Page() {
   };
 
   const refreshCliente = async () => {
-    if (!draft?.id || draft.estado === 'EMITIDO') return;
+    if (!draft?.id || draft.estado !== 'BORRADOR') return;
     clearFlash();
     setLoading(true);
     try {
@@ -613,7 +799,7 @@ export default function PresupuestosV2Page() {
   };
 
   const executeEmitir = async (confirmChanged = false) => {
-    if (!draft?.id || draft.estado === 'EMITIDO') return;
+    if (!draft?.id || draft.estado !== 'BORRADOR') return;
     clearFlash();
     setLoading(true);
     setBusyLabel('Emitiendo…');
@@ -643,7 +829,7 @@ export default function PresupuestosV2Page() {
   };
 
   const runEmitir = (confirmChanged = false) => {
-    if (!draft?.id || draft.estado === 'EMITIDO') return;
+    if (!draft?.id || draft.estado !== 'BORRADOR') return;
     const totales =
       calcTotales ||
       Object.values(lineResults).reduce(
@@ -689,6 +875,74 @@ export default function PresupuestosV2Page() {
     });
   };
 
+  const executeEmitirDesdeLista = async (p, confirmChanged = false) => {
+    if (!p?.id || p.estado !== 'BORRADOR') return;
+    clearFlash();
+    setLoading(true);
+    setBusyLabel('Emitiendo…');
+    try {
+      const res = await apiJson(routes.v2PresupuestoEmitir(p.id), {
+        method: 'POST',
+        body: JSON.stringify({ confirm_changed_totals: confirmChanged }),
+      });
+      await loadLista();
+      if (draftRef.current?.id === p.id) {
+        const refreshed = await apiJson(routes.v2Presupuesto(p.id));
+        hydrateEditor(refreshed.data);
+      }
+      flashOk(`Presupuesto emitido: ${res.data.numero}`, 'Emitido');
+    } catch (e) {
+      if (e.code === 'CALCULATION_CHANGED' || e.payload?.code === 'CALCULATION_CHANGED') {
+        const actual = e.payload?.total_actual;
+        const totalTxt =
+          actual?.mensualidad_sin_iva != null
+            ? ` Total recalculado: ${money(actual.mensualidad_sin_iva)} € mensual s/IVA.`
+            : '';
+        askConfirm({
+          title: 'El cálculo ha cambiado',
+          message: `El total guardado no coincide con el cálculo actual.${totalTxt}\n\n¿Emitir con el total recalculado?`,
+          type: 'warning',
+          confirmText: 'Emitir',
+          cancelText: 'Cancelar',
+          onConfirm: () => {
+            void executeEmitirDesdeLista(p, true);
+          },
+        });
+      } else {
+        flashErr(e.message);
+      }
+    } finally {
+      setLoading(false);
+      setBusyLabel('');
+    }
+  };
+
+  const emitirDesdeLista = (p) => {
+    if (!p?.id || p.estado !== 'BORRADOR') return;
+    const serviciosTxt = (p.servicios || [])
+      .map((s) => s.nombre)
+      .filter(Boolean)
+      .join(', ');
+    askConfirm({
+      title: 'Emitir presupuesto',
+      message: [
+        `Cliente: ${p.cliente_nombre || 'Sin cliente'}`,
+        `Marca: ${p.brand?.nombre || '—'}`,
+        serviciosTxt ? `Servicios: ${serviciosTxt}` : null,
+        '',
+        'Al emitir se asignará un número oficial y los datos económicos quedarán bloqueados.',
+      ]
+        .filter((line) => line != null)
+        .join('\n'),
+      type: 'info',
+      confirmText: 'Emitir',
+      cancelText: 'Cancelar',
+      onConfirm: () => {
+        void executeEmitirDesdeLista(p, false);
+      },
+    });
+  };
+
   const openPdf = async (id, mode) => {
     clearFlash();
     setLoading(true);
@@ -712,6 +966,123 @@ export default function PresupuestosV2Page() {
       );
     } catch (e) {
       flashErr(e.message, 'Error PDF');
+    } finally {
+      setLoading(false);
+      setBusyLabel('');
+    }
+  };
+
+  const openEnviar = async (id) => {
+    clearFlash();
+    setLoading(true);
+    try {
+      const data = await apiJson(routes.v2Presupuesto(id));
+      const p = data.data;
+      if (p.estado === 'BORRADOR') {
+        flashErr('Emite el presupuesto antes de enviarlo');
+        return;
+      }
+      const c = p.snapshot_cliente_json || {};
+      const o = p.cliente_overrides_json || {};
+      const reenvio =
+        Boolean(o.enviado_at) ||
+        p.estado === 'ENVIADO' ||
+        p.estado === 'FIRMADO' ||
+        p.estado === 'NO_CONFIRMADO' ||
+        p.estado === 'RECHAZADO';
+      const cuentas = cuentasDeEmpresa(p.company);
+      const guardada = o.cuenta_cobro?.id;
+      const cuentaId = cuentas.some((cuenta) => cuenta.id === guardada)
+        ? guardada
+        : cuentas.length === 1
+          ? cuentas[0].id
+          : '';
+      setEnviarModal({
+        open: true,
+        id: p.id,
+        email: o.email_envio || c.email_envio || c.email || '',
+        mensaje: '',
+        numero: p.numero || p.identificador_ui || '',
+        cliente: p.cliente_nombre || c.nombre || '',
+        cuentas,
+        cuentaId,
+        reenvio,
+        diasRestantes: reenvio ? diasRestantesOferta(p) : null,
+      });
+    } catch (e) {
+      flashErr(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const pedirConfirmacionEnviar = () => {
+    const email = String(enviarModal.email || '').trim();
+    if (!enviarModal.id || !email) {
+      flashErr('Indica el email del cliente');
+      return;
+    }
+    if (!enviarModal.reenvio && enviarModal.cuentas.length > 1 && !enviarModal.cuentaId) {
+      flashErr('Elige la cuenta que verá el cliente si paga por transferencia');
+      return;
+    }
+    const cuenta = enviarModal.reenvio
+      ? null
+      : enviarModal.cuentas.find((item) => item.id === enviarModal.cuentaId);
+    const plazo =
+      enviarModal.reenvio && enviarModal.diasRestantes != null
+        ? enviarModal.diasRestantes === 0
+          ? 'El plazo de la oferta ha terminado.'
+          : `Quedan ${enviarModal.diasRestantes} día${enviarModal.diasRestantes === 1 ? '' : 's'} para aceptar la oferta.`
+        : null;
+    askConfirm({
+      title: enviarModal.reenvio ? 'Reenviar copia' : 'Confirmar envío',
+      message: [
+        enviarModal.reenvio
+          ? `Se reenvía la misma copia${enviarModal.numero ? ` ${enviarModal.numero}` : ''} a:`
+          : `Se enviará el PDF oficial${enviarModal.numero ? ` ${enviarModal.numero}` : ''} a:`,
+        email,
+        enviarModal.cliente ? `Cliente: ${enviarModal.cliente}` : null,
+        cuenta ? `Transferencia: ${cuenta.banco} ${cuenta.iban}` : null,
+        plazo,
+        enviarModal.reenvio ? 'El presupuesto ya enviado no se modifica.' : null,
+        '',
+        'El correo no sale hasta que confirmes.',
+      ]
+        .filter((line) => line != null)
+        .join('\n'),
+      type: 'warning',
+      confirmText: 'Enviar ahora',
+      cancelText: 'Volver',
+      onConfirm: () => {
+        void submitEnviar();
+      },
+    });
+  };
+
+  const submitEnviar = async () => {
+    const email = String(enviarModal.email || '').trim();
+    if (!enviarModal.id || !email) {
+      flashErr('Indica el email del cliente');
+      return;
+    }
+    setLoading(true);
+    setBusyLabel('Enviando presupuesto…');
+    try {
+      const res = await apiJson(routes.v2PresupuestoEnviarEmail(enviarModal.id), {
+        method: 'POST',
+        body: JSON.stringify({
+          email,
+          mensaje: enviarModal.mensaje.trim() || undefined,
+          cuenta_cobro_id: enviarModal.reenvio
+            ? undefined
+            : enviarModal.cuentaId || undefined,
+        }),
+      });
+      setEnviarModal((m) => ({ ...m, open: false }));
+      flashOk(res.message || `Presupuesto enviado a ${email}`, 'Enviado');
+    } catch (e) {
+      flashErr(e.message, 'No se pudo enviar');
     } finally {
       setLoading(false);
       setBusyLabel('');
@@ -747,11 +1118,11 @@ export default function PresupuestosV2Page() {
   };
 
   const askDeletePresupuesto = (id, estado) => {
-    const isEmitido = estado === 'EMITIDO';
+    const isOficial = estado !== 'BORRADOR';
     askConfirm({
-      title: isEmitido ? 'Eliminar emitido' : 'Eliminar borrador',
-      message: isEmitido
-        ? '¿Eliminar este presupuesto EMITIDO? (modo prueba — no se puede deshacer)'
+      title: isOficial ? 'Eliminar presupuesto' : 'Eliminar borrador',
+      message: isOficial
+        ? '¿Eliminar este presupuesto? Esta acción no se puede deshacer.'
         : '¿Eliminar este borrador? Esta acción no se puede deshacer.',
       type: 'danger',
       confirmText: 'Eliminar',
@@ -796,7 +1167,7 @@ export default function PresupuestosV2Page() {
               ? [
                   {
                     id: 'editor',
-                    label: draft.estado === 'EMITIDO' ? 'Detalle' : 'Editar',
+                    label: draft.estado === 'BORRADOR' ? 'Editar' : 'Detalle',
                   },
                 ]
               : []),
@@ -841,6 +1212,94 @@ export default function PresupuestosV2Page() {
           show
           onClose={() => setNotif((n) => ({ ...n, open: false }))}
         />
+      )}
+      {enviarModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-5 space-y-3">
+            <h3 className="text-lg font-semibold text-slate-900">
+              {enviarModal.reenvio ? 'Reenviar copia' : 'Enviar presupuesto'}
+            </h3>
+            <p className="text-sm text-slate-600">
+              {enviarModal.reenvio
+                ? 'Se envía el mismo presupuesto, sin cambios, a otro email. El correo no sale hasta que confirmes.'
+                : 'Revisa el email. El PDF y el enlace para firmar en línea no se envían hasta que confirmes en el siguiente paso.'}
+            </p>
+            {enviarModal.reenvio && enviarModal.diasRestantes != null && (
+              <p className="text-sm font-medium text-slate-800">
+                {enviarModal.diasRestantes === 0
+                  ? 'El plazo de la oferta ha terminado.'
+                  : `Quedan ${enviarModal.diasRestantes} día${enviarModal.diasRestantes === 1 ? '' : 's'} para aceptar la oferta.`}
+              </p>
+            )}
+            <label className="block text-sm text-slate-700">
+              Email
+              <input
+                type="email"
+                className="mt-1 w-full border border-slate-300 rounded-xl px-3 py-2"
+                value={enviarModal.email}
+                onChange={(e) =>
+                  setEnviarModal((m) => ({ ...m, email: e.target.value }))
+                }
+              />
+            </label>
+            {!enviarModal.reenvio && (
+            <label className="block text-sm text-slate-700">
+              Cuenta si el cliente paga por transferencia
+              {enviarModal.cuentas.length === 0 ? (
+                <p className="mt-1 text-xs text-amber-700">
+                  No hay cuentas. Añádelas en Configuración → Empresa y marca.
+                </p>
+              ) : (
+                <select
+                  className="mt-1 w-full border border-slate-300 rounded-xl px-3 py-2"
+                  value={enviarModal.cuentaId}
+                  onChange={(e) =>
+                    setEnviarModal((m) => ({ ...m, cuentaId: e.target.value }))
+                  }
+                >
+                  {enviarModal.cuentas.length > 1 && (
+                    <option value="">Selecciona una cuenta</option>
+                  )}
+                  {enviarModal.cuentas.map((cuenta) => (
+                    <option key={cuenta.id} value={cuenta.id}>
+                      {cuenta.banco} · {cuenta.iban}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </label>
+            )}
+            <label className="block text-sm text-slate-700">
+              Mensaje (opcional)
+              <textarea
+                rows={3}
+                className="mt-1 w-full border border-slate-300 rounded-xl px-3 py-2"
+                value={enviarModal.mensaje}
+                onChange={(e) =>
+                  setEnviarModal((m) => ({ ...m, mensaje: e.target.value }))
+                }
+              />
+            </label>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                className="px-3 py-1.5 rounded-xl border text-sm"
+                onClick={() => setEnviarModal((m) => ({ ...m, open: false }))}
+                disabled={loading}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="px-3 py-1.5 rounded-xl bg-sky-700 text-white text-sm disabled:opacity-50"
+                onClick={pedirConfirmacionEnviar}
+                disabled={loading}
+              >
+                {enviarModal.reenvio ? 'Reenviar copia' : 'Revisar envío'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       <ConfirmModal
         isOpen={confirmModal.open}
@@ -891,13 +1350,9 @@ export default function PresupuestosV2Page() {
                             {p.identificador_ui}
                           </span>
                           <span
-                            className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                              p.estado === 'EMITIDO'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}
+                            className={`text-xs px-2 py-0.5 rounded-full font-medium ${claseEstado(p.estado)}`}
                           >
-                            {p.estado === 'EMITIDO' ? 'Emitido' : 'Borrador'}
+                            {etiquetaEstado(p.estado)}
                           </span>
                         </div>
                         <p className="text-sm text-slate-700">
@@ -912,6 +1367,11 @@ export default function PresupuestosV2Page() {
                             ? new Date(p.updated_at).toLocaleString('es-ES')
                             : '—'}
                         </p>
+                        {p.rechazo_motivo && (
+                          <p className="text-xs text-rose-700">
+                            Motivo del rechazo: {p.rechazo_motivo}
+                          </p>
+                        )}
                       </div>
                       {totalMes != null && (
                         <div className="text-right text-sm font-semibold">
@@ -924,6 +1384,14 @@ export default function PresupuestosV2Page() {
                       {p.estado === 'BORRADOR' ? (
                         <>
                           <button type="button" className="text-sm px-3 py-1.5 rounded-lg bg-slate-900 text-white" onClick={() => openEdit(p.id)}>Abrir</button>
+                          <button
+                            type="button"
+                            className="text-sm px-3 py-1.5 rounded-lg bg-emerald-700 text-white disabled:opacity-50"
+                            onClick={() => emitirDesdeLista(p)}
+                            disabled={loading}
+                          >
+                            Emitir
+                          </button>
                           <button type="button" className="text-sm px-3 py-1.5 rounded-lg border" onClick={() => openPdf(p.id, 'preview')}>PDF preview</button>
                         </>
                       ) : (
@@ -931,7 +1399,14 @@ export default function PresupuestosV2Page() {
                           <button type="button" className="text-sm px-3 py-1.5 rounded-lg bg-slate-900 text-white" onClick={() => openEdit(p.id)}>Ver detalle</button>
                           <button type="button" className="text-sm px-3 py-1.5 rounded-lg border" onClick={() => openPdf(p.id, 'oficial')}>PDF</button>
                           <button type="button" className="text-sm px-3 py-1.5 rounded-lg border" onClick={() => crearNuevaVersion(p.id)}>Nueva versión</button>
-                          <button type="button" disabled className="text-sm px-3 py-1.5 rounded-lg border opacity-40 cursor-not-allowed">Enviar</button>
+                          <button
+                            type="button"
+                            className="text-sm px-3 py-1.5 rounded-lg border border-sky-300 text-sky-800 disabled:opacity-50"
+                            onClick={() => openEnviar(p.id)}
+                            disabled={loading}
+                          >
+                            Enviar
+                          </button>
                         </>
                       )}
                       <button
@@ -1080,12 +1555,14 @@ export default function PresupuestosV2Page() {
                 {' · '}
                 <span
                   className={
-                    draft.estado === 'EMITIDO'
-                      ? 'text-emerald-700 font-medium'
-                      : 'text-amber-700 font-medium'
+                    draft.estado === 'BORRADOR'
+                      ? 'text-amber-700 font-medium'
+                      : draft.estado === 'RECHAZADO'
+                        ? 'text-rose-700 font-medium'
+                        : 'text-emerald-700 font-medium'
                   }
                 >
-                  {draft.estado === 'EMITIDO' ? 'Emitido' : 'Borrador'}
+                  {etiquetaEstado(draft.estado)}
                 </span>
                 {draft.emitted_at
                   ? ` · ${new Date(draft.emitted_at).toLocaleDateString('es-ES')}`
@@ -1101,8 +1578,17 @@ export default function PresupuestosV2Page() {
                     disabled={loading}
                     onClick={runCalcular}
                   >
-                    Calcular
+                    Guardar ahora
                   </button>
+                  <span className="self-center text-xs text-slate-500">
+                    {liveSave === 'guardando'
+                      ? 'Guardando en este borrador…'
+                      : liveSave === 'guardado'
+                        ? 'Guardado en este borrador'
+                        : liveSave === 'error'
+                          ? 'No se pudo guardar'
+                          : 'Los cambios actualizan este borrador'}
+                  </span>
                   <button
                     type="button"
                     className="px-3 py-1.5 rounded-xl border text-sm"
@@ -1121,7 +1607,7 @@ export default function PresupuestosV2Page() {
                   </button>
                 </>
               )}
-              {draft.estado === 'EMITIDO' && (
+              {draft.estado !== 'BORRADOR' && (
                 <>
                   <button
                     type="button"
@@ -1139,16 +1625,26 @@ export default function PresupuestosV2Page() {
                   >
                     Nueva versión
                   </button>
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 rounded-xl border border-sky-300 text-sky-800 text-sm disabled:opacity-50"
+                    disabled={loading}
+                    onClick={() => openEnviar(draft.id)}
+                  >
+                    Enviar
+                  </button>
                 </>
               )}
-              <button
-                type="button"
-                className="px-3 py-1.5 rounded-xl border text-sm opacity-50 cursor-not-allowed"
-                disabled
-                title="Próxima fase"
-              >
-                Enviar
-              </button>
+              {draft.estado === 'BORRADOR' && (
+                <button
+                  type="button"
+                  className="px-3 py-1.5 rounded-xl border text-sm opacity-50 cursor-not-allowed"
+                  disabled
+                  title="Emite el presupuesto antes de enviarlo"
+                >
+                  Enviar
+                </button>
+              )}
               <button
                 type="button"
                 className="px-3 py-1.5 rounded-xl border text-sm"
@@ -1195,7 +1691,7 @@ export default function PresupuestosV2Page() {
           {/* Cliente */}
           <section className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3 shadow-sm">
             <h3 className="text-base font-semibold text-slate-900">Cliente</h3>
-            {draft.estado === 'EMITIDO' ? (
+            {draft.estado !== 'BORRADOR' ? (
               <div className="text-sm text-slate-700 space-y-1">
                 {clienteDisplayLines(mergeClienteWorking(draft)).map((line) => (
                   <p key={line}>{line}</p>
@@ -1265,7 +1761,12 @@ export default function PresupuestosV2Page() {
           <div className="grid gap-4 lg:grid-cols-2">
             {(calcTotales || draft.totales_emitidos_json) && (
               <section className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm">
-                <h3 className="text-base font-semibold text-slate-900 mb-3">Oferta</h3>
+                <h3 className="text-base font-semibold text-slate-900 mb-3">
+                  Oferta
+                  {Number(totalesDocumento?.descuento_fidelidad_pct) > 0
+                    ? ` (neto, fidelidad ${totalesDocumento.descuento_fidelidad_pct}%)`
+                    : ''}
+                </h3>
                 <div className="space-y-2 text-sm">
                   {[
                     ['mensualidad_sin_iva', 'Mensual sin IVA'],
@@ -1297,9 +1798,15 @@ export default function PresupuestosV2Page() {
               <div className="space-y-2 text-sm text-slate-700">
                 <p>
                   <span className="text-slate-500">Estado: </span>
-                  {draft.estado === 'EMITIDO' ? 'Emitido' : 'Borrador'}
+                  {etiquetaEstado(draft.estado)}
                 </p>
-                {draft.estado === 'EMITIDO' && (
+                {draft.cliente_overrides_json?.rechazo?.motivo && (
+                  <p>
+                    <span className="text-slate-500">Motivo del rechazo: </span>
+                    {draft.cliente_overrides_json.rechazo.motivo}
+                  </p>
+                )}
+                {draft.estado !== 'BORRADOR' && (
                   <>
                     <p>
                       <span className="text-slate-500">Número: </span>
@@ -1391,7 +1898,7 @@ export default function PresupuestosV2Page() {
 
                   <ContenidoLineaEditor
                     value={
-                      draft.estado === 'EMITIDO'
+                      draft.estado !== 'BORRADOR'
                         ? (
                             draft.snapshot_economico_json?.lineas || []
                           ).find((l) => l.servicio_comercial_id === sid)
@@ -1400,7 +1907,7 @@ export default function PresupuestosV2Page() {
                         : line.contenido_comercial
                     }
                     personalizado={!!line.contenido_personalizado}
-                    disabled={draft.estado === 'EMITIDO'}
+                    disabled={draft.estado !== 'BORRADOR'}
                     onSave={(cc) => saveLineaContenido(line.linea_id, cc)}
                     onRestore={() => restoreLineaContenido(line.linea_id)}
                   />
@@ -1412,7 +1919,7 @@ export default function PresupuestosV2Page() {
                       op.inputs_json ||
                       {};
                     let resultado = null;
-                    if (draft.estado === 'EMITIDO') {
+                    if (draft.estado !== 'BORRADOR') {
                       const snapLine = (
                         draft.snapshot_economico_json?.lineas || []
                       ).find((l) => l.servicio_comercial_id === sid);
@@ -1525,7 +2032,7 @@ export default function PresupuestosV2Page() {
                         )}
                         {oid && (
                           <JornadaEditor
-                            disabled={draft.estado === 'EMITIDO'}
+                            disabled={draft.estado !== 'BORRADOR'}
                             value={op.jornada_json || {}}
                             onChange={(jornada) => {
                               /* local only until blur/save */
@@ -1552,8 +2059,12 @@ export default function PresupuestosV2Page() {
                             Guardar jornada
                           </button>
                         )}
-                        {draft.estado === 'EMITIDO' ? (
-                          <ResultadoBreakdown resultado={resultado} commercialOnly />
+                        {draft.estado !== 'BORRADOR' ? (
+                          <ResultadoBreakdown
+                            resultado={resultado}
+                            commercialOnly
+                            descuentoPct={draft.descuento_fidelidad_pct}
+                          />
                         ) : (
                           <>
                             <MotorInputsForm
@@ -1574,6 +2085,10 @@ export default function PresupuestosV2Page() {
                               <ResultadoBreakdown
                                 resultado={resultado}
                                 commercialOnly
+                                descuentoPct={
+                                  draft.descuento_fidelidad_pct ??
+                                  totalesDocumento?.descuento_fidelidad_pct
+                                }
                               />
                             </div>
                           </>
@@ -1596,7 +2111,7 @@ export default function PresupuestosV2Page() {
                     min={0}
                     max={100}
                     step={0.01}
-                    disabled={draft.estado === 'EMITIDO'}
+                    disabled={draft.estado !== 'BORRADOR'}
                     className="mt-1 block w-28 border border-slate-200 rounded-lg px-2 py-1.5 bg-white disabled:bg-slate-50"
                     defaultValue={
                       draft.descuento_fidelidad_pct ??
@@ -1644,9 +2159,37 @@ export default function PresupuestosV2Page() {
               </p>
             </div>
 
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-2">
+              <h4 className="text-sm font-medium text-slate-800">
+                Condiciones económicas de la oferta
+              </h4>
+              <p className="text-xs text-slate-500">
+                Una condición por línea. Salen en el PDF, bajo la tabla de precios
+                de este borrador. No cambian la ficha de la empresa ni la de otros
+                clientes.
+              </p>
+              <textarea
+                className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm disabled:bg-slate-50"
+                rows={4}
+                disabled={draft.estado !== 'BORRADOR'}
+                value={condicionesEconomicas}
+                onChange={(e) => setCondicionesEconomicas(e.target.value)}
+              />
+              {draft.estado === 'BORRADOR' && (
+                <button
+                  type="button"
+                  className="px-3 py-1.5 rounded-xl border border-slate-300 text-sm"
+                  onClick={saveCondicionesEconomicas}
+                  disabled={loading}
+                >
+                  Guardar condiciones
+                </button>
+              )}
+            </div>
+
             <DigitalesEditor
               items={draft.servicios_digitales || draft.servicios_digitales_json || []}
-              disabled={draft.estado === 'EMITIDO'}
+              disabled={draft.estado !== 'BORRADOR'}
               onSave={saveDigitales}
             />
             {(totalesDocumento?.ambiguo || calcTotales) && (

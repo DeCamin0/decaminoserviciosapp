@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { moneyEs } from './v2UiHelpers';
 import {
   auxiliaresB4,
@@ -105,6 +106,7 @@ function FieldPair({
   value,
   onChange,
   subtotalText,
+  hint,
   hideC = false,
   cReadOnly = false,
   cDisplay,
@@ -157,6 +159,7 @@ function FieldPair({
         )}
       </div>
       <SubtotalLine text={subtotalText} />
+      {hint ? <p className="text-xs text-slate-500 mt-1">{hint}</p> : null}
     </div>
   );
 }
@@ -165,8 +168,51 @@ function setPath(obj, key, val) {
   return { ...obj, [key]: val };
 }
 
+/** Misma cifra que el presupuesto anterior: 8 h × 365 días. No sale de Horas/día. */
+const NOCTURNIDAD_BASE = 8 * 365;
+
+function withNocturnidadBase(inputs) {
+  const prev =
+    inputs?.nocturnidad && typeof inputs.nocturnidad === 'object'
+      ? inputs.nocturnidad
+      : { c: 0.77 };
+  return {
+    ...inputs,
+    nocturnidad: { ...prev, b: NOCTURNIDAD_BASE },
+  };
+}
+
 function AuxiliaresForm({ inputs, onChange, resultado }) {
   const i = inputs || {};
+  const onChangeRef = useRef(onChange);
+  const inputsRef = useRef(i);
+  onChangeRef.current = onChange;
+  inputsRef.current = i;
+
+  useEffect(() => {
+    const cur = inputsRef.current || {};
+    let next = cur;
+    const noctB = n(cur.nocturnidad?.b);
+    const noctFromHoras = n(cur.horasDiarias) * 365;
+    if (
+      cur.aplicaNocturnidad &&
+      (noctB === 0 || (noctFromHoras !== NOCTURNIDAD_BASE && noctB === noctFromHoras))
+    ) {
+      next = withNocturnidadBase(next);
+    }
+    const h = n(cur.horasDiarias);
+    const fdsFromHoras = h * 2 * 52 + h * 15;
+    const fdsB = n(cur.finDeSemana?.b);
+    if (fdsFromHoras !== 952 && fdsB === fdsFromHoras) {
+      const prev =
+        cur.finDeSemana && typeof cur.finDeSemana === 'object'
+          ? cur.finDeSemana
+          : { c: 0.22 };
+      next = { ...next, finDeSemana: { ...prev, b: 952 } };
+    }
+    if (next !== cur) onChangeRef.current(next);
+  }, [i.aplicaNocturnidad, i.horasDiarias, i.nocturnidad?.b, i.finDeSemana?.b]);
+
   const hd = auxiliaresHeadcount(i, resultado);
   const B4 = auxiliaresB4(i, resultado);
   const autoUnif = i.aplicaUniformidadAuto !== false;
@@ -183,7 +229,7 @@ function AuxiliaresForm({ inputs, onChange, resultado }) {
   const vig = bc(i.vigilancia, { b: 8.4, c: 1 });
   const gasto = bc(i.gastosFijoHoras, { b: 1.1, c: 0 });
   const benef = bc(i.beneficioEmpresarial, { b: 0, c: 1 });
-  const noct = bc(i.nocturnidad, { b: 0, c: 0.77 });
+  const noct = bc(i.nocturnidad, { b: NOCTURNIDAD_BASE, c: 0.77 });
   const fds = bc(i.finDeSemana, { b: 952, c: 0.22 });
 
   return (
@@ -245,7 +291,10 @@ function AuxiliaresForm({ inputs, onChange, resultado }) {
           <FieldBool
             label="Aplicar nocturnidad"
             value={!!i.aplicaNocturnidad}
-            onChange={(v) => onChange(setPath(i, 'aplicaNocturnidad', v))}
+            onChange={(v) => {
+              const next = setPath(i, 'aplicaNocturnidad', v);
+              onChange(v ? withNocturnidadBase(next) : next);
+            }}
           />
           {i.aplicaNocturnidad ? (
             <FieldPair
@@ -254,9 +303,8 @@ function AuxiliaresForm({ inputs, onChange, resultado }) {
               labelC="Coeficiente"
               value={i.nocturnidad}
               onChange={(v) => onChange(setPath(i, 'nocturnidad', v))}
-              subtotalText={
-                pairSubtotalNoctOrFds(noct.b, noct.c, 'D12', resultado).text
-              }
+              hint="8 × 365 = 2.920 h/año. No usa las horas/día del formulario."
+              subtotalText={pairSubtotalNoctOrFds(noct.b, noct.c).text}
             />
           ) : null}
 
@@ -272,9 +320,7 @@ function AuxiliaresForm({ inputs, onChange, resultado }) {
               labelC="Coeficiente"
               value={i.finDeSemana}
               onChange={(v) => onChange(setPath(i, 'finDeSemana', v))}
-              subtotalText={
-                pairSubtotalNoctOrFds(fds.b, fds.c, 'D14', resultado).text
-              }
+              subtotalText={pairSubtotalNoctOrFds(fds.b, fds.c).text}
             />
           ) : null}
 
@@ -943,8 +989,32 @@ export function MotorInputsForm({ codigoMotor, inputs, onChange, resultado }) {
   );
 }
 
-export function ResultadoBreakdown({ resultado, commercialOnly = false }) {
-  const tot = resultado?.totales || {};
+function netAfterFidelidad(bruto, pct) {
+  const p = Number(pct) || 0;
+  if (!bruto || p <= 0) return bruto || {};
+  const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const descuento = {
+    mensualidad_sin_iva: round2(bruto.mensualidad_sin_iva * (p / 100)),
+    mensualidad_con_iva: round2(bruto.mensualidad_con_iva * (p / 100)),
+    anualidad_sin_iva: round2(bruto.anualidad_sin_iva * (p / 100)),
+    anualidad_con_iva: round2(bruto.anualidad_con_iva * (p / 100)),
+  };
+  return {
+    mensualidad_sin_iva: round2(bruto.mensualidad_sin_iva - descuento.mensualidad_sin_iva),
+    mensualidad_con_iva: round2(bruto.mensualidad_con_iva - descuento.mensualidad_con_iva),
+    anualidad_sin_iva: round2(bruto.anualidad_sin_iva - descuento.anualidad_sin_iva),
+    anualidad_con_iva: round2(bruto.anualidad_con_iva - descuento.anualidad_con_iva),
+  };
+}
+
+export function ResultadoBreakdown({
+  resultado,
+  commercialOnly = false,
+  descuentoPct = 0,
+}) {
+  const bruto = resultado?.totales || {};
+  const pct = Number(descuentoPct) || 0;
+  const tot = netAfterFidelidad(bruto, pct);
 
   if (!resultado) {
     return <p className="text-sm text-slate-500">Sin cálculo todavía.</p>;
@@ -954,7 +1024,9 @@ export function ResultadoBreakdown({ resultado, commercialOnly = false }) {
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
         <div className="bg-white border border-slate-200 rounded-xl p-3">
-          <div className="text-xs text-slate-500">Mensual sin IVA</div>
+          <div className="text-xs text-slate-500">
+            Mensual sin IVA{pct > 0 ? ' (neto)' : ''}
+          </div>
           <div className="font-semibold text-slate-900 tabular-nums">
             {moneyEs(tot.mensualidad_sin_iva)} €
           </div>
@@ -978,6 +1050,12 @@ export function ResultadoBreakdown({ resultado, commercialOnly = false }) {
           </div>
         </div>
       </div>
+      {pct > 0 ? (
+        <p className="text-xs text-slate-500">
+          Antes del descuento por fidelidad {pct}%: {moneyEs(bruto.mensualidad_sin_iva)} €/mes
+          sin IVA. El importe de arriba es el neto, el mismo criterio que el total del borrador.
+        </p>
+      ) : null}
       {resultado.descripcion && (
         <p className="text-sm text-slate-700">{resultado.descripcion}</p>
       )}

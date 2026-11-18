@@ -11,6 +11,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CalculadoraV2Service } from './calculadora/calculadora-v2.service';
 import { EmitirV2Service } from './emit/emitir-v2.service';
+import { PresupuestosV2PdfService } from './pdf/presupuestos-v2-pdf.service';
+import { EmailService } from '../services/email.service';
 import { getMotorDefinition, mergeInputs } from './calculadora/motor-registry';
 import { ClienteOverrides } from './emit/cliente.util';
 import { normalizeContenidoComercial } from './config/config-catalog';
@@ -35,9 +37,23 @@ import {
   resolveContenidoEfectivo,
 } from './emit/contenido-local.util';
 import { ContenidoSeedService } from './config/contenido-seed.service';
+import {
+  buildPresupuestoV2FirmarUrl,
+  readPresupuestoFirmaConfig,
+} from '../services/presupuesto-firma-access';
+import { normalizeCuentasCobro } from './emit/cuentas-cobro.util';
 
 const MODULE_ACCESS = 'presupuestos-v2';
 const MODULE_CONFIG = 'presupuestos-v2-config';
+
+function motivoRechazoDe(overrides: unknown): string | null {
+  const motivo = (
+    overrides as { rechazo?: { motivo?: unknown } } | null
+  )?.rechazo?.motivo;
+  if (typeof motivo !== 'string') return null;
+  const text = motivo.trim();
+  return text || null;
+}
 
 type AuthUser = {
   grupo?: string;
@@ -56,6 +72,8 @@ export class PresupuestosV2Service implements OnModuleInit {
     private readonly calculadora: CalculadoraV2Service,
     private readonly emitirService: EmitirV2Service,
     private readonly contenidoSeed: ContenidoSeedService,
+    private readonly pdfService: PresupuestosV2PdfService,
+    private readonly emailService: EmailService,
   ) {}
 
   async onModuleInit() {
@@ -414,6 +432,103 @@ export class PresupuestosV2Service implements OnModuleInit {
   }
 
   // ——— Presupuestos (borrador) ———
+  private validezDiasDe(row: { snapshot_brand_json?: unknown }): number {
+    const brand = (row.snapshot_brand_json || {}) as {
+      config?: Record<string, unknown>;
+      config_json?: Record<string, unknown>;
+    };
+    const cfg = brand.config || brand.config_json || {};
+    const n = Number(cfg.validez_dias ?? cfg.validezDias);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 60;
+  }
+
+  private fechaEnvioDe(row: { cliente_overrides_json?: unknown }): Date | null {
+    const raw = (row.cliente_overrides_json as { enviado_at?: unknown } | null)
+      ?.enviado_at;
+    if (typeof raw !== 'string' || !raw.trim()) return null;
+    const fecha = new Date(raw);
+    return Number.isNaN(fecha.getTime()) ? null : fecha;
+  }
+
+  /** Enviado sin firma pasa a No confirmado a los N días desde el envío, no desde la emisión. */
+  private async reconciliarEstados<
+    T extends {
+      id: number;
+      estado: string;
+      snapshot_brand_json?: unknown;
+      cliente_overrides_json?: unknown;
+    },
+  >(rows: T[]): Promise<T[]> {
+    if (!rows.length) return rows;
+    const firmados = await this.prisma.v2PresupuestoDocumento.findMany({
+      where: {
+        presupuesto_id: { in: rows.map((r) => r.id) },
+        tipo: 'FIRMADO',
+      },
+      select: { presupuesto_id: true },
+    });
+    const firmadoIds = new Set(firmados.map((f) => f.presupuesto_id));
+    const sinFecha = rows
+      .filter(
+        (row) =>
+          row.estado === 'ENVIADO' &&
+          !firmadoIds.has(row.id) &&
+          !this.fechaEnvioDe(row),
+      )
+      .map((row) => row.id);
+    const auditEnvio = new Map<number, Date>();
+    if (sinFecha.length) {
+      const audits = await this.prisma.v2PresupuestoAudit.findMany({
+        where: {
+          presupuesto_id: { in: sinFecha },
+          event_type: 'email_enviado',
+        },
+        select: { presupuesto_id: true, created_at: true },
+        orderBy: { created_at: 'asc' },
+      });
+      for (const audit of audits) {
+        if (!auditEnvio.has(audit.presupuesto_id)) {
+          auditEnvio.set(audit.presupuesto_id, audit.created_at);
+        }
+      }
+    }
+    const aFirmado: number[] = [];
+    const aNoConfirmado: number[] = [];
+    const now = Date.now();
+    for (const row of rows) {
+      if (row.estado === 'BORRADOR') continue;
+      if (firmadoIds.has(row.id)) {
+        if (row.estado !== 'FIRMADO') {
+          row.estado = 'FIRMADO';
+          aFirmado.push(row.id);
+        }
+        continue;
+      }
+      if (row.estado !== 'ENVIADO') continue;
+      const inicio = this.fechaEnvioDe(row) || auditEnvio.get(row.id) || null;
+      if (!inicio) continue;
+      const fin = new Date(inicio);
+      fin.setUTCDate(fin.getUTCDate() + this.validezDiasDe(row));
+      if (now > fin.getTime()) {
+        row.estado = 'NO_CONFIRMADO';
+        aNoConfirmado.push(row.id);
+      }
+    }
+    if (aFirmado.length) {
+      await this.prisma.v2Presupuesto.updateMany({
+        where: { id: { in: aFirmado } },
+        data: { estado: 'FIRMADO' },
+      });
+    }
+    if (aNoConfirmado.length) {
+      await this.prisma.v2Presupuesto.updateMany({
+        where: { id: { in: aNoConfirmado } },
+        data: { estado: 'NO_CONFIRMADO' },
+      });
+    }
+    return rows;
+  }
+
   async listPresupuestos() {
     const rows = await this.prisma.v2Presupuesto.findMany({
       orderBy: { updated_at: 'desc' },
@@ -436,6 +551,7 @@ export class PresupuestosV2Service implements OnModuleInit {
         },
       },
     });
+    await this.reconciliarEstados(rows);
 
     const clienteIds = [
       ...new Set(
@@ -455,6 +571,14 @@ export class PresupuestosV2Service implements OnModuleInit {
         c.NOMBRE_O_RAZON_SOCIAL?.trim() || `Cliente #${c.id}`,
       ]),
     );
+    const firmados = await this.prisma.v2PresupuestoDocumento.findMany({
+      where: {
+        presupuesto_id: { in: rows.map((r) => r.id) },
+        tipo: 'FIRMADO',
+      },
+      select: { presupuesto_id: true },
+    });
+    const firmadoIds = new Set(firmados.map((f) => f.presupuesto_id));
 
     return rows.map((r) => ({
       id: r.id,
@@ -481,6 +605,8 @@ export class PresupuestosV2Service implements OnModuleInit {
       })),
       totales: (r.totales_emitidos_json as any) || null,
       emitted_at: r.emitted_at,
+      tiene_firma: firmadoIds.has(r.id),
+      rechazo_motivo: motivoRechazoDe(r.cliente_overrides_json),
       identificador_ui:
         r.numero ||
         (r.estado === 'BORRADOR'
@@ -508,6 +634,7 @@ export class PresupuestosV2Service implements OnModuleInit {
       },
     });
     if (!r) throw new NotFoundException('Presupuesto V2 no encontrado');
+    await this.reconciliarEstados([r]);
 
     let cliente_nombre: string | null = null;
     if (r.cliente_id != null) {
@@ -644,7 +771,7 @@ export class PresupuestosV2Service implements OnModuleInit {
         : `#${r.id}`);
 
     const digitalesWorking =
-      r.estado === 'EMITIDO'
+      r.estado !== 'BORRADOR'
         ? normalizeServiciosDigitales(r.snapshot_servicios_digitales_json)
         : normalizeServiciosDigitales(
             r.servicios_digitales_json ??
@@ -659,11 +786,18 @@ export class PresupuestosV2Service implements OnModuleInit {
       totalesDocumento.totales_sin_alternativas,
       dtoPct,
     );
+    const firmaDoc = await this.prisma.v2PresupuestoDocumento.findFirst({
+      where: { presupuesto_id: id, tipo: 'FIRMADO' },
+      orderBy: { id: 'desc' },
+      select: { id: true, created_at: true },
+    });
 
     return {
       ...r,
       descuento_fidelidad_pct: dtoPct,
       cliente_nombre,
+      tiene_firma: Boolean(firmaDoc),
+      firmado_at: firmaDoc?.created_at || null,
       identificador_ui: identificadorUi,
       parent_numero: parentNumero,
       versiones,
@@ -1197,12 +1331,26 @@ export class PresupuestosV2Service implements OnModuleInit {
         })),
       })),
     );
+    const dtoPct = clampDescuentoFidelidadPct(
+      (existing as any).descuento_fidelidad_pct,
+    );
+    const fidelidad = applyDescuentoFidelidadToTotales(
+      totalesDocumento.totales_sin_alternativas,
+      dtoPct,
+    );
 
     return {
       presupuesto_id: id,
       lineas: lineasOut,
-      totales: totalesDocumento.totales_sin_alternativas,
-      totales_documento: totalesDocumento,
+      totales: fidelidad.neto,
+      totales_documento: {
+        ...totalesDocumento,
+        totales: fidelidad.neto,
+        totales_sin_alternativas: fidelidad.neto,
+        totales_brutos: fidelidad.bruto,
+        descuento_fidelidad: fidelidad.descuento,
+        descuento_fidelidad_pct: dtoPct,
+      },
       persisted: persist,
     };
   }
@@ -1658,9 +1806,9 @@ export class PresupuestosV2Service implements OnModuleInit {
       },
     });
     if (!source) throw new NotFoundException('Presupuesto V2 no encontrado');
-    if (source.estado !== 'EMITIDO') {
+    if (source.estado === 'BORRADOR') {
       throw new BadRequestException(
-        'Solo se puede crear una nueva versión desde un presupuesto EMITIDO',
+        'Solo se puede crear una nueva versión desde un presupuesto ya emitido',
       );
     }
 
@@ -1689,6 +1837,13 @@ export class PresupuestosV2Service implements OnModuleInit {
       };
     }
 
+    const overridesNueva = {
+      ...((source.cliente_overrides_json as Record<string, unknown>) || {}),
+    };
+    delete overridesNueva.enviado_at;
+    delete overridesNueva.rechazo;
+    delete overridesNueva.cuenta_cobro;
+
     const created = await this.prisma.$transaction(async (tx) => {
       const nuevo = await tx.v2Presupuesto.create({
         data: {
@@ -1704,8 +1859,7 @@ export class PresupuestosV2Service implements OnModuleInit {
           cliente_working_json:
             clienteWorking as unknown as Prisma.InputJsonValue,
           cliente_overrides_json:
-            (source.cliente_overrides_json as Prisma.InputJsonValue) ??
-            ({} as Prisma.InputJsonValue),
+            overridesNueva as Prisma.InputJsonValue,
           servicios_digitales_json:
             (deepCloneJson(
               source.snapshot_servicios_digitales_json ||
@@ -1882,6 +2036,189 @@ export class PresupuestosV2Service implements OnModuleInit {
       data: { updated_by: this.codigoOf(user) },
     });
     return this.getPresupuesto(presupuestoId);
+  }
+
+  async enviarEmail(
+    user: AuthUser,
+    id: number,
+    emailRaw: unknown,
+    mensajeRaw: unknown,
+    cuentaIdRaw: unknown,
+  ) {
+    const email = String(emailRaw ?? '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new BadRequestException('El email no es válido');
+    }
+    const p = await this.prisma.v2Presupuesto.findUnique({ where: { id } });
+    if (!p) throw new NotFoundException('Presupuesto V2 no encontrado');
+    if (p.estado === 'BORRADOR') {
+      throw new BadRequestException(
+        'Solo se puede enviar un presupuesto ya emitido',
+      );
+    }
+
+    const prev = (p.cliente_overrides_json as Record<string, unknown>) || {};
+    const yaEnviado =
+      this.fechaEnvioDe(p) != null ||
+      p.estado === 'ENVIADO' ||
+      p.estado === 'FIRMADO' ||
+      p.estado === 'NO_CONFIRMADO' ||
+      p.estado === 'RECHAZADO';
+    const cuentaGuardada = normalizeCuentasCobro(
+      prev.cuenta_cobro ? [prev.cuenta_cobro] : [],
+    )[0];
+    let cuenta = cuentaGuardada || null;
+    if (!yaEnviado) {
+      const empresa = await this.prisma.v2Company.findUnique({
+        where: { id: p.company_id },
+      });
+      const cuentas = normalizeCuentasCobro(
+        (empresa?.datos_fiscales_json as { cuentas_cobro?: unknown } | null)
+          ?.cuentas_cobro,
+      );
+      const cuentaId = String(cuentaIdRaw ?? '').trim();
+      cuenta =
+        cuentas.find((c) => c.id === cuentaId) ||
+        (cuentas.length === 1 ? cuentas[0] : null);
+      if (cuentas.length > 1 && !cuenta) {
+        throw new BadRequestException(
+          'Elige la cuenta que verá el cliente si paga por transferencia',
+        );
+      }
+    }
+
+    const { buffer, filename } = await this.pdfService.getOrCreateEmitidoPdf(
+      user,
+      id,
+    );
+    const numero = p.numero || String(id);
+    const cliente = (p.snapshot_cliente_json || {}) as Record<string, unknown>;
+    const company = (p.snapshot_company_json || {}) as Record<string, unknown>;
+    const companyName = String(
+      company.legal_name || 'De Camino Servicios Auxiliares S.L.',
+    );
+    const clienteNombre = String(cliente.nombre || '').trim();
+    const mensaje = String(mensajeRaw ?? '').trim().slice(0, 2000);
+    const escape = (value: string) =>
+      value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    const mensajeHtml = mensaje
+      ? `<div style="background-color:#e8f4f8;padding:15px;border-left:4px solid #2196F3;margin:20px 0;border-radius:4px;">
+      <h3 style="margin-top:0;color:#2196F3;">Mensaje adicional</h3>
+      <div style="white-space:pre-wrap;font-family:Arial,sans-serif;font-size:14px;line-height:1.6;">${escape(mensaje).replace(/\n/g, '<br>')}</div>
+    </div>`
+      : '';
+    const clienteTexto = clienteNombre
+      ? ` para <strong>${escape(clienteNombre)}</strong>`
+      : '';
+    const cfg = (this.configService.get('company') as Record<string, string>) || {};
+    const firmarBase = process.env.FIRMAR_BASE_URL || cfg.frontendAppUrl || '';
+    let firmarUrl = '';
+    try {
+      if (!firmarBase) {
+        throw new Error('Falta la URL pública de la aplicación para el enlace de firma');
+      }
+      firmarUrl = buildPresupuestoV2FirmarUrl(
+        firmarBase,
+        id,
+        readPresupuestoFirmaConfig(process.env),
+        new Date(),
+      );
+    } catch (e: any) {
+      throw new BadRequestException(
+        e?.message || 'No se puede crear el enlace de firma',
+      );
+    }
+    let inicio = this.fechaEnvioDe(p);
+    if (yaEnviado && !inicio) {
+      const primerEnvio = await this.prisma.v2PresupuestoAudit.findFirst({
+        where: { presupuesto_id: id, event_type: 'email_enviado' },
+        orderBy: { created_at: 'asc' },
+        select: { created_at: true },
+      });
+      inicio = primerEnvio?.created_at || null;
+    }
+    const validez = this.validezDiasDe(p);
+    const ancla = inicio || new Date();
+    const fin = new Date(ancla);
+    fin.setUTCDate(fin.getUTCDate() + validez);
+    const diasRestantes = Math.max(
+      0,
+      Math.ceil((fin.getTime() - Date.now()) / 86400000),
+    );
+    const plazoHtml = yaEnviado
+      ? diasRestantes === 0
+        ? '<p>El plazo para aceptar esta oferta ha terminado. Este correo es una copia del presupuesto ya enviado.</p>'
+        : `<p>Quedan <strong>${diasRestantes}</strong> ${diasRestantes === 1 ? 'día' : 'días'} para aceptar esta oferta. El presupuesto ya enviado no se modifica; este correo es una copia.</p>`
+      : `<p>Esta oferta es válida durante <strong>${validez}</strong> días desde este envío.</p>`;
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;line-height:1.6;color:#333;max-width:600px;margin:0 auto;padding:20px;">
+  <div style="background:#4CAF50;color:white;padding:24px 20px;border-radius:8px 8px 0 0;text-align:center;">
+    <h1 style="margin:0;font-size:22px;">${escape(companyName)}</h1>
+  </div>
+  <div style="background:#fff;padding:24px 20px;border:1px solid #e0e0e0;border-top:none;border-radius:0 0 8px 8px;">
+    <h2 style="color:#4CAF50;margin-top:0;">Presupuesto</h2>
+    <p>Estimado/a cliente,</p>
+    <p>Adjunto encontrará el presupuesto nº <strong>${escape(numero)}</strong>${clienteTexto}.</p>
+    ${plazoHtml}
+    <p>Puede aceptarlo y firmarlo en línea desde este enlace:</p>
+    <p style="text-align:center;margin:24px 0;">
+      <a href="${escape(firmarUrl)}" style="background:#4CAF50;color:#fff;text-decoration:none;padding:12px 22px;border-radius:6px;display:inline-block;font-weight:bold;">Firmar presupuesto</a>
+    </p>
+    <p style="font-size:13px;color:#666;word-break:break-all;">${escape(firmarUrl)}</p>
+    ${mensajeHtml}
+    <p>Quedamos a su disposición para cualquier aclaración.</p>
+    <p>Saludos cordiales,<br><strong>${escape(companyName)}</strong></p>
+    <p style="color:#888;font-size:13px;">${escape(cfg.email || '')}${cfg.phone ? ` · Tfno. ${escape(cfg.phone)}` : ''}</p>
+  </div>
+</body></html>`;
+
+    await this.emailService.sendEmailWithAttachment(
+      email,
+      `Presupuesto nº ${numero} - ${companyName}`,
+      html,
+      buffer,
+      filename,
+      {
+        record: {
+          senderId: this.codigoOf(user) || 'sistema',
+          recipientType: 'cliente',
+          recipientName: clienteNombre || 'Cliente',
+          attachmentNote: `Adjunto: ${filename}`,
+        },
+      },
+    );
+    await this.emitirService.audit(
+      id,
+      'email_enviado',
+      { email, filename, numero, cuenta_cobro_id: cuenta?.id || null },
+      this.codigoOf(user),
+    );
+    if (!yaEnviado && p.estado === 'EMITIDO') {
+      const base = (p.cliente_overrides_json as Record<string, unknown>) || {};
+      const enviadoAt =
+        typeof base.enviado_at === 'string' && base.enviado_at.trim()
+          ? base.enviado_at
+          : new Date().toISOString();
+      await this.prisma.v2Presupuesto.update({
+        where: { id },
+        data: {
+          estado: 'ENVIADO',
+          updated_by: this.codigoOf(user),
+          cliente_overrides_json: {
+            ...base,
+            ...(yaEnviado ? {} : { cuenta_cobro: cuenta }),
+            enviado_at: enviadoAt,
+          } as Prisma.InputJsonValue,
+        },
+      });
+    }
+    this.logger.log(`Presupuesto V2 ${id} enviado por email a ${email}`);
+    return { email, numero, filename };
   }
 
   async emitirPresupuesto(

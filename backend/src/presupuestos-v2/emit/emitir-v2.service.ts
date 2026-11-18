@@ -211,6 +211,18 @@ export class EmitirV2Service {
       ...((p.cliente_overrides_json as ClienteOverrides) || {}),
       ...overrides,
     };
+    if (Object.prototype.hasOwnProperty.call(overrides || {}, 'condiciones_economicas')) {
+      const raw = (overrides as ClienteOverrides).condiciones_economicas;
+      const list = Array.isArray(raw)
+        ? raw
+        : raw == null
+          ? []
+          : String(raw).split(/\n/);
+      merged.condiciones_economicas = list
+        .map((line) => String(line ?? '').trim())
+        .filter(Boolean)
+        .slice(0, 30);
+    }
     await this.prisma.v2Presupuesto.update({
       where: { id: presupuestoId },
       data: {
@@ -832,7 +844,7 @@ export class EmitirV2Service {
       working,
       overrides,
       efectivo:
-        p.estado === 'EMITIDO'
+        p.estado !== 'BORRADOR'
           ? p.snapshot_cliente_json
           : resolveClienteEfectivo(working, overrides),
       ficha_stale: stale,
